@@ -1,0 +1,1706 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>통합 자산 분석 대시보드</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        deposit: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb' },
+                        savings: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a' },
+                        investment: { 50: '#fff7ed', 500: '#f97316', 600: '#ea580c' },
+                        pension: { 50: '#faf5ff', 500: '#a855f7', 600: '#9333ea' },
+                        realestate: { 50: '#fef7f0', 500: '#f59e0b', 600: '#d97706' },
+                        car: { 50: '#ecfeff', 500: '#06b6d4', 600: '#0891b2' },
+                        loan: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563' },
+                        misc: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script>
+        // ===== 기본값 설정 (서버/로컬 전환 가능) =====
+        const USE_SERVER_CONFIG = false; // true: 서버에서 로드, false: 로컬 하드코딩 사용
+
+        // 공개용 기본값 (제3자 공개 시 사용)
+        const publicDefaultData = {
+            projectionMonths: 12,
+          monthlySalary: 280,
+            targetAmount: 10000, // 목표 자산 금액 (만원)
+            goalMode: 'period', // 'period' 또는 'target'
+            rebalancingMode: 'simple', // 'simple' | 'advanced'
+            assets: {
+                deposit: [
+                    { name: '비상금통장', amount: 100, rate: 2.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' },
+                    { name: '생활비통장', amount: 30, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' },
+                    { name: '카카오비상금', amount: 30, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+                ],
+                savings: [
+                    { name: '청년도약계좌', amount: 140, rate: 6.0, feeRate: 0, monthlyContrib: 0, extraContrib: 70, extraFrom: '비상금통장' },
+                    { name: '청약저축', amount: 180, rate: 6.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
+                ],
+                investment: [
+                    { name: '직접투자계좌', amount: 1400, rate: 10.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' },
+                    { name: 'ISA계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 100, extraContrib: 0, extraFrom: '' },
+                    { name: '금투자', amount: 0, rate: 3.0, feeRate: 0, monthlyContrib: 30, extraContrib: 0, extraFrom: '' },
+                    { name: '비트코인', amount: 0, rate: 12.0, feeRate: 0, monthlyContrib: 15, extraContrib: 0, extraFrom: '' }
+                ],
+                pension: [
+                    { name: '연금저축', amount: 199, rate: 10.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
+                ],
+                realestate: [
+                    { name: '아파트', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+                ],
+                car: [
+                    { name: '자동차', amount: 70, rate: -2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+                ],
+                loan: [
+                    { name: '신용대출', amount: 0, rate: 3.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+                ],
+                misc: [
+                    { name: '기타자산', amount: 0, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+                ]
+            },
+            monthlyExpenses: [
+                { name: '생활비', amount: 100 }
+            ],
+            expenseEvents: [],
+            rebalancingAlerts: {
+                deposit: { warning: 5, danger: 10 },
+                savings: { warning: 5, danger: 10 },
+                investment: { warning: 5, danger: 10 },
+                pension: { warning: 5, danger: 10 },
+                realestate: { warning: 5, danger: 10 },
+                misc: { warning: 5, danger: 10 }
+            },
+            simpleThresholds: { warning: 5, danger: 10 },
+            rebalancingTargets: { /* 섹터별 목표 비중(%) 합계 100 */ }
+        };
+
+        
+        // 서버 설정 로드 함수 (주석 처리/해제로 전환)
+        async function loadServerConfig() {
+            if (!USE_SERVER_CONFIG) return publicDefaultData;
+            
+            try {
+                // const response = await fetch('/api/defaultconfig');
+                // return await response.json();
+                return publicDefaultData; // 서버 연결 실패시 기본값 사용
+            } catch (error) {
+                console.error('서버 설정 로드 실패:', error);
+                return publicDefaultData;
+            }
+        }
+    </script>
+
+    <script type="text/babel">
+            const { useState, useMemo, useEffect, useRef } = React;
+
+        const AssetDashboard = () => {
+            // ===== 모든 상태를 먼저 선언 =====
+            const [appData, setAppData] = useState(null);
+            const [scenarios, setScenarios] = useState([]);
+            const [goalSeekResult, setGoalSeekResult] = useState(null);
+            const [autoDepositAccount, setAutoDepositAccount] = useState('생활비통장');
+            // 섹터 접힘 상태는 항상 상단에서 선언하여 훅 순서 고정
+            const [hiddenSectors, setHiddenSectors] = useState(() => {
+                try {
+                    const raw = localStorage.getItem('assetDashboardHiddenSectors');
+                    return raw ? JSON.parse(raw) : {};
+                } catch { return {}; }
+            });
+            useEffect(()=>{
+                try {
+                    localStorage.setItem('assetDashboardHiddenSectors', JSON.stringify(hiddenSectors));
+                } catch {}
+            }, [hiddenSectors]);
+            
+            // ===== 초기 데이터 로드 =====
+            useEffect(() => {
+                const loadInitialData = async () => {
+                const serverData = await loadServerConfig();
+                const baseData = publicDefaultData; // <-- 이렇게 수정
+                try {
+                    const savedData = localStorage.getItem('assetDashboardDataV3');
+                        const savedScenarios = localStorage.getItem('assetDashboardScenarios');
+                        
+                        if (savedData) {
+                            const parsedData = JSON.parse(savedData);
+                            // 새로운 필드들 추가
+                            if (!parsedData.targetAmount) parsedData.targetAmount = baseData.targetAmount;
+                            if (!parsedData.goalMode) parsedData.goalMode = baseData.goalMode;
+                            if (!parsedData.assets.realestate) parsedData.assets.realestate = baseData.assets.realestate;
+                            if (!parsedData.assets.misc) parsedData.assets.misc = baseData.assets.misc;
+                            if (!parsedData.rebalancingAlerts) parsedData.rebalancingAlerts = baseData.rebalancingAlerts;
+                            // 마이그레이션: 자산별 수수료/세금 필드 기본값(0)
+                            Object.keys(parsedData.assets||{}).forEach(sector=>{
+                                (parsedData.assets[sector]||[]).forEach(a=>{ if (a.feeRate === undefined) a.feeRate = 0; });
+                            });
+                            setAppData(parsedData);
+                        } else {
+                            setAppData(baseData);
+                        }
+                        
+                        if (savedScenarios) {
+                            setScenarios(JSON.parse(savedScenarios));
+                        }
+                    } catch (error) {
+                        console.error("데이터 로드 오류:", error);
+                        setAppData(baseData);
+                    }
+                };
+                
+                loadInitialData();
+            }, []);
+
+            // ===== 데이터 자동 저장 =====
+            useEffect(() => {
+                if (appData) {
+                    localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
+                }
+            }, [appData]);
+
+            useEffect(() => {
+                localStorage.setItem('assetDashboardScenarios', JSON.stringify(scenarios));
+            }, [scenarios]);
+
+            // ===== 기본값 설정 (appData가 없을 때도 안전하게) =====
+            const {
+                projectionMonths = 12, monthlySalary = 280, assets = {}, monthlyExpenses = [], 
+                incomeEvents = [], expenseEvents = [], targetAmount = 10000, 
+                goalMode = 'period', rebalancingAlerts = {}, baseMonth = new Date().toISOString().slice(0,7),
+                rebalancingMode = 'simple', simpleThresholds = { warning: 5, danger: 10 }, rebalancingTargets = {}
+            } = appData || {};
+            const applyTax = false;
+            // ===== Setter 함수들 =====
+            const setProjectionMonths = (value) => setAppData(prev => ({ ...prev, projectionMonths: value }));
+            const setMonthlySalary = (value) => setAppData(prev => ({ ...prev, monthlySalary: value }));
+            const setAssets = (value) => setAppData(prev => ({ ...prev, assets: typeof value === 'function' ? value(prev.assets) : value }));
+            const setMonthlyExpenses = (value) => setAppData(prev => ({ ...prev, monthlyExpenses: typeof value === 'function' ? value(prev.monthlyExpenses) : value }));
+            const setIncomeEvents = (value) => setAppData(prev => ({ ...prev, incomeEvents: typeof value === 'function' ? value(prev.incomeEvents) : value }));
+            const setExpenseEvents = (value) => setAppData(prev => ({ ...prev, expenseEvents: typeof value === 'function' ? value(prev.expenseEvents) : value }));
+            
+            const setTargetAmount = (value) => setAppData(prev => ({ ...prev, targetAmount: value }));
+            const setGoalMode = (value) => setAppData(prev => ({ ...prev, goalMode: value }));
+            const setRebalancingAlerts = (value) => setAppData(prev => ({ ...prev, rebalancingAlerts: typeof value === 'function' ? value(prev.rebalancingAlerts) : value }));
+            const setBaseMonth = (value) => setAppData(prev => ({ ...prev, baseMonth: value }));
+            const setRebalancingMode = (value) => setAppData(prev => ({ ...prev, rebalancingMode: value }));
+            const setSimpleThresholds = (value) => setAppData(prev => ({ ...prev, simpleThresholds: typeof value === 'function' ? value(prev.simpleThresholds) : value }));
+            const setRebalancingTargets = (value) => setAppData(prev => ({ ...prev, rebalancingTargets: typeof value === 'function' ? value(prev.rebalancingTargets) : value }));
+
+
+
+            const saveAsDefault = () => {
+                if (confirm('현재 설정을 기본값으로 저장하시겠습니까?')) {
+                    localStorage.setItem('assetDashboardCustomDefault', JSON.stringify(appData));
+                    alert('현재 설정이 기본값으로 저장되었습니다.');
+                }
+            };
+
+            const loadCustomDefault = () => {
+                try {
+                    const customDefault = localStorage.getItem('assetDashboardCustomDefault');
+                    if (customDefault) {
+                        if (confirm('저장된 기본값으로 초기화하시겠습니까?')) {
+                            const parsed = JSON.parse(customDefault);
+                            // 스키마 보정: 누락 필드 채움
+                            const fallback = publicDefaultData;
+                            if (!parsed.assets) parsed.assets = fallback.assets;
+                            if (!parsed.monthlySalary) parsed.monthlySalary = fallback.monthlySalary;
+                            if (!parsed.projectionMonths) parsed.projectionMonths = fallback.projectionMonths;
+                            setAppData(parsed);
+                            localStorage.setItem('assetDashboardUseDevDefaults','false');
+                        }
+                    } else {
+                        alert('저장된 기본값이 없습니다.');
+                    }
+                } catch (error) {
+                    alert('기본값 로드 중 오류가 발생했습니다.');
+                }
+            };
+
+            // ===== 개선된 PDF 저장 함수 =====
+            const saveToPDF = async () => {
+                try {
+                    // 로딩 알림 표시
+                    const loadingAlert = document.createElement('div');
+                    loadingAlert.className = 'fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded shadow-lg z-50';
+                    loadingAlert.textContent = 'PDF 생성 중...';
+                    document.body.appendChild(loadingAlert);
+
+                    // 요소 확인
+                    const element = document.getElementById('dashboard-content');
+                    if (!element) {
+                        throw new Error('대시보드 콘텐츠를 찾을 수 없습니다.');
+                    }
+
+                    // html2canvas 옵션 개선
+                    const canvas = await html2canvas(element, {
+                        scale: 1.5,
+                        useCORS: true,
+                        allowTaint: false,
+                        backgroundColor: '#f9fafb',
+                        logging: false,
+                        width: element.scrollWidth,
+                        height: element.scrollHeight,
+                        scrollX: 0,
+                        scrollY: 0
+                    });
+                    
+                    const imgData = canvas.toDataURL('image/png', 0.8);
+                    
+                    // jsPDF 인스턴스 생성 확인 (UMD 네임스페이스 호환)
+                    const JSPDF_NS = window.jspdf || window.jsPDF || window.jsPDFModule;
+                    if (!JSPDF_NS || !JSPDF_NS.jsPDF) {
+                        throw new Error('PDF 라이브러리를 로드할 수 없습니다.');
+                    }
+                    const pdf = new JSPDF_NS.jsPDF('p', 'mm', 'a4');
+                    const imgWidth = 210;
+                    const pageHeight = 295;
+                    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                    let heightLeft = imgHeight;
+                    let position = 0;
+
+                    // 첫 페이지
+                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+
+                    // 추가 페이지
+                    while (heightLeft >= 0) {
+                        position = heightLeft - imgHeight;
+                        pdf.addPage();
+                        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                        heightLeft -= pageHeight;
+                    }
+
+                    // 파일명 생성
+                    const fileName = `자산분석보고서_${new Date().toISOString().split('T')[0]}.pdf`;
+                    pdf.save(fileName);
+                    
+                    // 성공 알림
+                    loadingAlert.textContent = 'PDF 저장 완료!';
+                    loadingAlert.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
+                    
+                    setTimeout(() => {
+                        if (document.body.contains(loadingAlert)) {
+                            document.body.removeChild(loadingAlert);
+                        }
+                    }, 2000);
+
+                } catch (error) {
+                    console.error('PDF 저장 오류:', error);
+                    
+                    // 오류 알림
+                    const errorAlert = document.createElement('div');
+                    errorAlert.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg z-50';
+                    errorAlert.textContent = `PDF 저장 실패: ${error.message}`;
+                    document.body.appendChild(errorAlert);
+                    
+                    setTimeout(() => {
+                        if (document.body.contains(errorAlert)) {
+                            document.body.removeChild(errorAlert);
+                        }
+                    }, 5000);
+                    // 혹시 남아있는 로딩 알림 제거
+                    document.querySelectorAll('.fixed.top-4.right-4').forEach(el => {
+                        if (el.textContent.includes('PDF')) {
+                            el.parentNode && el.parentNode.removeChild(el);
+                        }
+                    });
+                }
+            };
+
+            // ===== 시나리오 관리 함수들 =====
+            const saveScenario = () => {
+                const name = prompt('시나리오 이름을 입력하세요:');
+                if (name && name.trim()) {
+                    const newScenario = {
+                        id: Date.now(),
+                        name: name.trim(),
+                        data: { ...appData },
+                        createdAt: new Date().toISOString()
+                    };
+                    setScenarios(prev => [...prev, newScenario]);
+                    alert('시나리오가 저장되었습니다.');
+                }
+            };
+
+            const loadScenario = (scenario) => {
+                if (confirm(`"${scenario.name}" 시나리오를 불러오시겠습니까?`)) {
+                    setAppData(scenario.data);
+                }
+            };
+
+            const deleteScenario = (id) => {
+                if (confirm('시나리오를 삭제하시겠습니까?')) {
+                    setScenarios(prev => prev.filter(s => s.id !== id));
+                }
+            };
+
+            // ===== 예산 계산 =====
+            const totalMonthlyExpense = useMemo(() => {
+                if (!monthlyExpenses || !Array.isArray(monthlyExpenses)) return 0;
+                return monthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+            }, [monthlyExpenses]);
+            
+            const totalSectorMonthlyContrib = useMemo(() => {
+                if (!assets || typeof assets !== 'object') return 0;
+                let sum = 0;
+                Object.entries(assets).forEach(([sector, arr]) => {
+                    if (Array.isArray(arr)) {
+                        arr.forEach(asset => { sum += asset.monthlyContrib || 0; });
+                    }
+                });
+                return sum;
+            }, [assets]);
+            
+            const maxSectorMonthlyContrib = useMemo(() => Math.max(0, monthlySalary - totalMonthlyExpense), [monthlySalary, totalMonthlyExpense]);
+            const autoDepositAmount = Math.max(0, maxSectorMonthlyContrib - totalSectorMonthlyContrib);
+
+            // ===== 자동입금 반영 함수 =====
+            const applyAutoDeposit = () => {
+                if (autoDepositAmount > 0) {
+                    setAssets(prev => {
+                        const next = { ...prev };
+                        let updated = false;
+                        Object.keys(next).forEach(sectorKey => {
+                            if (Array.isArray(next[sectorKey])) {
+                                next[sectorKey] = next[sectorKey].map(asset => {
+                                    if (asset.name === autoDepositAccount) {
+                                        updated = true;
+                                        return { ...asset, monthlyContrib: (asset.monthlyContrib || 0) + autoDepositAmount };
+                                    }
+                                    return asset;
+                                });
+                            }
+                        });
+                        return next;
+                    });
+                    alert(`${autoDepositAccount}에 ${autoDepositAmount}만원 월납입이 추가되었습니다.`);
+                }
+            };
+
+            // ===== 개선된 목표 달성 계산 =====
+            const calculateGoalSeek = () => {
+                if (!targetAmount || targetAmount <= 0) {
+                    alert('유효한 목표 금액을 입력해주세요.');
+                    return;
+                }
+
+                let months = 0;
+                let currentAssets = {};
+                
+                // 현재 자산 상태 복사
+                Object.keys(assets).forEach(sector => {
+                    if (Array.isArray(assets[sector])) {
+                        currentAssets[sector] = assets[sector].map(asset => ({ ...asset }));
+                    } else {
+                        currentAssets[sector] = [];
+                    }
+                });
+
+                const monthlyGrowth = totalSectorMonthlyContrib + autoDepositAmount;
+                
+                // 매월 시뮬레이션
+                while (months < 1000) {
+                    months++;
+                    
+                    // 복리 수익률 적용 (자산별 수수료/세금 반영)
+                    Object.keys(currentAssets).forEach(sector => {
+                        currentAssets[sector].forEach(asset => {
+                            const feeRate = (asset.feeRate || 0) / 100;
+                            let effectiveRate = (asset.rate / 100) * (1 - feeRate);
+                            const monthlyRate = 1 + (effectiveRate / 12);
+                            asset.amount *= monthlyRate;
+                        });
+                    });
+
+                    // 이벤트 적용
+                    incomeEvents.forEach(event => {
+                        if (months >= event.startMonth && months <= event.endMonth) {
+                            if (currentAssets[event.targetSector] && currentAssets[event.targetSector][event.targetAsset]) {
+                                currentAssets[event.targetSector][event.targetAsset].amount += event.amount;
+                            }
+                        }
+                    });
+
+                    expenseEvents.forEach(event => {
+                        if (months >= event.startMonth && months <= event.endMonth) {
+                            const livingAccount = currentAssets.deposit?.find(d => d.name === '생활비통장');
+                            if (livingAccount) {
+                                livingAccount.amount = Math.max(0, livingAccount.amount - event.amount);
+                            }
+                        }
+                    });
+
+                    // 월급 및 지출
+                    const livingAccount = currentAssets.deposit?.find(d => d.name === '생활비통장');
+                    if (livingAccount) {
+                        livingAccount.amount += monthlySalary;
+                        livingAccount.amount -= totalMonthlyExpense;
+                    }
+
+                    // 월납입 적용 (대출 상환 처리)
+                    Object.keys(currentAssets).forEach(sector => {
+                        currentAssets[sector].forEach(asset => {
+                            if (asset.monthlyContrib > 0) {
+                                if (sector === 'loan') {
+                                    asset.amount = Math.max(0, (asset.amount || 0) - asset.monthlyContrib);
+                                } else {
+                                    asset.amount += asset.monthlyContrib;
+                                }
+                                if (livingAccount && asset.name !== '생활비통장') {
+                                    livingAccount.amount -= asset.monthlyContrib;
+                                }
+                            }
+                        });
+                    });
+
+                    // 자동입금 (대출 상환 처리)
+                    if (autoDepositAmount > 0) {
+                        const allAccounts = Object.values(currentAssets).flat();
+                        const targetAccount = allAccounts.find(d => d.name === autoDepositAccount);
+                        if (targetAccount && livingAccount && targetAccount.name !== '생활비통장') {
+                            if ((Object.entries(currentAssets).find(([k,v]) => (v||[]).some(a => a.name===autoDepositAccount))||[])[0] === 'loan') {
+                                targetAccount.amount = Math.max(0, (targetAccount.amount || 0) - autoDepositAmount);
+                            } else {
+                                targetAccount.amount += autoDepositAmount;
+                            }
+                            livingAccount.amount -= autoDepositAmount;
+                        }
+                    }
+
+                    // 월수입외 납입 (대출 상환 처리)
+                    Object.keys(currentAssets).forEach(sector => {
+                        currentAssets[sector].forEach(asset => {
+                            if (asset.extraContrib > 0 && asset.extraFrom) {
+                                if (sector === 'loan') {
+                                    asset.amount = Math.max(0, (asset.amount || 0) - asset.extraContrib);
+                                } else {
+                                    asset.amount += asset.extraContrib;
+                                }
+                                const fromAccountArray = Object.values(currentAssets).flat();
+                                const fromAccount = fromAccountArray.find(d => d.name === asset.extraFrom);
+                                if (fromAccount) {
+                                    const actualDeduction = Math.min(asset.extraContrib, fromAccount.amount);
+                                    fromAccount.amount -= actualDeduction;
+                                    if (actualDeduction < asset.extraContrib) {
+                                        if (sector === 'loan') {
+                                            asset.amount += (asset.extraContrib - actualDeduction);
+                                        } else {
+                                            asset.amount -= (asset.extraContrib - actualDeduction);
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    });
+
+                    // 총 자산 계산
+                    const currentTotal = Object.values(currentAssets).flat().reduce((sum, asset) => sum + asset.amount, 0);
+                    
+                    if (currentTotal >= targetAmount) {
+                        setGoalSeekResult(`목표 달성까지 약 ${months}개월 소요됩니다.`);
+                        setProjectionMonths(months);
+                        return;
+                    }
+                }
+
+                setGoalSeekResult('현재 조건으로는 1000개월 내 목표 달성이 어렵습니다.');
+            };
+
+            // ===== 메인 계산 로직 =====
+            const calculation = useMemo(() => {
+                if (!appData || !assets || typeof assets !== 'object') {
+                    return {
+                        initial: {},
+                        projected: {},
+                        currentTotal: 0,
+                        projectedTotal: 0,
+                        growth: 0
+                    };
+                }
+                
+                const months = projectionMonths;
+                let currentAssets = {};
+                Object.keys(assets).forEach(sector => {
+                    if (Array.isArray(assets[sector])) {
+                        currentAssets[sector] = assets[sector].map(asset => ({ ...asset }));
+                    } else {
+                        currentAssets[sector] = [];
+                    }
+                });
+
+                for (let month = 1; month <= months; month++) {
+                    // 복리 수익률 적용 (자산별 수수료/세금 반영)
+                    Object.keys(currentAssets).forEach(sector => {
+                        currentAssets[sector].forEach(asset => {
+                            const feeRate = (asset.feeRate || 0) / 100;
+                            let effectiveRate = (asset.rate / 100) * (1 - feeRate);
+                            const monthlyRate = 1 + (effectiveRate / 12);
+                            asset.amount *= monthlyRate;
+                        });
+                    });
+
+                    // 이벤트 적용
+                    incomeEvents.forEach(event => {
+                        if (month >= event.startMonth && month <= event.endMonth) {
+                            if (currentAssets[event.targetSector] && currentAssets[event.targetSector][event.targetAsset]) {
+                                currentAssets[event.targetSector][event.targetAsset].amount += event.amount;
+                            }
+                        }
+                    });
+
+                    expenseEvents.forEach(event => {
+                        if (month >= event.startMonth && month <= event.endMonth) {
+                            const arr = currentAssets[event.targetSector];
+                            if (arr && arr[event.targetAsset]) {
+                                arr[event.targetAsset].amount = Math.max(0, arr[event.targetAsset].amount - event.amount);
+                            }
+                        }
+                    });
+
+                    // 월급 및 지출
+                    const livingAccount = currentAssets.deposit?.find(d => d.name === '생활비통장');
+                    if (livingAccount) {
+                        livingAccount.amount += monthlySalary;
+                        livingAccount.amount -= totalMonthlyExpense;
+                    }
+
+                    // 월납입 적용
+                    Object.keys(currentAssets).forEach(sector => {
+                        currentAssets[sector].forEach(asset => {
+                            if (asset.monthlyContrib > 0) {
+    // [수정] 대출 섹터일 경우 자산(부채)을 차감, 아닐 경우 증가
+    if (sector === 'loan') {
+        asset.amount = Math.max(0, (asset.amount || 0) - asset.monthlyContrib);
+    } else {
+        asset.amount += asset.monthlyContrib;
+    }
+
+    if (livingAccount && asset.name !== '생활비통장') {
+        livingAccount.amount -= asset.monthlyContrib;
+    }
+}
+                        });
+                    });
+
+                    // 자동입금
+                    if (autoDepositAmount > 0) {
+                        const allAccounts = Object.values(currentAssets).flat();
+                        const targetAccount = allAccounts.find(d => d.name === autoDepositAccount);
+                        if (targetAccount && livingAccount && targetAccount.name !== '생활비통장') {
+                            targetAccount.amount += autoDepositAmount;
+                            livingAccount.amount -= autoDepositAmount;
+                        }
+                    }
+
+                    // 월수입외 납입
+                    Object.keys(currentAssets).forEach(sector => {
+                        currentAssets[sector].forEach(asset => {
+                            if (asset.extraContrib > 0 && asset.extraFrom) {
+                                asset.amount += asset.extraContrib;
+                                const fromAccountArray = Object.values(currentAssets).flat();
+                                const fromAccount = fromAccountArray.find(d => d.name === asset.extraFrom);
+                                if (fromAccount) {
+                                    const actualDeduction = Math.min(asset.extraContrib, fromAccount.amount);
+                                    fromAccount.amount -= actualDeduction;
+                                    if (actualDeduction < asset.extraContrib) {
+                                        asset.amount -= (asset.extraContrib - actualDeduction);
+                                    }
+                                }
+                            }
+                        });
+                    });
+                }
+
+                const calculateTotal = (assetData) => {
+                    let sum = 0;
+                    Object.keys(assetData).forEach(sector => {
+                        const sectorSum = (assetData[sector]||[]).reduce((s,a)=> s + (a.amount||0), 0);
+                        sum += (sector === 'loan') ? -sectorSum : sectorSum;
+                    });
+                    return sum;
+                };
+                const currentTotal = calculateTotal(assets);
+                const projectedTotal = calculateTotal(currentAssets);
+
+                return {
+                    initial: assets,
+                    projected: currentAssets,
+                    currentTotal,
+                    projectedTotal,
+                    growth: projectedTotal - currentTotal
+                };
+            }, [appData, assets, projectionMonths, monthlySalary, monthlyExpenses, incomeEvents, expenseEvents, autoDepositAccount]);
+
+            // ===== 유틸리티 함수들 =====
+            const formatNumber = (num) => Math.round(num).toLocaleString();
+            const formatPercent = (num) => num.toFixed(1);
+            
+            const calculateGrossTotal = (assetData) => {
+                if (!assetData || typeof assetData !== 'object') return 0;
+                let sum = 0;
+                Object.keys(assetData).forEach(sector => {
+                    if (sector === 'loan') return; // 부채 제외
+                    const arr = assetData[sector] || [];
+                    sum += arr.reduce((s,a)=> s + (a.amount||0), 0);
+                });
+                return sum;
+            };
+
+            const getSectorTotals = (assetData, total) => {
+                const totals = {};
+                if (!assetData || typeof assetData !== 'object') return totals;
+                
+                Object.keys(assetData).forEach(sector => {
+                    if (sector === 'loan') return; // 대출은 비율/차트 계산에서 제외
+                    if (Array.isArray(assetData[sector])) {
+                        const sectorTotal = assetData[sector].reduce((sum, asset) => sum + (asset.amount || 0), 0);
+                        totals[sector] = { amount: sectorTotal, percentage: total > 0 ? (sectorTotal / total * 100) : 0 };
+                    }
+                });
+                return totals;
+            };
+
+            const currentGrossTotal = calculateGrossTotal(calculation.initial);
+            const projectedGrossTotal = calculateGrossTotal(calculation.projected);
+            const currentSectorTotals = getSectorTotals(calculation.initial, currentGrossTotal);
+            const projectedSectorTotals = getSectorTotals(calculation.projected, projectedGrossTotal);
+
+            // ===== 리밸런싱 경고 함수 (목표 비중 기준 편차) =====
+            const getRebalanceStatus = (sectorKey, percentage) => {
+                const target = rebalancingTargets[sectorKey] ?? (100 / Object.keys(sectorInfo).length);
+                const deviation = Math.abs(percentage - target);
+                const thresholds = rebalancingMode === 'simple' ? simpleThresholds : (rebalancingAlerts[sectorKey] || { warning: 5, danger: 10 });
+                if (deviation >= thresholds.danger) return 'bg-red-100 text-red-800';
+                if (deviation >= thresholds.warning) return 'bg-yellow-100 text-yellow-800';
+                return '';
+            };
+
+            // ===== 자동입금 계산식 표시 함수 =====
+            const getAutoDepositBreakdown = () => {
+                const breakdown = [];
+                Object.keys(assets).forEach(sectorKey => {
+                    if (Array.isArray(assets[sectorKey])) {
+                        assets[sectorKey].forEach(asset => {
+                            if (asset.monthlyContrib > 0) {
+                                breakdown.push({
+                                    sector: sectorKey,
+                                    name: asset.name,
+                                    amount: asset.monthlyContrib
+                                });
+                            }
+                        });
+                    }
+                });
+                return breakdown;
+            };
+
+            const autoDepositBreakdown = getAutoDepositBreakdown();
+
+            // ===== 차트 설정 =====
+            const currentPieRef = useRef(null);
+            const projectedPieRef = useRef(null);
+            const comparisonBarRef = useRef(null);
+
+            useEffect(() => {
+    if (!appData || !currentPieRef.current || !projectedPieRef.current || !comparisonBarRef.current) return;
+
+    const sectorColors = {
+        deposit: '#3b82f6',
+        savings: '#22c55e',
+        investment: '#f97316',
+        pension: '#a855f7',
+        realestate: '#f59e0b',
+        car: '#06b6d4',
+        loan: '#6b7280',
+        misc: '#6b7280'
+    };
+    const sectorLabels = {
+        deposit: '입출금통장',
+        savings: '저축',
+        investment: '투자',
+        pension: '연금',
+        realestate: '부동산',
+        car: '자동차',
+        loan: '대출',
+        misc: '기타'
+    };
+
+    // 기존 차트 인스턴스가 있다면 파괴합니다.
+    [currentPieRef, projectedPieRef, comparisonBarRef].forEach(ref => {
+        if (ref.current && ref.current._chart) {
+            ref.current._chart.destroy();
+        }
+    });
+
+    // 차트 데이터 준비
+    const filteredKeys = Object.keys(currentSectorTotals).filter(k => k !== 'loan');
+    const currentLabels = filteredKeys.map(key => sectorLabels[key]);
+    const currentData = filteredKeys.map(key => currentSectorTotals[key].amount);
+    const currentColors = filteredKeys.map(key => sectorColors[key]);
+    const projectedKeys = Object.keys(projectedSectorTotals).filter(k => k !== 'loan');
+    const projectedLabels = projectedKeys.map(key => sectorLabels[key]);
+    const projectedData = projectedKeys.map(key => projectedSectorTotals[key].amount);
+
+    const forecastDateText = (() => {
+        const [y,m] = (baseMonth || new Date().toISOString().slice(0,7)).split('-').map(Number);
+        const date = new Date(y, m - 1 + projectionMonths);
+        return `${String(date.getFullYear()).slice(2)}년 ${String(date.getMonth()+1).padStart(2,'0')}월`;
+    })();
+
+    // 현재 포트폴리오 차트
+    currentPieRef.current._chart = new Chart(currentPieRef.current, {
+        type: 'pie',
+        data: { labels: currentLabels, datasets: [{ data: currentData, backgroundColor: currentColors }] },
+        options: {
+            responsive: true,
+            plugins: { 
+                legend: { position: 'bottom' },
+                title: { display: true, text: '현재 포트폴리오' },
+                datalabels: {
+                    anchor: 'end', // 라벨을 슬라이스 바깥쪽 끝에 고정
+                    align: 'start', // 라벨 텍스트를 시작 부분에 정렬
+                    offset: 15, // 슬라이스에서 라벨까지의 거리
+                    color: '#111827',
+                    formatter: (v, ctx) => { const total = currentData.reduce((a,b)=>a+b,0)||1; const p = v/total*100; return p > 5 ? `${p.toFixed(1)}%` : ''; }, // 5% 미만은 숨김
+                    font: { weight: 'bold', size: 11 }
+                }
+            }
+        },
+        plugins: [ChartDataLabels]
+    });
+
+    // 예상 포트폴리오 차트
+    projectedPieRef.current._chart = new Chart(projectedPieRef.current, {
+        type: 'pie',
+        data: { labels: projectedLabels, datasets: [{ data: projectedData, backgroundColor: currentColors }] },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                title: { display: true, text: `${projectionMonths}개월 후 예상 ${forecastDateText ? `(${forecastDateText})` : ''}` },
+                datalabels: {
+                    anchor: 'end',
+                    align: 'start',
+                    offset: 15,
+                    color: '#111827',
+                    formatter: (v, ctx) => { const total = projectedData.reduce((a,b)=>a+b,0)||1; const p = v/total*100; return p > 5 ? `${p.toFixed(1)}%` : ''; },
+                    font: { weight: 'bold', size: 11 }
+                }
+            }
+        },
+        plugins: [ChartDataLabels]
+    });
+
+    // 비교 차트
+comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
+    type: 'bar',
+    data: {
+        labels: currentLabels,
+        datasets: [
+            { label: '현재', data: currentData, backgroundColor: 'rgba(59, 130, 246, 0.6)' },
+            { label: '예상', data: projectedData, backgroundColor: 'rgba(34, 197, 94, 0.6)' }
+        ]
+    },
+    options: {
+        responsive: true,
+        scales: { x: { position: 'bottom' }, y: { beginAtZero: true } },
+        plugins: {
+            legend: { position: 'bottom' },
+            title: { display: true, text: '현재 자산 vs 예상 자산' },
+            datalabels: {
+                anchor: 'end', 
+                align: 'top', 
+                offset: 4,
+                color: '#111827',
+                font: { size: 10 },
+                // formatter를 수정하여 각 막대의 값만 표시하도록 변경합니다.
+                formatter: (value, context) => {
+                    return `${Math.round(value).toLocaleString()}`;
+                }
+            }
+        }
+    },
+    plugins: [ChartDataLabels]
+});
+}, [appData, calculation, projectionMonths, baseMonth]);
+
+
+
+
+            // ===== 로딩 상태 처리 =====
+            if (!appData) {
+                return <div className="flex items-center justify-center min-h-screen">로딩 중...</div>;
+            }
+
+            // ===== 자산 관리 함수들 =====
+            const addAsset = (sector) => setAssets(prev => ({
+                ...prev,
+                [sector]: [...(prev[sector] || []), {
+                    name: '새 항목',
+                    amount: 0,
+                    rate: sector === 'loan' ? 3.0 : (sector === 'car' ? -2.0 : 10.0),
+                    feeRate: 0,
+                    monthlyContrib: 0,
+                    extraContrib: 0,
+                    extraFrom: (Object.values(prev).flat()[0]?.name) || ''
+                }]
+            }));
+
+            const updateAsset = (sector, index, field, value) => {
+                const newValue = (typeof value === 'string' && field !== 'name' && field !== 'extraFrom') ? Number(value) : value;
+                if ((field === 'monthlyContrib' || field === 'extraContrib') && newValue < 0) return;
+                setAssets(prev => ({
+                    ...prev,
+                    [sector]: prev[sector].map((asset, i) => i === index ? { ...asset, [field]: newValue } : asset)
+                }));
+            };
+
+            const removeAsset = (sector, index) => setAssets(prev => ({
+                ...prev,
+                [sector]: prev[sector].filter((_, i) => i !== index)
+            }));
+
+            // ===== 지출 관리 함수들 =====
+            const addExpense = () => setMonthlyExpenses(prev => [...prev, { name: '새 지출', amount: 0 }]);
+            const updateExpense = (index, field, value) => setMonthlyExpenses(prev => prev.map((expense, i) => 
+                i === index ? { ...expense, [field]: field === 'name' ? value : Number(value) } : expense
+            ));
+            const removeExpense = (index) => setMonthlyExpenses(prev => prev.filter((_, i) => i !== index));
+
+            // ===== 이벤트 관리 함수들 =====
+            const addIncomeEvent = () => setIncomeEvents(prev => [...prev, { 
+                name: '새 수입 이벤트', amount: 0, startMonth: 1, endMonth: 1, targetSector: 'deposit', targetAsset: 0 
+            }]);
+            const updateIncomeEvent = (index, field, value) => setIncomeEvents(prev => prev.map((event, i) => 
+                i === index ? { ...event, [field]: (typeof value === 'string' && field !== 'name' && field !== 'targetSector') ? Number(value) : value } : event
+            ));
+            const removeIncomeEvent = (index) => setIncomeEvents(prev => prev.filter((_, i) => i !== index));
+
+            const addExpenseEvent = () => setExpenseEvents(prev => [...prev, { 
+                name: '새 지출 이벤트', amount: 0, startMonth: 1, endMonth: 1, targetSector: 'deposit', targetAsset: 0 
+            }]);
+            const updateExpenseEvent = (index, field, value) => setExpenseEvents(prev => prev.map((event, i) => 
+                i === index ? { ...event, [field]: (typeof value === 'string' && field !== 'name') ? Number(value) : value } : event
+            ));
+            const removeExpenseEvent = (index) => setExpenseEvents(prev => prev.filter((_, i) => i !== index));
+
+            // ===== 리밸런싱 알림 설정 함수들 =====
+            const updateRebalancingAlert = (sector, type, value) => {
+                setRebalancingAlerts(prev => ({
+                    ...prev,
+                    [sector]: { ...prev[sector], [type]: Number(value) }
+                }));
+            };
+
+            // ===== 섹터 정보 =====
+            const sectorInfo = {
+                deposit: { name: '입출금통장', color: 'deposit', icon: '🏦' },
+                savings: { name: '저축', color: 'savings', icon: '💰' },
+                investment: { name: '투자', color: 'investment', icon: '📈' },
+                pension: { name: '연금', color: 'pension', icon: '🏛️' },
+                realestate: { name: '부동산', color: 'realestate', icon: '🏠' },
+                car: { name: '자동차', color: 'car', icon: '🚗' },
+                loan: { name: '대출', color: 'loan', icon: '💳' },
+                misc: { name: '기타', color: 'misc', icon: '📦' }
+            };
+
+            const savingsPanelSectors = ['deposit','savings','investment','misc'];
+            const assetsPanelSectors = ['realestate','car','misc'];
+            const loanPanelSectors = ['loan'];
+
+            return (
+                <div className="min-h-screen bg-gray-50">
+                    {/* ===== 상단 고정 헤더 ===== */}
+                    <div className="sticky top-0 z-50 bg-white shadow-sm border-b">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div className="flex justify-between items-center h-16">
+                                <h1 id="app-title" className="text-xl sm:text-2xl font-bold text-gray-900">통합 자산 분석 대시보드</h1>
+                                <div className="hidden sm:flex items-center gap-2 sm:gap-4">
+                                    <button onClick={saveToPDF} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">📄 PDF 저장</button>
+                                    <button onClick={saveScenario} className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">💾 시나리오 저장</button>
+                                    <button onClick={saveAsDefault} className="inline-flex items-center px-3 py-2 border border-blue-300 text-sm leading-4 font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50">⭐ 기본값 저장</button>
+                                    <button onClick={loadCustomDefault} className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">↩️ 기본값 불러오기</button>
+                                </div>
+                                <div className="sm:hidden relative">
+                                    <details className="relative">
+                                        <summary className="list-none inline-flex items-center px-3 py-2 border rounded-md bg-white text-gray-700">☰ 메뉴</summary>
+                                        <div className="absolute right-0 mt-2 w-48 bg-white border rounded-md shadow-md z-50 p-2 space-y-2">
+                                            <button onClick={saveToPDF} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100">📄 PDF 저장</button>
+                                            <button onClick={saveScenario} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100">💾 시나리오 저장</button>
+                                            <button onClick={saveAsDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100">⭐ 기본값 저장</button>
+                                            <button onClick={loadCustomDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100">↩️ 기본값 불러오기</button>
+                                        </div>
+                                    </details>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ===== 메인 콘텐츠 ===== */}
+                    <div id="dashboard-content" className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 sm:space-y-8">
+                        
+                        {/* ===== 기본 설정 + 요약 (병합) ===== */}
+                        <div className="grid grid-cols-1 gap-6">
+                            <div className="bg-white rounded-lg shadow p-6">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                                    <div className="bg-gray-50 rounded-lg p-4 flex flex-col justify-between">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <h2 className="text-lg font-semibold mb-2 text-gray-600">현재 총자산</h2>
+                                                <p className="text-2xl sm:text-3xl font-bold text-blue-600">{formatNumber(calculation.currentTotal)}만원</p>
+                                            </div>
+                                            <div>
+                                                <h2 className="text-lg font-semibold mb-2 text-gray-600">{projectionMonths}개월 후 예상 <span className="text-gray-400 text-sm">({(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d = new Date(y||new Date().getFullYear(), (m||1)-1, 1); d.setMonth(d.getMonth()+projectionMonths); return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`; } catch { return ''; } })()})</span></h2>
+                                                <p className="text-2xl sm:text-3xl font-bold text-green-600">{formatNumber(calculation.projectedTotal)}만원</p>
+                                                <p className="text-sm text-gray-500 mt-2">증가액: +{formatNumber(calculation.growth)}만원 ({formatPercent((calculation.growth) / Math.max(1, calculation.currentTotal) * 100)}%)</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-3">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const to=new Date(d); to.setMonth(to.getMonth()+projectionMonths); const fmt=(dt)=> `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`; return `기준월: ${fmt(d)} → ${fmt(to)}`; } catch { return ''; } })()}</p>
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-semibold mb-4 text-gray-700">기본 설정</h2>
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-2">월급 (만원)</label>
+                                                    <input type="number" className="w-full border rounded px-3 py-2" value={monthlySalary} onChange={(e) => setMonthlySalary(Number(e.target.value))} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-2">기준월</label>
+                                                    <input type="month" className="w-full border rounded px-3 py-2" value={baseMonth} onChange={(e) => setBaseMonth(e.target.value)} />
+                                                </div>
+                                            </div>
+                                            <div className="bg-blue-50 p-4 rounded-lg">
+                                                <h3 className="text-sm font-medium text-blue-700 mb-3">목표 설정 모드</h3>
+                                                <div className="space-y-3">
+                                                    <div className="flex items-center">
+                                                        <input id="period-mode" type="radio" name="goalMode" value="period" checked={goalMode === 'period'} onChange={(e) => setGoalMode(e.target.value)} className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500" />
+                                                        <label htmlFor="period-mode" className="ml-2 block text-sm text-gray-900">기간 설정 모드</label>
+                                                    </div>
+                                                    <div className="flex items-center">
+                                                        <input id="target-mode" type="radio" name="goalMode" value="target" checked={goalMode === 'target'} onChange={(e) => setGoalMode(e.target.value)} className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500" />
+                                                        <label htmlFor="target-mode" className="ml-2 block text-sm text-gray-900">목표 자산 모드</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {goalMode === 'period' ? (
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-2">예상 기간 (개월)</label>
+                                                    <input type="number" className="w-full border rounded px-3 py-2" value={projectionMonths} onChange={(e) => setProjectionMonths(Number(e.target.value))} />
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-2">목표 자산 (만원)</label>
+                                                        <input type="number" className="w-full border rounded px-3 py-2" value={targetAmount} onChange={(e) => setTargetAmount(Number(e.target.value))} />
+                                                    </div>
+                                                    <div className="flex items-end">
+                                                        <button onClick={calculateGoalSeek} className="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">목표 달성 계산</button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {goalSeekResult && (
+                                                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded"><p className="text-green-800 font-medium">{goalSeekResult}</p></div>
+                                            )}
+                                            <div className="flex flex-wrap gap-2"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* ===== 시나리오 관리 ===== */}
+                        {scenarios.length > 0 && (
+                            <div className="bg-white rounded-lg shadow p-6">
+                                <div className="flex flex-col lg:flex-row lg:items-start gap-6">
+                                    <div className="flex-1">
+                                        <h3 className="text-lg font-semibold text-gray-700 mb-4">저장된 시나리오</h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {scenarios.map(scenario => (
+                                                <div key={scenario.id} className="border rounded-lg p-4">
+                                                    <h4 className="font-medium text-gray-900">{scenario.name}</h4>
+                                                    <p className="text-sm text-gray-500">{new Date(scenario.createdAt).toLocaleDateString()}</p>
+                                                    <div className="mt-2 flex gap-2">
+                                                        <button onClick={() => loadScenario(scenario)} className="flex-1 px-3 py-1 rounded text-sm bg-indigo-500 text-white hover:bg-indigo-600">불러오기</button>
+                                                        <button onClick={() => deleteScenario(scenario.id)} className="px-3 py-1 rounded text-sm bg-rose-500 text-white hover:bg-rose-600">삭제</button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="text-lg font-semibold text-gray-700 mb-3">시나리오 비교 (최대 3개)</h3>
+                                        <ScenarioCompare scenarios={scenarios} sectorInfo={sectorInfo} />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ===== 포트폴리오 차트 ===== */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <div className="bg-white rounded-lg shadow p-4">
+                                <canvas ref={currentPieRef} height="300"></canvas>
+                            </div>
+                            <div className="bg-white rounded-lg shadow p-4">
+                                <canvas ref={projectedPieRef} height="300"></canvas>
+                            </div>
+                            <div className="bg-white rounded-lg shadow p-4">
+                                <canvas ref={comparisonBarRef} height="300"></canvas>
+                            </div>
+                        </div>
+
+                        {/* ===== 월납입 예산 관리 (개선된 계산식 표시) ===== */}
+                        <div className="bg-blue-50 rounded-lg shadow p-6">
+                            <h3 className="text-lg font-semibold text-blue-700 mb-4">💰 월납입 예산 관리</h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                                <div className="text-center">
+                                    <div className="text-sm text-gray-600">월수입</div>
+                                    <div className="text-xl font-bold text-blue-600">{formatNumber(monthlySalary)}만원</div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-sm text-gray-600">월별 지출</div>
+                                    <div className="text-xl font-bold text-red-600">{formatNumber(totalMonthlyExpense)}만원</div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-sm text-gray-600">월납입 가능액</div>
+                                    <div className="text-xl font-bold text-green-600">{formatNumber(maxSectorMonthlyContrib)}만원</div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-sm text-gray-600">월납입 사용액</div>
+                                    <div className={`text-xl font-bold ${totalSectorMonthlyContrib > maxSectorMonthlyContrib ? 'text-red-600' : 'text-blue-600'}`}>
+                                        {formatNumber(totalSectorMonthlyContrib)}만원
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {totalSectorMonthlyContrib > maxSectorMonthlyContrib && (
+                                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                                    ⚠️ 월납입 한도를 초과했습니다. 월수입외 납입을 이용하거나 월납입을 줄여주세요.
+                                </div>
+                            )}
+                            
+                            {/* 잔여액 계산식 표시 */}
+                            <div className="bg-white rounded-lg p-4 mb-4">
+                                <h4 className="text-sm font-medium text-gray-700 mb-3">💡 잔여액 계산식</h4>
+                                <div className="text-sm space-y-2">
+                                    <div className="flex justify-between">
+                                        <span>월수입</span>
+                                        <span className="font-medium text-blue-600">+{formatNumber(monthlySalary)}만원</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>월별 지출</span>
+                                        <span className="font-medium text-red-600">-{formatNumber(totalMonthlyExpense)}만원</span>
+                                    </div>
+                                    <hr className="border-gray-200" />
+                                    <div className="flex justify-between font-medium">
+                                        <span>월납입 가능액</span>
+                                        <span className="text-green-600">{formatNumber(maxSectorMonthlyContrib)}만원</span>
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-2">현재 월납입 설정:</div>
+                                    {autoDepositBreakdown.map((item, index) => (
+                                        <div key={index} className="flex justify-between text-xs">
+                                            <span className={`text-${sectorInfo[item.sector]?.color || 'gray'}-600`}>
+                                                {sectorInfo[item.sector]?.icon} {item.name}
+                                            </span>
+                                            <span className="font-medium">-{formatNumber(item.amount)}만원</span>
+                                        </div>
+                                    ))}
+                                    <hr className="border-gray-200" />
+                                    <div className="flex justify-between font-bold">
+                                        <span>잔여액</span>
+                                        <span className="text-green-600">{formatNumber(autoDepositAmount)}만원</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="flex flex-col sm:flex-row items-center justify-between bg-white rounded-lg p-4 gap-4">
+                                <div className="text-center sm:text-left">
+                                    <div className="text-sm text-gray-600">잔여액</div>
+                                    <div className="text-2xl font-bold text-green-600">{formatNumber(autoDepositAmount)}만원</div>
+                                    <div className="text-xs text-gray-500">
+                                    월납입 가능액 {formatNumber(maxSectorMonthlyContrib)}만원 - 월납입 사용액 {formatNumber(totalSectorMonthlyContrib)}만원
+                                    </div>
+                                </div>
+                                <div className="flex flex-col sm:flex-row items-center gap-2">
+                                    <div>
+                                        <div className="text-sm text-gray-600 text-center sm:text-left">잔여액 입금 통장</div>
+                                        <select className="border rounded px-3 py-2" value={autoDepositAccount} onChange={e => setAutoDepositAccount(e.target.value)}>
+                                            {Object.values(assets).flat().filter(item => item.name !== '새 항목').map((asset, idx) => (
+                                                <option key={idx} value={asset.name}>{asset.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <button onClick={applyAutoDeposit} disabled={autoDepositAmount <= 0} className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                                        반영하기
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* ===== 리밸런싱 설정 ===== */}
+                        <div className="bg-yellow-50 rounded-lg shadow p-6">
+                            <h3 className="text-lg font-semibold text-yellow-700 mb-2">⚠️ 리밸런싱 설정</h3>
+                            <div className="mb-4 grid grid-cols-1 lg:grid-cols-3 gap-4 text-sm">
+                                <div className="flex items-center gap-4">
+                                    <label className="inline-flex items-center gap-2">
+                                        <input type="radio" name="reb-mode" className="h-4 w-4" checked={rebalancingMode==='simple'} onChange={() => setRebalancingMode('simple')} />
+                                        간단 모드 (공통 임계값)
+                                    </label>
+                                    <label className="inline-flex items-center gap-2">
+                                        <input type="radio" name="reb-mode" className="h-4 w-4" checked={rebalancingMode==='advanced'} onChange={() => setRebalancingMode('advanced')} />
+                                        심화 모드 (섹터별 임계값)
+                                    </label>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-gray-700 whitespace-nowrap">공통 임계값</span>
+                                    <label className="text-xs text-gray-600">경고</label>
+                                    <input type="number" className="w-16 border rounded px-2 py-1 text-sm" value={simpleThresholds.warning} onChange={(e)=> setSimpleThresholds(prev=>({...prev, warning: Number(e.target.value)}))} disabled={rebalancingMode!=='simple'} />
+                                    <label className="text-xs text-gray-600">위험</label>
+                                    <input type="number" className="w-16 border rounded px-2 py-1 text-sm" value={simpleThresholds.danger} onChange={(e)=> setSimpleThresholds(prev=>({...prev, danger: Number(e.target.value)}))} disabled={rebalancingMode!=='simple'} />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-gray-700 whitespace-nowrap">목표 비중(합 100%)</span>
+                                    <span className="text-xs text-gray-500">설정하지 않으면 자동으로 100/섹터수</span>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {Object.keys(sectorInfo).filter(k=>k!=='loan').map(sectorKey => (
+                                    <div key={sectorKey} className="bg-white rounded-lg p-4">
+                                        <h4 className="font-medium text-gray-900 mb-2">{sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}</h4>
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <label className="block text-xs text-gray-600 whitespace-nowrap">목표 비중 (%)</label>
+                                                <input type="number" className="w-24 border rounded px-2 py-1 text-sm" value={rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).filter(k=>k!=='loan').length)} onChange={(e)=> setRebalancingTargets(prev=> ({ ...prev, [sectorKey]: Number(e.target.value) }))} />
+                                            </div>
+                                            {rebalancingMode==='advanced' && (
+                                                <>
+                                                    <div>
+                                                        <label className="block text-xs text-gray-600">경고 임계값 (편차 %)</label>
+                                                        <input type="number" className="w-full border rounded px-2 py-1 text-sm" value={rebalancingAlerts[sectorKey]?.warning ?? 5} onChange={(e)=> updateRebalancingAlert(sectorKey, 'warning', e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-gray-600">위험 임계값 (편차 %)</label>
+                                                        <input type="number" className="w-full border rounded px-2 py-1 text-sm" value={rebalancingAlerts[sectorKey]?.danger ?? 10} onChange={(e)=> updateRebalancingAlert(sectorKey, 'danger', e.target.value)} />
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* ===== 섹터별 자산 관리 ===== */}
+                        {Object.keys(sectorInfo).map(sectorKey => (
+                            <div key={sectorKey} className={`bg-${sectorInfo[sectorKey].color}-50 rounded-lg shadow p-6`}>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+                    <button type="button" onClick={()=> setHiddenSectors(prev=> ({...prev, [sectorKey]: !prev[sectorKey]}))} className={`text-left text-xl font-semibold text-${sectorInfo[sectorKey].color}-700 flex items-center gap-2`}>
+                                        <span>{sectorInfo[sectorKey].icon}</span>
+                                        {sectorInfo[sectorKey].name}
+                                        <span className="text-sm bg-white px-2 py-1 rounded">
+                                            현재: {formatPercent(currentSectorTotals[sectorKey]?.percentage || 0)}% → 
+                                            예상: {formatPercent(projectedSectorTotals[sectorKey]?.percentage || 0)}%
+                                        </span>
+                        <span className="ml-2 text-xs text-gray-500">{hiddenSectors[sectorKey] ? '(접힘)' : '(펼침)'}</span>
+                    </button>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => addAsset(sectorKey)} className={`bg-${sectorInfo[sectorKey].color}-500 text-white px-4 py-2 rounded hover:bg-${sectorInfo[sectorKey].color}-600 whitespace-nowrap`}>
+                            + 항목 추가
+                        </button>
+                    </div>
+                                </div>
+                {!hiddenSectors[sectorKey] && (
+                <div className="space-y-4">
+                                    {assets[sectorKey]?.map((asset, index) => {
+                                        const projectedAmount = calculation.projected[sectorKey]?.[index]?.amount || 0;
+                                        const sectorTotal = projectedSectorTotals[sectorKey]?.amount || 1;
+                                        const assetPercentage = (projectedAmount / sectorTotal * 100);
+                                        
+                                        return (
+                                            <div key={index} className="bg-white rounded-lg p-4 shadow-sm">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3 items-center">
+                                                    <input type="text" placeholder="항목명" className="border rounded px-2 py-1" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500">현재금액</label>
+                                                        <input type="number" className="w-full border rounded px-2 py-1" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500">수익률(%)</label>
+                                                        <input type="number" step="0.1" className="w-full border rounded px-2 py-1" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500">수수료/세금(%)</label>
+                                                        <input type="number" step="0.001" className="w-full border rounded px-2 py-1" value={asset.feeRate ?? 0} onChange={(e) => updateAsset(sectorKey, index, 'feeRate', e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500">월납입</label>
+                                                        <input type="number" className="w-full border rounded px-2 py-1" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500">월수입외 납입</label>
+                                                        <input type="number" min="0" className="w-full border rounded px-2 py-1" value={asset.extraContrib} onChange={(e) => updateAsset(sectorKey, index, 'extraContrib', e.target.value)} />
+                                                    </div>
+                                                    {asset.extraContrib > 0 && (
+                                                        <div>
+                                                            <label className="block text-xs text-gray-500">출금계좌</label>
+                                                            <select className="w-full border rounded px-2 py-1 text-xs" value={asset.extraFrom} onChange={(e) => updateAsset(sectorKey, index, 'extraFrom', e.target.value)}>
+                                                                {Object.values(assets).flat().map((d, i) => (
+                                                                    <option key={i} value={d.name}>{d.name}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    )}
+                                                    <div className="text-sm">
+                                                        <div className="text-gray-600">예상: {formatNumber(projectedAmount)}만원</div>
+                                                        <div className={`text-gray-500`}>
+                                                            비중: <span className={`${(() => {
+                                                                const target = rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length);
+                                                                const diff = Math.abs(assetPercentage - target);
+                                                                const warn = (rebalancingMode==='simple' ? simpleThresholds.warning : (rebalancingAlerts[sectorKey]?.warning ?? 5));
+                                                                const danger = (rebalancingMode==='simple' ? simpleThresholds.danger : (rebalancingAlerts[sectorKey]?.danger ?? 10));
+                                                                if (diff >= danger) return 'text-red-500';
+                                                                if (diff >= warn) return 'text-yellow-500';
+                                                                return 'text-green-600';
+                                                            })()}`}>{formatPercent(assetPercentage)}%</span>
+                                                        </div>
+                                                    </div>
+                                                    <button onClick={() => removeAsset(sectorKey, index)} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
+                                                </div>
+                                            </div>
+                                        );
+                    })}
+                </div>
+                )}
+                            </div>
+                        ))}
+
+                        {/* ===== 월별 지출 관리 ===== */}
+                        <div className="bg-red-50 rounded-lg shadow p-6">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+                                <h2 className="text-xl font-semibold text-red-700 flex items-center gap-2">💸 월별 지출</h2>
+                                <button onClick={addExpense} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 whitespace-nowrap">+ 지출 추가</button>
+                            </div>
+                            <div className="space-y-3">
+                                {monthlyExpenses.map((expense, index) => (
+                                    <div key={index} className="bg-white rounded-lg p-3 shadow-sm">
+                                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-center">
+                                            <input type="text" placeholder="지출명" className="border rounded px-2 py-1" value={expense.name} onChange={(e) => updateExpense(index, 'name', e.target.value)} />
+                                            <input type="number" placeholder="금액(만원)" className="border rounded px-2 py-1" value={expense.amount} onChange={(e) => updateExpense(index, 'amount', e.target.value)} />
+                                            <div className="text-sm text-gray-600">연간: {formatNumber(expense.amount * projectionMonths)}만원</div>
+                                            <button onClick={() => removeExpense(index)} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* ===== 이벤트성 수입 관리 ===== */}
+<div className="bg-green-50 rounded-lg shadow p-6">
+    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+        <h2 className="text-xl font-semibold text-green-700 flex items-center gap-2">💰 이벤트성 수입 (성과급, 용돈 등)</h2>
+        <button onClick={addIncomeEvent} className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 whitespace-nowrap">+ 수입 이벤트 추가</button>
+    </div>
+    <div className="text-xs text-gray-600 mb-4 bg-white p-3 rounded-lg border border-green-100">
+        💡 항목 설명: 이벤트명 | 금액 | 시작 월 | 종료 월 | 입금처(섹터/계좌)
+        <div className="mt-1 text-gray-500">
+            예: 3~8개월 입력 시, 기준월 기준 <strong>{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const fmt=(dt)=> `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`; const s=new Date(d); s.setMonth(s.getMonth()+3); const e=new Date(d); e.setMonth(e.getMonth()+8); return `${fmt(s)}부터 ${fmt(e)}까지`; } catch { return ''; } })()}</strong>
+        </div>
+    </div>
+    <div className="space-y-4">
+        {incomeEvents.map((event, index) => (
+            <div key={index} className="bg-white rounded-lg p-4 shadow-sm border">
+                {/* Changed: 일관성을 위해 8열 그리드 시스템으로 통일하고 반응형 개선 */}
+                <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 items-end">
+                    {/* --- 이벤트명 --- */}
+                    <div className="md:col-span-2 lg:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">이벤트명</label>
+                        <input type="text" placeholder="이벤트명" className="w-full border rounded-md px-3 py-2" value={event.name} onChange={(e) => updateIncomeEvent(index, 'name', e.target.value)} />
+                    </div>
+                    {/* --- 금액 --- */}
+                    <div className="md:col-span-2 lg:col-span-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">금액</label>
+                        <input type="number" placeholder="금액" className="w-full border rounded-md px-3 py-2" value={event.amount} onChange={(e) => updateIncomeEvent(index, 'amount', e.target.value)} />
+                    </div>
+                    {/* --- 시작 월 --- */}
+                    <div className="md:col-span-2 lg:col-span-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">시작 월</label>
+                        <input type="number" placeholder="개월차" className="w-full border rounded-md px-3 py-2" value={event.startMonth} onChange={(e) => updateIncomeEvent(index, 'startMonth', e.target.value)} />
+                        <div className="text-xs text-gray-500 mt-1">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const s=new Date(d); s.setMonth(s.getMonth()+Number(event.startMonth||0)); return `${String(s.getFullYear()).slice(2)}년 ${String(s.getMonth()+1).padStart(2,'0')}월 부터`; } catch { return ''; } })()}</div>
+                    </div>
+                    {/* --- 종료 월 --- */}
+                    <div className="md:col-span-2 lg:col-span-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">종료 월</label>
+                        <input type="number" placeholder="개월차" className="w-full border rounded-md px-3 py-2" value={event.endMonth} onChange={(e) => updateIncomeEvent(index, 'endMonth', e.target.value)} />
+                        <div className="text-xs text-gray-500 mt-1">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const e=new Date(d); e.setMonth(e.getMonth()+Number(event.endMonth||0)); return `${String(e.getFullYear()).slice(2)}년 ${String(e.getMonth()+1).padStart(2,'0')}월 까지`; } catch { return ''; } })()}</div>
+                    </div>
+                    {/* --- 입금처 --- */}
+                    <div className="md:col-span-3 lg:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">입금처</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <select className="w-full border rounded-md px-3 py-2" value={event.targetSector} onChange={(e) => updateIncomeEvent(index, 'targetSector', e.target.value)}>
+                                {Object.keys(sectorInfo).map(key => (
+                                    <option key={key} value={key}>{sectorInfo[key].name}</option>
+                                ))}
+                            </select>
+                            <select className="w-full border rounded-md px-3 py-2" value={event.targetAsset} onChange={(e) => updateIncomeEvent(index, 'targetAsset', e.target.value)}>
+                                {assets[event.targetSector]?.map((asset, assetIndex) => (
+                                    <option key={assetIndex} value={assetIndex}>{asset.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    {/* --- 삭제 버튼 --- */}
+                    <div className="md:col-span-1 lg:col-span-1 flex items-center justify-center h-full pt-6">
+                        <button onClick={() => removeIncomeEvent(index)} className="text-red-500 hover:text-red-700 font-medium whitespace-nowrap">삭제</button>
+                    </div>
+                </div>
+            </div>
+        ))}
+    </div>
+</div>
+
+{/* ===== 이벤트성 지출 관리 ===== */}
+<div className="bg-orange-50 rounded-lg shadow p-6">
+    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+        <h2 className="text-xl font-semibold text-orange-700 flex items-center gap-2">🛒 이벤트성 지출 (여행, 대형구매 등)</h2>
+        <button onClick={addExpenseEvent} className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 whitespace-nowrap">+ 지출 이벤트 추가</button>
+    </div>
+    <div className="text-xs text-gray-600 mb-4 bg-white p-3 rounded-lg border border-orange-100">
+        💡 항목 설명: 이벤트명 | 금액 | 시작 월 | 종료 월 | 출금처(섹터/계좌)
+        <div className="mt-1 text-gray-500">
+            예: 2~5개월 입력 시, 기준월 기준 <strong>{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const fmt=(dt)=> `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`; const s=new Date(d); s.setMonth(s.getMonth()+2); const e=new Date(d); e.setMonth(e.getMonth()+5); return `${fmt(s)}부터 ${fmt(e)}까지`; } catch { return ''; } })()}</strong>
+        </div>
+    </div>
+    <div className="space-y-4">
+        {expenseEvents.map((event, index) => (
+            <div key={index} className="bg-white rounded-lg p-4 shadow-sm border">
+                {/* Changed: 수입 부분과 동일한 8열 그리드 시스템으로 통일 */}
+                <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 items-end">
+                    {/* --- 이벤트명 --- */}
+                    <div className="md:col-span-2 lg:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">이벤트명</label>
+                        <input type="text" placeholder="이벤트명" className="w-full border rounded-md px-3 py-2" value={event.name} onChange={(e) => updateExpenseEvent(index, 'name', e.target.value)} />
+                    </div>
+                    {/* --- 금액 --- */}
+                    <div className="md:col-span-2 lg:col-span-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">금액</label>
+                        <input type="number" placeholder="금액" className="w-full border rounded-md px-3 py-2" value={event.amount} onChange={(e) => updateExpenseEvent(index, 'amount', e.target.value)} />
+                    </div>
+                    {/* --- 시작 월 --- */}
+                    <div className="md:col-span-2 lg:col-span-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">시작 월</label>
+                        <input type="number" placeholder="개월차" className="w-full border rounded-md px-3 py-2" value={event.startMonth} onChange={(e) => updateExpenseEvent(index, 'startMonth', e.target.value)} />
+                        <div className="text-xs text-gray-500 mt-1">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const s=new Date(d); s.setMonth(s.getMonth()+Number(event.startMonth||0)); return `${String(s.getFullYear()).slice(2)}년 ${String(s.getMonth()+1).padStart(2,'0')}월 부터`; } catch { return ''; } })()}</div>
+                    </div>
+                    {/* --- 종료 월 --- */}
+                    <div className="md:col-span-2 lg:col-span-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">종료 월</label>
+                        <input type="number" placeholder="개월차" className="w-full border rounded-md px-3 py-2" value={event.endMonth} onChange={(e) => updateExpenseEvent(index, 'endMonth', e.target.value)} />
+                        <div className="text-xs text-gray-500 mt-1">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const e=new Date(d); e.setMonth(e.getMonth()+Number(event.endMonth||0)); return `${String(e.getFullYear()).slice(2)}년 ${String(e.getMonth()+1).padStart(2,'0')}월 까지`; } catch { return ''; } })()}</div>
+                    </div>
+                    {/* --- 출금처 --- */}
+                    <div className="md:col-span-3 lg:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">출금처</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <select className="w-full border rounded-md px-3 py-2" value={event.targetSector || 'deposit'} onChange={(e) => updateExpenseEvent(index, 'targetSector', e.target.value)}>
+                                {Object.keys(sectorInfo).map(key => (
+                                    <option key={key} value={key}>{sectorInfo[key].name}</option>
+                                ))}
+                            </select>
+                            <select className="w-full border rounded-md px-3 py-2" value={event.targetAsset || 0} onChange={(e) => updateExpenseEvent(index, 'targetAsset', e.target.value)}>
+                                {assets[event.targetSector || 'deposit']?.map((asset, assetIndex) => (
+                                    <option key={assetIndex} value={assetIndex}>{asset.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    {/* --- 삭제 버튼 --- */}
+                    <div className="md:col-span-1 lg:col-span-1 flex items-center justify-center h-full pt-6">
+                        <button onClick={() => removeExpenseEvent(index)} className="text-red-500 hover:text-red-700 font-medium whitespace-nowrap">삭제</button>
+                    </div>
+                </div>
+            </div>
+        ))}
+    </div>
+</div>
+
+                        {/* ===== 상세 분석 테이블 ===== */}
+                        <div className="bg-white rounded-lg shadow p-6">
+                            <h2 className="text-xl font-semibold text-gray-700 mb-4">상세 분석</h2>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-100">
+                                        <tr>
+                                            <th className="p-3 text-left">섹터/항목</th>
+                                            <th className="p-3 text-right">현재 금액</th>
+                                            <th className="p-3 text-right">예상 금액</th>
+                                            <th className="p-3 text-right">증감률</th>
+                                            <th className="p-3 text-right">현재 비중</th>
+                                            <th className="p-3 text-right">예상 비중</th>
+                                            <th className="p-3 text-right">목표 비중</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {Object.keys(sectorInfo).map(sectorKey => {
+                                            const current = currentSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
+                                            const projected = projectedSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
+                                            const growthRate = current.amount > 0 ? ((projected.amount - current.amount) / current.amount * 100) : 0;
+                                            const rebalanceStatus = getRebalanceStatus(sectorKey, projected.percentage);
+                                            const targetPct = (rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length));
+                                            
+                                            return (
+                                                <React.Fragment key={sectorKey}>
+                                                    <tr className={`border-t bg-${sectorInfo[sectorKey].color}-50 ${rebalanceStatus}`}>
+                                                        <td className="p-3 font-semibold">
+                                                            {sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}
+                                                        </td>
+                                                        <td className="p-3 text-right">{formatNumber(current.amount)}</td>
+                                                        <td className="p-3 text-right">{formatNumber(projected.amount)}</td>
+                                                        <td className={`p-3 text-right ${growthRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(growthRate)}%</td>
+                                                        <td className="p-3 text-right">{formatPercent(current.percentage)}%</td>
+                                                        <td className="p-3 text-right">{formatPercent(projected.percentage)}%</td>
+                                                        <td className="p-3 text-right">{formatPercent(targetPct)}%</td>
+                                                    </tr>
+                                                    {assets[sectorKey]?.map((asset, idx) => {
+                                                        const projectedAmount = calculation.projected[sectorKey]?.[idx]?.amount || 0;
+                                                        const assetGrowth = projectedAmount - asset.amount;
+                                                        const assetGrowthRate = asset.amount > 0 ? (assetGrowth / asset.amount * 100) : 0;
+                                                        const sectorTotal = projected.amount || 1;
+                                                        const assetPercentage = (projectedAmount / sectorTotal * 100);
+                                                        
+                                                        return (
+                                                            <tr key={`${sectorKey}-${idx}`} className="border-t bg-gray-50">
+                                                                <td className="p-3 pl-8 text-sm">└ {asset.name}</td>
+                                                                <td className="p-3 text-right text-sm">{formatNumber(asset.amount)}</td>
+                                                                <td className="p-3 text-right text-sm">{formatNumber(projectedAmount)}</td>
+                                                                <td className={`p-3 text-right text-sm ${assetGrowthRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(assetGrowthRate)}%</td>
+                                                                <td className="p-3 text-right text-sm">-</td>
+                                                                <td className="p-3 text-right text-sm">{formatPercent(assetPercentage)}%</td>
+                                                                <td className="p-3 text-right text-sm">-</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                        <tr className="border-t-2 border-gray-400 bg-gray-100">
+                                            <td className="p-3 font-bold">총계</td>
+                                            <td className="p-3 text-right font-bold">{formatNumber(calculation.currentTotal)}</td>
+                                            <td className="p-3 text-right font-bold">{formatNumber(calculation.projectedTotal)}</td>
+                                            <td className="p-3 text-right font-bold text-green-600">{formatPercent(calculation.growth / calculation.currentTotal * 100)}%</td>
+                                            <td className="p-3 text-right font-bold">100.0%</td>
+                                            <td className="p-3 text-right font-bold">100.0%</td>
+                                            <td className="p-3 text-right font-bold">100.0%</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            {/* 시나리오 비교 (최대 3개) */}
+                            {scenarios.length > 0 && (
+                                <div className="mt-8">
+                                    <h3 className="text-lg font-semibold text-gray-700 mb-3">시나리오 비교 (최대 3개)</h3>
+                                    <ScenarioCompare scenarios={scenarios} sectorInfo={sectorInfo} />
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ===== 가정사항 ===== */}
+                        <div className="bg-blue-50 rounded-lg p-4 text-sm text-gray-700">
+                            <h3 className="font-semibold mb-2">💡 계산 가정사항</h3>
+                            <ul className="list-disc list-inside space-y-1">
+                                <li>수익률은 월복리로 계산됩니다.</li>
+                                <li>{applyTax ? '배당소득세(15.4%) 포함 세후 수익률 적용' : '배당소득세 제외 세전 수익률 적용'}</li>
+                                <li>이벤트성 수입은 지정된 계좌에 입금되며, 이벤트성 지출은 생활비통장에서 차감됩니다.</li>
+                                <li>월수입외 납입은 지정된 출금통장에서 차감됩니다.</li>
+                                <li>리밸런싱: 경고(노란색), 위험(빨간색) 임계값에 따라 표시됩니다.</li>
+                            </ul>
+                        </div>
+
+                        {/* ===== 모바일 버튼 ===== */}
+                        <div className="sm:hidden flex flex-col gap-2">
+                            <button onClick={saveToPDF} className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium">
+                                📄 PDF로 저장
+                            </button>
+                            <button onClick={saveScenario} className="w-full bg-gray-600 text-white py-3 rounded-lg font-medium">
+                                💾 시나리오 저장
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ScenarioCompare = ({ scenarios, sectorInfo }) => {
+            const [selectedIds, setSelectedIds] = React.useState([]);
+            const toggle = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : (prev.length<3 ? [...prev,id] : prev));
+
+            const selected = scenarios.filter(s => selectedIds.includes(s.id)).slice(0,3);
+
+            const compute = (data) => {
+                const months = data.projectionMonths || 12;
+                const monthlySalary = data.monthlySalary || 0;
+                const monthlyExpenses = data.monthlyExpenses || [];
+                const totalMonthlyExpense = monthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+                const assets = JSON.parse(JSON.stringify(data.assets || {}));
+                const incomeEvents = data.incomeEvents || [];
+                const expenseEvents = data.expenseEvents || [];
+                const monthlyContribSum = Object.values(assets).flat().reduce((s,a)=> s + (a.monthlyContrib||0),0);
+                const maxContrib = Math.max(0, monthlySalary - totalMonthlyExpense);
+                const autoDepositAmount = Math.max(0, maxContrib - monthlyContribSum);
+                for (let m=1; m<=months; m++) {
+                    Object.keys(assets).forEach(sector => {
+                        assets[sector].forEach(asset => {
+                            const feeRate = (asset.feeRate || 0) / 100;
+                            let effectiveRate = ((asset.rate || 0) / 100) * (1 - feeRate);
+                            asset.amount *= (1 + effectiveRate / 12);
+                        });
+                    });
+                    incomeEvents.forEach(ev => {
+                        if (m >= ev.startMonth && m <= ev.endMonth) {
+                            const arr = assets[ev.targetSector];
+                            if (arr && arr[ev.targetAsset]) arr[ev.targetAsset].amount += ev.amount;
+                        }
+                    });
+                    const living = assets.deposit?.find(d => d.name === '생활비통장');
+                    if (living) {
+                        living.amount += monthlySalary;
+                        living.amount -= totalMonthlyExpense;
+                    }
+                    Object.keys(assets).forEach(sector => {
+                        assets[sector].forEach(asset => {
+                            if (asset.monthlyContrib > 0) {
+                                if (sector === 'loan') {
+                                    asset.amount = Math.max(0, (asset.amount || 0) - asset.monthlyContrib);
+                                } else {
+                                    asset.amount += asset.monthlyContrib;
+                                }
+                                if (living && asset.name !== '생활비통장') living.amount -= asset.monthlyContrib;
+                            }
+                        });
+                    });
+                    if (autoDepositAmount > 0 && living) {
+                        living.amount -= autoDepositAmount; // 단순화 유지
+                    }
+                    expenseEvents.forEach(ev => {
+                        if (m >= ev.startMonth && m <= ev.endMonth && living) {
+                            living.amount = Math.max(0, living.amount - ev.amount);
+                        }
+                    });
+                }
+                const totals = {};
+                Object.keys(assets).forEach(sector => { totals[sector] = (assets[sector]||[]).reduce((s,a)=> s + (a.amount||0), 0); });
+                const gross = Object.keys(totals).filter(k=>k!=='loan').reduce((s,k)=> s + (totals[k]||0), 0);
+                const grand = Object.keys(totals).reduce((s,k)=> s + (k==='loan' ? -(totals[k]||0) : (totals[k]||0)), 0);
+                const percentages = {};
+                Object.keys(totals).forEach(sector => { percentages[sector] = (sector!=='loan' && gross>0) ? (totals[sector]/gross*100) : 0; });
+                return { assets, totals, gross, grand, percentages };
+            };
+
+            const results = selected.map(s => ({ id: s.id, name: s.name, ...compute(s.data) }));
+
+            return (
+                <div>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                        {scenarios.map(s => (
+                            <button key={s.id} onClick={() => toggle(s.id)} className={`px-3 py-1 border rounded ${selectedIds.includes(s.id) ? 'bg-blue-50 border-blue-400' : 'hover:bg-gray-50'}`}>{s.name}</button>
+                        ))}
+                    </div>
+                    {results.length > 0 ? (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-100">
+                                    <tr>
+                                        <th className="p-3 text-left">섹터/항목</th>
+                                        {results.map(r => (<th key={r.id} className="p-3 text-right">{r.name}</th>))}
+                                        {results.length===2 && (
+                                            <th className="p-3 text-right">차이(금액/비중)</th>
+                                        )}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {Object.keys(sectorInfo).map(sectorKey => (
+                                        <React.Fragment key={sectorKey}>
+                                            <tr className="border-t">
+                                                <td className="p-3 font-semibold">{sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}</td>
+                                                {results.map(r => (
+                                                    <td key={r.id} className="p-3 text-right">
+                                                        {Math.round((r.totals[sectorKey]||0)).toLocaleString()} ({(r.percentages[sectorKey]||0).toFixed(1)}%)
+                                                    </td>
+                                                ))}
+                                                {results.length===2 && (
+                                                    <td className="p-3 text-right text-indigo-700">
+                                                        {(() => {
+                                                            const a=results[0], b=results[1];
+                                                            const diff=(b.totals[sectorKey]||0)-(a.totals[sectorKey]||0);
+                                                            const pdiff=(b.percentages[sectorKey]||0)-(a.percentages[sectorKey]||0);
+                                                            const sign=diff>=0?'+':'';
+                                                            const psign=pdiff>=0?'+':'';
+                                                            return `${sign}${Math.round(diff).toLocaleString()} (${psign}${pdiff.toFixed(1)}%)`;
+                                                        })()}
+                                                    </td>
+                                                )}
+                                            </tr>
+                                            {results[0]?.assets[sectorKey]?.map((item, idx) => (
+                                                <tr key={`${sectorKey}-${idx}`} className="border-t bg-gray-50">
+                                                    <td className="p-3 pl-8 text-sm">└ {item.name}</td>
+                                                    {results.map(r => (
+                                                        <td key={r.id} className="p-3 text-right text-sm">{Math.round((r.assets[sectorKey]?.[idx]?.amount || 0)).toLocaleString()}</td>
+                                                    ))}
+                                                    {results.length===2 && (
+                                                        <td className="p-3 text-right text-sm text-indigo-700">
+                                                            {(() => {
+                                                                const a=results[0], b=results[1];
+                                                                const av=(a.assets[sectorKey]?.[idx]?.amount||0), bv=(b.assets[sectorKey]?.[idx]?.amount||0);
+                                                                const diff=bv-av; const sign=diff>=0?'+':'';
+                                                                return `${sign}${Math.round(diff).toLocaleString()}`;
+                                                            })()}
+                                                        </td>
+                                                    )}
+                                                </tr>
+                                            ))}
+                                        </React.Fragment>
+                                    ))}
+                                    <tr className="border-t-2 border-gray-400 bg-gray-100">
+                                        <td className="p-3 font-bold">총계</td>
+                                        {results.map(r => (<td key={r.id} className="p-3 text-right font-bold">{Math.round(r.grand).toLocaleString()} (100.0%)</td>))}
+                                        {results.length===2 && (
+                                            <td className="p-3 text-right font-bold text-indigo-700">
+                                                {(() => { const a=results[0], b=results[1]; const diff=b.grand-a.grand; const sign=diff>=0?'+':''; return `${sign}${Math.round(diff).toLocaleString()} (0.0%)`; })()}
+                                            </td>
+                                        )}
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="text-sm text-gray-500">비교할 시나리오를 최대 3개 선택하세요.</div>
+                    )}
+                </div>
+            );
+        };
+
+     
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<AssetDashboard />);
+    </script>
+</body>
+</html>
