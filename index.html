@@ -118,6 +118,11 @@
             const [scenarios, setScenarios] = useState([]);
             const [goalSeekResult, setGoalSeekResult] = useState(null);
             const [autoDepositAccount, setAutoDepositAccount] = useState('생활비통장');
+            // 차트 ref들
+            const currentPieRef = useRef(null);
+            const projectedPieRef = useRef(null);
+            const comparisonBarRef = useRef(null);
+            const historyChartRef = useRef(null);
             // 섹터 접힘 상태는 항상 상단에서 선언하여 훅 순서 고정
             const [hiddenSectors, setHiddenSectors] = useState(() => {
                 try {
@@ -137,10 +142,15 @@
                 const serverData = await loadServerConfig();
                 const baseData = publicDefaultData; // <-- 이렇게 수정
                 try {
-                    const savedData = localStorage.getItem('assetDashboardDataV3');
-                        const savedScenarios = localStorage.getItem('assetDashboardScenarios');
-                        
-                        if (savedData) {
+                const savedData = localStorage.getItem('assetDashboardDataV3');
+                const savedScenarios = localStorage.getItem('assetDashboardScenarios');
+
+                // [수정] 아래 if문 추가
+                if (savedScenarios) {
+                    setScenarios(JSON.parse(savedScenarios));
+                }
+
+                if (savedData) {
                             const parsedData = JSON.parse(savedData);
                             // 새로운 필드들 추가
                             if (!parsedData.targetAmount) parsedData.targetAmount = baseData.targetAmount;
@@ -157,9 +167,6 @@
                             setAppData(baseData);
                         }
                         
-                        if (savedScenarios) {
-                            setScenarios(JSON.parse(savedScenarios));
-                        }
                     } catch (error) {
                         console.error("데이터 로드 오류:", error);
                         setAppData(baseData);
@@ -171,14 +178,143 @@
 
             // ===== 데이터 자동 저장 =====
             useEffect(() => {
-                if (appData) {
-                    localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
-                }
+            if (appData) {
+                localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
+            }
             }, [appData]);
 
+            // useRef를 사용하여 첫 렌더링인지 추적하는 변수 추가
+            const isInitialMount = useRef(true);
+
             useEffect(() => {
-                localStorage.setItem('assetDashboardScenarios', JSON.stringify(scenarios));
+                // 첫 렌더링일 경우, 아무것도 하지 않고 스위치만 false로 변경
+                if (isInitialMount.current) {
+                    isInitialMount.current = false;
+                } else {
+                    // 첫 렌더링이 아닐 때만 localStorage에 저장
+                    localStorage.setItem('assetDashboardScenarios', JSON.stringify(scenarios));
+                }
             }, [scenarios]);
+
+            // ===== 자산 히스토리 관리 =====
+            const [assetHistory, setAssetHistory] = React.useState([]);
+            
+            // 히스토리 데이터 로드
+            React.useEffect(() => {
+                try {
+                    const savedHistory = localStorage.getItem('assetDashboardHistory');
+                    if (savedHistory) {
+                        setAssetHistory(JSON.parse(savedHistory));
+                    }
+                } catch (error) {
+                    console.error('히스토리 데이터 로드 오류:', error);
+                }
+            }, []);
+
+            // 히스토리 데이터 저장
+            React.useEffect(() => {
+                if (assetHistory.length > 0) {
+                    localStorage.setItem('assetDashboardHistory', JSON.stringify(assetHistory));
+                }
+            }, [assetHistory]);
+
+            // 현재 자산 저장 함수
+            const saveCurrentAsset = () => {
+                try {
+                    const now = new Date();
+                    const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
+                    const currentTime = now.toTimeString().split(' ')[0]; // HH:MM:SS
+                    const netWorth = calculation?.grand || 0;
+                    
+                    setAssetHistory(prev => {
+                        const newHistory = [...prev];
+                        const existingIndex = newHistory.findIndex(item => item.date === currentDate);
+                        
+                        if (existingIndex >= 0) {
+                            // 같은 날짜가 있으면 시간 정보와 함께 업데이트 (마지막 시간대만 유지)
+                            newHistory[existingIndex] = { 
+                                date: currentDate, 
+                                time: currentTime,
+                                netWorth,
+                                timestamp: now.getTime()
+                            };
+                        } else {
+                            // 새로운 날짜면 추가
+                            newHistory.push({ 
+                                date: currentDate, 
+                                time: currentTime,
+                                netWorth,
+                                timestamp: now.getTime()
+                            });
+                        }
+                        
+                        // 타임스탬프순으로 정렬 (최신이 마지막)
+                        return newHistory.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                    });
+                    
+                    alert(`현재 순자산 ${formatNumber(netWorth)}만원이 히스토리에 저장되었습니다.\n(${currentDate} ${currentTime})`);
+                } catch (error) {
+                    console.error('자산 저장 오류:', error);
+                    alert('자산 저장 중 오류가 발생했습니다.');
+                }
+            };
+
+            // ===== 데이터 이삿짐싸기 기능 =====
+            const exportAssetData = () => {
+                try {
+                    const exportData = {
+                        appData: appData,
+                        scenarios: scenarios,
+                        assetHistory: assetHistory,
+                        exportDate: new Date().toISOString(),
+                        version: '1.0'
+                    };
+                    
+                    const jsonString = JSON.stringify(exportData);
+                    const compressed = btoa(unescape(encodeURIComponent(jsonString)));
+                    
+                    // 클립보드에 복사
+                    navigator.clipboard.writeText(compressed).then(() => {
+                        alert('자산 데이터가 클립보드에 복사되었습니다!\n다른 기기에서 "자산 불러오기" 버튼을 눌러 붙여넣기하세요.');
+                    }).catch(() => {
+                        // 클립보드 복사 실패 시 텍스트 영역으로 표시
+                        const textArea = document.createElement('textarea');
+                        textArea.value = compressed;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                        alert('자산 데이터가 복사되었습니다!\n다른 기기에서 "자산 불러오기" 버튼을 눌러 붙여넣기하세요.');
+                    });
+                } catch (error) {
+                    console.error('데이터 내보내기 오류:', error);
+                    alert('데이터 내보내기 중 오류가 발생했습니다.');
+                }
+            };
+
+            const importAssetData = () => {
+                const compressedData = prompt('다른 기기에서 복사한 암호문을 붙여넣으세요:');
+                if (!compressedData) return;
+                
+                try {
+                    const jsonString = decodeURIComponent(escape(atob(compressedData)));
+                    const importData = JSON.parse(jsonString);
+                    
+                    if (!importData.appData || !importData.version) {
+                        throw new Error('잘못된 데이터 형식입니다.');
+                    }
+                    
+                    if (confirm('현재 데이터를 모두 덮어쓰고 불러오시겠습니까?')) {
+                        setAppData(importData.appData);
+                        setScenarios(importData.scenarios || []);
+                        setAssetHistory(importData.assetHistory || []);
+                        alert('자산 데이터가 성공적으로 불러와졌습니다!');
+                    }
+                } catch (error) {
+                    console.error('데이터 가져오기 오류:', error);
+                    alert('데이터 가져오기 중 오류가 발생했습니다.\n암호문을 다시 확인해주세요.');
+                }
+            };
 
             // ===== 기본값 설정 (appData가 없을 때도 안전하게) =====
             const {
@@ -192,9 +328,18 @@
             const setProjectionMonths = (value) => setAppData(prev => ({ ...prev, projectionMonths: value }));
             const setMonthlySalary = (value) => setAppData(prev => ({ ...prev, monthlySalary: value }));
             const setAssets = (value) => setAppData(prev => ({ ...prev, assets: typeof value === 'function' ? value(prev.assets) : value }));
-            const setMonthlyExpenses = (value) => setAppData(prev => ({ ...prev, monthlyExpenses: typeof value === 'function' ? value(prev.monthlyExpenses) : value }));
-            const setIncomeEvents = (value) => setAppData(prev => ({ ...prev, incomeEvents: typeof value === 'function' ? value(prev.incomeEvents) : value }));
-            const setExpenseEvents = (value) => setAppData(prev => ({ ...prev, expenseEvents: typeof value === 'function' ? value(prev.expenseEvents) : value }));
+            const setMonthlyExpenses = (value) => setAppData(prev => ({ 
+                ...prev, 
+                monthlyExpenses: typeof value === 'function' ? value(Array.isArray(prev.monthlyExpenses) ? prev.monthlyExpenses : []) : value 
+            }));
+            const setIncomeEvents = (value) => setAppData(prev => ({ 
+                ...prev, 
+                incomeEvents: typeof value === 'function' ? value(Array.isArray(prev.incomeEvents) ? prev.incomeEvents : []) : value 
+            }));
+            const setExpenseEvents = (value) => setAppData(prev => ({ 
+                ...prev, 
+                expenseEvents: typeof value === 'function' ? value(Array.isArray(prev.expenseEvents) ? prev.expenseEvents : []) : value 
+            }));
             
             const setTargetAmount = (value) => setAppData(prev => ({ ...prev, targetAmount: value }));
             const setGoalMode = (value) => setAppData(prev => ({ ...prev, goalMode: value }));
@@ -226,11 +371,16 @@
                             if (!parsed.projectionMonths) parsed.projectionMonths = fallback.projectionMonths;
                             setAppData(parsed);
                             localStorage.setItem('assetDashboardUseDevDefaults','false');
+                            alert('저장된 기본값으로 초기화되었습니다.');
                         }
                     } else {
-                        alert('저장된 기본값이 없습니다.');
+                        if (confirm('저장된 기본값이 없습니다.\n사이트 기본값으로 초기화하시겠습니까?')) {
+                            setAppData(publicDefaultData);
+                            alert('저장된 기본값이 없어 사이트 기본값으로 불러왔습니다.');
+                        }
                     }
                 } catch (error) {
+                    console.error('기본값 로드 오류:', error);
                     alert('기본값 로드 중 오류가 발생했습니다.');
                 }
             };
@@ -646,7 +796,8 @@
                     projected: currentAssets,
                     currentTotal,
                     projectedTotal,
-                    growth: projectedTotal - currentTotal
+                    growth: projectedTotal - currentTotal,
+                    grand: currentTotal // 순자산 추가
                 };
             }, [appData, assets, projectionMonths, monthlySalary, monthlyExpenses, incomeEvents, expenseEvents, autoDepositAccount]);
 
@@ -716,10 +867,6 @@
             const autoDepositBreakdown = getAutoDepositBreakdown();
 
             // ===== 차트 설정 =====
-            const currentPieRef = useRef(null);
-            const projectedPieRef = useRef(null);
-            const comparisonBarRef = useRef(null);
-
             useEffect(() => {
     if (!appData || !currentPieRef.current || !projectedPieRef.current || !comparisonBarRef.current) return;
 
@@ -841,7 +988,47 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
     },
     plugins: [ChartDataLabels]
 });
-}, [appData, calculation, projectionMonths, baseMonth]);
+
+    // 히스토리 차트
+    if (historyChartRef.current && assetHistory.length > 0) {
+        // 기존 차트 파괴
+        if (historyChartRef.current._chart) {
+            historyChartRef.current._chart.destroy();
+        }
+        
+        const historyLabels = assetHistory.map(item => {
+            const date = new Date(item.date);
+            const timeStr = item.time ? ` ${item.time.split(':').slice(0, 2).join(':')}` : '';
+            return `${date.getMonth() + 1}/${date.getDate()}${timeStr}`;
+        });
+        const historyData = assetHistory.map(item => item.netWorth);
+        
+        historyChartRef.current._chart = new Chart(historyChartRef.current, {
+            type: 'line',
+            data: {
+                labels: historyLabels,
+                datasets: [{
+                    label: '순자산 (만원)',
+                    data: historyData,
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    title: { display: true, text: '자산 히스토리' }
+                },
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    }
+}, [appData, calculation, projectionMonths, baseMonth, assetHistory]);
 
 
 
@@ -886,14 +1073,104 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
             ));
             const removeExpense = (index) => setMonthlyExpenses(prev => prev.filter((_, i) => i !== index));
 
+            // ===== 섹터 정보 (함수 정의 전에 위치) =====
+            const sectorInfo = {
+                deposit: { name: '입출금통장', color: 'deposit', icon: '🏦' },
+                savings: { name: '저축', color: 'savings', icon: '💰' },
+                investment: { name: '투자', color: 'investment', icon: '📈' },
+                pension: { name: '연금', color: 'pension', icon: '🏛️' },
+                realestate: { name: '부동산', color: 'realestate', icon: '🏠' },
+                car: { name: '자동차', color: 'car', icon: '🚗' },
+                loan: { name: '대출', color: 'loan', icon: '💳' },
+                misc: { name: '기타', color: 'misc', icon: '📦' }
+            };
+
             // ===== 이벤트 관리 함수들 =====
-            const addIncomeEvent = () => setIncomeEvents(prev => [...prev, { 
-                name: '새 수입 이벤트', amount: 0, startMonth: 1, endMonth: 1, targetSector: 'deposit', targetAsset: 0 
-            }]);
-            const updateIncomeEvent = (index, field, value) => setIncomeEvents(prev => prev.map((event, i) => 
-                i === index ? { ...event, [field]: (typeof value === 'string' && field !== 'name' && field !== 'targetSector') ? Number(value) : value } : event
-            ));
-            const removeIncomeEvent = (index) => setIncomeEvents(prev => prev.filter((_, i) => i !== index));
+            const addIncomeEvent = () => {
+                try {
+                    setIncomeEvents(prev => {
+                        // prev가 배열이 아니면 빈 배열로 초기화
+                        const currentEvents = Array.isArray(prev) ? prev : [];
+                        return [...currentEvents, { 
+                            name: '새 수입 이벤트', amount: 0, startMonth: 1, endMonth: 1, targetSector: 'deposit', targetAsset: 0 
+                        }];
+                    });
+                } catch (error) {
+                    console.error('Error adding income event:', error);
+                }
+            };
+            
+            const updateIncomeEvent = (index, field, value) => {
+                try {
+                    // incomeEvents가 배열인지 확인
+                    if (!Array.isArray(incomeEvents)) {
+                        console.warn('incomeEvents is not an array:', incomeEvents);
+                        return;
+                    }
+                    
+                    // 입력값 검증
+                    if (index < 0 || index >= incomeEvents.length) {
+                        console.warn('Invalid income event index:', index);
+                        return;
+                    }
+                    
+                    let newValue = value;
+                    
+                    // 숫자 필드 검증
+                    if (field === 'amount' || field === 'startMonth' || field === 'endMonth' || field === 'targetAsset') {
+                        const numValue = Number(value);
+                        if (isNaN(numValue)) {
+                            console.warn('Invalid number value:', value);
+                            return;
+                        }
+                        newValue = Math.max(0, numValue); // 음수 방지
+                    }
+                    
+                    // 섹터 필드 검증
+                    if (field === 'targetSector' && !Object.keys(sectorInfo).includes(value)) {
+                        console.warn('Invalid target sector:', value);
+                        return;
+                    }
+                    
+                    setIncomeEvents(prev => {
+                        if (!Array.isArray(prev)) {
+                            console.warn('Previous incomeEvents is not an array:', prev);
+                            return prev;
+                        }
+                        return prev.map((event, i) => 
+                            i === index ? { ...event, [field]: newValue } : event
+                        );
+                    });
+                } catch (error) {
+                    console.error('Error updating income event:', error);
+                }
+            };
+            
+            const removeIncomeEvent = (index) => {
+                try {
+                    // incomeEvents가 배열인지 확인
+                    if (!Array.isArray(incomeEvents)) {
+                        console.warn('incomeEvents is not an array:', incomeEvents);
+                        return;
+                    }
+                    
+                    // 인덱스 검증
+                    if (index < 0 || index >= incomeEvents.length) {
+                        console.warn('Invalid income event index for removal:', index);
+                        return;
+                    }
+                    
+                    setIncomeEvents(prev => {
+                        if (!Array.isArray(prev)) {
+                            console.warn('Previous incomeEvents is not an array:', prev);
+                            return prev;
+                        }
+                        return prev.filter((_, i) => i !== index);
+                    });
+                } catch (error) {
+                    console.error('Error removing income event:', error);
+                }
+            };
 
             const addExpenseEvent = () => setExpenseEvents(prev => [...prev, { 
                 name: '새 지출 이벤트', amount: 0, startMonth: 1, endMonth: 1, targetSector: 'deposit', targetAsset: 0 
@@ -911,17 +1188,6 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 }));
             };
 
-            // ===== 섹터 정보 =====
-            const sectorInfo = {
-                deposit: { name: '입출금통장', color: 'deposit', icon: '🏦' },
-                savings: { name: '저축', color: 'savings', icon: '💰' },
-                investment: { name: '투자', color: 'investment', icon: '📈' },
-                pension: { name: '연금', color: 'pension', icon: '🏛️' },
-                realestate: { name: '부동산', color: 'realestate', icon: '🏠' },
-                car: { name: '자동차', color: 'car', icon: '🚗' },
-                loan: { name: '대출', color: 'loan', icon: '💳' },
-                misc: { name: '기타', color: 'misc', icon: '📦' }
-            };
 
             const savingsPanelSectors = ['deposit','savings','investment','misc'];
             const assetsPanelSectors = ['realestate','car','misc'];
@@ -975,6 +1241,28 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                             </div>
                                         </div>
                                         <p className="text-xs text-gray-500 mt-3">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const to=new Date(d); to.setMonth(to.getMonth()+projectionMonths); const fmt=(dt)=> `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`; return `기준월: ${fmt(d)} → ${fmt(to)}`; } catch { return ''; } })()}</p>
+                                        
+                                        {/* 새로운 기능 버튼들 */}
+                                        <div className="mt-4 pt-4 border-t border-gray-200">
+                                            <div className="space-y-2">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <button onClick={saveCurrentAsset} className="px-3 py-2 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors">
+                                                        💾 현재 자산 저장
+                                                    </button>
+                                                    <div className="px-3 py-2 bg-gray-100 text-gray-600 text-sm rounded text-center">
+                                                        히스토리: {assetHistory.length}개
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <button onClick={exportAssetData} className="px-3 py-2 bg-green-500 text-white text-sm rounded hover:bg-green-600 transition-colors">
+                                                        📤 데이터 내보내기
+                                                    </button>
+                                                    <button onClick={importAssetData} className="px-3 py-2 bg-purple-500 text-white text-sm rounded hover:bg-purple-600 transition-colors">
+                                                        📥 데이터 불러오기
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div>
                                         <h2 className="text-lg font-semibold mb-4 text-gray-700">기본 설정</h2>
@@ -1067,6 +1355,20 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                 <canvas ref={comparisonBarRef} height="300"></canvas>
                             </div>
                         </div>
+
+                        {/* ===== 자산 히스토리 차트 ===== */}
+                        {assetHistory.length > 0 && (
+                            <div className="bg-white rounded-lg shadow p-6">
+                                <h3 className="text-lg font-semibold text-gray-700 mb-4">📈 자산 히스토리</h3>
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <canvas ref={historyChartRef} height="200"></canvas>
+                                </div>
+                                <div className="mt-4 text-sm text-gray-600">
+                                    총 {assetHistory.length}개의 기록이 있습니다. 
+                                    최근 기록: {assetHistory[assetHistory.length - 1]?.date} {assetHistory[assetHistory.length - 1]?.time ? `(${assetHistory[assetHistory.length - 1].time.split(':').slice(0, 2).join(':')})` : ''} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth)}만원)
+                                </div>
+                            </div>
+                        )}
 
                         {/* ===== 월납입 예산 관리 (개선된 계산식 표시) ===== */}
                         <div className="bg-blue-50 rounded-lg shadow p-6">
@@ -1322,11 +1624,37 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
     <div className="text-xs text-gray-600 mb-4 bg-white p-3 rounded-lg border border-green-100">
         💡 항목 설명: 이벤트명 | 금액 | 시작 월 | 종료 월 | 입금처(섹터/계좌)
         <div className="mt-1 text-gray-500">
-            예: 3~8개월 입력 시, 기준월 기준 <strong>{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const fmt=(dt)=> `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`; const s=new Date(d); s.setMonth(s.getMonth()+3); const e=new Date(d); e.setMonth(e.getMonth()+8); return `${fmt(s)}부터 ${fmt(e)}까지`; } catch { return ''; } })()}</strong>
+            예: 3~8개월 입력 시, 기준월 기준 <strong>{(() => { 
+                try { 
+                    const baseMonthStr = baseMonth || '';
+                    if (!baseMonthStr) return '기준월 설정 필요';
+                    const [y,m] = baseMonthStr.split('-').map(Number);
+                    if (!y || !m) return '기준월 형식 오류';
+                    const d = new Date(y, m-1, 1);
+                    if (isNaN(d.getTime())) return '날짜 계산 오류';
+                    const fmt = (dt) => `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`;
+                    const s = new Date(d);
+                    s.setMonth(s.getMonth() + 3);
+                    const e = new Date(d);
+                    e.setMonth(e.getMonth() + 8);
+                    if (isNaN(s.getTime()) || isNaN(e.getTime())) return '날짜 계산 오류';
+                    return `${fmt(s)}부터 ${fmt(e)}까지`;
+                } catch (error) { 
+                    console.error('Date calculation error:', error);
+                    return '날짜 계산 오류';
+                } 
+            })()}</strong>
         </div>
     </div>
     <div className="space-y-4">
-        {incomeEvents.map((event, index) => (
+        {incomeEvents && incomeEvents.length > 0 ? incomeEvents.map((event, index) => {
+            // 이벤트 데이터 검증
+            if (!event || typeof event !== 'object') {
+                console.warn('Invalid event data at index:', index);
+                return null;
+            }
+            
+            return (
             <div key={index} className="bg-white rounded-lg p-4 shadow-sm border">
                 {/* Changed: 일관성을 위해 8열 그리드 시스템으로 통일하고 반응형 개선 */}
                 <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 items-end">
@@ -1344,13 +1672,35 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                     <div className="md:col-span-2 lg:col-span-1">
                         <label className="block text-sm font-medium text-gray-700 mb-1">시작 월</label>
                         <input type="number" placeholder="개월차" className="w-full border rounded-md px-3 py-2" value={event.startMonth} onChange={(e) => updateIncomeEvent(index, 'startMonth', e.target.value)} />
-                        <div className="text-xs text-gray-500 mt-1">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const s=new Date(d); s.setMonth(s.getMonth()+Number(event.startMonth||0)); return `${String(s.getFullYear()).slice(2)}년 ${String(s.getMonth()+1).padStart(2,'0')}월 부터`; } catch { return ''; } })()}</div>
+                        
+                        {/* 👇 [추가] 이 div를 input 바로 아래에 다시 추가합니다. */}
+                        <div className="text-xs text-gray-500 mt-1">{(() => { 
+                            try { 
+                                const [y,m] = (baseMonth||'').split('-').map(Number);
+                                const d = new Date(y, m-1, 1);
+                                const s = new Date(d);
+                                s.setMonth(s.getMonth() + Number(event.startMonth || 0));
+                                return `${String(s.getFullYear()).slice(2)}년 ${String(s.getMonth()+1).padStart(2,'0')}월 부터`;
+                            } catch { return ''; } 
+                        })()}</div>
+
                     </div>
                     {/* --- 종료 월 --- */}
                     <div className="md:col-span-2 lg:col-span-1">
                         <label className="block text-sm font-medium text-gray-700 mb-1">종료 월</label>
                         <input type="number" placeholder="개월차" className="w-full border rounded-md px-3 py-2" value={event.endMonth} onChange={(e) => updateIncomeEvent(index, 'endMonth', e.target.value)} />
-                        <div className="text-xs text-gray-500 mt-1">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const e=new Date(d); e.setMonth(e.getMonth()+Number(event.endMonth||0)); return `${String(e.getFullYear()).slice(2)}년 ${String(e.getMonth()+1).padStart(2,'0')}월 까지`; } catch { return ''; } })()}</div>
+
+                        {/* 👇 [추가] 이 div도 input 바로 아래에 다시 추가합니다. */}
+                        <div className="text-xs text-gray-500 mt-1">{(() => { 
+                            try { 
+                                const [y,m] = (baseMonth||'').split('-').map(Number);
+                                const d = new Date(y, m-1, 1);
+                                const e = new Date(d);
+                                e.setMonth(e.getMonth() + Number(event.endMonth || 0));
+                                return `${String(e.getFullYear()).slice(2)}년 ${String(e.getMonth()+1).padStart(2,'0')}월 까지`;
+                            } catch { return ''; } 
+                        })()}</div>
+
                     </div>
                     {/* --- 입금처 --- */}
                     <div className="md:col-span-3 lg:col-span-2">
@@ -1369,12 +1719,18 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                         </div>
                     </div>
                     {/* --- 삭제 버튼 --- */}
-                    <div className="md:col-span-1 lg:col-span-1 flex items-center justify-center h-full pt-6">
+                    <div className="md:col-span-1 lg:col-span-1 flex items-end justify-center h-full">
                         <button onClick={() => removeIncomeEvent(index)} className="text-red-500 hover:text-red-700 font-medium whitespace-nowrap">삭제</button>
                     </div>
                 </div>
             </div>
-        ))}
+            );
+        }) : (
+            <div className="text-center text-gray-500 py-8">
+                <p>이벤트성 수입이 없습니다.</p>
+                <p className="text-sm">위의 "+ 수입 이벤트 추가" 버튼을 클릭하여 추가하세요.</p>
+            </div>
+        )}
     </div>
 </div>
 
@@ -1409,13 +1765,35 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                     <div className="md:col-span-2 lg:col-span-1">
                         <label className="block text-sm font-medium text-gray-700 mb-1">시작 월</label>
                         <input type="number" placeholder="개월차" className="w-full border rounded-md px-3 py-2" value={event.startMonth} onChange={(e) => updateExpenseEvent(index, 'startMonth', e.target.value)} />
-                        <div className="text-xs text-gray-500 mt-1">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const s=new Date(d); s.setMonth(s.getMonth()+Number(event.startMonth||0)); return `${String(s.getFullYear()).slice(2)}년 ${String(s.getMonth()+1).padStart(2,'0')}월 부터`; } catch { return ''; } })()}</div>
+                        
+                        {/* 👇 [추가] 이 div를 input 바로 아래에 추가합니다. */}
+                        <div className="text-xs text-gray-500 mt-1">{(() => { 
+                            try { 
+                                const [y,m] = (baseMonth||'').split('-').map(Number);
+                                const d = new Date(y, m-1, 1);
+                                const s = new Date(d);
+                                s.setMonth(s.getMonth() + Number(event.startMonth || 0));
+                                return `${String(s.getFullYear()).slice(2)}년 ${String(s.getMonth()+1).padStart(2,'0')}월 부터`;
+                            } catch { return ''; } 
+                        })()}</div>
+
                     </div>
                     {/* --- 종료 월 --- */}
                     <div className="md:col-span-2 lg:col-span-1">
                         <label className="block text-sm font-medium text-gray-700 mb-1">종료 월</label>
                         <input type="number" placeholder="개월차" className="w-full border rounded-md px-3 py-2" value={event.endMonth} onChange={(e) => updateExpenseEvent(index, 'endMonth', e.target.value)} />
-                        <div className="text-xs text-gray-500 mt-1">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const e=new Date(d); e.setMonth(e.getMonth()+Number(event.endMonth||0)); return `${String(e.getFullYear()).slice(2)}년 ${String(e.getMonth()+1).padStart(2,'0')}월 까지`; } catch { return ''; } })()}</div>
+
+                        {/* 👇 [추가] 이 div도 input 바로 아래에 추가합니다. */}
+                        <div className="text-xs text-gray-500 mt-1">{(() => { 
+                            try { 
+                                const [y,m] = (baseMonth||'').split('-').map(Number);
+                                const d = new Date(y, m-1, 1);
+                                const e = new Date(d);
+                                e.setMonth(e.getMonth() + Number(event.endMonth || 0));
+                                return `${String(e.getFullYear()).slice(2)}년 ${String(e.getMonth()+1).padStart(2,'0')}월 까지`;
+                            } catch { return ''; } 
+                        })()}</div>
+
                     </div>
                     {/* --- 출금처 --- */}
                     <div className="md:col-span-3 lg:col-span-2">
@@ -1434,7 +1812,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                         </div>
                     </div>
                     {/* --- 삭제 버튼 --- */}
-                    <div className="md:col-span-1 lg:col-span-1 flex items-center justify-center h-full pt-6">
+                    <div className="md:col-span-1 lg:col-span-1 flex items-end justify-center h-full">
                         <button onClick={() => removeExpenseEvent(index)} className="text-red-500 hover:text-red-700 font-medium whitespace-nowrap">삭제</button>
                     </div>
                 </div>
@@ -1514,13 +1892,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                     </tbody>
                                 </table>
                             </div>
-                            {/* 시나리오 비교 (최대 3개) */}
-                            {scenarios.length > 0 && (
-                                <div className="mt-8">
-                                    <h3 className="text-lg font-semibold text-gray-700 mb-3">시나리오 비교 (최대 3개)</h3>
-                                    <ScenarioCompare scenarios={scenarios} sectorInfo={sectorInfo} />
-                                </div>
-                            )}
+                            
                         </div>
 
                         {/* ===== 가정사항 ===== */}
@@ -1700,7 +2072,56 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
 
      
 
-        ReactDOM.createRoot(document.getElementById('root')).render(<AssetDashboard />);
+        // 에러 바운더리 컴포넌트
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+
+            componentDidCatch(error, errorInfo) {
+                console.error('Error caught by boundary:', error, errorInfo);
+            }
+
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-4 p-4">
+                            <div className="text-red-400 text-center max-w-md">
+                                <h2 className="text-xl font-bold mb-2">Something went wrong</h2>
+                                <p className="text-sm mb-4">An error occurred while rendering the component.</p>
+                                <button 
+                                    onClick={() => this.setState({ hasError: false, error: null })}
+                                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                                >
+                                    Try again
+                                </button>
+                            </div>
+                            {this.state.error && (
+                                <details className="text-red-300 text-xs max-w-md">
+                                    <summary className="cursor-pointer">Error details</summary>
+                                    <pre className="mt-2 p-2 bg-red-900/20 rounded overflow-auto">
+                                        {this.state.error.message}
+                                    </pre>
+                                </details>
+                            )}
+                        </div>
+                    );
+                }
+
+                return this.props.children;
+            }
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(
+            <ErrorBoundary>
+                <AssetDashboard />
+            </ErrorBoundary>
+        );
     </script>
 </body>
 </html>
