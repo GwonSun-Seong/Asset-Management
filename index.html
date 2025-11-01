@@ -668,17 +668,27 @@
                         livingAccount.amount -= totalMonthlyExpense;
                     }
 
-                    // 월납입 적용 (대출 상환 처리)
+                    // 월납입 적용
                     Object.keys(currentAssets).forEach(sector => {
                         currentAssets[sector].forEach(asset => {
                             if (asset.monthlyContrib > 0) {
                                 if (sector === 'loan') {
                                     asset.amount = Math.max(0, (asset.amount || 0) - asset.monthlyContrib);
+
+                                    // 👇 [개선] 여기서는 메인 로직과 동일하게 지정된 상환계좌에서 빼야 합니다.
+                                    const accountName = asset.repaymentAccount || '생활비통장';
+                                    const allAccounts = Object.values(currentAssets).flat();
+                                    const paymentSourceAccount = allAccounts.find(a => a.name === accountName);
+                                    if (paymentSourceAccount) {
+                                        paymentSourceAccount.amount -= asset.monthlyContrib;
+                                    }
+
                                 } else {
                                     asset.amount += asset.monthlyContrib;
-                                }
-                                if (livingAccount && asset.name !== '생활비통장') {
-                                    livingAccount.amount -= asset.monthlyContrib;
+                                    // 👇 [개선] 대출이 아닐 때만 생활비통장에서 차감 (else 안으로 이동)
+                                    if (livingAccount && asset.name !== '생활비통장') {
+                                        livingAccount.amount -= asset.monthlyContrib;
+                                    }
                                 }
                             }
                         });
@@ -1158,13 +1168,18 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
             }));
 
             const updateAsset = (sector, index, field, value) => {
-                const newValue = (typeof value === 'string' && field !== 'name' && field !== 'extraFrom') ? Number(value) : value;
-                if ((field === 'monthlyContrib' || field === 'extraContrib') && newValue < 0) return;
-                setAssets(prev => ({
-                    ...prev,
-                    [sector]: prev[sector].map((asset, i) => i === index ? { ...asset, [field]: newValue } : asset)
-                }));
-            };
+            // 👇 [개선] 숫자여야 하는 필드 목록을 만듭니다.
+            const numberFields = ['amount', 'rate', 'feeRate', 'monthlyContrib', 'extraContrib'];
+
+            // 👇 [개선] 해당 필드만 숫자로 변환하고, 나머지는(계좌 이름 등) 문자열로 둡니다.
+            const newValue = numberFields.includes(field) ? Number(value) : value;
+
+            if ((field === 'monthlyContrib' || field === 'extraContrib') && newValue < 0) return;
+            setAssets(prev => ({
+                ...prev,
+                [sector]: prev[sector].map((asset, i) => i === index ? { ...asset, [field]: newValue } : asset)
+            }));
+        };
 
             const removeAsset = (sector, index) => setAssets(prev => ({
                 ...prev,
@@ -1283,12 +1298,25 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 name: '새 지출 이벤트', amount: 0, startMonth: 1, endMonth: 1, targetSector: 'deposit', targetAsset: 0 
             }];
         });
-            const updateExpenseEvent = (index, field, value) => setExpenseEvents(prev => {
-            if (!Array.isArray(prev)) return []; // 👈 [개선] 배열이 아니면 중단
-            return prev.map((event, i) => 
-                i === index ? { ...event, [field]: (typeof value === 'string' && field !== 'name') ? Number(value) : value } : event
-            );
-        });
+            const updateExpenseEvent = (index, field, value) => {
+            // 👇 [개선] 'updateIncomeEvent'와 동일한 로직 적용
+            let newValue = value;
+            const numberFields = ['amount', 'startMonth', 'endMonth', 'targetAsset'];
+
+            if (numberFields.includes(field)) {
+                const numValue = Number(value);
+                if (!isNaN(numValue)) {
+                    newValue = Math.max(0, numValue); // 음수 방지
+                }
+            }
+
+            setExpenseEvents(prev => {
+                if (!Array.isArray(prev)) return [];
+                return prev.map((event, i) =>
+                    i === index ? { ...event, [field]: newValue } : event
+                );
+            });
+        };
             const removeExpenseEvent = (index) => setExpenseEvents(prev => {
             if (!Array.isArray(prev)) return []; // 👈 [개선] 배열이 아니면 중단
             return prev.filter((_, i) => i !== index);
@@ -1571,7 +1599,6 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                             </div>
                         </div>
 
-                // TO-BE
                     {/* ===== 리밸런싱 설정 ===== */}
                     <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg shadow p-6">
                         <h3 className="text-lg font-semibold text-yellow-700 dark:text-yellow-300 mb-2">⚠️ 리밸런싱 설정</h3>
@@ -2219,17 +2246,29 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                         living.amount -= totalMonthlyExpense;
                     }
                     Object.keys(assets).forEach(sector => {
-                        assets[sector].forEach(asset => {
-                            if (asset.monthlyContrib > 0) {
-                                if (sector === 'loan') {
-                                    asset.amount = Math.max(0, (asset.amount || 0) - asset.monthlyContrib);
-                                } else {
-                                    asset.amount += asset.monthlyContrib;
+                    assets[sector].forEach(asset => {
+                        if (asset.monthlyContrib > 0) {
+                            if (sector === 'loan') {
+                                asset.amount = Math.max(0, (asset.amount || 0) - asset.monthlyContrib);
+
+                                // 👇 [개선] 여기도 메인 로직처럼 지정된 상환계좌에서 빼도록 수정
+                                const accountName = asset.repaymentAccount || '생활비통장';
+                                const allAccounts = Object.values(assets).flat();
+                                const paymentSourceAccount = allAccounts.find(a => a.name === accountName);
+                                if (paymentSourceAccount) {
+                                    paymentSourceAccount.amount -= asset.monthlyContrib;
                                 }
-                                if (living && asset.name !== '생활비통장') living.amount -= asset.monthlyContrib;
+
+                            } else {
+                                asset.amount += asset.monthlyContrib;
+                                // 👇 [개선] 대출이 아닐 때만 생활비통장에서 차감 (else 안으로 이동)
+                                if (living && asset.name !== '생활비통장') {
+                                    living.amount -= asset.monthlyContrib; 
+                                }
                             }
-                        });
+                        }
                     });
+                });
                     if (autoDepositAmount > 0 && living) {
                         living.amount -= autoDepositAmount; // 단순화 유지
                     }
