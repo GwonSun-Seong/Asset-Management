@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>통합 자산 분석 대시보드</title>
+    <title>자산 플래너</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-gradient@0.6.1/dist/chartjs-plugin-gradient.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
@@ -18,14 +19,14 @@
             theme: {
                 extend: {
                     colors: {
-                        deposit: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb' },
-                        savings: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a' },
-                        investment: { 50: '#fff7ed', 500: '#f97316', 600: '#ea580c' },
-                        pension: { 50: '#faf5ff', 500: '#a855f7', 600: '#9333ea' },
-                        realestate: { 50: '#fef7f0', 500: '#f59e0b', 600: '#d97706' },
-                        car: { 50: '#ecfeff', 500: '#06b6d4', 600: '#0891b2' },
-                        loan: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563' },
-                        misc: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563' }
+                        deposit: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', start: '#60a5fa', end: '#3b82f6' },
+                        savings: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a', start: '#34d399', end: '#10b981' },
+                        investment: { 50: '#fff7ed', 500: '#f97316', 600: '#ea580c', start: '#fb923c', end: '#f97316' },
+                        pension: { 50: '#faf5ff', 500: '#a855f7', 600: '#9333ea', start: '#c084fc', end: '#a855f7' },
+                        realestate: { 50: '#fef7f0', 500: '#f59e0b', 600: '#d97706', start: '#fbbf24', end: '#f59e0b' },
+                        car: { 50: '#ecfeff', 500: '#06b6d4', 600: '#0891b2', start: '#22d3ee', end: '#0891b2' },
+                        loan: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280' },
+                        misc: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280' }
                     }
                 }
             }
@@ -45,6 +46,7 @@
           monthlySalary: 280,
             targetAmount: 10000, // 목표 자산 금액 (만원)
             goalMode: 'period', // 'period' 또는 'target'
+            displayMode: 'amount', // [추가] displayMode 기본값
             darkMode: false, // [추가] 다크 모드 상태
             rebalancingMode: 'simple', // 'simple' | 'advanced'
             assets: {
@@ -92,7 +94,8 @@
                 misc: { warning: 5, danger: 10 }
             },
             simpleThresholds: { warning: 5, danger: 10 },
-            rebalancingTargets: { /* 섹터별 목표 비중(%) 합계 100 */ }
+            rebalancingTargets: { /* 섹터별 목표 비중(%) 합계 100 */ },
+            memo: '' // [추가] 메모 기능
         };
 
         
@@ -114,8 +117,51 @@
     <script type="text/babel">
             const { useState, useMemo, useEffect, useRef } = React;
 
+        // [추가] 데이터 전송 모달 컴포넌트
+        const DataTransferModal = ({ isOpen, onClose, onConfirm, type, initialSelection }) => {
+            const [selectedItems, setSelectedItems] = useState(initialSelection || { appData: true, scenarios: true, assetHistory: true });
 
-        // TO-BE (const AssetDashboard... 이전에 추가)
+            const handleCheckboxChange = (e) => {
+                setSelectedItems(prev => ({ ...prev, [e.target.name]: e.target.checked }));
+            };
+
+            const handleConfirm = () => {
+                onConfirm(selectedItems);
+                onClose();
+            };
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-96">
+                        <h3 className="text-lg font-semibold mb-4">{type === 'export' ? '데이터 내보내기' : '데이터 불러오기'}</h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                            {type === 'export' ? '내보낼 데이터 항목을 선택하세요.' : '불러올 데이터 항목을 선택하세요. (기존 데이터는 덮어쓰여집니다.)'}
+                        </p>
+                        <div className="space-y-2 mb-6">
+                            <label className="flex items-center">
+                                <input type="checkbox" name="appData" checked={selectedItems.appData} onChange={handleCheckboxChange} className="mr-2" />
+                                <span className="text-gray-800">기본 자산 데이터 (계좌, 지출, 이벤트 등)</span>
+                            </label>
+                            <label className="flex items-center">
+                                <input type="checkbox" name="scenarios" checked={selectedItems.scenarios} onChange={handleCheckboxChange} className="mr-2" />
+                                <span className="text-gray-800">저장된 시나리오</span>
+                            </label>
+                            <label className="flex items-center">
+                                <input type="checkbox" name="assetHistory" checked={selectedItems.assetHistory} onChange={handleCheckboxChange} className="mr-2" />
+                                <span className="text-gray-800">자산 히스토리</span>
+                            </label>
+                        </div>
+                        <div className="flex justify-end space-x-3">
+                            <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">취소</button>
+                            <button onClick={handleConfirm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">확인</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // [추가] 리밸런싱 시각화를 위한 누적 막대 그래프 컴포넌트
         const StackedBarDisplay = ({ targets, sectorInfo }) => {
             const validSectors = Object.keys(sectorInfo).filter(k => k !== 'loan');
@@ -166,8 +212,10 @@
             // ===== 모든 상태를 먼저 선언 =====
             const [appData, setAppData] = useState(null);
             const [scenarios, setScenarios] = useState([]);
+            const [originalUserData, setOriginalUserData] = useState(null); // [추가] 원본 데이터 캐시
+            const [isDemoMode, setIsDemoMode] = useState(false); // [추가] 데모 모드 상태
             const [goalSeekResult, setGoalSeekResult] = useState(null);
-            const [autoDepositAccount, setAutoDepositAccount] = useState('생활비통장');
+            const [mainCashFlowAccount, setMainCashFlowAccount] = useState('생활비통장');
             // 차트 ref들
             const currentPieRef = useRef(null);
             const projectedPieRef = useRef(null);
@@ -185,6 +233,14 @@
                     localStorage.setItem('assetDashboardHiddenSectors', JSON.stringify(hiddenSectors));
                 } catch {}
             }, [hiddenSectors]);
+
+            // [추가] 데이터 전송 모달 상태
+            const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+            const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+            const [exportSelection, setExportSelection] = useState({ appData: true, scenarios: true, assetHistory: true });
+            const [importSelection, setImportSelection] = useState({ appData: true, scenarios: true, assetHistory: true });
+            // [추가] 입력 필드 참조를 위한 ref
+            const assetInputRefs = useRef({});
             
             // ===== 초기 데이터 로드 =====
             useEffect(() => {
@@ -205,16 +261,20 @@
                             // 새로운 필드들 추가
                             if (!parsedData.targetAmount) parsedData.targetAmount = baseData.targetAmount;
                             if (!parsedData.goalMode) parsedData.goalMode = baseData.goalMode;
+                            if (!parsedData.displayMode) parsedData.displayMode = baseData.displayMode; // [추가] displayMode 마이그레이션
                             if (!parsedData.assets.realestate) parsedData.assets.realestate = baseData.assets.realestate;
                             if (!parsedData.assets.misc) parsedData.assets.misc = baseData.assets.misc;
                             if (!parsedData.rebalancingAlerts) parsedData.rebalancingAlerts = baseData.rebalancingAlerts;
+                            if (parsedData.memo === undefined) parsedData.memo = ''; // [추가] memo 마이그레이션
                             // 마이그레이션: 자산별 수수료/세금 필드 기본값(0)
                             Object.keys(parsedData.assets||{}).forEach(sector=>{
                                 (parsedData.assets[sector]||[]).forEach(a=>{ if (a.feeRate === undefined) a.feeRate = 0; });
                             });
                             setAppData(parsedData);
+                            setOriginalUserData(parsedData); // [추가]
                         } else {
                             setAppData(baseData);
+                            setOriginalUserData(baseData); // [추가]
                         }
                         
                     } catch (error) {
@@ -228,10 +288,11 @@
 
             // ===== 데이터 자동 저장 =====
             useEffect(() => {
-            if (appData) {
+            if (appData && !isDemoMode) { // [수정] 데모 모드일 때는 저장하지 않음
                 localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
+                setOriginalUserData(appData); // [추가]
             }
-            }, [appData]);
+            }, [appData, isDemoMode]); // [수정] isDemoMode를 의존성 배열에 추가
 
             // useRef를 사용하여 첫 렌더링인지 추적하는 변수 추가
             const isInitialMount = useRef(true);
@@ -310,15 +371,15 @@
             };
 
             // ===== 데이터 이삿짐싸기 기능 =====
-            const exportAssetData = () => {
+            const handleExport = (selection) => {
                 try {
-                    const exportData = {
-                        appData: appData,
-                        scenarios: scenarios,
-                        assetHistory: assetHistory,
-                        exportDate: new Date().toISOString(),
-                        version: '1.0'
-                    };
+                    const exportData = {};
+                    if (selection.appData) exportData.appData = appData;
+                    if (selection.scenarios) exportData.scenarios = scenarios;
+                    if (selection.assetHistory) exportData.assetHistory = assetHistory;
+                    
+                    exportData.exportDate = new Date().toISOString();
+                    exportData.version = '1.0';
                     
                     const jsonString = JSON.stringify(exportData);
                     const compressedDataArray = pako.deflate(jsonString);
@@ -344,32 +405,27 @@
                 }
             };
 
-            const importAssetData = () => {
-            const compressedData = prompt('다른 기기에서 복사한 암호문을 붙여넣으세요:');
-            if (!compressedData) return;
-            
-            try {
-                // [수정] Base64 디코딩 (이진 문자열 반환)
-                const binaryString = atob(compressedData);
+            const handleImport = (selection) => {
+                const compressedData = prompt('다른 기기에서 복사한 암호문을 붙여넣으세요:');
+                if (!compressedData) return;
                 
-                // [수정] 이진 문자열을 Uint8Array로 변환
-                const compressedDataArray = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    compressedDataArray[i] = binaryString.charCodeAt(i);
-                }
-                
-                // [수정] pako.inflate로 압축 해제 (UTF-8 문자열로)
-                const jsonString = pako.inflate(compressedDataArray, { to: 'string' });
-                const importData = JSON.parse(jsonString);
-                
-                if (!importData.appData || !importData.version) {
-                    throw new Error('잘못된 데이터 형식입니다.');
-                }
+                try {
+                    const binaryString = atob(compressedData);
+                    const compressedDataArray = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        compressedDataArray[i] = binaryString.charCodeAt(i);
+                    }
+                    const jsonString = pako.inflate(compressedDataArray, { to: 'string' });
+                    const importData = JSON.parse(jsonString);
                     
+                    if (!importData.version) {
+                        throw new Error('잘못된 데이터 형식입니다.');
+                    }
+                        
                     if (confirm('현재 데이터를 모두 덮어쓰고 불러오시겠습니까?')) {
-                        setAppData(importData.appData);
-                        setScenarios(importData.scenarios || []);
-                        setAssetHistory(importData.assetHistory || []);
+                        if (selection.appData && importData.appData) setAppData(importData.appData);
+                        if (selection.scenarios && importData.scenarios) setScenarios(importData.scenarios);
+                        if (selection.assetHistory && importData.assetHistory) setAssetHistory(importData.assetHistory);
                         alert('자산 데이터가 성공적으로 불러와졌습니다!');
                     }
                 } catch (error) {
@@ -382,8 +438,10 @@
             const {
                 projectionMonths = 12, monthlySalary = 280, assets = {}, monthlyExpenses = [], 
                 incomeEvents = [], expenseEvents = [], targetAmount = 10000, 
-                goalMode = 'period', rebalancingAlerts = {}, baseMonth = new Date().toISOString().slice(0,7),
-                rebalancingMode = 'simple', simpleThresholds = { warning: 5, danger: 10 }, rebalancingTargets = {}
+                goalMode = 'period', displayMode = 'amount',
+                rebalancingAlerts = {}, baseMonth = new Date().toISOString().slice(0,7),
+                rebalancingTargets = {},
+                memo = '' // [추가]
             } = appData || {};
             const applyTax = false;
             // ===== Setter 함수들 =====
@@ -405,11 +463,11 @@
             
             const setTargetAmount = (value) => setAppData(prev => ({ ...prev, targetAmount: value }));
             const setGoalMode = (value) => setAppData(prev => ({ ...prev, goalMode: value }));
+            const setDisplayMode = (value) => setAppData(prev => ({ ...prev, displayMode: value })); 
             const setRebalancingAlerts = (value) => setAppData(prev => ({ ...prev, rebalancingAlerts: typeof value === 'function' ? value(prev.rebalancingAlerts) : value }));
             const setBaseMonth = (value) => setAppData(prev => ({ ...prev, baseMonth: value }));
-            const setRebalancingMode = (value) => setAppData(prev => ({ ...prev, rebalancingMode: value }));
-            const setSimpleThresholds = (value) => setAppData(prev => ({ ...prev, simpleThresholds: typeof value === 'function' ? value(prev.simpleThresholds) : value }));
             const setRebalancingTargets = (value) => setAppData(prev => ({ ...prev, rebalancingTargets: typeof value === 'function' ? value(prev.rebalancingTargets) : value }));
+            const setMemo = (value) => setAppData(prev => ({ ...prev, memo: value })); // [추가]
 
 
 
@@ -432,12 +490,16 @@
                             if (!parsed.monthlySalary) parsed.monthlySalary = fallback.monthlySalary;
                             if (!parsed.projectionMonths) parsed.projectionMonths = fallback.projectionMonths;
                             setAppData(parsed);
+                            setOriginalUserData(parsed); // [추가]
+                            setIsDemoMode(false); // [추가]
                             localStorage.setItem('assetDashboardUseDevDefaults','false');
                             alert('저장된 기본값으로 초기화되었습니다.');
                         }
                     } else {
                         if (confirm('저장된 기본값이 없습니다.\n사이트 기본값으로 초기화하시겠습니까?')) {
                             setAppData(publicDefaultData);
+                            setOriginalUserData(publicDefaultData); // [추가]
+                            setIsDemoMode(false); // [추가]
                             alert('저장된 기본값이 없어 사이트 기본값으로 불러왔습니다.');
                         }
                     }
@@ -446,6 +508,33 @@
                     alert('기본값 로드 중 오류가 발생했습니다.');
                 }
             };
+
+            const cycleDisplayMode = () => {
+                // 현재: 사용자 모드 -> 다음: 프라이빗 모드
+                if (!isDemoMode && appData?.displayMode === 'amount') {
+                    setAppData(prev => ({ ...prev, displayMode: 'percent' }));
+                    alert('프라이빗 모드로 전환합니다. 금액이 숨겨집니다.');
+                } 
+                // 현재: 프라이빗 모드 -> 다음: 데모 모드
+                else if (!isDemoMode && appData?.displayMode === 'percent') {
+                    setAppData(publicDefaultData);
+                    setIsDemoMode(true);
+                    alert('데모 모드로 전환합니다. 이 모드에서 변경한 내용은 저장되지 않습니다.');
+                } 
+                // 현재: 데모 모드 -> 다음: 사용자 모드
+                else {
+                    // displayMode를 'amount'로 되돌려야 합니다.
+                    setAppData({...originalUserData, displayMode: 'amount'});
+                    setIsDemoMode(false);
+                    alert('사용자 데이터로 전환합니다.');
+                }
+            };
+
+            // 제목에 표시될 텍스트
+            const titleText = isDemoMode 
+                ? <span className="text-sm text-red-500">(데모 모드)</span>
+                : appData?.displayMode === 'percent' 
+                    ? <span className="text-sm text-blue-500">(프라이빗 모드)</span> : null;
 
             // ===== 개선된 PDF 저장 함수 =====
             const saveToPDF = async () => {
@@ -568,7 +657,7 @@
             // ===== 예산 계산 =====
             const totalMonthlyExpense = useMemo(() => {
                 if (!monthlyExpenses || !Array.isArray(monthlyExpenses)) return 0;
-                return monthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+                return monthlyExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
             }, [monthlyExpenses]);
             
             const totalSectorMonthlyContrib = useMemo(() => {
@@ -576,7 +665,7 @@
                 let sum = 0;
                 Object.entries(assets).forEach(([sector, arr]) => {
                     if (Array.isArray(arr)) {
-                        arr.forEach(asset => { sum += asset.monthlyContrib || 0; });
+                        arr.forEach(asset => { sum += Number(asset.monthlyContrib || 0); });
                     }
                 });
                 return sum;
@@ -584,29 +673,6 @@
             
             const maxSectorMonthlyContrib = useMemo(() => Math.max(0, monthlySalary - totalMonthlyExpense), [monthlySalary, totalMonthlyExpense]);
             const autoDepositAmount = Math.max(0, maxSectorMonthlyContrib - totalSectorMonthlyContrib);
-
-            // ===== 자동입금 반영 함수 =====
-            const applyAutoDeposit = () => {
-                if (autoDepositAmount > 0) {
-                    setAssets(prev => {
-                        const next = { ...prev };
-                        let updated = false;
-                        Object.keys(next).forEach(sectorKey => {
-                            if (Array.isArray(next[sectorKey])) {
-                                next[sectorKey] = next[sectorKey].map(asset => {
-                                    if (asset.name === autoDepositAccount) {
-                                        updated = true;
-                                        return { ...asset, monthlyContrib: (asset.monthlyContrib || 0) + autoDepositAmount };
-                                    }
-                                    return asset;
-                                });
-                            }
-                        });
-                        return next;
-                    });
-                    alert(`${autoDepositAccount}에 ${autoDepositAmount}만원 월납입이 추가되었습니다.`);
-                }
-            };
 
             // ===== 개선된 목표 달성 계산 =====
             const calculateGoalSeek = () => {
@@ -616,9 +682,52 @@
                 }
 
                 let months = 0;
-                let currentAssets = {};
+
+                // [수정] 메인 계산 로직을 사용하여 목표 달성 시뮬레이션
+                while (months < 600) { // 최대 50년(600개월)까지만 계산
+                    months++;
+                    const projections = calculateMonthlyProjection(appData, months);
+
+                    // 계산 중 오류 발생 시 중단
+                    if (projections.error) {
+                        setGoalSeekResult(`계산 중 오류 발생: ${projections.message}`);
+                        // 오류가 발생한 입력란으로 포커스 이동
+                        if (projections.refId) {
+                            const targetElement = assetInputRefs.current[projections.refId];
+                            if (targetElement) {
+                                targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                setTimeout(() => targetElement.focus(), 500);
+                            }
+                        }
+                        return;
+                    }
+
+                    const finalProjection = projections[projections.length - 1];
+                    if (finalProjection.total >= targetAmount) {
+                        setGoalSeekResult(`목표 달성까지 약 ${months}개월 소요됩니다.`);
+                        setProjectionMonths(months);
+                        return;
+                    }
+                }
                 
-                // 현재 자산 상태 복사
+                // 매월 시뮬레이션
+                setGoalSeekResult('현재 조건으로는 50년 내 목표 달성이 어렵습니다.');
+            };
+
+            // ===== 메인 계산 로직 =====
+            const calculateMonthlyProjection = (initialData, monthsToProject) => {
+                const data = JSON.parse(JSON.stringify(initialData)); // Deep copy
+                const monthlyProjections = [];
+
+                const {
+                    projectionMonths: initialProjectionMonths = 12, monthlySalary = 280, assets = {}, monthlyExpenses = [], 
+                    incomeEvents = [], expenseEvents = [], targetAmount = 10000, 
+                    goalMode = 'period', displayMode = 'amount', 
+                    rebalancingAlerts = {}, baseMonth = new Date().toISOString().slice(0,7),
+                    rebalancingMode = 'simple', simpleThresholds = { warning: 5, danger: 10 }, rebalancingTargets = {}
+                } = data;
+
+                let currentAssets = {};
                 Object.keys(assets).forEach(sector => {
                     if (Array.isArray(assets[sector])) {
                         currentAssets[sector] = assets[sector].map(asset => ({ ...asset }));
@@ -627,288 +736,234 @@
                     }
                 });
 
-                const monthlyGrowth = totalSectorMonthlyContrib + autoDepositAmount;
+                const allAccountsFlat = Object.values(currentAssets).flat();
+                const totalMonthlyExpense = monthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+                const monthlyContribSum = Object.values(assets).flat().reduce((s,a)=> s + (a.monthlyContrib||0),0);
+
+                // [수정] 월 가용 현금 계산
+                const monthlyAvailableCash = monthlySalary - totalMonthlyExpense;
                 
-                // 매월 시뮬레이션
-                while (months < 1000) {
-                    months++;
-                    
-                    // 복리 수익률 적용 (자산별 수수료/세금 반영)
-                    Object.keys(currentAssets).forEach(sector => {
-                        currentAssets[sector].forEach(asset => {
-                            const feeRate = (asset.feeRate || 0) / 100;
-                            let effectiveRate = (asset.rate / 100) * (1 - feeRate);
-                            const monthlyRate = 1 + (effectiveRate / 12);
-                            asset.amount *= monthlyRate;
+                const calculateTotal = (assetData) => {
+                    let sum = 0;
+                    Object.keys(assetData).forEach(sector => {
+                        const sectorSum = (assetData[sector]||[]).reduce((s,a)=> s + (a.amount||0), 0);
+                        sum += (sector === 'loan') ? -sectorSum : sectorSum;
+                    });
+                    return sum;
+                };
+
+                for (let month = 0; month <= monthsToProject; month++) {
+                    if (month > 0) { // Skip initial state for calculations, only record it
+                        // 복리 수익률 적용 (자산별 수수료/세금 반영)
+                        Object.keys(currentAssets).forEach(sector => {
+                            if (sector === 'loan') return; 
+                            currentAssets[sector].forEach(asset => {
+                                const feeRate = (asset.feeRate || 0) / 100;
+                                let effectiveRate = (asset.rate / 100) * (1 - feeRate);
+                                const monthlyRate = 1 + (effectiveRate / 12);
+                                asset.amount *= monthlyRate;
+                            });
                         });
-                    });
 
-                    // 이벤트 적용
-                    incomeEvents.forEach(event => {
-                        if (months >= event.startMonth && months <= event.endMonth) {
-                            if (currentAssets[event.targetSector] && currentAssets[event.targetSector][event.targetAsset]) {
-                                currentAssets[event.targetSector][event.targetAsset].amount += event.amount;
+                        // 대출 이자 계산 (납입 전)
+                        (currentAssets.loan || []).forEach(loan => {
+                            if (loan.amount > 0 && loan.rate > 0) {
+                                const monthlyInterest = loan.amount * (loan.rate / 100) / 12;
+                                loan.amount += monthlyInterest; 
                             }
-                        }
-                    });
+                        });
+                        
+                        // 만기일시 상환 처리
+                        (currentAssets.loan || []).forEach(loan => {
+                            if (loan.repaymentMethod === '만기일시' && month === (loan.maturityMonth || 0)) {
+                                const repaymentAmount = loan.amount;
+                                loan.amount = 0; // 원금 전액 상환
+                            }
+                        });
 
-                   (expenseEvents || []).forEach(event => { // 👈 [개선] (expenseEvents || [])로 안정성 확보
-                    if (months >= event.startMonth && months <= event.endMonth) {
-                        const arr = currentAssets[event.targetSector]; // 👈 [개선] 지정된 섹터
-                        if (arr && arr[event.targetAsset]) { // 👈 [개선] 지정된 계좌
-                            arr[event.targetAsset].amount = Math.max(0, arr[event.targetAsset].amount - event.amount);
-                        }
-                    }
-                });
-
-                    // 월급 및 지출
-                    const livingAccount = currentAssets.deposit?.find(d => d.name === '생활비통장');
-                    if (livingAccount) {
-                        livingAccount.amount += monthlySalary;
-                        livingAccount.amount -= totalMonthlyExpense;
-                    }
-
-                    // 월납입 적용
-                    Object.keys(currentAssets).forEach(sector => {
-                        currentAssets[sector].forEach(asset => {
-                            if (asset.monthlyContrib > 0) {
-                                if (sector === 'loan') {
-                                    asset.amount = Math.max(0, (asset.amount || 0) - asset.monthlyContrib);
-
-                                    // 👇 [개선] 여기서는 메인 로직과 동일하게 지정된 상환계좌에서 빼야 합니다.
-                                    const accountName = asset.repaymentAccount || '생활비통장';
-                                    const allAccounts = Object.values(currentAssets).flat();
-                                    const paymentSourceAccount = allAccounts.find(a => a.name === accountName);
-                                    if (paymentSourceAccount) {
-                                        paymentSourceAccount.amount -= asset.monthlyContrib;
-                                    }
-
-                                } else {
-                                    asset.amount += asset.monthlyContrib;
-                                    // 👇 [개선] 대출이 아닐 때만 생활비통장에서 차감 (else 안으로 이동)
-                                    if (livingAccount && asset.name !== '생활비통장') {
-                                        livingAccount.amount -= asset.monthlyContrib;
-                                    }
+                        // 이벤트 적용
+                        (incomeEvents || []).forEach(event => {
+                            if (month >= event.startMonth && month <= event.endMonth) {
+                                if (currentAssets[event.targetSector] && currentAssets[event.targetSector][event.targetAsset]) {
+                                    currentAssets[event.targetSector][event.targetAsset].amount += event.amount;
                                 }
                             }
                         });
-                    });
 
-                    // 자동입금 (대출 상환 처리)
-                    if (autoDepositAmount > 0) {
-                        const allAccounts = Object.values(currentAssets).flat();
-                        const targetAccount = allAccounts.find(d => d.name === autoDepositAccount);
-                        if (targetAccount && livingAccount && targetAccount.name !== '생활비통장') {
-                            if ((Object.entries(currentAssets).find(([k,v]) => (v||[]).some(a => a.name===autoDepositAccount))||[])[0] === 'loan') {
-                                targetAccount.amount = Math.max(0, (targetAccount.amount || 0) - autoDepositAmount);
-                            } else {
-                                targetAccount.amount += autoDepositAmount;
-                            }
-                            livingAccount.amount -= autoDepositAmount;
-                        }
-                    }
-
-                    // 월수입외 납입 (대출 상환 처리)
-                    Object.keys(currentAssets).forEach(sector => {
-                        currentAssets[sector].forEach(asset => {
-                            if (asset.extraContrib > 0 && asset.extraFrom) {
-                                if (sector === 'loan') {
-                                    asset.amount = Math.max(0, (asset.amount || 0) - asset.extraContrib);
-                                } else {
-                                    asset.amount += asset.extraContrib;
+                        (expenseEvents || []).forEach(event => {
+                            if (month >= event.startMonth && month <= event.endMonth) {
+                                const arr = currentAssets[event.targetSector];
+                                if (arr && arr[event.targetAsset]) {
+                                    arr[event.targetAsset].amount = Math.max(0, arr[event.targetAsset].amount - event.amount);
                                 }
-                                const fromAccountArray = Object.values(currentAssets).flat();
-                                const fromAccount = fromAccountArray.find(d => d.name === asset.extraFrom);
-                                if (fromAccount) {
-                                    const actualDeduction = Math.min(asset.extraContrib, fromAccount.amount);
-                                    fromAccount.amount -= actualDeduction;
-                                    if (actualDeduction < asset.extraContrib) {
-                                        if (sector === 'loan') {
-                                            asset.amount += (asset.extraContrib - actualDeduction);
-                                        } else {
-                                            asset.amount -= (asset.extraContrib - actualDeduction);
+                            }
+                        });
+
+                        // [수정] 새로운 현금 흐름 로직
+                        let cashInHand = monthlyAvailableCash;
+                        const cashFlowAccount = allAccountsFlat.find(d => d.name === mainCashFlowAccount);
+
+                        // 1. 월납입 처리
+                        Object.keys(currentAssets).forEach(sector => {
+                            currentAssets[sector].forEach(asset => {
+                                if (asset.monthlyContrib > 0) {
+                                    const paymentAmount = asset.monthlyContrib;
+                                    const actualPayment = Math.min(paymentAmount, cashInHand);
+                                    
+                                    if (sector === 'loan') {
+                                        asset.amount = Math.max(0, asset.amount - actualPayment);
+                                    } else {
+                                        asset.amount += actualPayment;
+                                    }
+                                    
+                                    cashInHand -= actualPayment;
+
+                                    if (paymentAmount > actualPayment) {
+                                        // 월 가용 현금이 부족하여 월납입이 일부만 실행됨
+                                        return { 
+                                            error: true, 
+                                            message: `월 가용 현금이 부족하여 [${asset.name}]의 월납입액 ${paymentAmount}만원 중 ${actualPayment}만원만 납입됩니다. 월급 또는 지출 계획을 확인해주세요.`,
+                                            refId: null // 특정 필드를 가리키기 어려움
+                                        };
+                                    }
+                                }
+                            });
+                        });
+
+                        // 2. 남은 현금(잔여액)을 주 현금흐름 계좌에 입금
+                        if (cashInHand > 0 && cashFlowAccount) {
+                            cashFlowAccount.amount += cashInHand;
+                        }
+
+                        // 3. 월수입 외 납입 처리 (이 로직은 특정 계좌에서 출금되므로 순서상 마지막에 배치)
+                        Object.keys(currentAssets).forEach(sector => {
+                            currentAssets[sector].forEach(asset => {
+                                if (asset.extraContrib > 0 && asset.extraFrom) {
+                                    let fromAccount = allAccountsFlat.find(d => d.name === asset.extraFrom);
+                                    if (fromAccount === asset) {
+                                        fromAccount = {...fromAccount};
+                                    }
+                                    let actualDeduction = 0;
+                                    if (fromAccount) {
+                                        actualDeduction = Math.min(asset.extraContrib, fromAccount.amount); 
+                                        fromAccount.amount -= actualDeduction;
+                                        if (asset.extraContrib > actualDeduction) {
+                                            const fromSectorKey = Object.keys(currentAssets).find(key => currentAssets[key].some(a => a.name === fromAccount.name));
+                                            const fromAssetIndex = currentAssets[fromSectorKey]?.findIndex(a => a.name === fromAccount.name);
+                                            return { 
+                                                error: true, 
+                                                message: `[${fromAccount.name}] 계좌의 잔액이 부족하여 요청하신 ${asset.extraContrib}만원 중 ${actualDeduction}만원만 ${asset.name}로 납입됩니다.`,
+                                                refId: `${fromSectorKey}-${fromAssetIndex}-amount`
+                                            };
                                         }
                                     }
+                                    if (sector === 'loan') {
+                                        asset.amount = Math.max(0, asset.amount - actualDeduction);
+                                    } else {
+                                        asset.amount += actualDeduction;
+                                    }
                                 }
-                            }
+                            });
                         });
+                    }
+                    
+                    // Record current state
+                    const currentTotal = calculateTotal(currentAssets);
+                    const currentGross = Object.keys(currentAssets).filter(k=>k!=='loan').reduce((s,k)=> s + (currentAssets[k]||[]).reduce((sum,a)=>sum+(a.amount||0),0),0);
+                    const sectorTotals = {};
+                    Object.keys(currentAssets).forEach(sector => {
+                        if (sector === 'loan') return;
+                        const sectorSum = (currentAssets[sector]||[]).reduce((sum, asset) => sum + (asset.amount || 0), 0);
+                        sectorTotals[sector] = { amount: sectorSum, percentage: currentGross > 0 ? (sectorSum / currentGross * 100) : 0 };
                     });
 
-                    // 총 자산 계산
-                    const currentTotal = Object.values(currentAssets).flat().reduce((sum, asset) => sum + asset.amount, 0);
-                    
-                    if (currentTotal >= targetAmount) {
-                        setGoalSeekResult(`목표 달성까지 약 ${months}개월 소요됩니다.`);
-                        setProjectionMonths(months);
-                        return;
-                    }
-                }
+                    const itemTotals = {};
+                    Object.keys(currentAssets).forEach(sector => {
+                        itemTotals[sector] = (currentAssets[sector]||[]).map(asset => ({
+                            name: asset.name,
+                            amount: asset.amount,
+                            percentage: (sectorTotals[sector]?.amount > 0) ? (asset.amount / sectorTotals[sector].amount * 100) : 0
+                        }));
+                    });
 
-                setGoalSeekResult('현재 조건으로는 1000개월 내 목표 달성이 어렵습니다.');
+                    monthlyProjections.push({
+                        month: month,
+                        total: currentTotal,
+                        gross: currentGross,
+                        sectorTotals: sectorTotals,
+                        itemTotals: itemTotals,
+                        assets: JSON.parse(JSON.stringify(currentAssets)) // Deep copy for each month
+                    });
+                }
+                return monthlyProjections;
             };
 
-            // ===== 메인 계산 로직 =====
-            const calculation = useMemo(() => {
-                if (!appData || !assets || typeof assets !== 'object') {
-                    return {
-                        initial: {},
-                        projected: {},
-                        currentTotal: 0,
-                        projectedTotal: 0,
-                        growth: 0,
-                        grand: 0 // [수정] grand도 0으로 초기화
-                    };
-                }
-                
-                const months = projectionMonths;
-                let currentAssets = {};
-                Object.keys(assets).forEach(sector => {
-                    if (Array.isArray(assets[sector])) {
-                        currentAssets[sector] = assets[sector].map(asset => ({ ...asset }));
-                    } else {
-                        currentAssets[sector] = [];
-                    }
-                });
+            const calculation = useMemo(() => {
+                if (!appData || !assets || typeof assets !== 'object') {
+                    return {
+                        initial: {},
+                        projected: {},
+                        currentTotal: 0,
+                        projectedTotal: 0,
+                        growth: 0,
+                        grand: 0,
+                        monthlyProjections: []
+                    };
+                }
+                
+                const months = projectionMonths;
+                const monthlyProjections = calculateMonthlyProjection(appData, months);
 
-                // [추가] 시뮬레이션을 위한 모든 계좌 목록 캐싱 (매월 찾지 않도록)
-                const allAccountsFlat = Object.values(currentAssets).flat();
+                // [추가] 계산 오류 처리
+                if (monthlyProjections.error) {
+                    alert(monthlyProjections.message);
+                    if (monthlyProjections.refId) {
+                        const targetElement = assetInputRefs.current[monthlyProjections.refId];
+                        if (targetElement) {
+                            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            setTimeout(() => targetElement.focus(), 500);
+                        }
+                    }
+                    return { error: true }; // 오류 상태 반환
+                }
 
-                for (let month = 1; month <= months; month++) {
-                    // 복리 수익률 적용 (자산별 수수료/세금 반영)
-                    Object.keys(currentAssets).forEach(sector => {
-                        // [수정] 대출 섹터는 이자 계산을 별도로 하므로 여기서는 제외
-                        if (sector === 'loan') return; 
+                const finalProjection = monthlyProjections[months];
 
-                        currentAssets[sector].forEach(asset => {
-                            const feeRate = (asset.feeRate || 0) / 100;
-                            let effectiveRate = (asset.rate / 100) * (1 - feeRate);
-                            const monthlyRate = 1 + (effectiveRate / 12);
-                            asset.amount *= monthlyRate;
-                        });
-                    });
+                const calculateTotal = (assetData) => {
+                    let sum = 0;
+                    Object.keys(assetData).forEach(sector => {
+                        const sectorSum = (assetData[sector]||[]).reduce((s,a)=> s + (a.amount||0), 0);
+                        sum += (sector === 'loan') ? -sectorSum : sectorSum;
+                    });
+                    return sum;
+                };
 
-                    // [추가] 대출 이자 계산 (납입 전)
-                    // (상환방식별 복잡한 로직 대신, 현재 잔액 기준 월 이자율을 단순 적용)
-                    (currentAssets.loan || []).forEach(loan => {
-                        if (loan.amount > 0 && loan.rate > 0) {
-                            const monthlyInterest = loan.amount * (loan.rate / 100) / 12;
-                            loan.amount += monthlyInterest; // 이자가 원금에 더해짐
-                        }
-                    });
+                const currentTotal = calculateTotal(appData.assets);
+                const projectedTotal = finalProjection ? finalProjection.total : currentTotal;
 
-                    // 이벤트 적용
-                    (incomeEvents || []).forEach(event => { // [수정] null 방어
-                        if (month >= event.startMonth && month <= event.endMonth) {
-                            if (currentAssets[event.targetSector] && currentAssets[event.targetSector][event.targetAsset]) {
-                                currentAssets[event.targetSector][event.targetAsset].amount += event.amount;
-                            }
-                        }
-                   });
+                return {
+                    initial: appData.assets,
+                    projected: finalProjection ? finalProjection.assets : appData.assets,
+                    currentTotal,
+                    projectedTotal,
+                    growth: projectedTotal - currentTotal,
+                    grand: currentTotal,
+                    monthlyProjections: monthlyProjections
+                };
+            }, [appData, projectionMonths, monthlySalary, monthlyExpenses, incomeEvents, expenseEvents, mainCashFlowAccount, isDemoMode, rebalancingTargets]);
 
-                    (expenseEvents || []).forEach(event => { // [수정] null 방어
-                        if (month >= event.startMonth && month <= event.endMonth) {
-                            const arr = currentAssets[event.targetSector];
-                            if (arr && arr[event.targetAsset]) {
-                                arr[event.targetAsset].amount = Math.max(0, arr[event.targetAsset].amount - event.amount);
-                            }
-                        }
-                    });
+            // [추가] 계산 오류 시 렌더링 중단
+            if (calculation.error) {
+                // 오류 발생 시 렌더링을 잠시 멈추거나, 오류 메시지를 표시할 수 있습니다.
+                return <div className="flex items-center justify-center min-h-screen">계산 오류 발생. 설정을 확인해주세요.</div>;
+                        }
 
-                    // 월급 및 지출
-                    const livingAccount = allAccountsFlat.find(d => d.name === '생활비통장');
-                    if (livingAccount) {
-                        livingAccount.amount += monthlySalary;
-                        livingAccount.amount -= totalMonthlyExpense;
-                    }
-
-                    // 월납입 적용
-                    Object.keys(currentAssets).forEach(sector => {
-                        currentAssets[sector].forEach(asset => {
-                            if (asset.monthlyContrib > 0) {
-                                let paymentSourceAccount = null;
-
-                                if (sector === 'loan') {
-                                    // [수정] 대출 상환 로직
-                                    const paymentAmount = Math.min(asset.amount, asset.monthlyContrib); // 잔액 이상 상환 방지
-                                    asset.amount = Math.max(0, asset.amount - paymentAmount);
-                                    
-                                    // [수정] 지정된 상환계좌에서 출금
-                                    const accountName = asset.repaymentAccount || '생활비통장';
-                                    paymentSourceAccount = allAccountsFlat.find(a => a.name === accountName);
-                                    if (paymentSourceAccount) {
-                                        paymentSourceAccount.amount -= paymentAmount;
-                                    }
-                                } else {
-                                    // [기존] 자산 납입 로직
-                                    asset.amount += asset.monthlyContrib;
-                                    // [수정] 생활비통장에서 출금 (기본값)
-                                    if (livingAccount && asset.name !== '생활비통장') {
-                                        livingAccount.amount -= asset.monthlyContrib;
-                                    }
-                                }
-                            }
-                        });
-                    });
-
-                    // 자동입금
-                    if (autoDepositAmount > 0) {
-                        const targetAccount = allAccountsFlat.find(d => d.name === autoDepositAccount);
-                        if (targetAccount && livingAccount && targetAccount.name !== '생활비통장') {
-                            targetAccount.amount += autoDepositAmount;
-                            livingAccount.amount -= autoDepositAmount;
-                     }
-                    }
-
-                    // 월수입외 납입
-                    Object.keys(currentAssets).forEach(sector => {
-                        currentAssets[sector].forEach(asset => {
-                            if (asset.extraContrib > 0 && asset.extraFrom) {
-                                const fromAccount = allAccountsFlat.find(d => d.name === asset.extraFrom);
-                                let actualDeduction = 0;
-
-                                if (fromAccount) {
-                                    actualDeduction = Math.min(asset.extraContrib, fromAccount.amount);
-                                    fromAccount.amount -= actualDeduction;
-                                }
-
-                                if (sector === 'loan') {
-                                    // [수정] 대출 추가 상환 (실제 차감된 금액만)
-                                     asset.amount = Math.max(0, asset.amount - actualDeduction);
-                           } else {
-                                   // [기존] 자산 추가 납입 (실제 차감된 금액만 더함)
-                                  asset.amount += actualDeduction;
-                                }
-                            }
-                        });
-                    });
-                }
-
-                const calculateTotal = (assetData) => {
-                    let sum = 0;
-                    Object.keys(assetData).forEach(sector => {
-                       const sectorSum = (assetData[sector]||[]).reduce((s,a)=> s + (a.amount||0), 0);
-                        sum += (sector === 'loan') ? -sectorSum : sectorSum;
-                    });
-                    return sum;
-                };
-                const currentTotal = calculateTotal(assets);
-               const projectedTotal = calculateTotal(currentAssets);
-
-                return {
-                    initial: assets,
-                    projected: currentAssets,
-                    currentTotal,
-                    projectedTotal,
-                    growth: projectedTotal - currentTotal,
-                    grand: currentTotal // 순자산 추가
-                };
-            }, [appData, assets, projectionMonths, monthlySalary, monthlyExpenses, incomeEvents, expenseEvents, autoDepositAccount]);
-
-
-            
            
             // ===== 유틸리티 함수들 =====
-            const formatNumber = (num) => Math.round(num).toLocaleString();
+            const formatNumber = (num) => {
+                if (displayMode === 'percent') return '***'; // [추가] 금액 숨김 모드
+                return Math.round(num).toLocaleString();
+            };
             const formatPercent = (num) => num.toFixed(1);
             
             const calculateGrossTotal = (assetData) => {
@@ -945,7 +1000,7 @@
             const getRebalanceStatus = (sectorKey, percentage) => {
                 const target = rebalancingTargets[sectorKey] ?? (100 / Object.keys(sectorInfo).length);
                 const deviation = Math.abs(percentage - target);
-                const thresholds = rebalancingMode === 'simple' ? simpleThresholds : (rebalancingAlerts[sectorKey] || { warning: 5, danger: 10 });
+                const thresholds = rebalancingAlerts[sectorKey] || { warning: 5, danger: 10 };
                 if (deviation >= thresholds.danger) return 'bg-red-100 text-red-800';
                 if (deviation >= thresholds.warning) return 'bg-yellow-100 text-yellow-800';
                 return '';
@@ -975,17 +1030,6 @@
             // ===== 차트 설정 =====
             useEffect(() => {
     if (!appData || !currentPieRef.current || !projectedPieRef.current || !comparisonBarRef.current) return;
-
-    const sectorColors = {
-        deposit: '#3b82f6',
-        savings: '#22c55e',
-        investment: '#f97316',
-        pension: '#a855f7',
-        realestate: '#f59e0b',
-        car: '#06b6d4',
-        loan: '#6b7280',
-        misc: '#6b7280'
-    };
     const sectorLabels = {
         deposit: '입출금통장',
         savings: '저축',
@@ -1007,8 +1051,7 @@
     // 차트 데이터 준비
     const filteredKeys = Object.keys(currentSectorTotals).filter(k => k !== 'loan');
     const currentLabels = filteredKeys.map(key => sectorLabels[key]);
-    const currentData = filteredKeys.map(key => currentSectorTotals[key].amount);
-    const currentColors = filteredKeys.map(key => sectorColors[key]);
+    const currentData = filteredKeys.map(key => currentSectorTotals[key]?.amount || 0);
     const projectedKeys = Object.keys(projectedSectorTotals).filter(k => k !== 'loan');
     const projectedLabels = projectedKeys.map(key => sectorLabels[key]);
     const projectedData = projectedKeys.map(key => projectedSectorTotals[key].amount);
@@ -1019,22 +1062,77 @@
         return `${String(date.getFullYear()).slice(2)}년 ${String(date.getMonth()+1).padStart(2,'0')}월`;
     })();
 
+    const createGradient = (ctx, colors) => {
+        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, colors.start);
+        gradient.addColorStop(1, colors.end);
+        return gradient;
+    };
+
     // 현재 포트폴리오 차트
     currentPieRef.current._chart = new Chart(currentPieRef.current, {
-        type: 'pie',
-        data: { labels: currentLabels, datasets: [{ data: currentData, backgroundColor: currentColors }] },
+        type: 'doughnut',
+        data: { 
+            labels: currentLabels, 
+            datasets: [{ 
+                data: currentData, 
+                backgroundColor: filteredKeys.map(key => {
+                    const colors = tailwind.config.theme.extend.colors[key];
+                    return createGradient(currentPieRef.current.getContext('2d'), colors);
+                }),
+                borderWidth: 3,
+                borderColor: '#ffffff',
+                hoverBorderWidth: 5,
+                hoverBorderColor: '#ffffff',
+                hoverOffset: 40
+            }] 
+        },
         options: {
             responsive: true,
+            animation: {
+                animateScale: true,
+                animateRotate: true,
+                duration: 1500,
+                easing: 'easeInOutQuart'
+            },
             plugins: { 
                 legend: { position: 'bottom' },
                 title: { display: true, text: '현재 포트폴리오' },
                 datalabels: {
-                    anchor: 'end', // 라벨을 슬라이스 바깥쪽 끝에 고정
-                    align: 'start', // 라벨 텍스트를 시작 부분에 정렬
-                    offset: 15, // 슬라이스에서 라벨까지의 거리
+                    anchor: 'end',
+                    align: 'start',
+                    offset: 20,
                     color: '#111827',
-                    formatter: (v, ctx) => { const total = currentData.reduce((a,b)=>a+b,0)||1; const p = v/total*100; return p > 5 ? `${p.toFixed(1)}%` : ''; }, // 5% 미만은 숨김
-                    font: { weight: 'bold', size: 11 }
+                    font: function(context) {
+                        return {
+                            weight: 'bold',
+                            size: context.active ? 16 : 11
+                        };
+                    },
+                    borderRadius: 4,
+                    padding: 6,
+                    formatter: (value, context) => {
+                        const total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0) || 1;
+                        const percentage = (value / total) * 100;
+                        return (percentage > 5 || context.active) ? `${percentage.toFixed(1)}%` : '';
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    padding: 12,
+                    cornerRadius: 8,
+                    displayColors: true,
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = Math.round(context.parsed).toLocaleString();
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = ((context.parsed / total) * 100).toFixed(1);
+                            return ` ${label}: ${value}만원 (${percentage}%)`;
+                        }
+                    }
                 }
             }
         },
@@ -1043,20 +1141,69 @@
 
     // 예상 포트폴리오 차트
     projectedPieRef.current._chart = new Chart(projectedPieRef.current, {
-        type: 'pie',
-        data: { labels: projectedLabels, datasets: [{ data: projectedData, backgroundColor: currentColors }] },
+        type: 'doughnut',
+        data: { 
+            labels: projectedLabels, 
+            datasets: [{ 
+                data: projectedData, 
+                backgroundColor: projectedKeys.map(key => {
+                    const colors = tailwind.config.theme.extend.colors[key];
+                    return createGradient(projectedPieRef.current.getContext('2d'), colors);
+                }),
+                borderWidth: 3,
+                borderColor: '#ffffff',
+                hoverBorderWidth: 5,
+                hoverBorderColor: '#ffffff',
+                hoverOffset: 40
+            }] 
+        },
         options: {
             responsive: true,
+            animation: {
+                animateScale: true,
+                animateRotate: true,
+                duration: 1500,
+                easing: 'easeInOutQuart',
+                delay: 200
+            },
             plugins: {
                 legend: { position: 'bottom' },
                 title: { display: true, text: `${projectionMonths}개월 후 예상 ${forecastDateText ? `(${forecastDateText})` : ''}` },
                 datalabels: {
-                    anchor: 'end',
+                    anchor: 'end', 
                     align: 'start',
-                    offset: 15,
+                    offset: 20,
                     color: '#111827',
-                    formatter: (v, ctx) => { const total = projectedData.reduce((a,b)=>a+b,0)||1; const p = v/total*100; return p > 5 ? `${p.toFixed(1)}%` : ''; },
-                    font: { weight: 'bold', size: 11 }
+                    font: function(context) {
+                        return {
+                            weight: 'bold',
+                            size: context.active ? 16 : 11
+                        };
+                    },
+                    borderRadius: 4,
+                    padding: 6,
+                    formatter: (value, context) => {
+                        const total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0) || 1;
+                        const percentage = (value / total) * 100;
+                        return (percentage > 5 || context.active) ? `${percentage.toFixed(1)}%` : '';
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    padding: 12,
+                    cornerRadius: 8,
+                    displayColors: true,
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = Math.round(context.parsed).toLocaleString();
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = ((context.parsed / total) * 100).toFixed(1);
+                            return ` ${label}: ${value}만원 (${percentage}%)`;
+                        }
+                    }
                 }
             }
         },
@@ -1067,38 +1214,68 @@
 comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
     type: 'bar',
     data: {
-        labels: currentLabels,
+        labels: projectedLabels,
         datasets: [
-            { label: '현재', data: currentData, backgroundColor: 'rgba(59, 130, 246, 0.6)' },
-            { label: '예상', data: projectedData, backgroundColor: 'rgba(34, 197, 94, 0.6)' }
+            { 
+                label: '현재', 
+                data: currentData, 
+                backgroundColor: 'rgba(156, 163, 175, 0.7)',
+                borderColor: 'rgba(107, 114, 128, 1)',
+                borderWidth: 2,
+                borderRadius: 6,
+                borderSkipped: false
+            },
+            { 
+                label: '예상', 
+                data: projectedData, 
+                backgroundColor: (context) => {
+                    const ctx = context.chart.ctx;
+                    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+                    gradient.addColorStop(0, 'rgba(96, 165, 250, 0.9)');
+                    gradient.addColorStop(1, 'rgba(59, 130, 246, 0.8)');
+                    return gradient;
+                },
+                borderColor: '#3b82f6',
+                borderWidth: 2,
+                borderRadius: 6,
+                borderSkipped: false
+            }
         ]
     },
     options: {
         responsive: true,
         scales: { x: { position: 'bottom' }, y: { beginAtZero: true } },
         plugins: {
-            legend: { position: 'bottom' },
-            title: { display: true, text: '현재 자산 vs 예상 자산' },
-            datalabels: {
-                        anchor: 'center', // [수정] 막대 중앙에 위치
-                        align: 'center',  // [수정] 막대 중앙에 정렬
-                        color: '#ffffff', // [수정] 흰색으로 변경
-                        font: { 
-                            size: 10,
-                            weight: 'bold' // [추가] 굵게
-                        },
-                        // [추가] 가독성을 위한 텍스트 그림자
-                        textStrokeColor: 'rgba(0,0,0,0.4)',
-                        textStrokeWidth: 2,
-                        formatter: (value, context) => {
-                            // [수정] 0 이하는 표시 안함
-                            if (value <= 0) return '';
-                            return `${Math.round(value).toLocaleString()}`;
-                        }
-            }
+            legend: { 
+                position: 'top',
+                align: 'end',
+                labels: { usePointStyle: true, pointStyle: 'rectRounded' }
+            },
+            title: { 
+                display: true, 
+                text: '📊 현재 자산 vs 예상 자산',
+                font: { size: 18, weight: 'bold' },
+                padding: { top: 10, bottom: 20 }
+            },
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                titleFont: { size: 14, weight: 'bold' },
+                bodyFont: { size: 13 },
+                padding: 12,
+                cornerRadius: 8,
+                displayColors: true,
+                callbacks: {
+                    label: function(context) {
+                        const value = Math.round(context.parsed.y).toLocaleString();
+                        return ` ${context.dataset.label}: ${value}만원`;
+                    }
+                }
+            },
+            // 막대 차트에서는 데이터 라벨을 숨겨 깔끔하게 표시
+            datalabels: { display: false }
         }
     },
-    plugins: [ChartDataLabels]
+    plugins: []
 });
 
     // 히스토리 차트
@@ -1122,17 +1299,32 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 datasets: [{
                     label: '순자산 (만원)',
                     data: historyData,
-                    borderColor: 'rgb(59, 130, 246)',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    tension: 0.1,
-                    fill: true
+                    borderColor: 'rgb(79, 70, 229)',
+                    backgroundColor: (context) => {
+                        const ctx = context.chart.ctx;
+                        const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+                        gradient.addColorStop(0, 'rgba(79, 70, 229, 0.3)');
+                        gradient.addColorStop(1, 'rgba(79, 70, 229, 0)');
+                        return gradient;
+                    },
+                    tension: 0.3,
+                    fill: true,
+                    pointBackgroundColor: 'rgb(79, 70, 229)',
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: 'rgb(255, 255, 255)',
+                    pointHoverBorderWidth: 2,
+                    pointHoverBorderColor: 'rgb(79, 70, 229)'
                 }]
             },
             options: {
                 responsive: true,
                 plugins: {
                     legend: { position: 'bottom' },
-                    title: { display: true, text: '자산 히스토리' }
+                    title: { display: false }, // 섹션 제목이 이미 있으므로 차트 제목은 생략
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
                 },
                 scales: {
                     y: { beginAtZero: true }
@@ -1163,7 +1355,8 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                     extraFrom: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '', // '추가 상환' 출금 계좌
                     // [추가] 대출 전용 필드 기본값
                     repaymentMethod: '원리금균등', // 상환방식
-                    repaymentAccount: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '' // '월 상환액' 출금 계좌
+                    repaymentAccount: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '', // '월 상환액' 출금 계좌
+                    maturityMonth: 12 // [추가] 만기 (개월)
                 }]
             }));
 
@@ -1340,7 +1533,9 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                     <div className="sticky top-0 z-50 bg-white shadow-sm border-b">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                             <div className="flex justify-between items-center h-16">
-                                <h1 id="app-title" className="text-xl sm:text-2xl font-bold text-gray-900">통합 자산 분석 대시보드</h1>
+                                <h1 id="app-title" className="text-xl sm:text-2xl font-bold text-gray-900 cursor-pointer" onClick={cycleDisplayMode} title="클릭하여 사용자/프라이빗/데모 모드 전환">
+                                    자산 플래너 {titleText}
+                                </h1>
                                 <div className="hidden sm:flex items-center gap-2 sm:gap-4">
                                     <button onClick={saveToPDF} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">📄 PDF 저장</button>
                                     <button onClick={saveScenario} className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">💾 시나리오 저장</button>
@@ -1363,96 +1558,89 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                     </div>
 
                     {/* ===== 메인 콘텐츠 ===== */}
-                    <div id="dashboard-content" className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 sm:space-y-8">
+                    <div id="dashboard-content" className="p-4 sm:p-6 max-w-7xl mx-auto space-y-8">
                         
                         {/* ===== 기본 설정 + 요약 (병합) ===== */}
-                        <div className="grid grid-cols-1 gap-6">
-                            <div className="bg-white rounded-lg shadow p-6">
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-                                    <div className="bg-gray-50 rounded-lg p-4 flex flex-col justify-between">
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <h2 className="text-lg font-semibold mb-2 text-gray-600">현재 총자산</h2>
-                                                <p className="text-2xl sm:text-3xl font-bold text-blue-600">{formatNumber(calculation.currentTotal)}만원</p>
-                                            </div>
-                                            <div>
-                                                <h2 className="text-lg font-semibold mb-2 text-gray-600">{projectionMonths}개월 후 예상 <span className="text-gray-400 text-sm">({(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d = new Date(y||new Date().getFullYear(), (m||1)-1, 1); d.setMonth(d.getMonth()+projectionMonths); return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`; } catch { return ''; } })()})</span></h2>
-                                                <p className="text-2xl sm:text-3xl font-bold text-green-600">{formatNumber(calculation.projectedTotal)}만원</p>
-                                                <p className="text-sm text-gray-500 mt-2">증가액: +{formatNumber(calculation.growth)}만원 ({formatPercent((calculation.growth) / Math.max(1, calculation.currentTotal) * 100)}%)</p>
-                                            </div>
-                                        </div>
-                                        <p className="text-xs text-gray-500 mt-3">{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const to=new Date(d); to.setMonth(to.getMonth()+projectionMonths); const fmt=(dt)=> `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`; return `기준월: ${fmt(d)} → ${fmt(to)}`; } catch { return ''; } })()}</p>
-                                        
-                                        {/* 새로운 기능 버튼들 */}
-                                        <div className="mt-4 pt-4 border-t border-gray-200">
-                                            <div className="space-y-2">
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <button onClick={saveCurrentAsset} className="px-3 py-2 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors">
-                                                        💾 현재 자산 저장
-                                                    </button>
-                                                    <div className="px-3 py-2 bg-gray-100 text-gray-600 text-sm rounded text-center">
-                                                        히스토리: {assetHistory.length}개
-                                                    </div>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <button onClick={exportAssetData} className="px-3 py-2 bg-green-500 text-white text-sm rounded hover:bg-green-600 transition-colors">
-                                                        📤 데이터 내보내기
-                                                    </button>
-                                                    <button onClick={importAssetData} className="px-3 py-2 bg-purple-500 text-white text-sm rounded hover:bg-purple-600 transition-colors">
-                                                        📥 데이터 불러오기
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* 자산 요약 카드 */}
+                            <div className="md:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl shadow-lg p-6">
+                                <div>
+                                    <h2 className="text-lg font-semibold mb-2 text-gray-600">현재 총자산</h2>
+                                    <p className="text-3xl font-bold text-blue-600">{formatNumber(calculation.currentTotal)}만원</p>
+                                </div>
+                                <div className="mt-6">
+                                    <h2 className="text-lg font-semibold mb-2 text-gray-600">{projectionMonths}개월 후 예상 <span className="text-gray-400 text-sm">({(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d = new Date(y||new Date().getFullYear(), (m||1)-1, 1); d.setMonth(d.getMonth()+projectionMonths); return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`; } catch { return ''; } })()})</span></h2>
+                                    <p className="text-3xl font-bold text-green-600">{formatNumber(calculation.projectedTotal)}만원</p>
+                                    <p className="text-sm text-gray-500 mt-1">예상 증가액: +{formatNumber(calculation.growth)}만원 ({formatPercent((calculation.growth) / Math.max(1, calculation.currentTotal) * 100)}%)</p>
+                                </div>
+                            </div>
+
+                            {/* 핵심 설정 카드 */}
+                            <div className="md:col-span-1 bg-white rounded-xl shadow-lg p-6">
+                                <h2 className="text-xl font-bold text-gray-800 mb-4">핵심 설정</h2>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">월급 (만원)</label>
+                                        <input type="number" className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={monthlySalary} onChange={(e) => setMonthlySalary(Number(e.target.value))} />
                                     </div>
                                     <div>
-                                        <h2 className="text-lg font-semibold mb-4 text-gray-700">기본 설정</h2>
-                                        <div className="space-y-4">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="block text-sm font-medium text-gray-700 mb-2">월급 (만원)</label>
-                                                    <input type="number" className="w-full border rounded px-3 py-2" value={monthlySalary} onChange={(e) => setMonthlySalary(Number(e.target.value))} />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-medium text-gray-700 mb-2">기준월</label>
-                                                    <input type="month" className="w-full border rounded px-3 py-2" value={baseMonth} onChange={(e) => setBaseMonth(e.target.value)} />
-                                                </div>
-                                            </div>
-                                            <div className="bg-blue-50 p-4 rounded-lg">
-                                                <h3 className="text-sm font-medium text-blue-700 mb-3">목표 설정 모드</h3>
-                                                <div className="space-y-3">
-                                                    <div className="flex items-center">
-                                                        <input id="period-mode" type="radio" name="goalMode" value="period" checked={goalMode === 'period'} onChange={(e) => setGoalMode(e.target.value)} className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500" />
-                                                        <label htmlFor="period-mode" className="ml-2 block text-sm text-gray-900">기간 설정 모드</label>
-                                                    </div>
-                                                    <div className="flex items-center">
-                                                        <input id="target-mode" type="radio" name="goalMode" value="target" checked={goalMode === 'target'} onChange={(e) => setGoalMode(e.target.value)} className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500" />
-                                                        <label htmlFor="target-mode" className="ml-2 block text-sm text-gray-900">목표 자산 모드</label>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            {goalMode === 'period' ? (
-                                                <div>
-                                                    <label className="block text-sm font-medium text-gray-700 mb-2">예상 기간 (개월)</label>
-                                                    <input type="number" className="w-full border rounded px-3 py-2" value={projectionMonths} onChange={(e) => setProjectionMonths(Number(e.target.value))} />
-                                                </div>
-                                            ) : (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-2">목표 자산 (만원)</label>
-                                                        <input type="number" className="w-full border rounded px-3 py-2" value={targetAmount} onChange={(e) => setTargetAmount(Number(e.target.value))} />
-                                                    </div>
-                                                    <div className="flex items-end">
-                                                        <button onClick={calculateGoalSeek} className="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">목표 달성 계산</button>
-                                                    </div>
-                                                </div>
-                                            )}
-                                            {goalSeekResult && (
-                                                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded"><p className="text-green-800 font-medium">{goalSeekResult}</p></div>
-                                            )}
-                                            <div className="flex flex-wrap gap-2"></div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">기준월 (계산 시작)</label>
+                                        <input type="month" className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={baseMonth} onChange={(e) => setBaseMonth(e.target.value)} />
+                                    </div>
+                                    <div className="pt-4 border-t">
+                                        <h3 className="text-md font-semibold text-gray-700 mb-2">데이터 관리</h3>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button onClick={() => setIsExportModalOpen(true)} className="flex items-center justify-center gap-2 px-3 py-2 bg-green-500 text-white text-sm font-semibold rounded-lg hover:bg-green-600 shadow-sm hover:shadow-md transition-all">
+                                                <span>📤</span> 데이터 내보내기
+                                            </button>
+                                            <button onClick={() => setIsImportModalOpen(true)} className="flex items-center justify-center gap-2 px-3 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm hover:shadow-md transition-all">
+                                                <span>📥</span> 데이터 불러오기
+                                            </button>
+                                            <button onClick={saveCurrentAsset} className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-600 shadow-sm hover:shadow-md transition-all">
+                                                <span>💾</span> 히스토리 저장
+                                            </button>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+
+                            {/* 목표 달성 카드 */}
+                            <div className="md:col-span-1 bg-white rounded-xl shadow-lg p-6">
+                                <h2 className="text-xl font-bold text-gray-800 mb-4">목표 설정</h2>
+                                <div className="mb-4">
+                                    <div className="flex border border-gray-200 rounded-lg p-1 bg-gray-100">
+                                        <button onClick={() => { setGoalMode('period'); setGoalSeekResult(null); }} className={`flex-1 py-2 text-sm font-semibold rounded-md transition-colors ${goalMode === 'period' ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>
+                                            기간 기준
+                                        </button>
+                                        <button onClick={() => setGoalMode('target')} className={`flex-1 py-2 text-sm font-semibold rounded-md transition-colors ${goalMode === 'target' ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>
+                                            자산 기준
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {goalMode === 'period' ? (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">예상 기간 (개월)</label>
+                                            <input type="number" className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={projectionMonths} onChange={(e) => setProjectionMonths(Number(e.target.value))} />
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">목표 자산 (만원)</label>
+                                                <input type="number" className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500" value={targetAmount} onChange={(e) => setTargetAmount(Number(e.target.value))} />
+                                            </div>
+                                            <button onClick={calculateGoalSeek} className="w-full bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 font-semibold shadow-sm hover:shadow-md transition-all">
+                                                달성 기간 계산
+                                            </button>
+                                        </div>
+                                    )}
+                                    
+                                    {goalMode === 'target' && goalSeekResult && (
+                                        <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                            <p className="text-green-800 font-medium text-center">{goalSeekResult}</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1461,9 +1649,9 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                         {scenarios.length > 0 && (
                             <div className="bg-white rounded-lg shadow p-6">
                                 <div className="flex flex-col lg:flex-row lg:items-start gap-6">
-                                    <div className="flex-1">
+                                    <div className="lg:w-full lg:max-w-md">
                                         <h3 className="text-lg font-semibold text-gray-700 mb-4">저장된 시나리오</h3>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
                                             {scenarios.map(scenario => (
                                                 <div key={scenario.id} className="border rounded-lg p-4">
                                                     <h4 className="font-medium text-gray-900">{scenario.name}</h4>
@@ -1476,9 +1664,9 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                             ))}
                                         </div>
                                     </div>
-                                    <div className="flex-1">
+                                    <div className="flex-grow border-l border-gray-200 pl-6">
                                         <h3 className="text-lg font-semibold text-gray-700 mb-3">시나리오 비교 (최대 3개)</h3>
-                                        <ScenarioCompare scenarios={scenarios} sectorInfo={sectorInfo} />
+                                    <ScenarioCompare scenarios={scenarios} sectorInfo={sectorInfo} calculateMonthlyProjection={calculateMonthlyProjection} formatNumber={formatNumber} />
                                     </div>
                                 </div>
                             </div>
@@ -1575,28 +1763,38 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                 </div>
                             </div>
                             
-                            <div className="flex flex-col sm:flex-row items-center justify-between bg-white rounded-lg p-4 gap-4">
+                            <div className="flex flex-col sm:flex-row items-center justify-between bg-white rounded-lg p-4 gap-4 mt-4">
                                 <div className="text-center sm:text-left">
                                     <div className="text-sm text-gray-600">잔여액</div>
                                     <div className="text-2xl font-bold text-green-600">{formatNumber(autoDepositAmount)}만원</div>
                                     <div className="text-xs text-gray-500">
-                                    월납입 가능액 {formatNumber(maxSectorMonthlyContrib)}만원 - 월납입 사용액 {formatNumber(totalSectorMonthlyContrib)}만원
+                                        월납입 가능액 {formatNumber(maxSectorMonthlyContrib)}만원 - 월납입 사용액 {formatNumber(totalSectorMonthlyContrib)}만원
                                     </div>
                                 </div>
-                                <div className="flex flex-col sm:flex-row items-center gap-2">
+                                <div className="flex flex-col sm:flex-row items-center gap-4">
                                     <div>
-                                        <div className="text-sm text-gray-600 text-center sm:text-left">잔여액 입금 통장</div>
-                                        <select className="border rounded px-3 py-2" value={autoDepositAccount} onChange={e => setAutoDepositAccount(e.target.value)}>
+                                        <label className="block text-sm text-gray-600 text-center sm:text-left mb-1">월급/지출 및 잔여액 관리 계좌</label>
+                                        <select className="border rounded px-3 py-2" value={mainCashFlowAccount} onChange={e => setMainCashFlowAccount(e.target.value)}>
                                             {Object.values(assets).flat().filter(item => item.name !== '새 항목').map((asset, idx) => (
                                                 <option key={idx} value={asset.name}>{asset.name}</option>
                                             ))}
                                         </select>
                                     </div>
-                                    <button onClick={applyAutoDeposit} disabled={autoDepositAmount <= 0} className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed">
-                                        반영하기
-                                    </button>
                                 </div>
                             </div>
+                        </div>
+
+                        {/* ===== 메모장 ===== */}
+                        <div className="bg-white rounded-lg shadow p-6">
+                            <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                                📝 메모
+                            </h3>
+                            <textarea
+                                className="w-full h-32 p-3 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="여기에 자유롭게 메모를 남겨보세요. (자동 저장됩니다)"
+                                value={memo}
+                                onChange={(e) => setMemo(e.target.value)}
+                            />
                         </div>
 
                     {/* ===== 리밸런싱 설정 ===== */}
@@ -1640,24 +1838,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                     {/* [추가] 단일 누적 막대 그래프 */}
                                     <StackedBarDisplay targets={rebalancingTargets} sectorInfo={sectorInfo} />
 
-                                    <div className="mb-4 grid grid-cols-1 lg:grid-cols-3 gap-4 text-sm">
-                                        <div className="flex items-center gap-4">
-                                            <label className="inline-flex items-center gap-2 text-gray-700 dark:text-gray-200">
-                                                <input type="radio" name="reb-mode" className="h-4 w-4" checked={rebalancingMode==='simple'} onChange={() => setRebalancingMode('simple')} />
-                                                간단 모드 (공통 임계값)
-                                            </label>
-                                            <label className="inline-flex items-center gap-2 text-gray-700 dark:text-gray-200">
-                                                <input type="radio" name="reb-mode" className="h-4 w-4" checked={rebalancingMode==='advanced'} onChange={() => setRebalancingMode('advanced')} />
-                                                심화 모드 (섹터별 임계값)
-                                            </label>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-gray-700 dark:text-gray-200 whitespace-nowrap">공통 임계값</span>
-                                            <label className="text-xs text-gray-600 dark:text-gray-300">경고</label>
-                                            <input type="number" className="w-16 border rounded px-2 py-1 text-sm bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={simpleThresholds.warning} onChange={(e)=> setSimpleThresholds(prev=>({...prev, warning: Number(e.target.value)}))} disabled={rebalancingMode!=='simple'} />
-                                            <label className="text-xs text-gray-600 dark:text-gray-300">위험</label>
-                                            <input type="number" className="w-16 border rounded px-2 py-1 text-sm bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={simpleThresholds.danger} onChange={(e)=> setSimpleThresholds(prev=>({...prev, danger: Number(e.target.value)}))} disabled={rebalancingMode!=='simple'} />
-                                        </div>
+                                    <div className="mb-4 grid grid-cols-1 lg:grid-cols-3 gap-4 text-sm">                                        
                                         {/* [수정] 총합 표시 및 자동조정 버튼 */}
                                         <div className="flex items-center gap-2">
                                             <span className="text-gray-700 dark:text-gray-200 whitespace-nowrap">목표 비중 총합:</span>
@@ -1693,18 +1874,16 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                                 onChange={(e)=> setRebalancingTargets(prev=> ({ ...prev, [sectorKey]: Number(e.target.value) }))} 
                                                             />
                                                         </div>
-                                                        {rebalancingMode==='advanced' && (
-                                                            <>
-                                                                <div>
-                                                                    <label className="block text-xs text-gray-600 dark:text-gray-300">경고 임계값 (편차 %)</label>
-                                                                    <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingAlerts[sectorKey]?.warning ?? 5} onChange={(e)=> updateRebalancingAlert(sectorKey, 'warning', e.target.value)} />
-                                                                </div>
-                                                                <div>
-                                                                    <label className="block text-xs text-gray-600 dark:text-gray-300">위험 임계값 (편차 %)</label>
-                                                                    <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingAlerts[sectorKey]?.danger ?? 10} onChange={(e)=> updateRebalancingAlert(sectorKey, 'danger', e.target.value)} />
-                                                                </div>
-                                                            </>
-                                                        )}
+                                                        <>
+                                                            <div>
+                                                                <label className="block text-xs text-gray-600 dark:text-gray-300">경고 임계값 (편차 %)</label>
+                                                                <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingAlerts[sectorKey]?.warning ?? 5} onChange={(e)=> updateRebalancingAlert(sectorKey, 'warning', e.target.value)} />
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-xs text-gray-600 dark:text-gray-300">위험 임계값 (편차 %)</label>
+                                                                <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingAlerts[sectorKey]?.danger ?? 10} onChange={(e)=> updateRebalancingAlert(sectorKey, 'danger', e.target.value)} />
+                                                            </div>
+                                                        </>
                                                     </div>
                                                 </div>
                                             )
@@ -1742,6 +1921,11 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                         const assetPercentage = (projectedAmount / sectorTotal * 100);
                                         
                                         // TO-BE (assets[sectorKey]?.map 내부)
+                                        // [추가] 각 입력 필드에 ref 할당
+                                        const nameRef = el => assetInputRefs.current[`${sectorKey}-${index}-name`] = el;
+                                        const amountRef = el => assetInputRefs.current[`${sectorKey}-${index}-amount`] = el;
+                                        const monthlyContribRef = el => assetInputRefs.current[`${sectorKey}-${index}-monthlyContrib`] = el;
+
                                         return (
                                             <div key={index} className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
                                                 {/* [수정] 대출(loan)과 그 외 자산을 분기 처리 */}
@@ -1749,10 +1933,10 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                 {/* === 자산/기타 항목 (대출 제외) === */}
                                                 {sectorKey !== 'loan' && (
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3 items-center">
-                                                        <input type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
+                                                        <input ref={nameRef} type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                                                         <div>
                                                             <label className="block text-xs text-gray-500 dark:text-gray-400">현재금액</label>
-                                                            <input type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                                                            <input ref={amountRef} type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
                                                         </div>
                                                         <div>
                                                             <label className="block text-xs text-gray-500 dark:text-gray-400">수익률(%)</label>
@@ -1764,7 +1948,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                         </div>
                                                         <div>
                                                             <label className="block text-xs text-gray-500 dark:text-gray-400">월납입</label>
-                                                            <input type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
+                                                            <input ref={monthlyContribRef} type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
                                                         </div>
                                                         <div>
                                                             <label className="block text-xs text-gray-500 dark:text-gray-400">월수입외 납입</label>
@@ -1785,11 +1969,10 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                             <div className={`text-gray-500 dark:text-gray-400`}>
                                                                 비중: <span className={`${(() => {
                                                                     const validSectorTotal = projectedSectorTotals[sectorKey]?.amount || 0;
-                                                                    const assetPercentage = (validSectorTotal > 0) ? (projectedAmount / validSectorTotal * 100) : 0;
                                                                     const target = rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length);
-                                                                    const diff = Math.abs(assetPercentage - target);
-                                                                    const warn = (rebalancingMode==='simple' ? simpleThresholds.warning : (rebalancingAlerts[sectorKey]?.warning ?? 5));
-                                                                    const danger = (rebalancingMode==='simple' ? simpleThresholds.danger : (rebalancingAlerts[sectorKey]?.danger ?? 10));
+                                                                    const diff = Math.abs(projectedSectorTotals[sectorKey]?.percentage - target);
+                                                                    const warn = rebalancingAlerts[sectorKey]?.warning ?? 5;
+                                                                    const danger = rebalancingAlerts[sectorKey]?.danger ?? 10;
                                                                     if (diff >= danger) return 'text-red-500';
                                                                     if (diff >= warn) return 'text-yellow-500';
                                                                     return 'text-green-600 dark:text-green-400';
@@ -1808,13 +1991,13 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
 
                                                 {/* === 대출 전용 항목 === */}
                                                 {sectorKey === 'loan' && (
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3 items-center">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-3 items-center">
                                                         {/* 항목명 */}
-                                                        <input type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
+                                                        <input ref={nameRef} type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                                                         {/* 현재잔액 */}
                                                         <div>
                                                             <label className="block text-xs text-gray-500 dark:text-gray-400">현재잔액</label>
-                                                            <input type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                                                            <input ref={amountRef} type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
                                                         </div>
                                                         {/* 이자율 */}
                                                         <div>
@@ -1824,7 +2007,12 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                         {/* 월 상환액 */}
                                                         <div>
                                                             <label className="block text-xs text-gray-500 dark:text-gray-400">월 상환액</label>
-                                                            <input type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
+                                                            <input ref={monthlyContribRef} type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
+                                                        </div>
+                                                        {/* 만기(개월) */}
+                                                        <div>
+                                                            <label className="block text-xs text-gray-500 dark:text-gray-400">만기(개월)</label>
+                                                            <input type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.maturityMonth ?? 12} onChange={(e) => updateAsset(sectorKey, index, 'maturityMonth', e.target.value)} />
                                                         </div>
                                                         {/* 상환방식 */}
                                                         <div>
@@ -1922,11 +2110,11 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                     if (isNaN(d.getTime())) return '날짜 계산 오류';
                     const fmt = (dt) => `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`;
                     const s = new Date(d);
-                    s.setMonth(s.getMonth() + 3);
+                    s.setMonth(s.getMonth() + 3 - 1);
                     const e = new Date(d);
-                    e.setMonth(e.getMonth() + 8);
+                    e.setMonth(e.getMonth() + 8 - 1);
                     if (isNaN(s.getTime()) || isNaN(e.getTime())) return '날짜 계산 오류';
-                    return `${fmt(s)}부터 ${fmt(e)}까지`;
+                    return `${fmt(s)} ~ ${fmt(e)}`;
                 } catch (error) { 
                     console.error('Date calculation error:', error);
                     return '날짜 계산 오류';
@@ -2031,7 +2219,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
     <div className="text-xs text-gray-600 mb-4 bg-white p-3 rounded-lg border border-orange-100">
         💡 항목 설명: 이벤트명 | 금액 | 시작 월 | 종료 월 | 출금처(섹터/계좌)
         <div className="mt-1 text-gray-500">
-            예: 2~5개월 입력 시, 기준월 기준 <strong>{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const fmt=(dt)=> `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`; const s=new Date(d); s.setMonth(s.getMonth()+2); const e=new Date(d); e.setMonth(e.getMonth()+5); return `${fmt(s)}부터 ${fmt(e)}까지`; } catch { return ''; } })()}</strong>
+            예: 2~5개월 입력 시, 기준월 기준 <strong>{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const fmt=(dt)=> `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`; const s=new Date(d); s.setMonth(s.getMonth()+2-1); const e=new Date(d); e.setMonth(e.getMonth()+5-1); return `${fmt(s)} ~ ${fmt(e)}`; } catch { return ''; } })()}</strong>
         </div>
     </div>
     <div className="space-y-4">
@@ -2151,7 +2339,10 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                         const assetGrowth = projectedAmount - asset.amount;
                                                         const assetGrowthRate = asset.amount > 0 ? (assetGrowth / asset.amount * 100) : 0;
                                                         const sectorTotal = projected.amount || 1;
-                                                        const assetPercentage = (projectedAmount / sectorTotal * 100);
+                                                        const currentAssetPercentageInPortfolio = (currentGrossTotal > 0) ? (asset.amount / currentGrossTotal * 100) : 0;
+                                                        const assetPercentageInPortfolio = (projectedAmount / projectedGrossTotal * 100);
+                                                        const currentAssetPercentageInSector = (current.amount > 0) ? (asset.amount / current.amount * 100) : 0;
+                                                        const projectedAssetPercentageInSector = (projected.amount > 0) ? (projectedAmount / projected.amount * 100) : 0;
                                                         
                                                         return (
                                                             <tr key={`${sectorKey}-${idx}`} className="border-t bg-gray-50">
@@ -2159,8 +2350,12 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                                 <td className="p-3 text-right text-sm">{formatNumber(asset.amount)}</td>
                                                                 <td className="p-3 text-right text-sm">{formatNumber(projectedAmount)}</td>
                                                                 <td className={`p-3 text-right text-sm ${assetGrowthRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(assetGrowthRate)}%</td>
-                                                                <td className="p-3 text-right text-sm">-</td>
-                                                                <td className="p-3 text-right text-sm">{formatPercent(assetPercentage)}%</td>
+                                                                <td className="p-3 text-right text-sm">
+                                                                    {sectorKey !== 'loan' ? `${formatPercent(currentAssetPercentageInPortfolio)}% (${formatPercent(currentAssetPercentageInSector)}%)` : '-'}
+                                                                </td>
+                                                                <td className="p-3 text-right text-sm">
+                                                                    {sectorKey !== 'loan' ? `${formatPercent(assetPercentageInPortfolio)}% (${formatPercent(projectedAssetPercentageInSector)}%)` : '-'}
+                                                                </td>
                                                                 <td className="p-3 text-right text-sm">-</td>
                                                             </tr>
                                                         );
@@ -2205,89 +2400,74 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                             </button>
                         </div>
                     </div>
+                    {/* ===== 블로그 배너 ===== */}
+                    <a href="https://blog.naver.com/zocdoc" target="_blank" rel="noopener noreferrer" title="블로그 방문하기" className="fixed bottom-5 right-5 z-50 p-3 bg-white rounded-full shadow-lg hover:shadow-xl transition-all transform hover:scale-110">
+                        <img src="https://i.namu.wiki/i/TKnrYp2KzXgWrkiIWYPu3x3l3JMnGaD6ud8uYzUyDsdvvVoNL688XRbJFq9OFFxibxqZwa4Sk_78LZN7sd1Fnvsl27PRJXlSj8DZ4hYX_ATWKaY-T07Dk7WQnXHIFcfYLnfEsdMhDtn0bm8KMwXUMw.svg" alt="네이버 블로그" className="w-14 h-14"/>
+                    </a>
+                    <DataTransferModal 
+                        isOpen={isExportModalOpen} 
+                        onClose={() => setIsExportModalOpen(false)} 
+                        onConfirm={handleExport} 
+                        type="export"
+                        initialSelection={exportSelection}
+                    />
+                    <DataTransferModal 
+                        isOpen={isImportModalOpen} 
+                        onClose={() => setIsImportModalOpen(false)} 
+                        onConfirm={(selection) => handleImport(selection)} 
+                        type="import"
+                        initialSelection={importSelection}
+                    />
                 </div>
             );
         };
 
-        const ScenarioCompare = ({ scenarios, sectorInfo }) => {
-            const [selectedIds, setSelectedIds] = React.useState([]);
+        const ScenarioCompare = ({ scenarios, sectorInfo, calculateMonthlyProjection, formatNumber }) => {
+            const { useState, useMemo } = React;
+            const [selectedIds, setSelectedIds] = useState([]);
             const toggle = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : (prev.length<3 ? [...prev,id] : prev));
 
             const selected = scenarios.filter(s => selectedIds.includes(s.id)).slice(0,3);
-
-            const compute = (data) => {
-                const months = data.projectionMonths || 12;
-                const monthlySalary = data.monthlySalary || 0;
-                const monthlyExpenses = data.monthlyExpenses || [];
-                const totalMonthlyExpense = monthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-                const assets = JSON.parse(JSON.stringify(data.assets || {}));
-                const incomeEvents = data.incomeEvents || [];
-                const expenseEvents = data.expenseEvents || [];
-                const monthlyContribSum = Object.values(assets).flat().reduce((s,a)=> s + (a.monthlyContrib||0),0);
-                const maxContrib = Math.max(0, monthlySalary - totalMonthlyExpense);
-                const autoDepositAmount = Math.max(0, maxContrib - monthlyContribSum);
-                for (let m=1; m<=months; m++) {
-                    Object.keys(assets).forEach(sector => {
-                        assets[sector].forEach(asset => {
-                            const feeRate = (asset.feeRate || 0) / 100;
-                            let effectiveRate = ((asset.rate || 0) / 100) * (1 - feeRate);
-                            asset.amount *= (1 + effectiveRate / 12);
-                        });
-                    });
-                    incomeEvents.forEach(ev => {
-                        if (m >= ev.startMonth && m <= ev.endMonth) {
-                            const arr = assets[ev.targetSector];
-                            if (arr && arr[ev.targetAsset]) arr[ev.targetAsset].amount += ev.amount;
-                        }
-                    });
-                    const living = assets.deposit?.find(d => d.name === '생활비통장');
-                    if (living) {
-                        living.amount += monthlySalary;
-                        living.amount -= totalMonthlyExpense;
-                    }
-                    Object.keys(assets).forEach(sector => {
-                    assets[sector].forEach(asset => {
-                        if (asset.monthlyContrib > 0) {
-                            if (sector === 'loan') {
-                                asset.amount = Math.max(0, (asset.amount || 0) - asset.monthlyContrib);
-
-                                // 👇 [개선] 여기도 메인 로직처럼 지정된 상환계좌에서 빼도록 수정
-                                const accountName = asset.repaymentAccount || '생활비통장';
-                                const allAccounts = Object.values(assets).flat();
-                                const paymentSourceAccount = allAccounts.find(a => a.name === accountName);
-                                if (paymentSourceAccount) {
-                                    paymentSourceAccount.amount -= asset.monthlyContrib;
-                                }
-
-                            } else {
-                                asset.amount += asset.monthlyContrib;
-                                // 👇 [개선] 대출이 아닐 때만 생활비통장에서 차감 (else 안으로 이동)
-                                if (living && asset.name !== '생활비통장') {
-                                    living.amount -= asset.monthlyContrib; 
-                                }
-                            }
-                        }
-                    });
-                });
-                    if (autoDepositAmount > 0 && living) {
-                        living.amount -= autoDepositAmount; // 단순화 유지
-                    }
-                    expenseEvents.forEach(ev => {
-                        if (m >= ev.startMonth && m <= ev.endMonth && living) {
-                            living.amount = Math.max(0, living.amount - ev.amount);
-                        }
-                    });
-                }
-                const totals = {};
-                Object.keys(assets).forEach(sector => { totals[sector] = (assets[sector]||[]).reduce((s,a)=> s + (a.amount||0), 0); });
-                const gross = Object.keys(totals).filter(k=>k!=='loan').reduce((s,k)=> s + (totals[k]||0), 0);
-                const grand = Object.keys(totals).reduce((s,k)=> s + (k==='loan' ? -(totals[k]||0) : (totals[k]||0)), 0);
-                const percentages = {};
-                Object.keys(totals).forEach(sector => { percentages[sector] = (sector!=='loan' && gross>0) ? (totals[sector]/gross*100) : 0; });
-                return { assets, totals, gross, grand, percentages };
+            
+            const computeScenarioProjections = (scenarioData) => {
+                // Use the main calculation logic to get monthly projections
+                const tempAppData = { ...scenarioData }; // Create a temporary appData for calculation
+                const monthlyProjections = calculateMonthlyProjection(tempAppData, scenarioData.projectionMonths || 12);
+                return monthlyProjections;
             };
 
-            const results = selected.map(s => ({ id: s.id, name: s.name, ...compute(s.data) }));
+            const results = useMemo(() => {
+                return selected.map(s => ({
+                    id: s.id,
+                    name: s.name,
+                    data: s.data,
+                    projections: computeScenarioProjections(s.data)
+                }));
+            }, [selected]);
+
+            // Determine common months for comparison
+            const allMonths = results.flatMap(r => r.projections.map(p => p.month));
+            const uniqueMonths = [...new Set(allMonths)].sort((a, b) => a - b);
+
+            // Limit to max 12 comparison points, adjust for long periods
+            const maxComparisonMonths = 12;
+            let comparisonInterval = 1;
+            if (uniqueMonths.length > maxComparisonMonths) {
+                comparisonInterval = Math.ceil(uniqueMonths.length / maxComparisonMonths);
+            }
+            const displayMonths = uniqueMonths.filter((_, index) => index % comparisonInterval === 0);
+            if (!displayMonths.includes(uniqueMonths[uniqueMonths.length - 1])) {
+                displayMonths.push(uniqueMonths[uniqueMonths.length - 1]); // Always include the last month
+            }
+
+
+            const getMonthLabel = (monthIndex, baseMonthStr) => {
+                try {
+                    const [y,m] = (baseMonthStr || new Date().toISOString().slice(0,7)).split('-').map(Number);
+                    const d = new Date(y, m - 1 + monthIndex);
+                    return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`;
+                } catch { return `월 ${monthIndex}`; }
+            };
 
             return (
                 <div>
@@ -2302,8 +2482,8 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                 <thead className="bg-gray-100">
                                     <tr>
                                         <th className="p-3 text-left">섹터/항목</th>
-                                        {results.map(r => (<th key={r.id} className="p-3 text-right">{r.name}</th>))}
-                                        {results.length===2 && (
+                                        {results.map(r => (<th key={r.id} className="p-3 text-right">{r.name} (최종)</th>))}
+                                        {results.length === 2 && (
                                             <th className="p-3 text-right">차이(금액/비중)</th>
                                         )}
                                     </tr>
@@ -2313,37 +2493,72 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                         <React.Fragment key={sectorKey}>
                                             <tr className="border-t">
                                                 <td className="p-3 font-semibold">{sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}</td>
-                                                {results.map(r => (
-                                                    <td key={r.id} className="p-3 text-right">
-                                                        {Math.round((r.totals[sectorKey]||0)).toLocaleString()} ({(r.percentages[sectorKey]||0).toFixed(1)}%)
-                                                    </td>
-                                                ))}
-                                                {results.length===2 && (
+                                                {results.map(r => {
+                                                    const finalProjection = r.projections[r.projections.length - 1];
+                                                    const sectorTotal = finalProjection?.sectorTotals[sectorKey] || { amount: 0, percentage: 0 };
+                                                    return (
+                                                        <td key={r.id} className="p-3 text-right">
+                                                            {formatNumber(sectorTotal.amount)} ({(sectorTotal.percentage || 0).toFixed(1)}%)
+                                                        </td>
+                                                    );
+                                                })}
+                                                {results.length === 2 && (
                                                     <td className="p-3 text-right text-indigo-700">
                                                         {(() => {
-                                                            const a=results[0], b=results[1];
-                                                            const diff=(b.totals[sectorKey]||0)-(a.totals[sectorKey]||0);
-                                                            const pdiff=(b.percentages[sectorKey]||0)-(a.percentages[sectorKey]||0);
-                                                            const sign=diff>=0?'+':'';
-                                                            const psign=pdiff>=0?'+':'';
-                                                            return `${sign}${Math.round(diff).toLocaleString()} (${psign}${pdiff.toFixed(1)}%)`;
+                                                            const finalA = results[0].projections[results[0].projections.length - 1];
+                                                            const finalB = results[1].projections[results[1].projections.length - 1];
+                                                            const amountA = finalA?.sectorTotals[sectorKey]?.amount || 0;
+                                                            const amountB = finalB?.sectorTotals[sectorKey]?.amount || 0;
+                                                            const percentA = finalA?.sectorTotals[sectorKey]?.percentage || 0;
+                                                            const percentB = finalB?.sectorTotals[sectorKey]?.percentage || 0;
+                                                            const diffAmount = amountB - amountA;
+                                                            const diffPercent = percentB - percentA;
+                                                            const signAmount = diffAmount >= 0 ? '+' : '';
+                                                            const signPercent = diffPercent >= 0 ? '+' : '';
+                                                            const color = diffAmount >= 0 ? 'text-green-600' : 'text-red-600';
+                                                            return (
+                                                                <div className={color}>
+                                                                    <span>{signAmount}{formatNumber(diffAmount)}</span>
+                                                                    <span className="text-xs ml-1">({signPercent}{diffPercent.toFixed(1)}%)</span>
+                                                                </div>
+                                                            );
                                                         })()}
                                                     </td>
                                                 )}
                                             </tr>
-                                            {results[0]?.assets[sectorKey]?.map((item, idx) => (
+                                            {results[0]?.projections[results[0].projections.length - 1]?.itemTotals[sectorKey]?.map((item, idx) => (
                                                 <tr key={`${sectorKey}-${idx}`} className="border-t bg-gray-50">
-                                                    <td className="p-3 pl-8 text-sm">└ {item.name}</td>
-                                                    {results.map(r => (
-                                                        <td key={r.id} className="p-3 text-right text-sm">{Math.round((r.assets[sectorKey]?.[idx]?.amount || 0)).toLocaleString()}</td>
-                                                    ))}
-                                                    {results.length===2 && (
+                                                    <td className="p-3 pl-8 text-sm text-gray-600">└ {item.name}</td>
+                                                    {results.map(r => {
+                                                        const finalProjection = r.projections[r.projections.length - 1];
+                                                        const itemData = finalProjection?.itemTotals[sectorKey]?.[idx] || { amount: 0, percentage: 0 };
+                                                        return (
+                                                            <td key={r.id} className="p-3 text-right text-sm">
+                                                                <div>{formatNumber(itemData.amount)}</div>
+                                                                <div className="text-xs text-gray-500">
+                                                                    ({(itemData.percentage || 0).toFixed(1)}%)
+                                                                </div>
+                                                            </td>
+                                                        );
+                                                    })}
+                                                    {results.length === 2 && (
                                                         <td className="p-3 text-right text-sm text-indigo-700">
                                                             {(() => {
-                                                                const a=results[0], b=results[1];
-                                                                const av=(a.assets[sectorKey]?.[idx]?.amount||0), bv=(b.assets[sectorKey]?.[idx]?.amount||0);
-                                                                const diff=bv-av; const sign=diff>=0?'+':'';
-                                                                return `${sign}${Math.round(diff).toLocaleString()}`;
+                                                                const finalA = results[0].projections[results[0].projections.length - 1];
+                                                                const finalB = results[1].projections[results[1].projections.length - 1];
+                                                                const itemA = finalA?.itemTotals[sectorKey]?.[idx] || { amount: 0, percentage: 0 };
+                                                                const itemB = finalB?.itemTotals[sectorKey]?.[idx] || { amount: 0, percentage: 0 };
+                                                                const diffAmount = itemB.amount - itemA.amount;
+                                                                const diffPercent = itemB.percentage - itemA.percentage;
+                                                                const signAmount = diffAmount >= 0 ? '+' : '';
+                                                                const signPercent = diffPercent >= 0 ? '+' : '';
+                                                                const color = diffAmount >= 0 ? 'text-green-600' : 'text-red-600';
+                                                                return (
+                                                                    <div className={color}>
+                                                                        <div>{signAmount}{formatNumber(diffAmount)}</div>
+                                                                        <div className="text-xs ml-1">({signPercent}{diffPercent.toFixed(1)}%)</div>
+                                                                    </div>
+                                                                );
                                                             })()}
                                                         </td>
                                                     )}
@@ -2353,13 +2568,73 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                     ))}
                                     <tr className="border-t-2 border-gray-400 bg-gray-100">
                                         <td className="p-3 font-bold">총계</td>
-                                        {results.map(r => (<td key={r.id} className="p-3 text-right font-bold">{Math.round(r.grand).toLocaleString()} (100.0%)</td>))}
-                                        {results.length===2 && (
+                                        {results.map(r => {
+                                            const finalProjection = r.projections[r.projections.length - 1];
+                                            return (
+                                                <td key={r.id} className="p-3 text-right font-bold">{formatNumber(finalProjection?.total || 0)}</td>
+                                            );
+                                        })}
+                                        {results.length === 2 && (
                                             <td className="p-3 text-right font-bold text-indigo-700">
-                                                {(() => { const a=results[0], b=results[1]; const diff=b.grand-a.grand; const sign=diff>=0?'+':''; return `${sign}${Math.round(diff).toLocaleString()} (0.0%)`; })()}
+                                                {(() => { 
+                                                    const finalA = results[0].projections[results[0].projections.length - 1];
+                                                    const finalB = results[1].projections[results[1].projections.length - 1];
+                                                    const diff = (finalB?.total || 0) - (finalA?.total || 0); 
+                                                    const sign = diff >= 0 ? '+' : '';
+                                                    const color = diff >= 0 ? 'text-green-600' : 'text-red-600';
+                                                    return (
+                                                        <div className={color}>{sign}{formatNumber(diff)}</div>
+                                                    );
+                                                })()}
                                             </td>
                                         )}
                                     </tr>
+                                </tbody>
+                            </table>
+
+                            {/* Monthly Comparison Table */}
+                            <h4 className="text-lg font-semibold text-gray-700 mt-8 mb-4">월별 비교 (최대 12개월)</h4>
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-100">
+                                    <tr>
+                                        <th className="p-3 text-left">월차</th>
+                                        {results.map(r => (<th key={r.id} className="p-3 text-right">{r.name} (총자산)</th>))}
+                                        {results.length === 2 && (
+                                            <th className="p-3 text-right">차이</th>
+                                        )}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {displayMonths.map(monthIndex => {
+                                        const monthLabel = getMonthLabel(monthIndex, results[0]?.data.baseMonth);
+                                        return (
+                                            <tr key={monthIndex} className="border-t">
+                                                <td className="p-3 font-semibold">{monthLabel}</td>
+                                                {results.map(r => {
+                                                    const projection = r.projections.find(p => p.month === monthIndex);
+                                                    return (
+                                                        <td key={r.id} className="p-3 text-right">
+                                                            {projection ? formatNumber(projection.total) : '-'}
+                                                        </td>
+                                                    );
+                                                })}
+                                                {results.length === 2 && (
+                                                    <td className="p-3 text-right text-indigo-700">
+                                                        {(() => {
+                                                            const projA = results[0].projections.find(p => p.month === monthIndex);
+                                                            const projB = results[1].projections.find(p => p.month === monthIndex);
+                                                            if (projA && projB) {
+                                                                const diff = projB.total - projA.total;
+                                                                const sign = diff >= 0 ? '+' : '';
+                                                                return `${sign}${formatNumber(diff)}`;
+                                                            }
+                                                            return '-';
+                                                        })()}
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
