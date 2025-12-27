@@ -40,6 +40,27 @@
         // ===== 기본값 설정 (서버/로컬 전환 가능) =====
         const USE_SERVER_CONFIG = false; // true: 서버에서 로드, false: 로컬 하드코딩 사용
 
+        // [수정] 대출 상환 방식에 따른 월 상환금 계산 함수
+        const calculateLoanPayment = (principal, annualRate, months, method) => {
+            if (principal <= 0) return { payment: 0, interest: 0, principalRepay: 0, totalPayment: 0 };
+            const monthlyRate = annualRate / 100 / 12;
+            let payment = 0, interest = principal * monthlyRate, principalRepay = 0;
+
+            if (method === '만기일시') {
+                payment = interest; // 매달 이자만 납부
+                principalRepay = 0;
+            } else if (method === '원금균등') {
+                principalRepay = months > 0 ? principal / months : 0;
+                payment = principalRepay + interest;
+            } else { // '원리금균등'이 기본값
+                if (months <= 0) payment = principal + interest;
+                else if (monthlyRate === 0) payment = months > 0 ? principal / months : principal;
+                else payment = (principal * monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+                principalRepay = payment - interest;
+            }
+            return { payment, interest, principalRepay, totalPayment: payment };
+        };
+
         // 공개용 기본값 (제3자 공개 시 사용)
         const publicDefaultData = {
             projectionMonths: 12,
@@ -51,34 +72,46 @@
             rebalancingMode: 'simple', // 'simple' | 'advanced'
             assets: {
                 deposit: [
-                    { name: '비상금통장', amount: 100, rate: 2.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' },
-                    { name: '생활비통장', amount: 30, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' },
-                    { name: '카카오비상금', amount: 30, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+                    { id: 'def-dep-1', name: '비상금통장', amount: 100, rate: 2.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' },
+                    { id: 'def-dep-2', name: '생활비통장', amount: 30, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' },
+                    { id: 'def-dep-3', name: '카카오비상금', amount: 30, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
                 ],
                 savings: [
-                    { name: '청년도약계좌', amount: 140, rate: 6.0, feeRate: 0, monthlyContrib: 0, extraContrib: 70, extraFrom: '비상금통장' },
-                    { name: '청약저축', amount: 180, rate: 6.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
+                    { id: 'def-sav-1', name: '청년도약계좌', amount: 140, rate: 6.0, feeRate: 0, monthlyContrib: 0, extraContrib: 70, extraFrom: '비상금통장' },
+                    { id: 'def-sav-2', name: '청약저축', amount: 180, rate: 6.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
                 ],
                 investment: [
-                    { name: '직접투자계좌', amount: 1400, rate: 10.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' },
-                    { name: 'ISA계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 100, extraContrib: 0, extraFrom: '' },
-                    { name: '금투자', amount: 0, rate: 3.0, feeRate: 0, monthlyContrib: 30, extraContrib: 0, extraFrom: '' },
-                    { name: '비트코인', amount: 0, rate: 12.0, feeRate: 0, monthlyContrib: 15, extraContrib: 0, extraFrom: '' }
+                    { id: 'def-inv-1', name: '직접투자계좌', amount: 1400, rate: 10.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' },
+                    { id: 'def-inv-2', name: 'ISA계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 100, extraContrib: 0, extraFrom: '' },
+                    { id: 'def-inv-3', name: '금투자', amount: 0, rate: 3.0, feeRate: 0, monthlyContrib: 30, extraContrib: 0, extraFrom: '' },
+                    { id: 'def-inv-4', name: '비트코인', amount: 0, rate: 12.0, feeRate: 0, monthlyContrib: 15, extraContrib: 0, extraFrom: '' }
                 ],
                 pension: [
-                    { name: '연금저축', amount: 199, rate: 10.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
+                    { id: 'def-pen-1', name: '연금저축', amount: 199, rate: 10.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
                 ],
                 realestate: [
-                    { name: '아파트', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+                    { id: 'def-re-1', name: '아파트', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
                 ],
                 car: [
-                    { name: '자동차', amount: 70, rate: -2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+                    { id: 'def-car-1', name: '자동차', amount: 70, rate: -2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
                 ],
                 loan: [
-                    { name: '신용대출', amount: 0, rate: 3.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+                    { 
+                        id: 'def-loan-1',
+                        name: '신용대출', 
+                        amount: 0, 
+                        rate: 3.0, 
+                        monthlyContrib: 0, 
+                        extraContrib: 0, 
+                        extraFrom: '',
+                        repaymentMethod: '원리금균등',
+                        repaymentAccount: '생활비통장',
+                        maturityMonth: 36,
+                        loanStartDate: new Date().toISOString().slice(0,7)
+                    }
                 ],
                 misc: [
-                    { name: '기타자산', amount: 0, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+                    { id: 'def-misc-1', name: '기타자산', amount: 0, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
                 ]
             },
             monthlyExpenses: [
@@ -124,7 +157,7 @@
             const handleCheckboxChange = (e) => {
                 setSelectedItems(prev => ({ ...prev, [e.target.name]: e.target.checked }));
             };
-
+ 
             const handleConfirm = () => {
                 onConfirm(selectedItems);
                 onClose();
@@ -141,7 +174,7 @@
                         </p>
                         <div className="space-y-2 mb-6">
                             <label className="flex items-center">
-                                <input type="checkbox" name="appData" checked={selectedItems.appData} onChange={handleCheckboxChange} className="mr-2" />
+                                <input type="checkbox" name="appData" checked={selectedItems.appData} onChange={handleCheckboxChange} className="mr-2" /> 
                                 <span className="text-gray-800">기본 자산 데이터 (계좌, 지출, 이벤트, 메모 등)</span>
                             </label>
                             <label className="flex items-center">
@@ -162,11 +195,11 @@
             );
         };
 
-        // [추가] 패널 래퍼 컴포넌트
-        const PanelWrapper = ({ id, title, moveUp, moveDown, isFirst, isLast, isCollapsed, onToggle, children }) => {
+        // [수정] 패널 래퍼 컴포넌트 (접기/펴기 기능 추가)
+        const PanelWrapper = ({ id, title, moveUp, moveDown, isFirst, isLast, isCollapsed, onToggle, children, className = "bg-white rounded-lg shadow" }) => {
             return (
                 <div id={id}>
-                    <div className="flex justify-between items-center mb-4 cursor-pointer" onClick={onToggle}>
+                    <div className="flex justify-between items-center mb-4 cursor-pointer select-none" onClick={onToggle}>
                         <h2 className="text-xl font-semibold text-gray-700 flex items-center gap-2 select-none">
                             <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 text-gray-500 transform transition-transform duration-200 ${!isCollapsed ? 'rotate-90' : ''}`} viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
@@ -179,7 +212,7 @@
                                     e.stopPropagation();
                                     moveUp();
                                 }} 
-                                disabled={isFirst}
+                                disabled={isFirst} 
                                 className="p-1 rounded-full hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
                                 title="위로 이동"
                             >
@@ -192,7 +225,7 @@
                                     e.stopPropagation();
                                     moveDown();
                                 }} 
-                                disabled={isLast}
+                                disabled={isLast} 
                                 className="p-1 rounded-full hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
                                 title="아래로 이동"
                             >
@@ -203,7 +236,7 @@
                         </div>
                     </div>
                     {!isCollapsed && (
-                        <div className="p-4 sm:p-6">
+                        <div className={className}>
                             {children}
                         </div>
                     )}
@@ -288,7 +321,7 @@
             const [isImportModalOpen, setIsImportModalOpen] = useState(false);
             const [exportSelection, setExportSelection] = useState({ appData: true, scenarios: true, assetHistory: true });
             const [importSelection, setImportSelection] = useState({ appData: true, scenarios: true, assetHistory: true });            
-            // [추가] 레이아웃 순서 상태
+            // [수정] 레이아웃 및 패널 상태 관리
             const [layoutOrder, setLayoutOrder] = useState(() => {
                 try {
                     const savedOrder = localStorage.getItem('assetDashboardLayoutOrder');
@@ -301,11 +334,10 @@
                 localStorage.setItem('assetDashboardLayoutOrder', JSON.stringify(layoutOrder));
             }, [layoutOrder]);
 
-            // [추가] 패널 접힘/펼침 상태
             const [panelCollapseState, setPanelCollapseState] = useState(() => {
                 try {
                     const savedState = localStorage.getItem('assetDashboardPanelCollapse');
-                    return savedState ? JSON.parse(savedState) : {}; // 기본값: 모두 펼침
+                    return savedState ? JSON.parse(savedState) : {};
                 } catch {
                     return {};
                 }
@@ -314,8 +346,6 @@
                 localStorage.setItem('assetDashboardPanelCollapse', JSON.stringify(panelCollapseState));
             }, [panelCollapseState]);
 
-
-            // [추가] 자산 섹터 순서 상태
             const [assetSectorOrder, setAssetSectorOrder] = useState(() => {
                 try {
                     const savedOrder = localStorage.getItem('assetDashboardAssetSectorOrder');
@@ -335,7 +365,7 @@
             // ===== 초기 데이터 로드 =====
             useEffect(() => {
                 const loadInitialData = async () => {
-                const serverData = await loadServerConfig();
+                await loadServerConfig();
                 const baseData = publicDefaultData; // <-- 이렇게 수정
                 try {
                 const savedData = localStorage.getItem('assetDashboardDataV3');
@@ -349,14 +379,21 @@
                 if (savedData) {
                             const parsedData = JSON.parse(savedData);
                             // 새로운 필드들 추가
-                            const mergedData = {
+                            const mergedData = { // 병합 로직 개선
                                 ...baseData,
                                 ...parsedData,
-                                assets: { ...baseData.assets, ...parsedData.assets },
+                                assets: { ...baseData.assets, ...parsedData.assets }, 
                                 rebalancingAlerts: { ...baseData.rebalancingAlerts, ...parsedData.rebalancingAlerts },
                             };
-                            // [수정] memo가 누락된 경우 baseData에서 가져오도록 수정
                             if (mergedData.memo === undefined) mergedData.memo = baseData.memo;
+
+                            // 마이그레이션: ID 및 대출 시작일 추가
+                            Object.keys(parsedData.assets||{}).forEach(sector=>{
+                                (parsedData.assets[sector]||[]).forEach(a=>{ 
+                                    if (!a.id) a.id = Date.now() + Math.random();
+                                    if (sector === 'loan' && !a.loanStartDate) a.loanStartDate = parsedData.baseMonth || baseData.baseMonth;
+                                });
+                            });
 
                             // 마이그레이션: 자산별 수수료/세금 필드 기본값(0)
                             Object.keys(parsedData.assets||{}).forEach(sector=>{
@@ -383,8 +420,8 @@
             if (appData && !isDemoMode) { // [수정] 데모 모드일 때는 저장하지 않음
                 localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
                 setOriginalUserData(appData); // [추가]
-            }
-            }, [appData, isDemoMode]); // [수정] isDemoMode를 의존성 배열에 추가
+            } 
+            }, [appData, isDemoMode]);
 
             // useRef를 사용하여 첫 렌더링인지 추적하는 변수 추가
             const isInitialMount = useRef(true);
@@ -401,6 +438,7 @@
 
             // ===== 자산 히스토리 관리 =====
             const [assetHistory, setAssetHistory] = React.useState([]);
+            const [showProjectionInHistory, setShowProjectionInHistory] = useState(false);
             
             // 히스토리 데이터 로드
             React.useEffect(() => {
@@ -466,32 +504,30 @@
             const handleExport = async (selection) => {
                 try {
                     const exportData = {};
-                    if (selection.appData) exportData.appData = appData;
+                    if (selection.appData) exportData.appData = appData; 
                     if (selection.scenarios) exportData.scenarios = scenarios;
                     if (selection.assetHistory) exportData.assetHistory = assetHistory;
 
                     exportData.exportDate = new Date().toISOString();
                     exportData.version = '1.0';
-
+ 
                     const jsonString = JSON.stringify(exportData);
-                    // [개선] 압축 레벨 9 적용 및 안정적인 변환
-                    const compressedDataArray = pako.deflate(jsonString, { level: 9 });
-
-                    // [핵심 수정] Uint8Array를 Base64로 안전하게 변환 (스택 오버플로우 방지)
-                    const blob = new Blob([compressedDataArray], { type: 'application/octet-stream' });
-                    const dataUrl = await new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => resolve(reader.result);
-                        reader.onerror = reject;
-                        reader.readAsDataURL(blob);
-                    });
-                    const compressed = dataUrl.split(',')[1];
+                    const compressedDataArray = pako.deflate(jsonString);
+                    const binaryString = String.fromCharCode.apply(null, compressedDataArray);
+                    const compressed = btoa(binaryString);
 
                     // 클립보드에 복사
                     navigator.clipboard.writeText(compressed).then(() => {
                         alert('자산 데이터가 클립보드에 복사되었습니다!\n다른 기기에서 "자산 불러오기" 버튼을 눌러 붙여넣기하세요.');
                     }).catch(() => {
-                        alert('클립보드 복사에 실패했습니다. 수동으로 복사해주세요.');
+                        // 클립보드 복사 실패 시 텍스트 영역으로 표시
+                        const textArea = document.createElement('textarea');
+                        textArea.value = compressed;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                        alert('자산 데이터가 복사되었습니다!\n다른 기기에서 "자산 불러오기" 버튼을 눌러 붙여넣기하세요.');
                     });
                 } catch (error) {
                     console.error('데이터 내보내기 오류:', error);
@@ -499,19 +535,19 @@
                 }
             };
 
-            const handleImport = async (selection) => {
+            const handleImport = (selection) => {
                 const compressedData = prompt('다른 기기에서 복사한 암호문을 붙여넣으세요:');
                 if (!compressedData) return;
-
+                
                 try {
-                    // [개선] Base64를 Uint8Array로 안전하게 변환 (스택 오버플로우 방지)
-                    const response = await fetch(`data:application/octet-stream;base64,${compressedData}`);
-                    const blob = await response.blob();
-                    const compressedDataArray = new Uint8Array(await blob.arrayBuffer());
-
+                    const binaryString = atob(compressedData);
+                    const compressedDataArray = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        compressedDataArray[i] = binaryString.charCodeAt(i);
+                    }
                     const jsonString = pako.inflate(compressedDataArray, { to: 'string' });
                     const importData = JSON.parse(jsonString);
-
+                    
                     if (!importData.version) {
                         throw new Error('잘못된 데이터 형식입니다.');
                     }
@@ -780,10 +816,11 @@
                 // [수정] 메인 계산 로직을 사용하여 목표 달성 시뮬레이션
                 while (months < 600) { // 최대 50년(600개월)까지만 계산
                     months++;
-                    const projections = calculateMonthlyProjection(appData, months);
+                    const result = calculateMonthlyProjection(appData, months);
+                    const projections = result.projections;
 
                     // 계산 중 오류 발생 시 중단
-                    if (projections.error) {
+                    if (result.error) {
                         setGoalSeekResult(`계산 중 오류 발생: ${projections.message}`);
                         // 오류가 발생한 입력란으로 포커스 이동
                         if (projections.refId) {
@@ -819,15 +856,13 @@
                 setLayoutOrder(newOrder);
             };
 
-            // [추가] 패널 접힘/펼침 토글 함수
             const togglePanelCollapse = (panelId) => {
                 setPanelCollapseState(prev => ({
                     ...prev,
                     [panelId]: !prev[panelId]
                 }));
             };
-            // ===== 메인 계산 로직 =====
-            // [추가] 자산 섹터 이동 함수
+
             const moveAssetSector = (sectorKey, direction) => {
                 const index = assetSectorOrder.indexOf(sectorKey);
                 if (index === -1) return;
@@ -838,17 +873,28 @@
                 setAssetSectorOrder(newOrder);
             };
 
+            // ===== 메인 계산 로직 (수정됨) =====
+            const getMonthDiff = (start, end) => {
+                if (!start || !end) return 0;
+                const [sY, sM] = start.split('-').map(Number);
+                const [eY, eM] = end.split('-').map(Number);
+                return (eY - sY) * 12 + (eM - sM);
+            };
+
             const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 const data = JSON.parse(JSON.stringify(initialData)); // Deep copy
-                const monthlyProjections = [];
+                const warnings = [];
+                const monthlyProjections = []; 
 
                 const {
-                    projectionMonths: initialProjectionMonths = 12, monthlySalary = 280, assets = {}, monthlyExpenses = [], 
+                    monthlySalary = 0, assets = {}, monthlyExpenses = [], 
                     incomeEvents = [], expenseEvents = [], targetAmount = 10000, 
-                    goalMode = 'period', displayMode = 'amount', 
-                    rebalancingAlerts = {}, baseMonth = new Date().toISOString().slice(0,7),
-                    rebalancingMode = 'simple', simpleThresholds = { warning: 5, danger: 10 }, rebalancingTargets = {}
+                    mainCashFlowAccount, baseMonth
                 } = data;
+
+                // 월 가용 현금 계산 (월급 - 고정 지출)
+                const totalMonthlyExpense = monthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+                const monthlyAvailableCash = monthlySalary - totalMonthlyExpense;
 
                 let currentAssets = {};
                 Object.keys(assets).forEach(sector => {
@@ -858,13 +904,6 @@
                         currentAssets[sector] = [];
                     }
                 });
-
-                const allAccountsFlat = Object.values(currentAssets).flat();
-                const totalMonthlyExpense = monthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-                const monthlyContribSum = Object.values(assets).flat().reduce((s,a)=> s + (a.monthlyContrib||0),0);
-
-                // [수정] 월 가용 현금 계산
-                const monthlyAvailableCash = monthlySalary - totalMonthlyExpense;
                 
                 const calculateTotal = (assetData) => {
                     let sum = 0;
@@ -876,35 +915,24 @@
                 };
 
                 for (let month = 0; month <= monthsToProject; month++) {
+                    const allAccountsFlat = Object.values(currentAssets).flat();
+
                     if (month > 0) { // Skip initial state for calculations, only record it
-                        // 복리 수익률 적용 (자산별 수수료/세금 반영)
+                        // 1. 이자/수익률 적용
                         Object.keys(currentAssets).forEach(sector => {
-                            if (sector === 'loan') return; 
+                            if (sector === 'loan') return; // 대출은 상환 단계에서 처리
                             currentAssets[sector].forEach(asset => {
-                                const feeRate = (asset.feeRate || 0) / 100;
-                                let effectiveRate = (asset.rate / 100) * (1 - feeRate);
-                                const monthlyRate = 1 + (effectiveRate / 12);
-                                asset.amount *= monthlyRate;
+                                if (asset.amount > 0) {
+                                    const feeRate = (asset.feeRate || 0) / 100;
+                                    const effectiveRate = (asset.rate / 100) * (1 - feeRate);
+                                    asset.amount *= (1 + effectiveRate / 12);
+                                        // 부동 소수점 오차 방지
+                                        asset.amount = Math.round(asset.amount * 10000) / 10000;
+                                }
                             });
                         });
 
-                        // 대출 이자 계산 (납입 전)
-                        (currentAssets.loan || []).forEach(loan => {
-                            if (loan.amount > 0 && loan.rate > 0) {
-                                const monthlyInterest = loan.amount * (loan.rate / 100) / 12;
-                                loan.amount += monthlyInterest; 
-                            }
-                        });
-                        
-                        // 만기일시 상환 처리
-                        (currentAssets.loan || []).forEach(loan => {
-                            if (loan.repaymentMethod === '만기일시' && month === (loan.maturityMonth || 0)) {
-                                const repaymentAmount = loan.amount;
-                                loan.amount = 0; // 원금 전액 상환
-                            }
-                        });
-
-                        // 이벤트 적용
+                        // 2. 이벤트 적용
                         (incomeEvents || []).forEach(event => {
                             if (month >= event.startMonth && month <= event.endMonth) {
                                 if (currentAssets[event.targetSector] && currentAssets[event.targetSector][event.targetAsset]) {
@@ -922,79 +950,111 @@
                             }
                         });
 
-                        // [수정] 새로운 현금 흐름 로직
+                        // 3. 현금 흐름 및 납입 처리
                         let cashInHand = monthlyAvailableCash;
                         const cashFlowAccount = allAccountsFlat.find(d => d.name === mainCashFlowAccount);
 
-                        // 1. 월납입 처리
+                        // 3a. 월급 기반 월납입 (자산 증식)
                         Object.keys(currentAssets).forEach(sector => {
+                            if (sector === 'loan') return;
                             currentAssets[sector].forEach(asset => {
                                 if (asset.monthlyContrib > 0) {
                                     const paymentAmount = asset.monthlyContrib;
-                                    const actualPayment = Math.min(paymentAmount, cashInHand);
-                                    
-                                    if (sector === 'loan') {
-                                        asset.amount = Math.max(0, asset.amount - actualPayment);
-                                    } else {
-                                        asset.amount += actualPayment;
-                                    }
-                                    
-                                    cashInHand -= actualPayment;
-
-                                    if (paymentAmount > actualPayment) {
-                                        // 월 가용 현금이 부족하여 월납입이 일부만 실행됨
-                                        return { 
-                                            error: true, 
-                                            message: `월 가용 현금이 부족하여 [${asset.name}]의 월납입액 ${paymentAmount}만원 중 ${actualPayment}만원만 납입됩니다. 월급 또는 지출 계획을 확인해주세요.`,
-                                            refId: null // 특정 필드를 가리키기 어려움
-                                        };
-                                    }
+                                    cashInHand -= paymentAmount;
+                                    asset.amount += paymentAmount;
                                 }
                             });
                         });
 
-                        // 2. 남은 현금(잔여액)을 주 현금흐름 계좌에 입금
-                        if (cashInHand > 0 && cashFlowAccount) {
+                        if (cashInHand < 0) {
+                            warnings.push({ month, type: 'cashflow', message: `월 ${month}: 월급 기반 월납입액이 월 가용 현금을 초과합니다. (${cashInHand.toFixed(2)}만원 부족)` });
+                        }
+                        if (cashFlowAccount) {
                             cashFlowAccount.amount += cashInHand;
                         }
 
-                        // 3. 월수입 외 납입 처리 (이 로직은 특정 계좌에서 출금되므로 순서상 마지막에 배치)
+                        // 3b. 대출 상환 (계좌이체 기반) (Fix #1, #3)
+                        (currentAssets.loan || []).forEach((loan) => {
+                            const simStartToLoanStart = getMonthDiff(baseMonth, loan.loanStartDate || baseMonth);
+                            const loanMonthAtSimMonth = month + simStartToLoanStart;
+
+                            if (loanMonthAtSimMonth < 1 || loan.amount <= 0) return;
+
+                            const repaymentAccount = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
+                            if (!repaymentAccount) {
+                                warnings.push({ month, type: 'repayment', message: `[${loan.name}]의 상환계좌(${loan.repaymentAccount})를 찾을 수 없습니다.` });
+                                return;
+                            }
+
+                            const monthlyRate = (loan.rate / 100) / 12;
+                            const interestForMonth = loan.amount * monthlyRate;
+                            
+                            // 1. 이자 가산 (회계적 정밀도: 원금에 이자를 먼저 더함)
+                            loan.amount += interestForMonth;
+
+                            // 2. 상환액 계산 (가산 전 원금 기준)
+                            const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
+                            const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
+                            
+                            let scheduledPayment = paymentInfo.payment;
+                            let totalScheduledPayment = scheduledPayment + (loan.monthlyContrib || 0);
+
+                            if (totalScheduledPayment > 0) {
+                                const actualRepayment = Math.min(totalScheduledPayment, repaymentAccount.amount);
+                                repaymentAccount.amount -= actualRepayment;
+                                
+                                // 3. 상환액 전체 차감 (이자 가산이 선행되었으므로 원리금 전체를 차감)
+                                loan.amount -= actualRepayment;
+
+                                if (actualRepayment < totalScheduledPayment) {
+                                    warnings.push({ month, type: 'repayment', message: `[${repaymentAccount.name}] 잔액 부족으로 [${loan.name}] 상환액 ${totalScheduledPayment.toFixed(2)}만원 중 ${actualRepayment.toFixed(2)}만원만 상환되었습니다.` });
+                                }
+                            }
+
+                            // 만기일시 상환의 만기달 원금 상환 처리
+                            if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth === loan.maturityMonth && loan.amount > 0) {
+                                const finalPrincipal = loan.amount;
+                                const actualFinalRepayment = Math.min(finalPrincipal, repaymentAccount.amount);
+                                repaymentAccount.amount -= actualFinalRepayment;
+                                loan.amount -= actualFinalRepayment;
+                                if (actualFinalRepayment < finalPrincipal) {
+                                    warnings.push({ month, type: 'repayment', message: `[${loan.name}] 만기 원금 상환 실패. [${repaymentAccount.name}] 잔액 부족.` });
+                                }
+                            }
+
+                            // 부동 소수점 오차 보정 및 0원 처리
+                            loan.amount = Math.round(loan.amount * 10000) / 10000;
+                            if (loan.amount < 0.01) loan.amount = 0;
+                            repaymentAccount.amount = Math.round(repaymentAccount.amount * 10000) / 10000;
+                            loan.amount = Math.max(0, loan.amount);
+                        });
+
+                        // 3c. 월수입 외 추가 납입/상환 (계좌이체) (Fix #2)
                         Object.keys(currentAssets).forEach(sector => {
                             currentAssets[sector].forEach(asset => {
-                                // [추가] 대출 상환 로직
-                                if (sector === 'loan' && asset.monthlyContrib > 0 && asset.repaymentAccount) {
-                                    let fromAccount = allAccountsFlat.find(d => d.name === asset.repaymentAccount);
-                                    if (fromAccount) {
-                                        const actualDeduction = Math.min(asset.monthlyContrib, fromAccount.amount);
-                                        fromAccount.amount -= actualDeduction;
-                                        asset.amount = Math.max(0, asset.amount - actualDeduction);
-                                    }
-                                }
-
-                                // 월수입 외 추가 납입
                                 if (asset.extraContrib > 0 && asset.extraFrom) {
-                                    let fromAccount = allAccountsFlat.find(d => d.name === asset.extraFrom);
-                                    if (fromAccount === asset) {
-                                        fromAccount = {...fromAccount};
-                                    }
-                                    let actualDeduction = 0; // [수정] 변수명 명확화
+                                    // 참조를 깨뜨리지 않도록 수정
+                                    const fromAccount = allAccountsFlat.find(d => d.name === asset.extraFrom);
                                     if (fromAccount) {
-                                        actualDeduction = Math.min(asset.extraContrib, fromAccount.amount); 
+                                        const actualDeduction = Math.min(asset.extraContrib, fromAccount.amount);
                                         fromAccount.amount -= actualDeduction;
-                                        if (asset.extraContrib > actualDeduction) {
-                                            const fromSectorKey = Object.keys(currentAssets).find(key => currentAssets[key].some(a => a.name === fromAccount.name));
-                                            const fromAssetIndex = currentAssets[fromSectorKey]?.findIndex(a => a.name === fromAccount.name);
-                                            return { 
-                                                error: true, 
-                                                message: `${month}개월차에 [${fromAccount.name}] 계좌의 잔액이 부족하여 요청하신 ${asset.extraContrib}만원 중 ${actualDeduction}만원만 ${asset.name}로 납입됩니다.`,
-                                                refId: `${fromSectorKey}-${fromAssetIndex}-amount`
-                                            };
+
+                                        if (sector === 'loan') {
+                                            asset.amount = Math.max(0, asset.amount - actualDeduction);
+                                        } else {
+                                            asset.amount += actualDeduction;
                                         }
-                                    }
-                                    if (sector === 'loan') {
-                                        asset.amount = Math.max(0, asset.amount - actualDeduction);
-                                    } else {
-                                        asset.amount += actualDeduction;
+
+                                        if (actualDeduction < asset.extraContrib) {
+                                            warnings.push({
+                                                month, type: 'transfer',
+                                                message: `월 ${month}: [${fromAccount.name}] 잔액 부족으로 [${asset.name}]에 ${asset.extraContrib}만원 이체 중 ${actualDeduction.toFixed(2)}만원만 실행되었습니다.`
+                                            });
+                                        }
+
+                                        // 부동 소수점 오차 보정
+                                        asset.amount = Math.round(asset.amount * 10000) / 10000;
+                                        fromAccount.amount = Math.round(fromAccount.amount * 10000) / 10000;
                                     }
                                 }
                             });
@@ -1002,7 +1062,7 @@
                     }
                     
                     // Record current state
-                    const currentTotal = calculateTotal(currentAssets);
+                    const currentTotal = calculateTotal(currentAssets); 
                     const currentGross = Object.keys(currentAssets).filter(k=>k!=='loan').reduce((s,k)=> s + (currentAssets[k]||[]).reduce((sum,a)=>sum+(a.amount||0),0),0);
                     const sectorTotals = {};
                     Object.keys(currentAssets).forEach(sector => {
@@ -1014,6 +1074,7 @@
                     const itemTotals = {};
                     Object.keys(currentAssets).forEach(sector => {
                         itemTotals[sector] = (currentAssets[sector]||[]).map(asset => ({
+                            id: asset.id, // [개선] 비교를 위해 id 포함
                             name: asset.name,
                             amount: asset.amount,
                             percentage: (sectorTotals[sector]?.amount > 0) ? (asset.amount / sectorTotals[sector].amount * 100) : 0
@@ -1029,7 +1090,7 @@
                         assets: JSON.parse(JSON.stringify(currentAssets)) // Deep copy for each month
                     });
                 }
-                return monthlyProjections;
+                return { projections: monthlyProjections, warnings };
             };
 
             const calculation = useMemo(() => {
@@ -1041,30 +1102,16 @@
                         projectedTotal: 0,
                         growth: 0,
                         grand: 0,
-                        monthlyProjections: []
+                        monthlyProjections: [],
+                        warnings: []
                     };
                 }
                 
                 const months = projectionMonths;
-                const monthlyProjections = calculateMonthlyProjection(appData, months);
+                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection(appData, months);
 
-                // [추가] 계산 오류 처리
-                if (monthlyProjections.error) {
-                    alert(monthlyProjections.message);
-                    if (monthlyProjections.refId && assetInputRefs.current) {
-                        const targetElement = assetInputRefs.current[monthlyProjections.refId];
-                        if (targetElement) {
-                            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            // 하이라이트 효과 추가
-                            targetElement.classList.add('bg-red-200', 'transition-all', 'duration-1000');
-                            setTimeout(() => {
-                                targetElement.focus();
-                                // 1초 후 하이라이트 제거
-                                setTimeout(() => targetElement.classList.remove('bg-red-200'), 1000);
-                            }, 500);
-                        }
-                    }
-                    return { error: true }; // 오류 상태 반환
+                if (!monthlyProjections || monthlyProjections.length === 0) {
+                    return { error: true, warnings: [] };
                 }
 
                 const finalProjection = monthlyProjections[months];
@@ -1088,7 +1135,8 @@
                     projectedTotal,
                     growth: projectedTotal - currentTotal,
                     grand: currentTotal,
-                    monthlyProjections: monthlyProjections
+                    monthlyProjections: monthlyProjections,
+                    warnings: warnings
                 };
             }, [appData, projectionMonths, monthlySalary, monthlyExpenses, incomeEvents, expenseEvents, mainCashFlowAccount, isDemoMode, rebalancingTargets]);
 
@@ -1163,8 +1211,7 @@
 
             // ===== 차트 설정 =====
             useEffect(() => {
-    // [개선] 차트 패널이 접혀있으면, 굳이 차트를 다시 그리지 않습니다.
-    // 이렇게 하면 다른 패널을 조작할 때 불필요한 리렌더링 애니메이션이 보이지 않습니다.
+    // [수정] 차트 패널이 접혀있으면 다시 그리지 않음
     if (panelCollapseState['charts']) return;
 
     if (!appData || !currentPieRef.current || !projectedPieRef.current || !comparisonBarRef.current) return;
@@ -1414,50 +1461,101 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
         }
     },
     plugins: []
-});
-            }, [appData, calculation, projectionMonths, baseMonth, panelCollapseState['charts']]);
+}); 
+            }, [appData, calculation, projectionMonths, baseMonth, panelCollapseState['charts']]); // [수정] 의존성 배열에 panelCollapseState 추가
 
 
 
             // [분리] 히스토리 차트 전용 useEffect
             useEffect(() => {
-                if (panelCollapseState['history']) return; // 히스토리 패널이 접혀있으면 실행 안함
+                if (panelCollapseState['history']) return;
                 if (!historyChartRef.current || assetHistory.length === 0) return;
 
                 if (historyChartRef.current._chart) {
                     historyChartRef.current._chart.destroy();
                 }
-                
+                 
                 const historyLabels = assetHistory.map(item => {
                     const date = new Date(item.date);
                     const timeStr = item.time ? ` ${item.time.split(':').slice(0, 2).join(':')}` : '';
                     return `${date.getMonth() + 1}/${date.getDate()}${timeStr}`;
                 });
-                const historyData = assetHistory.map(item => item.netWorth);
+                const historyData = assetHistory.map(item => item.netWorth); 
                 
+                let finalLabels = [...historyLabels];
+                let finalHistoryData = [...historyData];
+                let projectionData = new Array(historyData.length).fill(null);
+
+                if (showProjectionInHistory && calculation.monthlyProjections && calculation.monthlyProjections.length > 0) {
+                    // 마지막 히스토리 지점과 연결하여 연속성 확보
+                    projectionData[historyData.length - 1] = historyData[historyData.length - 1];
+                    
+                    calculation.monthlyProjections.forEach((p, idx) => {
+                        if (idx === 0) return;
+                        
+                        // 미래 날짜 라벨 생성
+                        const [y, m] = (baseMonth || new Date().toISOString().slice(0, 7)).split('-').map(Number);
+                        const d = new Date(y, m - 1 + idx);
+                        const label = `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth() + 1).padStart(2, '0')}월 (예상)`;
+                        
+                        finalLabels.push(label);
+                        projectionData.push(Math.floor(p.total)); // 만원 이하 절삭
+                        finalHistoryData.push(null);
+                    });
+                }
+
+                const datasets = [
+                    {
+                        label: '순자산 (만원)',
+                        data: finalHistoryData,
+                        borderColor: 'rgb(79, 70, 229)',
+                        backgroundColor: (context) => {
+                            const ctx = context.chart.ctx;
+                            const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+                            gradient.addColorStop(0, 'rgba(79, 70, 229, 0.3)');
+                            gradient.addColorStop(1, 'rgba(79, 70, 229, 0)');
+                            return gradient;
+                        },
+                        tension: 0.3,
+                        fill: true,
+                        pointBackgroundColor: 'rgb(79, 70, 229)',
+                        pointHoverRadius: 6,
+                        pointHoverBackgroundColor: 'rgb(255, 255, 255)',
+                        pointHoverBorderWidth: 2,
+                        pointHoverBorderColor: 'rgb(79, 70, 229)'
+                    }
+                ];
+
+                if (showProjectionInHistory) {
+                    datasets.push({
+                        label: '예상 자산 (만원)',
+                        data: projectionData,
+                        borderColor: 'rgba(79, 70, 229, 0.5)',
+                        borderDash: [5, 5], // 점선 표시
+                        tension: 0.3,
+                        fill: false,
+                        pointRadius: 2,
+                        pointBackgroundColor: 'rgba(79, 70, 229, 0.5)'
+                    });
+                }
+
+                if (goalMode === 'target' && targetAmount > 0) {
+                    datasets.push({
+                        label: `목표 자산 (${formatNumber(targetAmount)}만원)`,
+                        data: new Array(finalLabels.length).fill(targetAmount),
+                        borderColor: 'rgba(239, 68, 68, 0.8)',
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        fill: false,
+                        borderWidth: 2
+                    });
+                }
+
                 historyChartRef.current._chart = new Chart(historyChartRef.current, {
                     type: 'line',
                     data: {
-                        labels: historyLabels,
-                        datasets: [{
-                            label: '순자산 (만원)',
-                            data: historyData,
-                            borderColor: 'rgb(79, 70, 229)',
-                            backgroundColor: (context) => {
-                                const ctx = context.chart.ctx;
-                                const gradient = ctx.createLinearGradient(0, 0, 0, 200);
-                                gradient.addColorStop(0, 'rgba(79, 70, 229, 0.3)');
-                                gradient.addColorStop(1, 'rgba(79, 70, 229, 0)');
-                                return gradient;
-                            },
-                            tension: 0.3,
-                            fill: true,
-                            pointBackgroundColor: 'rgb(79, 70, 229)',
-                            pointHoverRadius: 6,
-                            pointHoverBackgroundColor: 'rgb(255, 255, 255)',
-                            pointHoverBorderWidth: 2,
-                            pointHoverBorderColor: 'rgb(79, 70, 229)'
-                        }]
+                        labels: finalLabels,
+                        datasets: datasets
                     },
                     options: {
                         responsive: true,
@@ -1469,7 +1567,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                         scales: { y: { beginAtZero: true } }
                     }
                 });
-            }, [assetHistory, panelCollapseState['history']]);
+            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth]); // [수정] 의존성 추가
 
             // ===== 로딩 상태 처리 =====
             if (!appData) {
@@ -1480,27 +1578,26 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
             const addAsset = (sector) => setAssets(prev => ({
                 ...prev,
                 [sector]: [...(prev[sector] || []), {
-                    id: Date.now() + Math.random(), // [개선] 고유 ID 추가
+                    id: Date.now() + Math.random(), // 고유 ID 추가
                     name: '새 항목',
                     amount: 0,
                     rate: sector === 'loan' ? 3.0 : (sector === 'car' ? -2.0 : 10.0),
                     feeRate: 0,
                     monthlyContrib: 0, // 대출의 경우 '월 상환액'으로 사용
-                    extraContrib: 0, // 대출의 경우 '추가 상환액'으로 사용
-                    extraFrom: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '', // '추가 상환' 출금 계좌
-                    // [추가] 대출 전용 필드 기본값
+                    extraContrib: 0, 
+                    extraFrom: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '',
+                    // [수정] 대출 전용 필드 추가
                     repaymentMethod: '원리금균등', // 상환방식
-                    repaymentAccount: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '', // '월 상환액' 출금 계좌
-                    maturityMonth: 12 // [추가] 만기 (개월)
+                    repaymentAccount: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '',
+                    maturityMonth: 36,
+                    loanStartDate: baseMonth
                 }]
             }));
 
             const updateAsset = (sector, index, field, value) => {
-                // 👇 [개선] 숫자여야 하는 필드 목록을 만듭니다.
-                const numberFields = ['amount', 'rate', 'feeRate', 'monthlyContrib', 'extraContrib', 'maturityMonth'];
+                const numberFields = ['amount', 'rate', 'feeRate', 'monthlyContrib', 'extraContrib', 'maturityMonth']; 
 
-                // 👇 [개선] 해당 필드만 숫자로 변환하고, 나머지는(계좌 이름 등) 문자열로 둡니다.
-                let newValue = numberFields.includes(field) ? Number(value) : value;
+                let newValue = numberFields.includes(field) ? Number(value) : value; 
 
                 if (numberFields.includes(field) && isNaN(newValue)) {
                     newValue = 0; // 숫자가 아닌 값이 들어오면 0으로 처리
@@ -1513,10 +1610,24 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 }));
             };
 
-            const removeAsset = (sector, index) => setAssets(prev => ({
-                ...prev,
-                [sector]: prev[sector].filter((_, i) => i !== index)
-            }));
+            const removeAsset = (sector, index) => {
+                const assetToRemove = assets[sector][index];
+                if (assetToRemove.name === mainCashFlowAccount) {
+                    const allAccounts = Object.values(assets).flat();
+                    const nextAccount = allAccounts.find(a => a.id !== assetToRemove.id);
+                    
+                    if (nextAccount) {
+                        setMainCashFlowAccount(nextAccount.name);
+                    } else {
+                        alert('최소 한 개의 계좌는 유지되어야 하며, 주 현금흐름 계좌로 설정되어야 합니다.');
+                        return;
+                    }
+                }
+                setAssets(prev => ({
+                    ...prev,
+                    [sector]: prev[sector].filter((_, i) => i !== index)
+                }));
+            };
 
             // ===== 지출 관리 함수들 =====
             const addExpense = () => setMonthlyExpenses(prev => [...prev, { name: '새 지출', amount: 0 }]);
@@ -1540,7 +1651,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
             // ===== 이벤트 관리 함수들 =====
             const addIncomeEvent = () => {
                 setIncomeEvents(prev => {
-                    // [개선] prev가 배열이 아닐 경우를 대비하여 안전하게 처리
+                    // prev가 배열이 아닐 경우를 대비하여 안전하게 처리
                     const currentEvents = Array.isArray(prev) ? prev : [];
                     return [...currentEvents, { 
                         name: '새 수입 이벤트', amount: 0, startMonth: 1, endMonth: 1, targetSector: 'deposit', targetAsset: 0 
@@ -1621,7 +1732,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
             };
 
             const addExpenseEvent = () => setExpenseEvents(prev => {
-                // [개선] prev가 배열이 아닐 경우를 대비하여 안전하게 처리
+                // prev가 배열이 아닐 경우를 대비하여 안전하게 처리
                 const currentEvents = Array.isArray(prev) ? prev : [];
                 return [...currentEvents, { 
                     name: '새 지출 이벤트', amount: 0, startMonth: 1, endMonth: 1, targetSector: 'deposit', targetAsset: 0 
@@ -1639,7 +1750,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 }
 
                 setExpenseEvents(prev => {
-                    // [개선] prev가 배열이 아닐 경우를 대비하여 안전하게 처리
+                    // prev가 배열이 아닐 경우를 대비하여 안전하게 처리
                     const currentEvents = Array.isArray(prev) ? prev : [];
                     return currentEvents.map((event, i) =>
                         i === index ? { ...event, [field]: newValue } : event
@@ -1647,12 +1758,12 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 });
             };
             const removeExpenseEvent = (index) => setExpenseEvents(prev => {
-                // [개선] prev가 배열이 아닐 경우를 대비하여 안전하게 처리
+                // prev가 배열이 아닐 경우를 대비하여 안전하게 처리
                 const currentEvents = Array.isArray(prev) ? prev : [];
                 return currentEvents.filter((_, i) => i !== index);
             });
             // ===== 리밸런싱 알림 설정 함수들 =====
-            const updateRebalancingAlert = (sector, type, value) => {
+            const updateRebalancingAlert = (sector, type, value) => { 
                 setRebalancingAlerts(prev => ({
                     ...prev,
                     [sector]: { ...prev[sector], [type]: Number(value) }
@@ -1664,20 +1775,45 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
             const assetsPanelSectors = ['realestate','car','misc'];
             const loanPanelSectors = ['loan'];
 
-            const renderSummaryPanel = () => (
+            const renderSummaryPanel = () => {
+                const lastProj = calculation.monthlyProjections && calculation.monthlyProjections[projectionMonths];
+                let compLabel = "";
+                let compVal = 0;
+                let compPct = 0;
+
+                if (!calculation.error && projectionMonths >= 1 && calculation.monthlyProjections?.length > projectionMonths) {
+                    if (projectionMonths <= 12) {
+                        const prevProj = calculation.monthlyProjections[projectionMonths - 1];
+                        compVal = lastProj.total - prevProj.total;
+                        compPct = prevProj.total !== 0 ? (compVal / Math.abs(prevProj.total)) * 100 : 0;
+                        compLabel = "전월 대비";
+                    } else {
+                        const prevProj = calculation.monthlyProjections[projectionMonths - 12];
+                        compVal = lastProj.total - prevProj.total;
+                        compPct = prevProj.total !== 0 ? (compVal / Math.abs(prevProj.total)) * 100 : 0;
+                        compLabel = "1년 전 대비";
+                    }
+                }
+
+                return (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="md:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl shadow-lg p-6">
                         <div>
                             <h2 className="text-lg font-semibold mb-2 text-gray-600">현재 총자산</h2>
                             <p className="text-3xl font-bold text-blue-600">{formatNumber(calculation.currentTotal)}만원</p>
                         </div>
-                        <div className="mt-6">
+                        <div className="mt-6"> 
                             <h2 className="text-lg font-semibold mb-2 text-gray-600">{projectionMonths}개월 후 예상 <span className="text-gray-400 text-sm">({(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d = new Date(y||new Date().getFullYear(), (m||1)-1, 1); d.setMonth(d.getMonth()+projectionMonths); return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`; } catch { return ''; } })()})</span></h2>
                             <p className="text-3xl font-bold text-green-600">{formatNumber(calculation.projectedTotal)}만원</p>
                             <p className="text-sm text-gray-500 mt-1">예상 증가액: +{formatNumber(calculation.growth)}만원 ({formatPercent((calculation.growth) / Math.max(1, calculation.currentTotal) * 100)}%)</p>
+                            {compLabel && (
+                                <p className="text-xs text-gray-400 mt-1">
+                                    ({compLabel}: {compVal >= 0 ? '+' : ''}{formatNumber(compVal)}만원, {compVal >= 0 ? '+' : ''}{formatPercent(compPct)}%)
+                                </p>
+                            )}
                         </div>
                     </div>
-                    <div className="md:col-span-1 bg-white rounded-xl shadow-lg p-6">
+                    <div className="md:col-span-1 bg-white rounded-xl shadow-lg p-6"> 
                         <h2 className="text-xl font-bold text-gray-800 mb-4">핵심 설정</h2>
                         <div className="space-y-4">
                             <div>
@@ -1704,7 +1840,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                             </div>
                         </div>
                     </div>
-                    <div className="md:col-span-1 bg-white rounded-xl shadow-lg p-6">
+                    <div className="md:col-span-1 bg-white rounded-xl shadow-lg p-6"> 
                         <h2 className="text-xl font-bold text-gray-800 mb-4">목표 설정</h2>
                         <div className="mb-4">
                             <div className="flex border border-gray-200 rounded-lg p-1 bg-gray-100">
@@ -1717,7 +1853,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                             </div>
                         </div>
 
-                        <div className="space-y-4">
+                        <div className="space-y-4"> 
                             {goalMode === 'period' ? (
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">예상 기간 (개월)</label>
@@ -1734,7 +1870,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                     </button>
                                 </div>
                             )}
-                            
+                             
                             {goalMode === 'target' && goalSeekResult && (
                                 <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
                                     <p className="text-green-800 font-medium text-center">{goalSeekResult}</p>
@@ -1743,9 +1879,10 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                         </div>
                     </div>
                 </div>
-            );
+                );
+            };
 
-            const renderScenarioPanel = () => (
+            const renderScenarioPanel = () => ( 
                 <div className="flex flex-col lg:flex-row lg:items-start gap-6">
                     <div className="lg:w-full lg:max-w-md">
                         <h3 className="text-lg font-semibold text-gray-700 mb-4">저장된 시나리오</h3>
@@ -1769,27 +1906,38 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 </div>
             );
 
-            const renderChartsPanel = () => (
+            const renderChartsPanel = () => ( 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div className="bg-white rounded-lg shadow p-4"><canvas ref={currentPieRef} height="300"></canvas></div>
                     <div className="bg-white rounded-lg shadow p-4"><canvas ref={projectedPieRef} height="300"></canvas></div>
                     <div className="bg-white rounded-lg shadow p-4"><canvas ref={comparisonBarRef} height="300"></canvas></div>
                 </div>
             );
-
+ 
             const renderHistoryPanel = () => (
                 <>
+                    <div className="flex justify-between items-center mb-4 px-4 pt-2">
+                        <div className="text-sm text-gray-600">
+                            총 {assetHistory.length}개의 기록이 있습니다. 
+                            최근 기록: {assetHistory[assetHistory.length - 1]?.date} {assetHistory[assetHistory.length - 1]?.time ? `(${assetHistory[assetHistory.length - 1].time.split(':').slice(0, 2).join(':')})` : ''} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth)}만원)
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer bg-blue-50 px-3 py-1 rounded-full border border-blue-100 hover:bg-blue-100 transition-colors">
+                            <input 
+                                type="checkbox" 
+                                checked={showProjectionInHistory} 
+                                onChange={(e) => setShowProjectionInHistory(e.target.checked)}
+                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-xs font-semibold text-blue-700">미래 예상 자산 표시</span>
+                        </label>
+                    </div>
                     <div className="bg-gray-50 rounded-lg p-4">
                         <canvas ref={historyChartRef} height="200"></canvas>
-                    </div>
-                    <div className="mt-4 text-sm text-gray-600">
-                        총 {assetHistory.length}개의 기록이 있습니다. 
-                        최근 기록: {assetHistory[assetHistory.length - 1]?.date} {assetHistory[assetHistory.length - 1]?.time ? `(${assetHistory[assetHistory.length - 1].time.split(':').slice(0, 2).join(':')})` : ''} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth)}만원)
                     </div>
                 </>
             );
 
-            const renderBudgetPanel = () => (
+            const renderBudgetPanel = () => ( 
                 <div className="bg-blue-50 rounded-lg shadow p-6">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                         <div className="text-center"><div className="text-sm text-gray-600">월수입</div><div className="text-xl font-bold text-blue-600">{formatNumber(monthlySalary)}만원</div></div>
@@ -1803,7 +1951,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 </div>
             );
 
-            const renderMemoPanel = () => (
+            const renderMemoPanel = () => ( 
                 <textarea className="w-full h-32 p-3 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="여기에 자유롭게 메모를 남겨보세요. (자동 저장됩니다)" value={memo} onChange={(e) => setMemo(e.target.value)} />
             );
 
@@ -1811,7 +1959,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 const validSectors = Object.keys(sectorInfo).filter(k=>k!=='loan');
                 const defaultPct = Math.round(100 / validSectors.length);
                 
-                const totalTarget = validSectors.reduce((sum, key) => {
+                const totalTarget = validSectors.reduce((sum, key) => { 
                     const value = rebalancingTargets[key];
                     const numericValue = (value === undefined || value === null) ? defaultPct : Number(value);
                     return sum + numericValue;
@@ -1836,7 +1984,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 };
 
                 return (
-                    <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg shadow p-6">
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg shadow p-6"> 
                         <StackedBarDisplay targets={rebalancingTargets} sectorInfo={sectorInfo} />
                         <div className="mb-4 grid grid-cols-1 lg:grid-cols-3 gap-4 text-sm">                                        
                             <div className="flex items-center gap-2">
@@ -1892,10 +2040,10 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
             };
 
             const renderAssetsPanel = () => (
-                <div className="space-y-8">
+                <div className="space-y-8"> 
                     {assetSectorOrder.map((sectorKey, index) => (
                         <div key={sectorKey} className={`bg-${sectorInfo[sectorKey].color}-50 rounded-lg shadow p-6`}>
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4"> 
                                 <button type="button" onClick={()=> setHiddenSectors(prev=> ({...prev, [sectorKey]: !prev[sectorKey]}))} className={`text-left text-xl font-semibold text-${sectorInfo[sectorKey].color}-700 flex items-center gap-2`}>
                                     <span>{sectorInfo[sectorKey].icon}</span>
                                     {sectorInfo[sectorKey].name}
@@ -1906,10 +2054,10 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                     <span className="ml-2 text-xs text-gray-500">{hiddenSectors[sectorKey] ? '(접힘)' : '(펼침)'}</span>
                                 </button>
                                 <div className="flex items-center gap-2">
-                                    <div className="flex items-center gap-1 bg-white rounded-full p-1">
+                                    <div className="flex items-center gap-1 bg-white rounded-full p-1"> 
                                         <button onClick={() => moveAssetSector(sectorKey, -1)} disabled={index === 0} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed" title="위로 이동">
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
-                                        </button>
+                                        </button> 
                                         <button onClick={() => moveAssetSector(sectorKey, 1)} disabled={index === assetSectorOrder.length - 1} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed" title="아래로 이동">
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
                                         </button>
@@ -1920,7 +2068,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                 </div>
                             </div>
                             {!hiddenSectors[sectorKey] && (
-                            <div className="space-y-4">
+                            <div className="space-y-4"> 
                                 {assets[sectorKey]?.map((asset, index) => {
                                     const projectedAmount = calculation.projected[sectorKey]?.[index]?.amount || 0;
                                     const sectorTotal = projectedSectorTotals[sectorKey]?.amount || 1;
@@ -1931,7 +2079,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                     const monthlyContribRef = el => assetInputRefs.current[`${sectorKey}-${index}-monthlyContrib`] = el;
 
                                     return (
-                                        <div key={index} className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+                                        <div key={asset.id || index} className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
                                             {sectorKey !== 'loan' && (
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3 items-center">
                                                     <input ref={nameRef} type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
@@ -2064,7 +2212,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
             );
 
             const renderExpensesPanel = () => (
-                <div className="bg-red-50 rounded-lg shadow p-6">
+                <div className="bg-red-50 rounded-lg shadow p-6"> 
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-lg font-semibold text-red-700">월별 지출</h3>
                         <button onClick={addExpense} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 whitespace-nowrap">+ 지출 추가</button>
@@ -2084,7 +2232,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 </div>
             );
 
-            const renderEventsPanel = () => (
+            const renderEventsPanel = () => ( 
                 <div className="space-y-6">
                     <div className="bg-green-50 rounded-lg shadow p-6">
                         <div className="flex justify-between items-center mb-4">
@@ -2267,15 +2415,11 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
             const renderFunctions = { renderSummaryPanel, renderScenarioPanel, renderChartsPanel, renderHistoryPanel, renderBudgetPanel, renderMemoPanel, renderRebalancePanel, renderAssetsPanel, renderExpensesPanel, renderEventsPanel };
 
             return (
-                calculation.error ? (
-                    <div className="flex items-center justify-center min-h-screen bg-red-50 text-red-700">
-                        <div className="text-center p-8 bg-white rounded-lg shadow-md">
-                            <h2 className="text-2xl font-bold mb-2">계산 오류 발생</h2>
-                            <p>입력값을 확인하거나 설정을 초기화해주세요.</p>
-                            <p className="text-sm text-gray-500 mt-4">{typeof calculation.error === 'string' ? calculation.error : '알 수 없는 오류'}</p>
-                        </div>
-                    </div>
-                ) : (
+                (calculation.error || layoutOrder.length === 0) ? 
+                <div className="flex items-center justify-center min-h-screen bg-gray-50">
+                    { layoutOrder.length === 0 ? '레이아웃 로딩 중...' : '계산 오류 발생. 설정을 확인해주세요.' }
+                </div>
+                :
                     <div className="min-h-screen bg-gray-50">
                     <div className="sticky top-0 z-50 bg-white shadow-sm border-b">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -2283,7 +2427,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                 <h1 id="app-title" className="text-xl sm:text-2xl font-bold text-gray-900 cursor-pointer" onClick={cycleDisplayMode} title="클릭하여 사용자/프라이빗/데모 모드 전환">
                                     자산 플래너 {titleText}
                                 </h1>
-                                <div className="hidden sm:flex items-center gap-2 sm:gap-4">
+                                <div className="hidden sm:flex items-center gap-2 sm:gap-4"> 
                                     <button onClick={saveToPDF} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">📄 PDF 저장</button>
                                     <button onClick={saveScenario} className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">💾 시나리오 저장</button>
                                     <button onClick={saveAsDefault} className="inline-flex items-center px-3 py-2 border border-blue-300 text-sm leading-4 font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50">⭐ 기본값 저장</button>
@@ -2305,10 +2449,10 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                     </div>
 
                     {/* ===== 메인 콘텐츠 ===== */}
-                    <div id="dashboard-content" className="p-4 sm:p-6 max-w-7xl mx-auto space-y-8">
+                    <div id="dashboard-content" className="p-4 sm:p-6 max-w-7xl mx-auto">
                         <div className="space-y-8">
                             {layoutOrder.map((panelId, index) => {
-                                const panelProps = {
+                                const panelProps = { 
                                     key: panelId,
                                     id: panelId,
                                     moveUp: () => movePanel(panelId, -1),
@@ -2319,29 +2463,35 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                     onToggle: () => togglePanelCollapse(panelId),
                                 };
 
-                                const { renderSummaryPanel, renderScenarioPanel, renderChartsPanel, renderHistoryPanel, renderBudgetPanel, renderMemoPanel, renderRebalancePanel, renderAssetsPanel, renderExpensesPanel, renderEventsPanel } = renderFunctions;
+                                const { renderSummaryPanel, renderScenarioPanel, renderChartsPanel, renderHistoryPanel, renderBudgetPanel, renderMemoPanel, renderRebalancePanel, renderAssetsPanel, renderExpensesPanel, renderEventsPanel } = renderFunctions; 
 
                                 switch (panelId) {
                                     case 'summary':
                                         return (
                                             <PanelWrapper {...panelProps} title="📊 요약 및 핵심 설정">
                                                 {renderSummaryPanel()}
+                                                {calculation.warnings && calculation.warnings.length > 0 && (
+                                                    <div className="mt-6 p-4 bg-red-50 border-l-4 border-red-500 rounded shadow-sm">
+                                                        <h3 className="text-sm font-bold text-red-800 mb-2 flex items-center gap-2">⚠️ 시뮬레이션 경고 ({calculation.warnings.length}건)</h3>
+                                                        <ul className="text-xs text-red-700 list-disc list-inside space-y-1 max-h-40 overflow-y-auto">
+                                                            {calculation.warnings.map((w, i) => (
+                                                                <li key={i}>[월 {w.month}] {w.message}</li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
                                             </PanelWrapper>
                                         );
-                                    case 'scenario':
+                                    case 'scenario': 
                                         return scenarios.length > 0 && (
-                                            <PanelWrapper key={panelId} {...panelProps} title="🔀 시나리오 비교">
+                                            <PanelWrapper key={panelId} {...panelProps} title="🔀 시나리오 비교" className="bg-gray-50 rounded-lg shadow">
                                                 {renderScenarioPanel()}
                                             </PanelWrapper>
                                         );
                                     case 'charts':
                                         return (
                                             <PanelWrapper key={panelId} {...panelProps} title="🍩 포트폴리오 분석 차트">
-                                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                                    <div className="bg-white rounded-lg shadow p-4"><canvas ref={currentPieRef} height="300"></canvas></div>
-                                                    <div className="bg-white rounded-lg shadow p-4"><canvas ref={projectedPieRef} height="300"></canvas></div>
-                                                    <div className="bg-white rounded-lg shadow p-4"><canvas ref={comparisonBarRef} height="300"></canvas></div>
-                                                </div>
+                                                {renderChartsPanel()}
                                             </PanelWrapper>
                                         );
                                     case 'history':
@@ -2389,7 +2539,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                     default: return null;
                                 }
                             })}
-                            {/* 상세 분석 테이블 (패널화 되지 않음) */}
+                            {/* 상세 분석 테이블 */}
                             <PanelWrapper id="detail-analysis" title="🔍 상세 분석" isCollapsed={!!panelCollapseState['detail-analysis']} onToggle={() => togglePanelCollapse('detail-analysis')}>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm">
@@ -2409,6 +2559,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                 const current = currentSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
                                                 const projected = projectedSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
                                                 const growthRate = current.amount > 0 ? ((projected.amount - current.amount) / current.amount * 100) : 0;
+                                                const isPositiveGood = sectorKey === 'loan' ? growthRate <= 0 : growthRate >= 0;
                                                 const rebalanceStatus = getRebalanceStatus(sectorKey, projected.percentage);
                                                 const targetPct = (rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length));
                                                 
@@ -2420,7 +2571,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                             </td>
                                                             <td className="p-3 text-right">{formatNumber(current.amount)}</td>
                                                             <td className="p-3 text-right">{formatNumber(projected.amount)}</td>
-                                                            <td className={`p-3 text-right ${growthRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(growthRate)}%</td>
+                                                            <td className={`p-3 text-right ${isPositiveGood ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(growthRate)}%</td>
                                                             <td className="p-3 text-right">{formatPercent(current.percentage)}%</td>
                                                             <td className="p-3 text-right">{formatPercent(projected.percentage)}%</td>
                                                             <td className="p-3 text-right">{formatPercent(targetPct)}%</td>
@@ -2429,6 +2580,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                             const projectedAmount = calculation.projected[sectorKey]?.[idx]?.amount || 0;
                                                             const assetGrowth = projectedAmount - asset.amount;
                                                             const assetGrowthRate = asset.amount > 0 ? (assetGrowth / asset.amount * 100) : 0;
+                                                            const isAssetPositiveGood = sectorKey === 'loan' ? assetGrowthRate <= 0 : assetGrowthRate >= 0;
                                                             const sectorTotal = projected.amount || 1;
                                                             const currentAssetPercentageInPortfolio = (currentGrossTotal > 0) ? (asset.amount / currentGrossTotal * 100) : 0;
                                                             const assetPercentageInPortfolio = (projectedAmount / projectedGrossTotal * 100);
@@ -2440,7 +2592,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                                     <td className="p-3 pl-8 text-sm">└ {asset.name}</td>
                                                                     <td className="p-3 text-right text-sm">{formatNumber(asset.amount)}</td>
                                                                     <td className="p-3 text-right text-sm">{formatNumber(projectedAmount)}</td>
-                                                                    <td className={`p-3 text-right text-sm ${assetGrowthRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(assetGrowthRate)}%</td>
+                                                                    <td className={`p-3 text-right text-sm ${isAssetPositiveGood ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(assetGrowthRate)}%</td>
                                                                     <td className="p-3 text-right text-sm">
                                                                         {sectorKey !== 'loan' ? `${formatPercent(currentAssetPercentageInPortfolio)}% (${formatPercent(currentAssetPercentageInSector)}%)` : '-'}
                                                                     </td>
@@ -2474,7 +2626,7 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                 <ul className="list-disc list-inside space-y-1">
                                     <li>수익률은 월복리로 계산됩니다.</li>
                                     <li>{applyTax ? '배당소득세(15.4%) 포함 세후 수익률 적용' : '배당소득세 제외 세전 수익률 적용'}</li>
-                                    <li>이벤트성 수입은 지정된 계좌에 입금되며, 이벤트성 지출은 생활비통장에서 차감됩니다.</li>
+                                    <li>대출 상환은 지정된 상환계좌에서 자동으로 차감됩니다. 잔액 부족 시 경고가 표시됩니다.</li>
                                     <li>월수입외 납입은 지정된 출금통장에서 차감됩니다.</li>
                                     <li>리밸런싱: 경고(노란색), 위험(빨간색) 임계값에 따라 표시됩니다.</li>
                                 </ul>
@@ -2510,8 +2662,10 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                         type="import"
                         initialSelection={importSelection}
                     />
+                    {calculation.warnings?.length > 0 && (
+                        <div className="fixed inset-0 border-[6px] border-red-500 pointer-events-none z-[9999] animate-pulse opacity-60"></div>
+                    )}
                     </div>
-                )
             );
         };
         const ScenarioCompare = ({ scenarios, sectorInfo, calculateMonthlyProjection, formatNumber }) => {
@@ -2607,7 +2761,8 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                             const diffPercent = percentB - percentA;
                                                             const signAmount = diffAmount >= 0 ? '+' : '';
                                                             const signPercent = diffPercent >= 0 ? '+' : '';
-                                                            const color = diffAmount >= 0 ? 'text-green-600' : 'text-red-600';
+                                                            const isGood = sectorKey === 'loan' ? diffAmount <= 0 : diffAmount >= 0;
+                                                            const color = isGood ? 'text-green-600' : 'text-red-600';
                                                             return (
                                                                 <div className={color}>
                                                                     <span>{signAmount}{formatNumber(diffAmount)}</span>
@@ -2619,41 +2774,24 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                 )}
                                             </tr>
                                             {(() => {
-                                                // [개선] 모든 시나리오의 자산을 통합하여 고유한 목록 생성 (ID와 이름 모두 사용)
-                                                const allItems = new Map(); // key: id, value: { name }
-                                                const itemsByName = {}; // key: name, value: { id, name }
-
+                                                const allItems = new Map();
                                                 results.forEach(r => {
                                                     const finalProjection = r.projections[r.projections.length - 1];
                                                     finalProjection?.itemTotals[sectorKey]?.forEach(item => {
-                                                        if (item.id && !allItems.has(item.id)) {
-                                                            allItems.set(item.id, { name: item.name });
-                                                        }
-                                                        if (!itemsByName[item.name]) {
-                                                            itemsByName[item.name] = { id: item.id, name: item.name };
+                                                        const key = item.id || item.name;
+                                                        if (!allItems.has(key)) {
+                                                            allItems.set(key, { name: item.name });
                                                         }
                                                     });
                                                 });
-
-                                                // ID 기반 목록에 이름 기반 목록을 합치되, 중복 ID는 제외
-                                                Object.values(itemsByName).forEach(item => {
-                                                    if (!allItems.has(item.id)) {
-                                                        // ID가 없는 옛날 데이터거나, ID가 겹치지 않는 이름 기반 항목일 경우
-                                                        // 이름으로라도 식별할 수 있도록 추가. (고유성을 위해 이름 사용)
-                                                        if (!Array.from(allItems.values()).some(v => v.name === item.name)) {
-                                                            allItems.set(item.name, { name: item.name }); // key를 이름으로 사용
-                                                        }
-                                                    }
-                                                });
                                                 return Array.from(allItems.entries());
-                                            })().map(([id, { name }]) => (
-                                                <tr key={`${sectorKey}-${id}`} className="border-t bg-gray-50">
+                                            })().map(([key, { name }]) => (
+                                                <tr key={`${sectorKey}-${key}`} className="border-t bg-gray-50">
                                                     <td className="p-3 pl-8 text-sm text-gray-600">└ {name}</td>
                                                     {results.map(r => {
-                                                        const finalProjection = r.projections[r.projections.length - 1];
-                                                        // [개선] ID 우선, 이름 차선으로 정확한 항목 찾기
+                                                        const finalProjection = r.projections[r.projections.length - 1]; 
                                                         const items = finalProjection?.itemTotals[sectorKey] || [];
-                                                        const itemData = items.find(item => item.id === id) || items.find(item => item.name === name) || { amount: 0, percentage: 0 };
+                                                        const itemData = items.find(item => (item.id || item.name) === key) || { amount: 0, percentage: 0 };
                                                         return (
                                                             <td key={r.id} className="p-3 text-right text-sm">
                                                                 <div>{formatNumber(itemData.amount)}</div>
@@ -2663,19 +2801,17 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                                                     {results.length === 2 && (
                                                         <td className="p-3 text-right text-sm text-indigo-700">
                                                             {(() => {
-                                                                const finalA = results[0].projections[results[0].projections.length - 1];
-                                                                const finalB = results[1].projections[results[1].projections.length - 1];
-                                                                // [개선] ID 우선, 이름 차선으로 정확한 항목 찾기
+                                                                const finalA = results[0].projections[results[0].projections.length - 1]; 
+                                                                const finalB = results[1].projections[results[1].projections.length - 1]; 
                                                                 const itemsA = finalA?.itemTotals[sectorKey] || [];
                                                                 const itemsB = finalB?.itemTotals[sectorKey] || [];
-                                                                const itemA = itemsA.find(item => item.id === id) || itemsA.find(item => item.name === name) || { amount: 0, percentage: 0 };
-                                                                const itemB = itemsB.find(item => item.id === id) || itemsB.find(item => item.name === name) || { amount: 0, percentage: 0 };
+                                                                const itemA = itemsA.find(item => (item.id || item.name) === key) || { amount: 0, percentage: 0 };
+                                                                const itemB = itemsB.find(item => (item.id || item.name) === key) || { amount: 0, percentage: 0 };
 
                                                                 const diffAmount = itemB.amount - itemA.amount;
-                                                                const diffPercent = itemB.percentage - itemA.percentage;
                                                                 const signAmount = diffAmount >= 0 ? '+' : '';
-                                                                const signPercent = diffPercent >= 0 ? '+' : '';
-                                                                const color = diffAmount >= 0 ? 'text-green-600' : 'text-red-600';
+                                                                const isGood = sectorKey === 'loan' ? diffAmount <= 0 : diffAmount >= 0;
+                                                                const color = isGood ? 'text-green-600' : 'text-red-600';
                                                                 return (
                                                                     <div className={color}>
                                                                         <div>{signAmount}{formatNumber(diffAmount)}</div>
