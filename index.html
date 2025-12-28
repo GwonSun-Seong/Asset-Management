@@ -908,6 +908,26 @@
                 monthlyExpenses: typeof value === 'function' ? value(Array.isArray(prev.monthlyExpenses) ? prev.monthlyExpenses : []) : value 
             }));
 
+            // [이동] Setter 함수들을 handleDarkModeToggle보다 상단으로 이동하여 참조 오류 방지
+            const setDarkMode = (value) => setAppData(prev => ({ ...prev, darkMode: value }));
+            const setMainCashFlowAccount = (value) => setAppData(prev => ({ ...prev, mainCashFlowAccount: value }));
+            const setIncomeEvents = (value) => setAppData(prev => ({ 
+                ...prev, 
+                incomeEvents: typeof value === 'function' ? value(Array.isArray(prev.incomeEvents) ? prev.incomeEvents : []) : value 
+            }));
+            const setExpenseEvents = (value) => setAppData(prev => ({ 
+                ...prev, 
+                expenseEvents: typeof value === 'function' ? value(Array.isArray(prev.expenseEvents) ? prev.expenseEvents : []) : value 
+            }));
+            
+            const setTargetAmount = (value) => setAppData(prev => ({ ...prev, targetAmount: value }));
+            const setGoalMode = (value) => setAppData(prev => ({ ...prev, goalMode: value }));
+            const setDisplayMode = (value) => setAppData(prev => ({ ...prev, displayMode: value })); 
+            const setRebalancingAlerts = (value) => setAppData(prev => ({ ...prev, rebalancingAlerts: typeof value === 'function' ? value(prev.rebalancingAlerts) : value }));
+            const setBaseMonth = (value) => setAppData(prev => ({ ...prev, baseMonth: value }));
+            const setRebalancingTargets = (value) => setAppData(prev => ({ ...prev, rebalancingTargets: typeof value === 'function' ? value(prev.rebalancingTargets) : value }));
+            const setMemo = (value) => setAppData(prev => ({ ...prev, memo: value }));
+
             // [추가] 다크모드 토글 핸들러 (PRO 제한 로직)
             const handleDarkModeToggle = () => {
                 if (!isPro) {
@@ -925,6 +945,13 @@
                     setAppData(prev => ({ ...prev, darkMode: false }));
                 }
             }, [isPro, darkMode]);
+
+            // [추가] PRO 권한 상실 시 히스토리 예상 자산 표시 강제 해제
+            useEffect(() => {
+                if (!isPro && showProjectionInHistory) {
+                    setShowProjectionInHistory(false);
+                }
+            }, [isPro, showProjectionInHistory]);
 
 
             // ===== Supabase 연동 로직 =====
@@ -1098,25 +1125,6 @@
                     setIsLoadingCloud(false);
                 }
             };
-
-            const setDarkMode = (value) => setAppData(prev => ({ ...prev, darkMode: value }));
-            const setMainCashFlowAccount = (value) => setAppData(prev => ({ ...prev, mainCashFlowAccount: value }));
-            const setIncomeEvents = (value) => setAppData(prev => ({ 
-                ...prev, 
-                incomeEvents: typeof value === 'function' ? value(Array.isArray(prev.incomeEvents) ? prev.incomeEvents : []) : value 
-            }));
-            const setExpenseEvents = (value) => setAppData(prev => ({ 
-                ...prev, 
-                expenseEvents: typeof value === 'function' ? value(Array.isArray(prev.expenseEvents) ? prev.expenseEvents : []) : value 
-            }));
-            
-            const setTargetAmount = (value) => setAppData(prev => ({ ...prev, targetAmount: value }));
-            const setGoalMode = (value) => setAppData(prev => ({ ...prev, goalMode: value }));
-            const setDisplayMode = (value) => setAppData(prev => ({ ...prev, displayMode: value })); 
-            const setRebalancingAlerts = (value) => setAppData(prev => ({ ...prev, rebalancingAlerts: typeof value === 'function' ? value(prev.rebalancingAlerts) : value }));
-            const setBaseMonth = (value) => setAppData(prev => ({ ...prev, baseMonth: value }));
-            const setRebalancingTargets = (value) => setAppData(prev => ({ ...prev, rebalancingTargets: typeof value === 'function' ? value(prev.rebalancingTargets) : value }));
-            const setMemo = (value) => setAppData(prev => ({ ...prev, memo: value })); // [추가]
 
 
 
@@ -2261,14 +2269,25 @@ updateOrCreateChart(comparisonBarRef, {
                             총 {assetHistory.length}개의 기록이 있습니다. 
                             최근 기록: {assetHistory[assetHistory.length - 1]?.date} {assetHistory[assetHistory.length - 1]?.time ? `(${assetHistory[assetHistory.length - 1].time.split(':').slice(0, 2).join(':')})` : ''} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth)}만원)
                         </div>
-                        <label className="flex items-center gap-2 cursor-pointer bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full border border-blue-100 dark:border-blue-800 hover:bg-blue-100 transition-colors">
+                        <label className={`flex items-center gap-2 cursor-pointer px-3 py-1 rounded-full border transition-colors ${!isPro ? 'bg-gray-100 border-gray-200' : 'bg-blue-50 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800 hover:bg-blue-100'}`}>
                             <input 
                                 type="checkbox" 
                                 checked={showProjectionInHistory} 
-                                onChange={(e) => setShowProjectionInHistory(e.target.checked)}
-                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                onChange={(e) => {
+                                    if (!isPro) {
+                                        if (confirm('미래 예상 자산 표시 기능은 PRO 버전에서만 제공됩니다. 후원하시겠습니까?')) {
+                                            window.open('https://blog.naver.com/zocdoc', '_blank');
+                                        }
+                                        return;
+                                    }
+                                    setShowProjectionInHistory(e.target.checked);
+                                }}
+                                className={`w-4 h-4 rounded focus:ring-blue-500 ${!isPro ? 'text-gray-400' : 'text-blue-600'}`}
                             />
-                            <span className="text-xs font-semibold text-blue-700">미래 예상 자산 표시</span>
+                            <span className={`text-xs font-semibold flex items-center gap-1 ${!isPro ? 'text-gray-500' : 'text-blue-700'}`}>
+                                {!isPro && <span>🔒</span>}
+                                미래 예상 자산 표시
+                            </span>
                         </label>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
