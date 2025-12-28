@@ -210,6 +210,14 @@
             const [isCloudLoaded, setIsCloudLoaded] = useState(false); // [추가] 클라우드 데이터 로드 완료 여부 (Race Condition 방지)
             const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
 
+            // [추가] 타임아웃 헬퍼 함수 (30초)
+            const withTimeout = (promise, ms = 30000) => {
+                return Promise.race([
+                    promise,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('요청 시간이 초과되었습니다. (30초)')), ms))
+                ]);
+            };
+
             // Cloudflare 빌드 시점에 환경 변수로 교체될 플레이스홀더
             const SUPABASE_URL = '__SUPABASE_URL__';
             const SUPABASE_KEY = '__SUPABASE_KEY__';
@@ -362,10 +370,21 @@
 
                     // 3. Supabase 세션 체크 (백그라운드)
                     if (supabase) {
-                        const { data: { session } } = await supabase.auth.getSession();
-                        if (session) {
-                            // 세션이 있으면 구독 상태 확인 및 클라우드 동기화 시도
-                            checkSubscription(session, false, mergedData || baseData); // [수정] 로드된 로컬 데이터를 직접 전달
+                        try {
+                            const { data: { session }, error } = await withTimeout(supabase.auth.getSession());
+                            
+                            if (error) {
+                                console.error('Session error:', error);
+                                alert('로그인 실패: ' + (error.message || '세션을 확인할 수 없습니다.'));
+                            }
+
+                            if (session) {
+                                // 세션이 있으면 구독 상태 확인 및 클라우드 동기화 시도
+                                checkSubscription(session, false, mergedData || baseData); // [수정] 로드된 로컬 데이터를 직접 전달
+                            }
+                        } catch (err) {
+                            console.error('Session check error:', err);
+                            // 타임아웃 시 조용히 실패 처리 (초기 로드이므로)
                         }
                     }
                 };
@@ -385,14 +404,14 @@
 
                 setSyncStatus('syncing');
                 try {
-                    const { data, error } = await supabase
+                    const { data, error } = await withTimeout(supabase
                         .from('user_assets')
                         .upsert({ 
                             email: verifiedEmail, 
                             data: dataToSave,
                         }, { onConflict: 'email' })
                         .select('updated_at')
-                        .single();
+                        .single());
                     
                     if (error) throw error;
                     if (data) {
@@ -661,31 +680,37 @@
                 
                 if (isManualCheck) setIsLoadingCloud(true);
 
-                try {
-                    setVerifiedEmail(session.user.email);
-                    setUserProfile(session.user.user_metadata);
+                // [수정] 로그인 상태 우선 반영 (DB 조회 실패하더라도 로그인은 유지)
+                setVerifiedEmail(session.user.email);
+                setUserProfile(session.user.user_metadata);
 
-                    const { data: profile, error } = await supabase
+                try {
+                    const { data: profile, error } = await withTimeout(supabase
                         .from('user_profiles')
                         .select('is_paid')
                         .eq('id', session.user.id)
-                        .maybeSingle();
+                        .maybeSingle());
                     
-                    if (error) throw error;
+                    if (error) {
+                        console.warn('Profile fetch error (ignoring for login):', error);
+                        // DB 에러가 나도 로그인은 유지하되 PRO 권한만 false로 설정
+                        setIsPro(false);
+                    } else {
+                        const proStatus = profile ? profile.is_paid : false;
+                        setIsPro(proStatus);
 
-                    const proStatus = profile ? profile.is_paid : false;
-                    setIsPro(proStatus);
+                        if (isManualCheck) {
+                            alert(`구독 상태가 확인되었습니다.\n현재 상태: ${proStatus ? 'PRO (유료)' : 'FREE (무료)'}`);
+                        }
 
-                    if (isManualCheck) {
-                        alert(`구독 상태가 확인되었습니다.\n현재 상태: ${proStatus ? 'PRO (유료)' : 'FREE (무료)'}`);
-                    }
-
-                    // PRO 권한이 확인된 경우에만 클라우드 데이터 로드 시도
-                    if (proStatus) {
-                        await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
+                        // PRO 권한이 확인된 경우에만 클라우드 데이터 로드 시도
+                        if (proStatus) {
+                            await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
+                        }
                     }
                 } catch (err) {
                     console.error('Subscription check error:', err);
+                    setIsPro(false); // 에러 발생 시 안전하게 FREE 모드로 설정
                     if (isManualCheck) alert('구독 상태 확인 중 오류가 발생했습니다.');
                 } finally {
                     if (isManualCheck) setIsLoadingCloud(false);
@@ -700,7 +725,9 @@
 
                 const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
                     if (session && !isProcessing.current) {
-                        if (event === 'SIGNED_IN' && !isFetchingRef.current) {
+                        // [수정] 이벤트 타입 체크 완화: 세션이 있고 데이터 로드 중이 아니면 상태 동기화
+                        // SIGNED_IN 뿐만 아니라 INITIAL_SESSION(새로고침) 등 유효 세션 이벤트 대응
+                        if (!isFetchingRef.current && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
                             await checkSubscription(session);
                         }
                     } else if (!session) {
@@ -714,11 +741,15 @@
 
             const handleLogin = async () => {
                 if (!supabase) return alert('데이터베이스 연결 설정이 필요합니다.');
-                const { error } = await supabase.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: { redirectTo: window.location.origin }
-                });
-                if (error) alert('로그인 오류: ' + error.message);
+                try {
+                    const { error } = await withTimeout(supabase.auth.signInWithOAuth({
+                        provider: 'google',
+                        options: { redirectTo: window.location.origin }
+                    }));
+                    if (error) alert('로그인 오류: ' + error.message);
+                } catch (err) {
+                    alert('로그인 요청 시간 초과: ' + err.message);
+                }
             };
 
             // 실시간 클라우드 동기화 (Debounced)
@@ -739,11 +770,11 @@
                 setIsLoadingCloud(true);
                 setSyncStatusError('');
                 try {
-                    const { data, error } = await supabase
+                    const { data, error } = await withTimeout(supabase
                         .from('user_assets')
                         .select('data, updated_at')
                         .eq('email', email)
-                        .maybeSingle();
+                        .maybeSingle());
                     
                     if (error) throw error;
 
@@ -802,7 +833,7 @@
                         // [수정] 신규 사용자 예외 처리
                         // RLS 정책상 PRO 유저만 INSERT 가능하므로, FREE 유저는 INSERT 시도하지 않음
                         if (pro) {
-                            const { data: upsertData, error: upsertError } = await supabase
+                            const { data: upsertData, error: upsertError } = await withTimeout(supabase
                                 .from('user_assets')
                                 .upsert({ 
                                     email: email, 
@@ -810,7 +841,7 @@
                                     updated_at: new Date().toISOString()
                                 }, { onConflict: 'email' })
                                 .select('updated_at')
-                                .single();
+                                .single());
                             
                             if (upsertError) throw upsertError;
                             if (upsertData) localStorage.setItem('assetDashboardLastUpdate', upsertData.updated_at);
