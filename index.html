@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>자산 플래너</title>
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4329438160019487"
+     crossorigin="anonymous"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -85,6 +87,91 @@
                         <div className="flex justify-end space-x-3">
                             <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">취소</button>
                             <button onClick={handleConfirm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">확인</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // [추가] 개인정보처리방침 모달
+        const PrivacyPolicyModal = ({ isOpen, onClose }) => {
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+                        <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">개인정보처리방침</h3>
+                            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto text-sm text-gray-700 dark:text-gray-300 space-y-4">
+                            <p><strong>1. 개인정보의 처리 목적</strong><br/>
+                            '자산 플래너'(이하 '서비스')는 다음의 목적을 위하여 개인정보를 처리합니다. 처리하고 있는 개인정보는 다음의 목적 이외의 용도로는 이용되지 않으며 이용 목적이 변경되는 경우에는 별도의 동의를 받는 등 필요한 조치를 이행할 예정입니다.<br/>
+                            - 서비스 제공 및 콘텐츠 이용: 자산 시뮬레이션 데이터 저장 및 동기화 (선택 사항)</p>
+
+                            <p><strong>2. 처리하는 개인정보의 항목</strong><br/>
+                            서비스는 기본적인 기능 이용 시 별도의 개인정보를 수집하지 않으며, 모든 데이터는 사용자의 브라우저(Local Storage)에 저장됩니다.<br/>
+                            단, '클라우드 동기화(PRO)' 기능을 사용하는 경우에 한하여 다음의 정보가 수집될 수 있습니다.<br/>
+                            - 필수항목: 이메일 주소, 프로필 이미지, 이름 (Google 로그인 시 제공되는 정보)<br/>
+                            - 수집방법: Google OAuth 2.0 연동</p>
+
+                            <p><strong>3. 개인정보의 처리 및 보유 기간</strong><br/>
+                            서비스는 법령에 따른 개인정보 보유·이용기간 또는 정보주체로부터 개인정보를 수집 시에 동의받은 개인정보 보유·이용기간 내에서 개인정보를 처리·보유합니다.<br/>
+                            - 회원 탈퇴 시 즉시 파기</p>
+
+                            <p><strong>4. 쿠키(Cookie)의 운용 및 거부</strong><br/>
+                            서비스는 이용자에게 개별적인 맞춤서비스를 제공하기 위해 이용정보를 저장하고 수시로 불러오는 '쿠키(cookie)'를 사용합니다.<br/>
+                            - 쿠키 등 사용 목적: 이용자의 접속 빈도나 방문 시간 등을 분석, 이용자의 취향과 관심분야를 파악 및 자취 추적<br/>
+                            - 쿠키 설정 거부 방법: 웹브라우저 상단의 도구 > 인터넷 옵션 > 개인정보 메뉴의 옵션 설정을 통해 쿠키 저장을 거부할 수 있습니다.</p>
+                            
+                            <p><strong>5. 광고 게재</strong><br/>
+                            본 서비스는 Google AdSense를 통해 광고를 게재할 수 있으며, 이 과정에서 Google은 쿠키를 사용하여 사용자의 이전 방문 기록을 바탕으로 광고를 제공할 수 있습니다.</p>
+                        </div>
+                        <div className="p-6 border-t dark:border-gray-700 flex justify-end">
+                            <button onClick={onClose} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">닫기</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // [추가] 기능 제안 모달
+        const SuggestionModal = ({ isOpen, onClose, onSubmit }) => {
+            const [content, setContent] = useState('');
+            const [isSubmitting, setIsSubmitting] = useState(false);
+
+            if (!isOpen) return null;
+
+            const handleSubmit = async () => {
+                if (!content.trim()) return alert('내용을 입력해주세요.');
+                setIsSubmitting(true);
+                await onSubmit(content);
+                setIsSubmitting(false);
+                setContent('');
+                onClose();
+            };
+
+            return (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">💡 기능 제안 및 의견 보내기</h3>
+                        <textarea
+                            className="w-full h-32 p-3 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-4 resize-none"
+                            placeholder="어떤 기능이 필요하신가요? 자유롭게 의견을 남겨주세요."
+                            value={content}
+                            onChange={(e) => setContent(e.target.value)}
+                        />
+                        <div className="flex justify-end gap-2">
+                            <button onClick={onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">취소</button>
+                            <button 
+                                onClick={handleSubmit} 
+                                disabled={isSubmitting}
+                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {isSubmitting ? '전송 중...' : '보내기'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -209,6 +296,7 @@
             const isProcessing = useRef(false); // [추가] 상태 업데이트 락(Lock)
             const [isCloudLoaded, setIsCloudLoaded] = useState(false); // [추가] 클라우드 데이터 로드 완료 여부 (Race Condition 방지)
             const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
+            const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
 
             // [추가] 타임아웃 헬퍼 함수 (30초)
             const withTimeout = (promise, ms = 30000) => {
@@ -252,6 +340,8 @@
             const [isImportModalOpen, setIsImportModalOpen] = useState(false);
             const [exportSelection, setExportSelection] = useState({ appData: true, scenarios: true, assetHistory: true });
             const [importSelection, setImportSelection] = useState({ appData: true, scenarios: true, assetHistory: true });            
+            const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false); // [추가] 개인정보처리방침 모달 상태
+            const [isSuggestionModalOpen, setIsSuggestionModalOpen] = useState(false); // [추가] 기능 제안 모달 상태
             // [수정] 레이아웃 및 패널 상태 관리
             const [layoutOrder, setLayoutOrder] = useState(() => {
                 try {
@@ -677,25 +767,37 @@
             // [추가] 구독 상태 확인 및 데이터 로드 함수 (재사용 가능하도록 분리)
             const checkSubscription = async (session, isManualCheck = false, localDataOverride = null) => {
                 if (!session?.user) return;
+                if (isCheckingSubscriptionRef.current && !isManualCheck) return; // 중복 실행 방지
                 
                 if (isManualCheck) setIsLoadingCloud(true);
+                isCheckingSubscriptionRef.current = true;
 
                 // [수정] 로그인 상태 우선 반영 (DB 조회 실패하더라도 로그인은 유지)
                 setVerifiedEmail(session.user.email);
                 setUserProfile(session.user.user_metadata);
 
                 try {
-                    const { data: profile, error } = await withTimeout(supabase
-                        .from('user_profiles')
-                        .select('is_paid')
-                        .eq('id', session.user.id)
-                        .maybeSingle());
+                    // [개선] DB 조회 재시도 로직 (최대 3회)
+                    let profile = null;
+                    let fetchError = null;
+
+                    for (let i = 0; i < 3; i++) {
+                        const { data, error } = await withTimeout(supabase
+                            .from('user_profiles')
+                            .select('is_paid')
+                            .eq('id', session.user.id)
+                            .maybeSingle(), 5000); // 재시도 시 짧은 타임아웃(5초) 적용
+                        
+                        if (!error) {
+                            profile = data;
+                            fetchError = null;
+                            break; // 성공 시 루프 탈출
+                        }
+                        fetchError = error;
+                        await new Promise(r => setTimeout(r, 500)); // 0.5초 대기 후 재시도
+                    }
                     
-                    if (error) {
-                        console.warn('Profile fetch error (ignoring for login):', error);
-                        // DB 에러가 나도 로그인은 유지하되 PRO 권한만 false로 설정
-                        setIsPro(false);
-                    } else {
+                    if (!fetchError) {
                         const proStatus = profile ? profile.is_paid : false;
                         setIsPro(proStatus);
 
@@ -707,13 +809,56 @@
                         if (proStatus) {
                             await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
                         }
+                    } else {
+                        console.warn('Profile fetch error after retries:', fetchError);
+                        // DB 에러가 나도 로그인은 유지하되 PRO 권한만 false로 설정
+                        setIsPro(false);
                     }
                 } catch (err) {
                     console.error('Subscription check error:', err);
                     setIsPro(false); // 에러 발생 시 안전하게 FREE 모드로 설정
                     if (isManualCheck) alert('구독 상태 확인 중 오류가 발생했습니다.');
                 } finally {
+                    isCheckingSubscriptionRef.current = false;
                     if (isManualCheck) setIsLoadingCloud(false);
+                }
+            };
+
+            // [추가] 기능 제안 전송 핸들러
+            const handleSuggestionSubmit = async (content) => {
+                if (!supabase) return;
+                try {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (!user) return alert('로그인이 필요합니다.');
+
+                    // [수정] user_profiles 테이블의 suggestions 컬럼에 내용 추가 (Append 방식)
+                    // 1. 기존 내용 조회
+                    const { data: currentProfile, error: fetchError } = await supabase
+                        .from('user_profiles')
+                        .select('suggestions')
+                        .eq('id', user.id)
+                        .maybeSingle();
+                    
+                    if (fetchError) throw fetchError;
+
+                    // 2. 기존 내용에 새 내용 이어붙이기 (타임스탬프 포함)
+                    const timestamp = new Date().toLocaleString();
+                    const newEntry = `[${timestamp}] ${content}`;
+                    const updatedSuggestions = currentProfile?.suggestions 
+                        ? currentProfile.suggestions + '\n\n' + newEntry 
+                        : newEntry;
+
+                    // 3. 업데이트 실행
+                    const { error } = await supabase
+                        .from('user_profiles')
+                        .update({ suggestions: updatedSuggestions })
+                        .eq('id', user.id);
+                    
+                    if (error) throw error;
+                    alert('소중한 의견 감사합니다! 개발자에게 전달되었습니다.');
+                } catch (error) {
+                    console.error('Suggestion error:', error);
+                    alert('의견 전송 중 오류가 발생했습니다.');
                 }
             };
 
@@ -2602,6 +2747,7 @@ updateOrCreateChart(comparisonBarRef, {
                                                         )}
                                                     </div>
                                                     <button onClick={() => fetchFromCloud(verifiedEmail, isPro, false, true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-sm">🔄 클라우드 동기화</button>
+                                                    <button onClick={() => setIsSuggestionModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-sm">💡 기능 제안</button>
                                                     <button onClick={handleLogout} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-red-500 text-sm">🚪 로그아웃</button>
                                                 </>
                                             )}
@@ -2692,11 +2838,46 @@ updateOrCreateChart(comparisonBarRef, {
                                             >
                                                 💳 구독 상태 확인
                                             </button>
+                                            {!isPro && (
+                                                <button 
+                                                    onClick={async () => {
+                                                        const code = prompt('발급받은 후원 코드를 입력하세요:');
+                                                        if (code) {
+                                                            setIsLoadingCloud(true);
+                                                            try {
+                                                                const { data, error } = await supabase.rpc('redeem_code', { input_code: code.trim() });
+                                                                if (error) throw error;
+                                                                if (data) {
+                                                                    alert('🎉 후원 코드가 확인되었습니다! PRO 모드가 활성화됩니다.');
+                                                                    const { data: { session } } = await supabase.auth.getSession();
+                                                                    if (session) checkSubscription(session, true);
+                                                                } else {
+                                                                    alert('❌ 유효하지 않거나 이미 사용된 코드입니다.');
+                                                                }
+                                                            } catch (err) {
+                                                                console.error('Redeem error:', err);
+                                                                alert('오류가 발생했습니다: ' + err.message);
+                                                            } finally {
+                                                                setIsLoadingCloud(false);
+                                                            }
+                                                        }
+                                                    }}
+                                                    className="w-full py-2 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-[10px] font-bold hover:bg-green-100 dark:hover:bg-green-900/50 transition-all border border-green-100 dark:border-green-800"
+                                                >
+                                                    🎫 후원 코드 등록
+                                                </button>
+                                            )}
                                             <button 
                                                 onClick={() => fetchFromCloud(verifiedEmail, isPro, false, true)} 
                                                 className="w-full py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg text-[10px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all border border-indigo-100 dark:border-indigo-800"
                                             >
                                                 🔄 클라우드 강제 동기화
+                                            </button>
+                                            <button 
+                                                onClick={() => setIsSuggestionModalOpen(true)} 
+                                                className="w-full py-2 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-lg text-[10px] font-bold hover:bg-yellow-100 dark:hover:bg-yellow-900/50 transition-all border border-yellow-100 dark:border-yellow-800"
+                                            >
+                                                💡 기능 제안 / 버그 신고
                                             </button>
                                             <button 
                                                 onClick={handleLogout} 
@@ -2826,6 +3007,17 @@ updateOrCreateChart(comparisonBarRef, {
                                     default: return null;
                                 }
                             })}
+                            {/* [추가] 하단 푸터 (개인정보처리방침) */}
+                            <div className="mt-12 pt-6 border-t dark:border-gray-800 text-center">
+                                <button 
+                                    onClick={() => setIsPrivacyModalOpen(true)} 
+                                    className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:underline transition-colors"
+                                >
+                                    개인정보처리방침
+                                </button>
+                                <span className="mx-2 text-gray-300 dark:text-gray-700">|</span>
+                                <span className="text-xs text-gray-400 dark:text-gray-600">© 2024 Asset Planner</span>
+                            </div>
                         </div>
 
                         {/* ===== 모바일 버튼 ===== */}
@@ -2857,6 +3049,15 @@ updateOrCreateChart(comparisonBarRef, {
                         onConfirm={(selection) => handleImport(selection)} 
                         type="import"
                         initialSelection={importSelection}
+                    />
+                    <PrivacyPolicyModal 
+                        isOpen={isPrivacyModalOpen} 
+                        onClose={() => setIsPrivacyModalOpen(false)} 
+                    />
+                    <SuggestionModal 
+                        isOpen={isSuggestionModalOpen} 
+                        onClose={() => setIsSuggestionModalOpen(false)} 
+                        onSubmit={handleSuggestionSubmit}
                     />
                     {calculation.warnings?.length > 0 && (
                         <div className="fixed inset-0 border-[6px] border-red-500 pointer-events-none z-[9999] animate-pulse opacity-60"></div>
