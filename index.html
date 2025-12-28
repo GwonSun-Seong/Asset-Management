@@ -11,6 +11,13 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="config.js"></script>
+    <script>
+        // [추가] 시스템 다크모드 설정 무시하고 'class' 전략 사용 (수동 토글 전용)
+        if (typeof tailwind !== 'undefined') {
+            tailwind.config = tailwind.config || {};
+            tailwind.config.darkMode = 'class';
+        }
+    </script>
     <script src="defaultData.js"></script>
     <script src="utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -441,6 +448,12 @@
                             setAppData(mergedData); // [수정] parsedData 대신 mergedData 사용
                             setOriginalUserData(parsedData); // [추가]
                             lastSavedDataRef.current = JSON.stringify(mergedData); // [추가] 초기 로드 시점 데이터 기록
+
+                            // [추가] 로컬 데이터에 다크모드 설정이 있다면 즉시 적용 (깜빡임 방지)
+                            if (mergedData.darkMode) {
+                                document.documentElement.classList.add('dark');
+                                document.documentElement.style.colorScheme = 'dark';
+                            }
                         } else {
                             setAppData(baseData);
                             setOriginalUserData(baseData); // [추가]
@@ -484,8 +497,12 @@
             }, []);
 
             // [추가] 클라우드 저장 헬퍼 함수 (중복 로직 제거 및 강제 저장 지원)
-            const saveToCloud = async (dataToSave, force = false) => {
-                if (!verifiedEmail || !isPro || isDemoMode || !supabase || !dataToSave) return;
+            // [수정] 초기 로딩 시점의 상태 불일치 해결을 위해 email, proStatus 오버라이드 인자 추가
+            const saveToCloud = async (dataToSave, force = false, emailOverride = null, proOverride = null) => {
+                const targetEmail = emailOverride || verifiedEmail;
+                const targetPro = proOverride !== null ? proOverride : isPro;
+
+                if (!targetEmail || !targetPro || isDemoMode || !supabase || !dataToSave) return;
                 // 강제 저장이 아니고, 클라우드 로드 전이거나 로드 중이면 중단
                 if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
 
@@ -498,7 +515,7 @@
                     const { data, error } = await withTimeout(supabase
                         .from('user_assets')
                         .upsert({ 
-                            email: verifiedEmail, 
+                            email: targetEmail, 
                             data: dataToSave,
                         }, { onConflict: 'email' })
                         .select('updated_at')
@@ -736,8 +753,10 @@
             useEffect(() => {
                 if (darkMode) {
                     document.documentElement.classList.add('dark');
+                    document.documentElement.style.colorScheme = 'dark';
                 } else {
                     document.documentElement.classList.remove('dark');
+                    document.documentElement.style.colorScheme = 'light';
                 }
             }, [darkMode]);
 
@@ -958,7 +977,8 @@
                                     // [수정] 로컬 유지를 선택했으므로, 현재 로컬 데이터를 클라우드에 강제 동기화
                                     // localDataOverride가 있으면(초기 로드 시) 그것을 사용, 아니면 현재 appData 사용
                                     setIsCloudLoaded(true); // 저장 허용 상태로 변경
-                                    saveToCloud(localDataOverride || appData, true);
+                                    // [수정] 상태 업데이트 전이므로 인자로 받은 email, pro 정보를 직접 전달
+                                    saveToCloud(localDataOverride || appData, true, email, pro);
                                 }
                             }
                         }
@@ -973,6 +993,13 @@
                             // React 렌더링 사이클 이후 락 해제
                             setTimeout(() => { isFetchingRef.current = false; }, 500);
                         }
+
+                        // [추가] 클라우드 데이터 로드 직후 다크모드 즉시 적용 (PRO 유저 경험 개선)
+                        if (shouldLoad && data.data.darkMode) {
+                            document.documentElement.classList.add('dark');
+                            document.documentElement.style.colorScheme = 'dark';
+                        }
+
                         setSyncStatus('synced');
                         setIsCloudLoaded(true); // [추가] 로드 완료 플래그 설정
                     } else {
@@ -1376,6 +1403,10 @@
     if (panelCollapseState['charts']) return;
 
     if (!appData || !currentPieRef.current || !projectedPieRef.current || !comparisonBarRef.current) return;
+
+    // [수정] DOM 렌더링 확보를 위해 차트 생성을 약간 지연 (차트 미표시 문제 해결)
+    const renderTimer = setTimeout(() => {
+
     const sectorLabels = {
         deposit: '입출금통장',
         savings: '저축',
@@ -1643,6 +1674,9 @@ updateOrCreateChart(comparisonBarRef, {
     plugins: []
 }); 
 
+    }, 50); // 50ms 지연
+
+    return () => clearTimeout(renderTimer);
             }, [calculation, panelCollapseState['charts'], darkMode]);
 
             // [추가] 컴포넌트 언마운트 시에만 차트 인스턴스 정리
