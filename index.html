@@ -124,7 +124,7 @@
                             <p><strong>4. 쿠키(Cookie)의 운용 및 거부</strong><br/>
                             서비스는 이용자에게 개별적인 맞춤서비스를 제공하기 위해 이용정보를 저장하고 수시로 불러오는 '쿠키(cookie)'를 사용합니다.<br/>
                             - 쿠키 등 사용 목적: 이용자의 접속 빈도나 방문 시간 등을 분석, 이용자의 취향과 관심분야를 파악 및 자취 추적<br/>
-                            - 쿠키 설정 거부 방법: 웹브라우저 상단의 도구 > 인터넷 옵션 > 개인정보 메뉴의 옵션 설정을 통해 쿠키 저장을 거부할 수 있습니다.</p>
+                            - 쿠키 설정 거부 방법: 웹브라우저 상단의 도구 - 인터넷 옵션 - 개인정보 메뉴의 옵션 설정을 통해 쿠키 저장을 거부할 수 있습니다.</p>
                             
                             <p><strong>5. 광고 게재</strong><br/>
                             본 서비스는 Google AdSense를 통해 광고를 게재할 수 있으며, 이 과정에서 Google은 쿠키를 사용하여 사용자의 이전 방문 기록을 바탕으로 광고를 제공할 수 있습니다.</p>
@@ -455,28 +455,29 @@
                         lastSavedDataRef.current = JSON.stringify(baseData);
                     }
 
-                    // 2. UI 렌더링 허용 (Supabase 체크 전이라도 화면 표시)
-                    setIsLoading(false);
-
-                    // 3. Supabase 세션 체크 (백그라운드)
+                    // 2. Supabase 세션 체크 (계정 정보 확인 대기)
                     if (supabase) {
                         try {
-                            const { data: { session }, error } = await withTimeout(supabase.auth.getSession());
+                            // [수정] 세션 체크 타임아웃 2초로 단축
+                            const { data: { session }, error } = await withTimeout(supabase.auth.getSession(), 2000);
                             
                             if (error) {
                                 console.error('Session error:', error);
-                                alert('로그인 실패: ' + (error.message || '세션을 확인할 수 없습니다.'));
+                                // 초기 로딩 시 alert는 사용자 경험을 해칠 수 있으므로 로그만 남김
                             }
 
                             if (session) {
-                                // 세션이 있으면 구독 상태 확인 및 클라우드 동기화 시도
-                                checkSubscription(session, false, mergedData || baseData); // [수정] 로드된 로컬 데이터를 직접 전달
+                                // 세션이 있으면 구독 상태 확인 및 클라우드 동기화 시도 (await로 대기)
+                                await checkSubscription(session, false, mergedData || baseData);
                             }
                         } catch (err) {
                             console.error('Session check error:', err);
                             // 타임아웃 시 조용히 실패 처리 (초기 로드이므로)
                         }
                     }
+
+                    // 3. 모든 체크 완료 후 UI 렌더링 허용
+                    setIsLoading(false);
                 };
                 
                 loadInitialData();
@@ -786,7 +787,7 @@
                             .from('user_profiles')
                             .select('is_paid')
                             .eq('id', session.user.id)
-                            .maybeSingle(), 5000); // 재시도 시 짧은 타임아웃(5초) 적용
+                            .maybeSingle(), 2000); // [수정] 재시도 타임아웃 2초로 단축
                         
                         if (!error) {
                             profile = data;
@@ -2678,7 +2679,14 @@ updateOrCreateChart(comparisonBarRef, {
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
                         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                        <p className="text-gray-600 dark:text-gray-400 font-medium animate-pulse">데이터를 안전하게 확인 중입니다...</p>
+                        <p className="text-gray-600 dark:text-gray-400 font-medium animate-pulse mb-4">계정 정보 확인 중...</p>
+                        {/* [추가] 로딩 중 비상 로그아웃 버튼 */}
+                        <button 
+                            onClick={() => handleLogout(true)}
+                            className="text-xs text-gray-500 underline hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
+                        >
+                            로그아웃 (취소)
+                        </button>
                     </div>
                 );
             }
@@ -2823,21 +2831,18 @@ updateOrCreateChart(comparisonBarRef, {
                                                 </div>
                                             </div>
                                         </div>
-                                        {!isPro && (
-                                            <div className="text-[9px] text-amber-600 font-bold text-center bg-amber-50 dark:bg-amber-900/20 rounded py-1 border border-amber-100 dark:border-amber-800">
-                                                PRO 전용 동기화 기능
-                                            </div>
-                                        )}
                                         <div className="grid grid-cols-1 gap-1.5 mt-2">
-                                            <button 
-                                                onClick={async () => {
-                                                    const { data: { session } } = await supabase.auth.getSession();
-                                                    if (session) checkSubscription(session, true);
-                                                }}
-                                                className="w-full py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all border border-blue-100 dark:border-blue-800"
-                                            >
-                                                💳 구독 상태 확인
-                                            </button>
+                                            {isPro && (
+                                                <button 
+                                                    onClick={async () => {
+                                                        const { data: { session } } = await supabase.auth.getSession();
+                                                        if (session) checkSubscription(session, true);
+                                                    }}
+                                                    className="w-full py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all border border-blue-100 dark:border-blue-800"
+                                                >
+                                                    💳 구독 상태 확인
+                                                </button>
+                                            )}
                                             {!isPro && (
                                                 <button 
                                                     onClick={async () => {
@@ -2867,12 +2872,14 @@ updateOrCreateChart(comparisonBarRef, {
                                                     🎫 후원 코드 등록
                                                 </button>
                                             )}
+                                            {isPro && (
                                             <button 
                                                 onClick={() => fetchFromCloud(verifiedEmail, isPro, false, true)} 
                                                 className="w-full py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg text-[10px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all border border-indigo-100 dark:border-indigo-800"
                                             >
                                                 🔄 클라우드 강제 동기화
                                             </button>
+                                            )}
                                             <button 
                                                 onClick={() => setIsSuggestionModalOpen(true)} 
                                                 className="w-full py-2 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-lg text-[10px] font-bold hover:bg-yellow-100 dark:hover:bg-yellow-900/50 transition-all border border-yellow-100 dark:border-yellow-800"
