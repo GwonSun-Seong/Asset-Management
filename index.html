@@ -8,6 +8,9 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="config.js"></script>
+    <script src="defaultData.js"></script>
+    <script src="utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-gradient@0.6.1/dist/chartjs-plugin-gradient.min.js"></script>
@@ -15,25 +18,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        deposit: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', start: '#60a5fa', end: '#3b82f6' },
-                        savings: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a', start: '#34d399', end: '#10b981' },
-                        investment: { 50: '#fff7ed', 500: '#f97316', 600: '#ea580c', start: '#fb923c', end: '#f97316' },
-                        pension: { 50: '#faf5ff', 500: '#a855f7', 600: '#9333ea', start: '#c084fc', end: '#a855f7' },
-                        realestate: { 50: '#fef7f0', 500: '#f59e0b', 600: '#d97706', start: '#fbbf24', end: '#f59e0b' },
-                        car: { 50: '#ecfeff', 500: '#06b6d4', 600: '#0891b2', start: '#22d3ee', end: '#0891b2' },
-                        loan: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280' },
-                        misc: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280' }
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
     <div id="root"></div>
@@ -62,89 +46,6 @@
             }
             return { payment, interest, principalRepay, totalPayment: payment };
         };
-
-        // 공개용 기본값 (제3자 공개 시 사용)
-        const publicDefaultData = {
-            projectionMonths: 12,
-          monthlySalary: 280,
-            targetAmount: 10000, // 목표 자산 금액 (만원)
-            goalMode: 'period', // 'period' 또는 'target'
-            displayMode: 'amount', // [추가] displayMode 기본값
-            darkMode: false, // [추가] 다크 모드 상태
-            rebalancingMode: 'simple', // 'simple' | 'advanced'
-            assets: {
-                deposit: [
-                    { id: 'def-dep-1', name: '비상금통장', amount: 400, rate: 2.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' },
-                    { id: 'def-dep-2', name: '생활비통장', amount: 30, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
-                ],
-                savings: [
-                    { id: 'def-sav-1', name: '청년도약계좌', amount: 140, rate: 6.0, feeRate: 0, monthlyContrib: 0, extraContrib: 20, extraFrom: '비상금통장' },
-                    { id: 'def-sav-2', name: '청약저축', amount: 180, rate: 6.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
-                ],
-                investment: [
-                    { id: 'def-inv-1', name: '직접투자계좌', amount: 1400, rate: 10.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' },
-                    { id: 'def-inv-2', name: 'ISA계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 100, extraContrib: 0, extraFrom: '' },
-                    { id: 'def-inv-3', name: '금투자', amount: 0, rate: 3.0, feeRate: 0, monthlyContrib: 30, extraContrib: 0, extraFrom: '' },
-                    { id: 'def-inv-4', name: '비트코인', amount: 0, rate: 12.0, feeRate: 0, monthlyContrib: 15, extraContrib: 0, extraFrom: '' }
-                ],
-                pension: [
-                    { id: 'def-pen-1', name: '연금저축', amount: 199, rate: 10.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
-                ],
-                realestate: [
-                    { id: 'def-re-1', name: '아파트', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
-                ],
-                car: [],
-                loan: [
-                    { 
-                        id: 'def-loan-1',
-                        name: '신용대출', 
-                        amount: 0, 
-                        rate: 3.0, 
-                        monthlyContrib: 0, 
-                        extraContrib: 0, 
-                        extraFrom: '',
-                        repaymentMethod: '원리금균등',
-                        repaymentAccount: '생활비통장',
-                        maturityMonth: 36,
-                        loanStartDate: new Date().toISOString().slice(0,7)
-                    }
-                ],
-                misc: [
-                    { id: 'def-misc-1', name: '기타자산', amount: 0, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
-                ]
-            },
-            monthlyExpenses: [
-                { name: '생활비', amount: 100 }
-            ],
-            expenseEvents: [],
-            rebalancingAlerts: {
-                deposit: { warning: 5, danger: 10 },
-                savings: { warning: 5, danger: 10 },
-                investment: { warning: 5, danger: 10 },
-                pension: { warning: 5, danger: 10 },
-                realestate: { warning: 5, danger: 10 },
-                misc: { warning: 5, danger: 10 }
-            },
-            simpleThresholds: { warning: 5, danger: 10 },
-            rebalancingTargets: { /* 섹터별 목표 비중(%) 합계 100 */ },
-            mainCashFlowAccount: '생활비통장',
-            memo: '' // [추가] 메모 기능
-        };
-
-        
-        // 서버 설정 로드 함수 (주석 처리/해제로 전환)
-        async function loadServerConfig() {
-            if (!USE_SERVER_CONFIG) return publicDefaultData;
-            
-            try {
-                // const response = await fetch('/api/defaultconfig');
-                // return await response.json();
-                return publicDefaultData; // 서버 연결 실패시 기본값 사용
-            } catch (error) {
-                console.error('서버 설정 로드 실패:', error);
-                return publicDefaultData;
-            }
-        }
     </script>
 
     <script type="text/babel">
@@ -298,244 +199,12 @@
             return (eY - sY) * 12 + (eM - sM);
         };
 
-        const calculateMonthlyProjection = (initialData, monthsToProject) => {
-            if (!initialData) return { projections: [], warnings: [] };
-            
-            const data = JSON.parse(JSON.stringify(initialData)); // Deep copy
-            const warnings = [];
-            const monthlyProjections = []; 
 
-            const {
-                monthlySalary = 0, assets = {}, monthlyExpenses = [],
-                targetAmount = 10000, 
-                mainCashFlowAccount, baseMonth
-            } = data;
-
-            // [개선] 시뮬레이션 엔진 내부에서도 배열 무결성 보장
-            const safeMonthlyExpenses = Array.isArray(monthlyExpenses) ? monthlyExpenses : [];
-            const safeIncomeEvents = Array.isArray(data.incomeEvents) ? data.incomeEvents : [];
-            const safeExpenseEvents = Array.isArray(data.expenseEvents) ? data.expenseEvents : [];
-
-            // 월 가용 현금 계산 (월급 - 고정 지출)
-            const totalMonthlyExpense = safeMonthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-            const monthlyAvailableCash = monthlySalary - totalMonthlyExpense;
-
-            let currentAssets = {};
-            Object.keys(assets).forEach(sector => {
-                if (Array.isArray(assets[sector])) {
-                    currentAssets[sector] = assets[sector].map(asset => ({ ...asset }));
-                } else {
-                    currentAssets[sector] = [];
-                }
-            });
-            
-            const calculateTotal = (assetData) => {
-                let sum = 0;
-                Object.keys(assetData).forEach(sector => {
-                    const sectorSum = (assetData[sector]||[]).reduce((s,a)=> s + (a.amount||0), 0);
-                    sum += (sector === 'loan') ? -sectorSum : sectorSum;
-                });
-                return sum;
-            };
-
-            for (let month = 0; month <= monthsToProject; month++) {
-                const allAccountsFlat = Object.values(currentAssets).flat();
-
-                if (month > 0) { // Skip initial state for calculations, only record it
-                    // 1. 이자/수익률 적용
-                    Object.keys(currentAssets).forEach(sector => {
-                        if (sector === 'loan') return; // 대출은 상환 단계에서 처리
-                        currentAssets[sector].forEach(asset => {
-                            if (asset.amount > 0) {
-                                const feeRate = (asset.feeRate || 0) / 100;
-                                const effectiveRate = (asset.rate / 100) * (1 - feeRate);
-                                asset.amount *= (1 + effectiveRate / 12);
-                                    // 부동 소수점 오차 방지
-                                    asset.amount = Math.round(asset.amount * 10000) / 10000;
-                            }
-                        });
-                    });
-
-                    // 2. 이벤트 적용
-                    safeIncomeEvents.forEach(event => {
-                        const startIdx = typeof event.startMonth === 'string' ? getMonthDiff(baseMonth, event.startMonth) + 1 : event.startMonth;
-                        const endIdx = typeof event.endMonth === 'string' ? getMonthDiff(baseMonth, event.endMonth) + 1 : event.endMonth;
-                        if (month >= startIdx && month <= endIdx) {
-                            if (currentAssets[event.targetSector] && currentAssets[event.targetSector][event.targetAsset]) {
-                                currentAssets[event.targetSector][event.targetAsset].amount += event.amount;
-                            }
-                        }
-                    });
-
-                    safeExpenseEvents.forEach(event => {
-                        const startIdx = typeof event.startMonth === 'string' ? getMonthDiff(baseMonth, event.startMonth) + 1 : event.startMonth;
-                        const endIdx = typeof event.endMonth === 'string' ? getMonthDiff(baseMonth, event.endMonth) + 1 : event.endMonth;
-                        if (month >= startIdx && month <= endIdx) {
-                            const arr = currentAssets[event.targetSector];
-                            if (arr && arr[event.targetAsset]) {
-                                arr[event.targetAsset].amount = Math.max(0, arr[event.targetAsset].amount - event.amount);
-                            }
-                        }
-                    });
-
-                    // 3. 현금 흐름 및 납입 처리
-                    let cashInHand = monthlyAvailableCash;
-                    const allAccountsFlat = Object.values(currentAssets).flat();
-                    const cashFlowAccount = allAccountsFlat.find(d => d.name === mainCashFlowAccount);
-
-                    // 3a. 월급 기반 월납입 (자산 증식)
-                    Object.keys(currentAssets).forEach(sector => {
-                        if (sector === 'loan') return;
-                        currentAssets[sector].forEach(asset => {
-                            if (asset.monthlyContrib > 0) {
-                                const paymentAmount = asset.monthlyContrib;
-                                cashInHand -= paymentAmount;
-                                asset.amount += paymentAmount;
-                            }
-                        });
-                    });
-
-                    if (cashInHand < 0) {
-                        warnings.push({ month, type: 'cashflow', message: `월 ${month}: 월급 기반 월납입액이 월 가용 현금을 초과합니다. (${cashInHand.toFixed(2)}만원 부족)` });
-                    }
-                    if (cashFlowAccount) {
-                        cashFlowAccount.amount += cashInHand;
-                    }
-
-                    // 3b. 대출 상환 (계좌이체 기반) (Fix #1, #3)
-                    (currentAssets.loan || []).forEach((loan) => {
-                        const simStartToLoanStart = getMonthDiff(baseMonth, loan.loanStartDate || baseMonth);
-                        const loanMonthAtSimMonth = month + simStartToLoanStart;
-
-                        if (loanMonthAtSimMonth < 1 || loan.amount <= 0) return;
-
-                        const repaymentAccount = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
-                        if (!repaymentAccount) {
-                            warnings.push({ month, type: 'repayment', message: `[${loan.name}]의 상환계좌(${loan.repaymentAccount})를 찾을 수 없습니다.` });
-                            return;
-                        }
-
-                        const monthlyRate = (loan.rate / 100) / 12;
-                        const interestForMonth = loan.amount * monthlyRate;
-                        
-                        // 1. 이자 가산 (회계적 정밀도: 원금에 이자를 먼저 더함)
-                        loan.amount += interestForMonth;
-
-                        // 2. 상환액 계산 (가산 전 원금 기준)
-                        const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
-                        const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
-                        
-                        let scheduledPayment = paymentInfo.payment;
-                        let totalScheduledPayment = scheduledPayment + (loan.monthlyContrib || 0);
-
-                        if (totalScheduledPayment > 0) {
-                            const actualRepayment = Math.min(totalScheduledPayment, repaymentAccount.amount);
-                            repaymentAccount.amount -= actualRepayment;
-                            
-                            // 3. 상환액 전체 차감 (이자 가산이 선행되었으므로 원리금 전체를 차감)
-                            loan.amount -= actualRepayment;
-
-                            if (actualRepayment < totalScheduledPayment) {
-                                warnings.push({ month, type: 'repayment', message: `[${repaymentAccount.name}] 잔액 부족으로 [${loan.name}] 상환액 ${totalScheduledPayment.toFixed(2)}만원 중 ${actualRepayment.toFixed(2)}만원만 상환되었습니다.` });
-                            }
-                        }
-
-                        // 만기일시 상환의 만기달 원금 상환 처리
-                        if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth === loan.maturityMonth && loan.amount > 0) {
-                            const finalPrincipal = loan.amount;
-                            const actualFinalRepayment = Math.min(finalPrincipal, repaymentAccount.amount);
-                            repaymentAccount.amount -= actualFinalRepayment;
-                            loan.amount -= actualFinalRepayment;
-                            if (actualFinalRepayment < finalPrincipal) {
-                                warnings.push({ month, type: 'repayment', message: `[${loan.name}] 만기 원금 상환 실패. [${repaymentAccount.name}] 잔액 부족.` });
-                            }
-                        }
-
-                        // 부동 소수점 오차 보정 및 0원 처리
-                        loan.amount = Math.round(loan.amount * 10000) / 10000;
-                        if (loan.amount < 0.01) loan.amount = 0;
-                        repaymentAccount.amount = Math.round(repaymentAccount.amount * 10000) / 10000;
-                        loan.amount = Math.max(0, loan.amount);
-                    });
-
-                    // 3c. 월수입 외 추가 납입/상환 (계좌이체) (Fix #2)
-                    Object.keys(currentAssets).forEach(sector => {
-                        currentAssets[sector].forEach(asset => {
-                            if (asset.extraContrib > 0 && asset.extraFrom) {
-                                // 참조를 깨뜨리지 않도록 수정
-                                const fromAccount = allAccountsFlat.find(d => d.name === asset.extraFrom);
-                                if (fromAccount) {
-                                    const actualDeduction = Math.min(asset.extraContrib, fromAccount.amount);
-                                    fromAccount.amount -= actualDeduction;
-
-                                    if (sector === 'loan') {
-                                        asset.amount = Math.max(0, asset.amount - actualDeduction);
-                                    } else {
-                                        asset.amount += actualDeduction;
-                                    }
-
-                                    if (actualDeduction < asset.extraContrib) {
-                                        warnings.push({
-                                            month, type: 'transfer',
-                                            message: `월 ${month}: [${fromAccount.name}] 잔액 부족으로 [${asset.name}]에 ${asset.extraContrib}만원 이체 중 ${actualDeduction.toFixed(2)}만원만 실행되었습니다.`
-                                        });
-                                    }
-
-                                    // 부동 소수점 오차 보정
-                                    asset.amount = Math.round(asset.amount * 10000) / 10000;
-                                    fromAccount.amount = Math.round(fromAccount.amount * 10000) / 10000;
-                                }
-                            }
-                        });
-                    });
-                }
-                
-                // Record current state
-                const currentTotal = calculateTotal(currentAssets); 
-                const currentGross = Object.keys(currentAssets).filter(k=>k!=='loan').reduce((s,k)=> s + (currentAssets[k]||[]).reduce((sum,a)=>sum+(a.amount||0),0),0);
-                const sectorTotals = {};
-                Object.keys(currentAssets).forEach(sector => {
-                    if (sector === 'loan') return;
-                    const sectorSum = (currentAssets[sector]||[]).reduce((sum, asset) => sum + (asset.amount || 0), 0);
-                    sectorTotals[sector] = { amount: sectorSum, percentage: currentGross > 0 ? (sectorSum / currentGross * 100) : 0 };
-                });
-
-                const itemTotals = {};
-                Object.keys(currentAssets).forEach(sector => {
-                    itemTotals[sector] = (currentAssets[sector]||[]).map(asset => ({
-                        id: asset.id, // [개선] 비교를 위해 id 포함
-                        name: asset.name,
-                        amount: asset.amount,
-                        percentage: (sectorTotals[sector]?.amount > 0) ? (asset.amount / sectorTotals[sector].amount * 100) : 0
-                    }));
-                });
-
-                monthlyProjections.push({
-                    month: month,
-                    total: currentTotal,
-                    gross: currentGross,
-                    sectorTotals: sectorTotals,
-                    itemTotals: itemTotals,
-                    // 매달 전체 자산 객체를 복사하는 대신, 마지막 달만 복사하도록 최적화
-                    assets: month === monthsToProject ? JSON.parse(JSON.stringify(currentAssets)) : null
-                });
-            }
-            return { projections: monthlyProjections, warnings };
-        };
 
         // [최적화] 정적 데이터 외부로 이동 및 스타일 클래스 하드코딩 (다크모드 해결)
-        const sectorInfo = {
-            deposit: { name: '입출금통장', color: 'deposit', icon: '🏦', bgClass: 'bg-blue-50 dark:bg-blue-900/20', textClass: 'text-blue-700 dark:text-blue-100' },
-            savings: { name: '저축', color: 'savings', icon: '💰', bgClass: 'bg-green-50 dark:bg-green-900/20', textClass: 'text-green-700 dark:text-green-100' },
-            investment: { name: '투자', color: 'investment', icon: '📈', bgClass: 'bg-orange-50 dark:bg-orange-900/20', textClass: 'text-orange-700 dark:text-orange-100' },
-            pension: { name: '연금', color: 'pension', icon: '🏛️', bgClass: 'bg-purple-50 dark:bg-purple-900/20', textClass: 'text-purple-700 dark:text-purple-100' },
-            realestate: { name: '부동산', color: 'realestate', icon: '🏠', bgClass: 'bg-amber-50 dark:bg-amber-900/20', textClass: 'text-amber-700 dark:text-amber-100' },
-            car: { name: '자동차', color: 'car', icon: '🚗', bgClass: 'bg-cyan-50 dark:bg-cyan-900/20', textClass: 'text-cyan-700 dark:text-cyan-100' },
-            loan: { name: '대출', color: 'loan', icon: '💳', bgClass: 'bg-gray-100 dark:bg-gray-800', textClass: 'text-gray-700 dark:text-gray-300' },
-            misc: { name: '기타', color: 'misc', icon: '📦', bgClass: 'bg-gray-50 dark:bg-gray-800/50', textClass: 'text-gray-600 dark:text-gray-400' }
-        };
-
         const AssetDashboard = () => {
+            // config.js에서 로드된 sectorInfo 사용
+            const sectorInfo = window.sectorInfo;
             // ===== 모든 상태를 먼저 선언 =====
             const [appData, setAppData] = useState(null);
             const [scenarios, setScenarios] = useState([]);
@@ -1426,38 +1095,7 @@
                 };
             }, [JSON.stringify(appData)]);
 
-           
-            // ===== 유틸리티 함수들 =====
-            const formatNumber = (num) => {
-                if (displayMode === 'percent') return '***'; // [추가] 금액 숨김 모드
-                return Math.round(num).toLocaleString();
-            };
-            const formatPercent = (num) => num.toFixed(1);
-            
-            const calculateGrossTotal = (assetData) => {
-                if (!assetData || typeof assetData !== 'object') return 0;
-                let sum = 0;
-                Object.keys(assetData).forEach(sector => {
-                    if (sector === 'loan') return; // 부채 제외
-                    const arr = assetData[sector] || [];
-                    sum += arr.reduce((s,a)=> s + (a.amount||0), 0);
-                });
-                return sum;
-            };
 
-            const getSectorTotals = (assetData, total) => {
-                const totals = {};
-                if (!assetData || typeof assetData !== 'object') return totals;
-                
-                Object.keys(assetData).forEach(sector => {
-                    if (sector === 'loan') return; // 대출은 비율/차트 계산에서 제외
-                    if (Array.isArray(assetData[sector])) {
-                        const sectorTotal = assetData[sector].reduce((sum, asset) => sum + (asset.amount || 0), 0);
-                        totals[sector] = { amount: sectorTotal, percentage: total > 0 ? (sectorTotal / total * 100) : 0 };
-                    }
-                });
-                return totals;
-            };
 
             const currentGrossTotal = calculateGrossTotal(calculation.initial);
             const projectedGrossTotal = calculateGrossTotal(calculation.projected);
