@@ -18,6 +18,21 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // [추가] 인앱 브라우저(카카오톡) 감지 및 외부 브라우저 전환 스크립트
+        (function() {
+            const userAgent = navigator.userAgent.toLowerCase();
+            const targetUrl = window.location.href;
+
+            if (userAgent.indexOf('kakaotalk') > -1) {
+                if (userAgent.indexOf('android') > -1) {
+                    location.href = 'intent://' + targetUrl.replace(/https?:\/\//i, '') + '#Intent;scheme=http;package=com.android.chrome;end';
+                } else if (userAgent.indexOf('iphone') > -1 || userAgent.indexOf('ipad') > -1) {
+                    location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(targetUrl);
+                }
+            }
+        })();
+    </script>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
     <div id="root"></div>
@@ -193,6 +208,7 @@
             const isFetchingRef = useRef(false); // [추가] 동기화 무한 루프 방지를 위한 Ref
             const isProcessing = useRef(false); // [추가] 상태 업데이트 락(Lock)
             const [isCloudLoaded, setIsCloudLoaded] = useState(false); // [추가] 클라우드 데이터 로드 완료 여부 (Race Condition 방지)
+            const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
 
             // Cloudflare 빌드 시점에 환경 변수로 교체될 플레이스홀더
             const SUPABASE_URL = '__SUPABASE_URL__';
@@ -286,25 +302,17 @@
                 }
             };
 
-            // [개선] 다크모드 클래스 적용 (사용자 설정 우선)
-            useEffect(() => {
-                if (darkMode) {
-                    document.documentElement.classList.add('dark');
-                } else {
-                    document.documentElement.classList.remove('dark');
-                }
-            }, [darkMode]);
-
             // ===== 초기 데이터 로드 =====
             useEffect(() => {
                 const loadInitialData = async () => {
-                await loadServerConfig();
-                const baseData = publicDefaultData; // <-- 이렇게 수정
-                try {
-                const savedData = localStorage.getItem('assetDashboardDataV3');
-                const savedScenarios = localStorage.getItem('assetDashboardScenarios');
+                    await loadServerConfig();
+                    const baseData = publicDefaultData;
+                    
+                    // 1. 로컬 데이터 로드 시도
+                    try {
+                        const savedData = localStorage.getItem('assetDashboardDataV3');
+                        const savedScenarios = localStorage.getItem('assetDashboardScenarios');
 
-                // [수정] 아래 if문 추가
                 if (savedScenarios) {
                     setScenarios(JSON.parse(savedScenarios));
                 }
@@ -334,14 +342,31 @@
                             });
                             setAppData(mergedData); // [수정] parsedData 대신 mergedData 사용
                             setOriginalUserData(parsedData); // [추가]
+                            lastSavedDataRef.current = JSON.stringify(mergedData); // [추가] 초기 로드 시점 데이터 기록
                         } else {
                             setAppData(baseData);
                             setOriginalUserData(baseData); // [추가]
+                            lastSavedDataRef.current = JSON.stringify(baseData);
                         }
                         
                     } catch (error) {
-                        console.error("데이터 로드 오류:", error);
+                        console.error("로컬 데이터 로드 오류 (초기화 진행):", error);
+                        // [수정] 데이터 손상 시 로컬스토리지 초기화하여 무한 로딩/에러 방지
+                        localStorage.removeItem('assetDashboardDataV3');
                         setAppData(baseData);
+                        lastSavedDataRef.current = JSON.stringify(baseData);
+                    }
+
+                    // 2. UI 렌더링 허용 (Supabase 체크 전이라도 화면 표시)
+                    setIsLoading(false);
+
+                    // 3. Supabase 세션 체크 (백그라운드)
+                    if (supabase) {
+                        const { data: { session } } = await supabase.auth.getSession();
+                        if (session) {
+                            // 세션이 있으면 구독 상태 확인 및 클라우드 동기화 시도
+                            checkSubscription(session);
+                        }
                     }
                 };
                 
@@ -350,11 +375,18 @@
 
             // ===== 데이터 자동 저장 =====
             useEffect(() => {
-            if (appData && !isDemoMode) { // [수정] 데모 모드일 때는 저장하지 않음
-                localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
-                localStorage.setItem('assetDashboardLastUpdate', new Date().toISOString());
-                setOriginalUserData(appData); // [추가]
-            } 
+                if (appData && !isDemoMode) {
+                    const currentDataStr = JSON.stringify(appData);
+                    // [최적화] 변경사항이 있을 때만 로컬스토리지 저장
+                    if (currentDataStr !== lastSavedDataRef.current) {
+                        localStorage.setItem('assetDashboardDataV3', currentDataStr);
+                        localStorage.setItem('assetDashboardLastUpdate', new Date().toISOString());
+                        setOriginalUserData(appData);
+                        // 주의: lastSavedDataRef는 클라우드 동기화 로직에서도 사용되므로 
+                        // 여기서는 업데이트하지 않거나, 로컬 저장과 클라우드 저장의 기준을 분리해야 함.
+                        // 현재 구조에서는 클라우드 동기화 useEffect에서 lastSavedDataRef를 활용하므로 여기선 놔둠.
+                    }
+                } 
             }, [JSON.stringify(appData), isDemoMode]);
 
             // useRef를 사용하여 첫 렌더링인지 추적하는 변수 추가
@@ -555,12 +587,14 @@
                 setDarkMode(!darkMode);
             };
 
-            // [추가] PRO 권한 상실 시 다크모드 강제 해제
+            // [수정] 다크모드 클래스 적용 (isPro 여부와 무관하게 상태 기반 적용)
             useEffect(() => {
-                if (!isPro && darkMode) {
-                    setAppData(prev => ({ ...prev, darkMode: false }));
+                if (darkMode) {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
                 }
-            }, [isPro, darkMode]);
+            }, [darkMode]);
 
             // [추가] PRO 권한 상실 시 히스토리 예상 자산 표시 강제 해제
             useEffect(() => {
@@ -576,7 +610,7 @@
                 isProcessing.current = true;
                 // 이미 세션이 종료되어 호출된 경우 signOut 중복 호출 방지
                 if (supabase && !skipSignOut) await supabase.auth.signOut();
-                setVerifiedEmail(null);
+                setVerifiedEmail(null); 
                 setUserProfile(null);
                 setIsPro(false);
                 setAppData(publicDefaultData);
@@ -586,49 +620,53 @@
                 isProcessing.current = false;
             };
 
-            useEffect(() => {
-                // [수정 사항 1] Supabase가 없을 때 로딩을 해제하여 무한 로딩 방지
-                if (!supabase) {
-                    setIsLoading(false);
-                    return;
-                }
+            // [추가] 구독 상태 확인 및 데이터 로드 함수 (재사용 가능하도록 분리)
+            const checkSubscription = async (session, isManualCheck = false) => {
+                if (!session?.user) return;
+                
+                if (isManualCheck) setIsLoadingCloud(true);
 
-                const handleAuthAction = async (session) => {
+                try {
                     setVerifiedEmail(session.user.email);
                     setUserProfile(session.user.user_metadata);
+
+                    const { data: profile, error } = await supabase
+                        .from('user_profiles')
+                        .select('is_paid')
+                        .eq('id', session.user.id)
+                        .maybeSingle();
                     
-                    try {
-                        const { data: profile } = await supabase
-                            .from('user_profiles')
-                            .select('is_paid')
-                            .eq('id', session.user.id)
-                            .maybeSingle();
-                        
-                        const proStatus = profile ? profile.is_paid : false;
-                        setIsPro(proStatus);
+                    if (error) throw error;
 
-                        // PRO 권한이 확인된 경우에만 클라우드 데이터 로드 시도
-                        if (proStatus) {
-                            await fetchFromCloud(session.user.email, proStatus, true);
-                        }
-                    } catch (err) {
-                        console.error('Auth action error:', err);
-                    }
-                };
+                    const proStatus = profile ? profile.is_paid : false;
+                    setIsPro(proStatus);
 
-                // 초기 세션 체크 (새로고침 대응)
-                supabase.auth.getSession().then(({ data: { session } }) => {
-                    if (session) {
-                        handleAuthAction(session).finally(() => setIsLoading(false));
-                    } else {
-                        setIsLoading(false); // 비로그인 유저도 로딩 해제
+                    if (isManualCheck) {
+                        alert(`구독 상태가 확인되었습니다.\n현재 상태: ${proStatus ? 'PRO (유료)' : 'FREE (무료)'}`);
                     }
-                });
+
+                    // PRO 권한이 확인된 경우에만 클라우드 데이터 로드 시도
+                    if (proStatus) {
+                        await fetchFromCloud(session.user.email, proStatus, true);
+                    }
+                } catch (err) {
+                    console.error('Subscription check error:', err);
+                    if (isManualCheck) alert('구독 상태 확인 중 오류가 발생했습니다.');
+                } finally {
+                    if (isManualCheck) setIsLoadingCloud(false);
+                }
+            };
+
+            useEffect(() => {
+                // [수정] 초기 로딩 로직은 loadInitialData로 통합되었으므로 여기서는 Auth 리스너만 관리
+                if (!supabase) return;
+
+                // onAuthStateChange는 로그인/로그아웃 이벤트 감지용
 
                 const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
                     if (session && !isProcessing.current) {
                         if (event === 'SIGNED_IN' && !isFetchingRef.current) {
-                            await handleAuthAction(session);
+                            await checkSubscription(session);
                         }
                     } else if (!session) {
                         // 세션이 없으면 로컬 상태 초기화 (이미 로그아웃된 상태이므로 signOut 호출 안 함)
@@ -656,6 +694,10 @@
                     return;
                 }
 
+                    // [추가] 데이터 변경이 없으면 저장하지 않음 (무한 루프 방지)
+                    const currentDataStr = JSON.stringify(appData);
+                    if (currentDataStr === lastSavedDataRef.current) return;
+
                     setSyncStatus('syncing');
                     const timer = setTimeout(async () => {
                         if (isFetchingRef.current) return; // [추가] 데이터 로드 중이면 저장 건너뜀
@@ -672,10 +714,16 @@
                         if (error) {
                             console.error('Sync error:', error);
                             setSyncStatus('error');
-                            setSyncStatusError(error.message);
+                            // [보안] RLS(Row Level Security) 정책 위반 감지 (서버단 방어 확인)
+                            if (error.code === '42501' || error.message.includes('row-level security')) {
+                                setSyncStatusError('서버 저장 권한이 없습니다. (PRO 구독 정보 불일치)');
+                            } else {
+                                setSyncStatusError(error.message);
+                            }
                         } else if (data) {
                             setSyncStatus('synced');
                             localStorage.setItem('assetDashboardLastUpdate', data.updated_at);
+                            lastSavedDataRef.current = currentDataStr; // [추가] 저장 완료된 데이터 기준점 갱신
                         }
                     }, 2000); // 2초 후 동기화
                     return () => clearTimeout(timer);
@@ -706,35 +754,36 @@
                         const shouldLoad = isManual || !localLastUpdate || new Date(cloudLastUpdate).getTime() > new Date(localLastUpdate).getTime();
 
                         if (shouldLoad) {
-                            if (isInitialLoad && localLastUpdate && !isManual) {
-                                if (!confirm('로그인한 계정의 클라우드 데이터를 불러오시겠습니까?\n(취소 시 현재 화면의 데이터가 클라우드에 저장됩니다.)')) {
-                                    setSyncStatus('synced');
-                                    return;
-                                }
-                            }
+                            // [수정] 초기 로드 시 confirm 제거하여 무한 로딩/블로킹 방지
+                            // 클라우드 데이터가 더 최신이면 자동으로 동기화 (Sync 개념)
+                            
                             // [핵심] 데이터를 불러오는 동안 자동 저장(Sync)이 트리거되지 않도록 락 설정
                             isFetchingRef.current = true;
                             setAppData(data.data);
                             localStorage.setItem('assetDashboardLastUpdate', cloudLastUpdate);
+                            lastSavedDataRef.current = JSON.stringify(data.data); // [추가] 로드된 데이터를 기준점으로 설정
                             // React 렌더링 사이클 이후 락 해제
                             setTimeout(() => { isFetchingRef.current = false; }, 500);
                         }
                         setSyncStatus('synced');
                         setIsCloudLoaded(true); // [추가] 로드 완료 플래그 설정
                     } else {
-                        // [추가] 신규 사용자 예외 처리: 기본 데이터 upsert
-                        const { data: upsertData, error: upsertError } = await supabase
-                            .from('user_assets')
-                            .upsert({ 
-                                email: email, 
-                                data: publicDefaultData,
-                                updated_at: new Date().toISOString()
-                            }, { onConflict: 'email' })
-                            .select('updated_at')
-                            .single();
-                        
-                        if (upsertError) throw upsertError;
-                        if (upsertData) localStorage.setItem('assetDashboardLastUpdate', upsertData.updated_at);
+                        // [수정] 신규 사용자 예외 처리
+                        // RLS 정책상 PRO 유저만 INSERT 가능하므로, FREE 유저는 INSERT 시도하지 않음
+                        if (pro) {
+                            const { data: upsertData, error: upsertError } = await supabase
+                                .from('user_assets')
+                                .upsert({ 
+                                    email: email, 
+                                    data: publicDefaultData,
+                                    updated_at: new Date().toISOString()
+                                }, { onConflict: 'email' })
+                                .select('updated_at')
+                                .single();
+                            
+                            if (upsertError) throw upsertError;
+                            if (upsertData) localStorage.setItem('assetDashboardLastUpdate', upsertData.updated_at);
+                        }
                         setSyncStatus('synced');
                         setIsCloudLoaded(true); // [추가] 신규 생성 후에도 로드 완료로 처리
                     }
@@ -913,7 +962,8 @@
 
             // ===== 시나리오 관리 함수들 =====
             const saveScenario = () => {
-                const name = prompt('시나리오 이름을 입력하세요:');
+                // [수정] 시나리오 저장 시 깔끔한 기본 이름 제공 (지저분한 자동완성 방지)
+                const name = prompt('시나리오 이름을 입력하세요:', `시나리오 ${new Date().toISOString().slice(0,10)}`);
                 if (name && name.trim()) {
                     const newScenario = {
                         id: Date.now(),
@@ -2479,6 +2529,15 @@ updateOrCreateChart(comparisonBarRef, {
                                                         <span className={`ml-2 text-[9px] px-1 rounded font-bold ${isPro ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
                                                             {isPro ? 'PRO' : 'FREE'}
                                                         </span>
+                                                        {/* [추가] 모바일 메뉴 내 동기화 상태 표시 */}
+                                                        {isPro && (
+                                                            <div className="flex items-center gap-1 mt-1">
+                                                                <span className={`text-[9px] flex items-center gap-1 ${syncStatus === 'synced' ? 'text-green-600' : syncStatus === 'syncing' ? 'text-yellow-600' : syncStatus === 'error' ? 'text-red-600' : 'text-gray-400'}`}>
+                                                                    <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'synced' ? 'bg-green-500' : syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-300'}`}></span>
+                                                                    {syncStatus === 'synced' ? '동기화됨' : syncStatus === 'syncing' ? '동기화 중' : syncStatus === 'error' ? '동기화 실패' : '대기'}
+                                                                </span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                     <button onClick={() => fetchFromCloud(verifiedEmail, isPro, false, true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-sm">🔄 클라우드 동기화</button>
                                                     <button onClick={handleLogout} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-red-500 text-sm">🚪 로그아웃</button>
@@ -2563,6 +2622,15 @@ updateOrCreateChart(comparisonBarRef, {
                                         )}
                                         <div className="grid grid-cols-1 gap-1.5 mt-2">
                                             <button 
+                                                onClick={async () => {
+                                                    const { data: { session } } = await supabase.auth.getSession();
+                                                    if (session) checkSubscription(session, true);
+                                                }}
+                                                className="w-full py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all border border-blue-100 dark:border-blue-800"
+                                            >
+                                                💳 구독 상태 확인
+                                            </button>
+                                            <button 
                                                 onClick={() => fetchFromCloud(verifiedEmail, isPro, false, true)} 
                                                 className="w-full py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg text-[10px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all border border-indigo-100 dark:border-indigo-800"
                                             >
@@ -2581,15 +2649,11 @@ updateOrCreateChart(comparisonBarRef, {
 
                             <div className="space-y-1 bg-white dark:bg-gray-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800">
                                 <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 px-2">빠른 이동</div>
-                                {[
-                                    ...layoutOrder.filter(id => {
-                                        if (id === 'scenario') return scenarios.length > 0;
-                                        if (id === 'history') return assetHistory.length > 0;
-                                        return true;
-                                    }),
-                                    'detail-analysis',
-                                    'assumptions'
-                                ].map(id => (
+                                {layoutOrder.filter(id => {
+                                    if (id === 'scenario') return scenarios.length > 0;
+                                    if (id === 'history') return assetHistory.length > 0;
+                                    return true;
+                                }).map(id => (
                                     <button key={id} onClick={() => scrollToPanel(id)} className="w-full text-left px-2 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all flex items-center gap-2 group">
                                         <span className="group-hover:scale-110 transition-transform">{navLabels[id]?.icon}</span>
                                         <span className="truncate">{navLabels[id]?.title}</span>
@@ -2693,7 +2757,7 @@ updateOrCreateChart(comparisonBarRef, {
                                         );
                                     case 'assumptions':
                                         return (
-                                            <PanelWrapper key={panelId} {...panelProps} title="💡 계산 가정사항">
+                                            <PanelWrapper key={panelId} {...panelProps} title="💡 계산 가정사항" className="bg-sky-50 dark:bg-gray-900 rounded-lg shadow">
                                                 {renderAssumptionsPanel()}
                                             </PanelWrapper>
                                         );
