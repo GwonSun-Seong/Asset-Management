@@ -26,7 +26,7 @@
 
             if (userAgent.indexOf('kakaotalk') > -1) {
                 if (userAgent.indexOf('android') > -1) {
-                    location.href = 'intent://' + targetUrl.replace(/https?:\/\//i, '') + '#Intent;scheme=http;package=com.android.chrome;end';
+                    location.href = 'intent://' + targetUrl.replace(/https?:\/\//i, '') + '#Intent;scheme=https;end';
                 } else if (userAgent.indexOf('iphone') > -1 || userAgent.indexOf('ipad') > -1) {
                     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(targetUrl);
                 }
@@ -365,13 +365,48 @@
                         const { data: { session } } = await supabase.auth.getSession();
                         if (session) {
                             // 세션이 있으면 구독 상태 확인 및 클라우드 동기화 시도
-                            checkSubscription(session);
+                            checkSubscription(session, false, mergedData || baseData); // [수정] 로드된 로컬 데이터를 직접 전달
                         }
                     }
                 };
                 
                 loadInitialData();
             }, []);
+
+            // [추가] 클라우드 저장 헬퍼 함수 (중복 로직 제거 및 강제 저장 지원)
+            const saveToCloud = async (dataToSave, force = false) => {
+                if (!verifiedEmail || !isPro || isDemoMode || !supabase || !dataToSave) return;
+                // 강제 저장이 아니고, 클라우드 로드 전이거나 로드 중이면 중단
+                if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
+
+                const currentDataStr = JSON.stringify(dataToSave);
+                // 강제 저장이 아니고, 변경 사항이 없으면 중단
+                if (!force && currentDataStr === lastSavedDataRef.current) return;
+
+                setSyncStatus('syncing');
+                try {
+                    const { data, error } = await supabase
+                        .from('user_assets')
+                        .upsert({ 
+                            email: verifiedEmail, 
+                            data: dataToSave,
+                        }, { onConflict: 'email' })
+                        .select('updated_at')
+                        .single();
+                    
+                    if (error) throw error;
+                    if (data) {
+                        setSyncStatus('synced');
+                        localStorage.setItem('assetDashboardLastUpdate', data.updated_at);
+                        lastSavedDataRef.current = currentDataStr;
+                    }
+                } catch (error) {
+                    console.error('Sync error:', error);
+                    setSyncStatus('error');
+                    const isAuthError = error.code === '42501' || error.message?.includes('row-level security');
+                    setSyncStatusError(isAuthError ? '서버 저장 권한이 없습니다. (PRO 구독 정보 불일치)' : (error.message || '저장 실패'));
+                }
+            };
 
             // ===== 데이터 자동 저장 =====
             useEffect(() => {
@@ -613,7 +648,7 @@
                 setVerifiedEmail(null); 
                 setUserProfile(null);
                 setIsPro(false);
-                setAppData(publicDefaultData);
+                // setAppData(publicDefaultData); // [수정] 로그아웃 시 현재 데이터 유지 (로컬 모드 전환)
                 setSyncStatus('idle');
                 setSyncStatusError('');
                 setIsCloudLoaded(false); // [추가] 로드 상태 초기화
@@ -621,7 +656,7 @@
             };
 
             // [추가] 구독 상태 확인 및 데이터 로드 함수 (재사용 가능하도록 분리)
-            const checkSubscription = async (session, isManualCheck = false) => {
+            const checkSubscription = async (session, isManualCheck = false, localDataOverride = null) => {
                 if (!session?.user) return;
                 
                 if (isManualCheck) setIsLoadingCloud(true);
@@ -647,7 +682,7 @@
 
                     // PRO 권한이 확인된 경우에만 클라우드 데이터 로드 시도
                     if (proStatus) {
-                        await fetchFromCloud(session.user.email, proStatus, true);
+                        await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
                     }
                 } catch (err) {
                     console.error('Subscription check error:', err);
@@ -688,50 +723,16 @@
 
             // 실시간 클라우드 동기화 (Debounced)
             useEffect(() => {
-                // [엄격 가드] 로그인 전이거나, 데이터를 불러오는 중(isFetchingRef)이면 절대 실행 금지
-                // [추가] isCloudLoaded가 false이면(아직 불러오지 않음) 저장하지 않음
-                if (!verifiedEmail || !isPro || !appData || isDemoMode || !supabase || isFetchingRef.current || !isCloudLoaded) {
-                    return;
-                }
-
-                    // [추가] 데이터 변경이 없으면 저장하지 않음 (무한 루프 방지)
-                    const currentDataStr = JSON.stringify(appData);
-                    if (currentDataStr === lastSavedDataRef.current) return;
-
-                    setSyncStatus('syncing');
-                    const timer = setTimeout(async () => {
-                        if (isFetchingRef.current) return; // [추가] 데이터 로드 중이면 저장 건너뜀
-                        const { data, error } = await supabase
-                            .from('user_assets')
-                            .upsert({ 
-                                email: verifiedEmail, 
-                                data: appData,
-                                // updated_at은 DB 트리거/기본값에 의해 자동 갱신됨
-                            }, { onConflict: 'email' }) // [수정] 충돌 해결 정책 명시
-                            .select('updated_at')
-                            .single();
-                        
-                        if (error) {
-                            console.error('Sync error:', error);
-                            setSyncStatus('error');
-                            // [보안] RLS(Row Level Security) 정책 위반 감지 (서버단 방어 확인)
-                            if (error.code === '42501' || error.message.includes('row-level security')) {
-                                setSyncStatusError('서버 저장 권한이 없습니다. (PRO 구독 정보 불일치)');
-                            } else {
-                                setSyncStatusError(error.message);
-                            }
-                        } else if (data) {
-                            setSyncStatus('synced');
-                            localStorage.setItem('assetDashboardLastUpdate', data.updated_at);
-                            lastSavedDataRef.current = currentDataStr; // [추가] 저장 완료된 데이터 기준점 갱신
-                        }
-                    }, 2000); // 2초 후 동기화
-                    return () => clearTimeout(timer);
-            }, [JSON.stringify(appData), isPro, verifiedEmail, isDemoMode]);
+                if (!appData) return;
+                const timer = setTimeout(() => {
+                    saveToCloud(appData);
+                }, 2000);
+                return () => clearTimeout(timer);
+            }, [JSON.stringify(appData), isPro, verifiedEmail, isDemoMode, isCloudLoaded]);
 
             // 클라우드 데이터 불러오기
             // [수정] isManual 인자 추가
-            const fetchFromCloud = async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false) => {
+            const fetchFromCloud = async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null) => {
                 if (isProcessing.current) return;
 
                 setSyncStatus('syncing');
@@ -750,12 +751,42 @@
                         const localLastUpdate = localStorage.getItem('assetDashboardLastUpdate');
                         const cloudLastUpdate = data.updated_at;
 
-                        // 수동 로드이거나 클라우드 데이터가 로컬보다 최신인 경우에만 로드
-                        const shouldLoad = isManual || !localLastUpdate || new Date(cloudLastUpdate).getTime() > new Date(localLastUpdate).getTime();
+                        let shouldLoad = false;
+
+                        // 1. 수동 동기화 버튼 클릭 시: 무조건 로드
+                        if (isManual) {
+                            shouldLoad = true;
+                        } 
+                        // 2. 로컬 데이터가 없는 경우: 무조건 로드
+                        else if (!localLastUpdate) {
+                            shouldLoad = true;
+                        } 
+                        // 3. 타임스탬프 비교
+                        else {
+                            const cloudTime = new Date(cloudLastUpdate).getTime();
+                            const localTime = new Date(localLastUpdate).getTime();
+
+                            // [수정] 클라우드가 더 최신이거나, 로그인(초기 로드) 시점에는 타임스탬프가 같더라도 확실한 동기화를 위해 로드
+                            if (cloudTime > localTime || (isInitialLoad && cloudTime === localTime)) {
+                                shouldLoad = true;
+                            } else if (isInitialLoad && localTime > cloudTime) {
+                                // [수정] 로그인 직후 로컬이 더 최신일 경우: 사용자에게 선택권 부여
+                                const cloudDateStr = new Date(cloudLastUpdate).toLocaleString();
+                                const localDateStr = new Date(localLastUpdate).toLocaleString();
+                                
+                                if (confirm(`⚠️ 데이터 충돌 감지\n\n☁️ 클라우드: ${cloudDateStr}\n💻 내 기기: ${localDateStr} (더 최신)\n\n클라우드 데이터를 불러와서 덮어쓰시겠습니까?\n(취소 시 현재 기기의 데이터가 유지되며, 잠시 후 클라우드에 저장됩니다.)`)) {
+                                    shouldLoad = true;
+                                } else {
+                                    shouldLoad = false;
+                                    // [수정] 로컬 유지를 선택했으므로, 현재 로컬 데이터를 클라우드에 강제 동기화
+                                    // localDataOverride가 있으면(초기 로드 시) 그것을 사용, 아니면 현재 appData 사용
+                                    setIsCloudLoaded(true); // 저장 허용 상태로 변경
+                                    saveToCloud(localDataOverride || appData, true);
+                                }
+                            }
+                        }
 
                         if (shouldLoad) {
-                            // [수정] 초기 로드 시 confirm 제거하여 무한 로딩/블로킹 방지
-                            // 클라우드 데이터가 더 최신이면 자동으로 동기화 (Sync 개념)
                             
                             // [핵심] 데이터를 불러오는 동안 자동 저장(Sync)이 트리거되지 않도록 락 설정
                             isFetchingRef.current = true;
