@@ -303,7 +303,20 @@
             const [syncError, setSyncStatusError] = useState(''); // [추가] 구체적 에러 메시지
             const [isLoadingCloud, setIsLoadingCloud] = useState(false); // [추가] 클라우드 로딩 상태
             const [isLoading, setIsLoading] = useState(true); // [추가] 앱 초기 로딩 상태
-            const [isFetching, setIsFetching] = useState(false); // [추가] 동기화 무한 루프 방지 플래그
+            const isFetchingRef = useRef(false); // [추가] 동기화 무한 루프 방지를 위한 Ref
+            const isProcessing = useRef(false); // [추가] 상태 업데이트 락(Lock)
+
+            // [수정 사항 2] sectorInfo를 컴포넌트 최상단으로 이동하여 참조 에러 해결
+            const sectorInfo = {
+                deposit: { name: '입출금통장', color: 'deposit', icon: '🏦' },
+                savings: { name: '저축', color: 'savings', icon: '💰' },
+                investment: { name: '투자', color: 'investment', icon: '📈' },
+                pension: { name: '연금', color: 'pension', icon: '🏛️' },
+                realestate: { name: '부동산', color: 'realestate', icon: '🏠' },
+                car: { name: '자동차', color: 'car', icon: '🚗' },
+                loan: { name: '대출', color: 'loan', icon: '💳' },
+                misc: { name: '기타', color: 'misc', icon: '📦' }
+            };
 
             // Cloudflare 빌드 시점에 환경 변수로 교체될 플레이스홀더
             const SUPABASE_URL = '__SUPABASE_URL__';
@@ -652,8 +665,10 @@
 
             // [추가] PRO 권한 상실 시 다크모드 강제 해제
             useEffect(() => {
-                if (!isPro && darkMode) setDarkMode(false);
-            }, [isPro]);
+                if (!isPro && darkMode) {
+                    setAppData(prev => ({ ...prev, darkMode: false }));
+                }
+            }, [isPro, darkMode]);
 
             // [개선] 다크모드 클래스 적용 (PRO 전용 강제 제한)
             useEffect(() => {
@@ -666,16 +681,23 @@
 
             // ===== Supabase 연동 로직 =====
             const handleLogout = async () => {
+                isProcessing.current = true;
                 if (supabase) await supabase.auth.signOut();
                 setVerifiedEmail(null);
                 setUserProfile(null);
                 setIsPro(false);
+                setAppData(publicDefaultData);
                 setSyncStatus('idle');
                 setSyncStatusError('');
+                isProcessing.current = false;
             };
 
             useEffect(() => {
-                if (!supabase) return;
+                // [수정 사항 1] Supabase가 없을 때 로딩을 해제하여 무한 로딩 방지
+                if (!supabase) {
+                    setIsLoading(false);
+                    return;
+                }
 
                 const handleAuthAction = async (session) => {
                     setVerifiedEmail(session.user.email);
@@ -702,13 +724,16 @@
 
                 // 초기 세션 체크 (새로고침 대응)
                 supabase.auth.getSession().then(({ data: { session } }) => {
-                    if (session) handleAuthAction(session).finally(() => setIsLoading(false));
-                    else setIsLoading(false);
+                    if (session) {
+                        handleAuthAction(session).finally(() => setIsLoading(false));
+                    } else {
+                        setIsLoading(false); // 비로그인 유저도 로딩 해제
+                    }
                 });
 
                 const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-                    if (session) {
-                        if (event === 'SIGNED_IN') {
+                    if (session && !isProcessing.current) {
+                        if (event === 'SIGNED_IN' && !isFetchingRef.current) {
                             await handleAuthAction(session);
                         }
                     } else {
@@ -730,7 +755,11 @@
 
             // 실시간 클라우드 동기화 (Debounced)
             useEffect(() => {
-                if (isPro && verifiedEmail && appData && !isDemoMode && supabase && !isFetching) {
+                // [엄격 가드] 로그인 전이거나, 데이터를 불러오는 중(isFetchingRef)이면 절대 실행 금지
+                if (!verifiedEmail || !isPro || !appData || isDemoMode || !supabase || isFetchingRef.current) {
+                    return;
+                }
+
                     setSyncStatus('syncing');
                     const timer = setTimeout(async () => {
                         const { data, error } = await supabase
@@ -752,12 +781,13 @@
                         }
                     }, 2000); // 2초 후 동기화
                     return () => clearTimeout(timer);
-                }
             }, [appData, isPro, verifiedEmail, isDemoMode]);
 
             // 클라우드 데이터 불러오기
-            const fetchFromCloud = async (email = verifiedEmail, pro = isPro, isInitialLoad = false) => {
-                if (!email || !pro || !supabase) return;
+            // [수정] isManual 인자 추가
+            const fetchFromCloud = async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false) => {
+                if (isProcessing.current) return;
+
                 setSyncStatus('syncing');
                 setIsLoadingCloud(true);
                 setSyncStatusError('');
@@ -774,25 +804,27 @@
                         const localLastUpdate = localStorage.getItem('assetDashboardLastUpdate');
                         const cloudLastUpdate = data.updated_at;
 
-                        // [수정] 수동 로드(isManual)이거나 클라우드가 더 최신인 경우 로드
+                        // 수동 로드이거나 클라우드 데이터가 로컬보다 최신인 경우에만 로드
                         const shouldLoad = isManual || !localLastUpdate || new Date(cloudLastUpdate).getTime() > new Date(localLastUpdate).getTime();
 
                         if (shouldLoad) {
-                            // [보안] 초기 로드(로그인 시)에 로컬 데이터가 있으면 덮어쓸지 반드시 확인
                             if (isInitialLoad && localLastUpdate && !isManual) {
                                 if (!confirm('로그인한 계정의 클라우드 데이터를 불러오시겠습니까?\n(취소 시 현재 화면의 데이터가 클라우드에 저장됩니다.)')) {
                                     setSyncStatus('synced');
                                     return;
                                 }
                             }
-                            setIsFetching(true);
+                            // [핵심] 데이터를 불러오는 동안 자동 저장(Sync)이 트리거되지 않도록 락 설정
+                            isFetchingRef.current = true;
                             setAppData(data.data);
                             localStorage.setItem('assetDashboardLastUpdate', cloudLastUpdate);
+                            // React 렌더링 사이클 이후 락 해제
+                            setTimeout(() => { isFetchingRef.current = false; }, 500);
                         }
                         setSyncStatus('synced');
                     } else {
                         // [추가] 신규 사용자 예외 처리: 기본 데이터 upsert
-                        const { error: upsertError } = await supabase
+                        const { data: upsertData, error: upsertError } = await supabase
                             .from('user_assets')
                             .upsert({ 
                                 email: email, 
@@ -803,7 +835,7 @@
                             .single();
                         
                         if (upsertError) throw upsertError;
-                        if (data) localStorage.setItem('assetDashboardLastUpdate', data.updated_at);
+                        if (upsertData) localStorage.setItem('assetDashboardLastUpdate', upsertData.updated_at);
                         setSyncStatus('synced');
                     }
                 } catch (err) {
@@ -812,7 +844,6 @@
                     setSyncStatus('error');
                 } finally {
                     setIsLoadingCloud(false);
-                    setTimeout(() => setIsFetching(false), 500); // 상태 업데이트 후 플래그 해제
                 }
             };
 
@@ -922,7 +953,8 @@
                         scale: 1.2,
                         useCORS: true,
                         allowTaint: false,
-                        backgroundColor: '#f9fafb',
+                        // [수정 사항 4] PDF 배경색을 흰색으로 명시적 설정
+                        backgroundColor: '#ffffff',
                         onclone: (clonedDoc) => {
                             clonedDoc.documentElement.classList.remove('dark');
                             clonedDoc.getElementById('dashboard-content').style.backgroundColor = '#f9fafb';
@@ -1122,6 +1154,8 @@
             };
 
             const calculateMonthlyProjection = (initialData, monthsToProject) => {
+                if (!initialData) return { projections: [], warnings: [] };
+                
                 const data = JSON.parse(JSON.stringify(initialData)); // Deep copy
                 const warnings = [];
                 const monthlyProjections = []; 
@@ -1201,6 +1235,7 @@
 
                         // 3. 현금 흐름 및 납입 처리
                         let cashInHand = monthlyAvailableCash;
+                        const allAccountsFlat = Object.values(currentAssets).flat();
                         const cashFlowAccount = allAccountsFlat.find(d => d.name === mainCashFlowAccount);
 
                         // 3a. 월급 기반 월납입 (자산 증식)
@@ -1336,14 +1371,15 @@
                         gross: currentGross,
                         sectorTotals: sectorTotals,
                         itemTotals: itemTotals,
-                        assets: JSON.parse(JSON.stringify(currentAssets)) // Deep copy for each month
+                        // 매달 전체 자산 객체를 복사하는 대신, 마지막 달만 복사하도록 최적화
+                        assets: month === monthsToProject ? JSON.parse(JSON.stringify(currentAssets)) : null
                     });
                 }
                 return { projections: monthlyProjections, warnings };
             };
 
             const calculation = useMemo(() => {
-                if (!appData || !assets || typeof assets !== 'object') {
+                if (!appData || !appData.assets || typeof appData.assets !== 'object') {
                     return {
                         initial: {},
                         projected: {},
@@ -1854,16 +1890,6 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                 };
             }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode]); // [수정] darkMode 의존성 추가
 
-            // ===== 로딩 상태 처리 =====
-            if (isLoading) {
-                return (
-                    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-                        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                        <p className="text-gray-600 dark:text-gray-400 font-medium animate-pulse">데이터를 안전하게 확인 중입니다...</p>
-                    </div>
-                );
-            }
-
             // ===== 자산 관리 함수들 =====
             const addAsset = (sector) => setAssets(prev => ({
                 ...prev,
@@ -1927,17 +1953,6 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
             const removeExpense = (index) => setMonthlyExpenses(prev => prev.filter((_, i) => i !== index));
 
             // ===== 섹터 정보 (함수 정의 전에 위치) =====
-            const sectorInfo = {
-                deposit: { name: '입출금통장', color: 'deposit', icon: '🏦' },
-                savings: { name: '저축', color: 'savings', icon: '💰' },
-                investment: { name: '투자', color: 'investment', icon: '📈' },
-                pension: { name: '연금', color: 'pension', icon: '🏛️' },
-                realestate: { name: '부동산', color: 'realestate', icon: '🏠' },
-                car: { name: '자동차', color: 'car', icon: '🚗' },
-                loan: { name: '대출', color: 'loan', icon: '💳' },
-                misc: { name: '기타', color: 'misc', icon: '📦' }
-            };
-
             // ===== 이벤트 관리 함수들 =====
             const addIncomeEvent = () => {
                 setIncomeEvents(prev => {
@@ -2665,6 +2680,16 @@ comparisonBarRef.current._chart = new Chart(comparisonBarRef.current, {
                     </div>
                 </div>
             );
+
+            // [수정] 모든 Hook 선언이 끝난 후, 실제 렌더링 직전에 로딩 상태를 체크하여 Hook 규칙 위반 해결
+            if (isLoading) {
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+                        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <p className="text-gray-600 dark:text-gray-400 font-medium animate-pulse">데이터를 안전하게 확인 중입니다...</p>
+                    </div>
+                );
+            }
 
             const renderFunctions = { renderSummaryPanel, renderScenarioPanel, renderChartsPanel, renderHistoryPanel, renderBudgetPanel, renderMemoPanel, renderRebalancePanel, renderAssetsPanel, renderExpensesPanel, renderEventsPanel };
 
