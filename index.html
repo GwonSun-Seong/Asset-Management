@@ -500,9 +500,8 @@
             // [수정] 초기 로딩 시점의 상태 불일치 해결을 위해 email, proStatus 오버라이드 인자 추가
             const saveToCloud = async (dataToSave, force = false, emailOverride = null, proOverride = null) => {
                 const targetEmail = emailOverride || verifiedEmail;
-                const targetPro = proOverride !== null ? proOverride : isPro;
 
-                if (!targetEmail || !targetPro || isDemoMode || !supabase || !dataToSave) return;
+                if (!targetEmail || isDemoMode || !supabase || !dataToSave) return;
                 // 강제 저장이 아니고, 클라우드 로드 전이거나 로드 중이면 중단
                 if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
 
@@ -517,6 +516,7 @@
                         .upsert({ 
                             email: targetEmail, 
                             data: dataToSave,
+                            updated_at: new Date().toISOString()
                         }, { onConflict: 'email' })
                         .select('updated_at')
                         .single());
@@ -796,6 +796,14 @@
                 setVerifiedEmail(session.user.email);
                 setUserProfile(session.user.user_metadata);
 
+                // 오프라인 상태 감지 시 DB 조회 생략
+                if (!navigator.onLine) {
+                    console.warn('Offline: Skipping subscription check');
+                    isCheckingSubscriptionRef.current = false;
+                    if (isManualCheck) setIsLoadingCloud(false);
+                    return;
+                }
+
                 try {
                     // [개선] DB 조회 재시도 로직 (최대 3회)
                     let profile = null;
@@ -806,7 +814,7 @@
                             .from('user_profiles')
                             .select('is_paid')
                             .eq('id', session.user.id)
-                            .maybeSingle(), 2000); // [수정] 재시도 타임아웃 2초로 단축
+                            .maybeSingle(), 5000);
                         
                         if (!error) {
                             profile = data;
@@ -814,7 +822,7 @@
                             break; // 성공 시 루프 탈출
                         }
                         fetchError = error;
-                        await new Promise(r => setTimeout(r, 500)); // 0.5초 대기 후 재시도
+                        await new Promise(r => setTimeout(r, 1000)); // 1초 대기 후 재시도
                     }
                     
                     if (!fetchError) {
@@ -832,11 +840,12 @@
                     } else {
                         console.warn('Profile fetch error after retries:', fetchError);
                         // DB 에러가 나도 로그인은 유지하되 PRO 권한만 false로 설정
-                        setIsPro(false);
+                        // DB 조회 실패 시 기존 권한 유지
+                        if (isManualCheck) alert('서버 연결 상태가 좋지 않아 구독 정보를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.');
                     }
                 } catch (err) {
                     console.error('Subscription check error:', err);
-                    setIsPro(false); // 에러 발생 시 안전하게 FREE 모드로 설정
+                    // 에러 발생 시에도 기존 권한 유지
                     if (isManualCheck) alert('구독 상태 확인 중 오류가 발생했습니다.');
                 } finally {
                     isCheckingSubscriptionRef.current = false;
@@ -920,9 +929,10 @@
             // 실시간 클라우드 동기화 (Debounced)
             useEffect(() => {
                 if (!appData) return;
+                const AUTO_SYNC_DELAY = 2000; // [설정] 자동 동기화 대기 시간 (ms) - 현재 2초
                 const timer = setTimeout(() => {
                     saveToCloud(appData);
-                }, 2000);
+                }, AUTO_SYNC_DELAY);
                 return () => clearTimeout(timer);
             }, [JSON.stringify(appData), isPro, verifiedEmail, isDemoMode, isCloudLoaded]);
 
@@ -1005,7 +1015,7 @@
                     } else {
                         // [수정] 신규 사용자 예외 처리
                         // RLS 정책상 PRO 유저만 INSERT 가능하므로, FREE 유저는 INSERT 시도하지 않음
-                        if (pro) {
+                        if (email) {
                             const { data: upsertData, error: upsertError } = await withTimeout(supabase
                                 .from('user_assets')
                                 .upsert({ 
@@ -1031,6 +1041,37 @@
                     setIsLoadingCloud(false);
                 }
             };
+
+            // [추가] 실시간 동기화 구독 (다른 기기 변경사항 감지)
+            useEffect(() => {
+                if (!supabase || !verifiedEmail) return;
+
+                const channel = supabase
+                    .channel('realtime_assets')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'UPDATE',
+                            schema: 'public',
+                            table: 'user_assets',
+                            filter: `email=eq.${verifiedEmail}`,
+                        },
+                        (payload) => {
+                            const cloudTime = new Date(payload.new.updated_at).getTime();
+                            const localTime = new Date(localStorage.getItem('assetDashboardLastUpdate') || 0).getTime();
+
+                            // 로컬 데이터보다 최신인 경우에만 로드 (무한 루프 방지)
+                            if (cloudTime > localTime) {
+                                fetchFromCloud(verifiedEmail, isPro, false, false);
+                            }
+                        }
+                    )
+                    .subscribe();
+
+                return () => {
+                    supabase.removeChannel(channel);
+                };
+            }, [supabase, verifiedEmail, isPro]);
 
 
 
