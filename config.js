@@ -33,3 +33,19 @@ const sectorInfo = {
 
 // 전역으로 노출
 window.sectorInfo = sectorInfo;
+
+// 사이드바 내비게이션 항목 정의
+window.navLabels = {
+    summary: { title: "요약 및 설정", icon: "📊" },
+    scenario: { title: "시나리오 비교", icon: "🔀" },
+    charts: { title: "포트폴리오 차트", icon: "🍩" },
+    history: { title: "자산 히스토리", icon: "📈" },
+    budget: { title: "예산 관리", icon: "💰" },
+    memo: { title: "메모", icon: "📝" },
+    rebalance: { title: "리밸런싱", icon: "⚠️" },
+    assets: { title: "자산 상세입력", icon: "🏦" },
+    expenses: { title: "지출 관리", icon: "💸" },
+    events: { title: "이벤트 관리", icon: "🎉" },
+    'detail-analysis': { title: "상세 분석", icon: "🔍" },
+    assumptions: { title: "가정 사항", icon: "💡" }
+};

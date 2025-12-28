@@ -26,26 +26,6 @@
         // ===== 기본값 설정 (서버/로컬 전환 가능) =====
         const USE_SERVER_CONFIG = false; // true: 서버에서 로드, false: 로컬 하드코딩 사용
 
-        // [수정] 대출 상환 방식에 따른 월 상환금 계산 함수
-        const calculateLoanPayment = (principal, annualRate, months, method) => {
-            if (principal <= 0) return { payment: 0, interest: 0, principalRepay: 0, totalPayment: 0 };
-            const monthlyRate = annualRate / 100 / 12;
-            let payment = 0, interest = principal * monthlyRate, principalRepay = 0;
-
-            if (method === '만기일시') {
-                payment = interest; // 매달 이자만 납부
-                principalRepay = 0;
-            } else if (method === '원금균등') {
-                principalRepay = months > 0 ? principal / months : 0;
-                payment = principalRepay + interest;
-            } else { // '원리금균등'이 기본값
-                if (months <= 0) payment = principal + interest;
-                else if (monthlyRate === 0) payment = months > 0 ? principal / months : principal;
-                else payment = (principal * monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-                principalRepay = payment - interest;
-            }
-            return { payment, interest, principalRepay, totalPayment: payment };
-        };
     </script>
 
     <script type="text/babel">
@@ -191,13 +171,6 @@
             );
         };
 
-        // [최적화] 무거운 계산 함수들을 컴포넌트 외부로 이동하여 참조 안정성 확보
-        const getMonthDiff = (start, end) => {
-            if (!start || !end) return 0;
-            const [sY, sM] = start.split('-').map(Number);
-            const [eY, eM] = end.split('-').map(Number);
-            return (eY - sY) * 12 + (eM - sM);
-        };
 
 
 
@@ -259,9 +232,15 @@
             const [layoutOrder, setLayoutOrder] = useState(() => {
                 try {
                     const savedOrder = localStorage.getItem('assetDashboardLayoutOrder');
-                    return savedOrder ? JSON.parse(savedOrder) : ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events'];
+                    const defaultOrder = ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'];
+                    if (savedOrder) {
+                        const parsed = JSON.parse(savedOrder);
+                        const missing = defaultOrder.filter(id => !parsed.includes(id));
+                        return [...parsed, ...missing];
+                    }
+                    return defaultOrder;
                 } catch {
-                    return ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events'];
+                    return ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'];
                 }
             });
             useEffect(() => {
@@ -448,7 +427,7 @@
                         return newHistory.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
                     });
                     
-                    alert(`현재 순자산 ${formatNumber(netWorth)}만원이 히스토리에 저장되었습니다.\n(${currentDate} ${currentTime})`);
+                    alert(`현재 순자산 ${formatNumber(netWorth, displayMode)}만원이 히스토리에 저장되었습니다.\n(${currentDate} ${currentTime})`);
                 } catch (error) {
                     console.error('자산 저장 오류:', error);
                     alert('자산 저장 중 오류가 발생했습니다.');
@@ -1178,11 +1157,10 @@
 
     // [최적화] 차트 업데이트/생성 헬퍼 함수
     const updateOrCreateChart = (ref, config) => {
-        if (ref.current && ref.current._chart) {
-            ref.current._chart.data = config.data;
-            ref.current._chart.options = config.options;
-            ref.current._chart.update();
-        } else {
+        if (ref.current) {
+            if (ref.current._chart) {
+                ref.current._chart.destroy();
+            }
             ref.current._chart = new Chart(ref.current, config);
         }
     };
@@ -1497,7 +1475,7 @@ updateOrCreateChart(comparisonBarRef, {
 
                 if (goalMode === 'target' && targetAmount > 0) {
                     datasets.push({
-                        label: `목표 자산 (${formatNumber(targetAmount)}만원)`,
+                        label: `목표 자산 (${formatNumber(targetAmount, displayMode)}만원)`,
                         data: new Array(finalLabels.length).fill(targetAmount),
                         borderColor: 'rgba(239, 68, 68, 0.8)',
                         borderDash: [5, 5],
@@ -1535,11 +1513,10 @@ updateOrCreateChart(comparisonBarRef, {
                     }
                 };
 
-                if (historyChartRef.current._chart) {
-                    historyChartRef.current._chart.data = chartConfig.data;
-                    historyChartRef.current._chart.options = chartConfig.options;
-                    historyChartRef.current._chart.update();
-                } else {
+                if (historyChartRef.current) {
+                    if (historyChartRef.current._chart) {
+                        historyChartRef.current._chart.destroy();
+                    }
                     historyChartRef.current._chart = new Chart(historyChartRef.current, chartConfig);
                 }
 
@@ -1760,15 +1737,15 @@ updateOrCreateChart(comparisonBarRef, {
                     <div className="md:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-xl shadow-lg p-6">
                         <div>
                             <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">현재 총자산</h2>
-                            <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(calculation.currentTotal)}만원</p>
+                            <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(calculation.currentTotal, displayMode)}만원</p>
                         </div>
                         <div className="mt-6"> 
                             <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">{projectionMonths}개월 후 예상 <span className="text-gray-400 text-sm">({(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d = new Date(y||new Date().getFullYear(), (m||1)-1, 1); d.setMonth(d.getMonth()+projectionMonths); return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`; } catch { return ''; } })()})</span></h2>
-                            <p className="text-3xl font-bold text-green-600 dark:text-green-400">{formatNumber(calculation.projectedTotal)}만원</p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">예상 증가액: +{formatNumber(calculation.growth)}만원 ({formatPercent((calculation.growth) / Math.max(1, calculation.currentTotal) * 100)}%)</p>
+                            <p className="text-3xl font-bold text-green-600 dark:text-green-400">{formatNumber(calculation.projectedTotal, displayMode)}만원</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">예상 증가액: +{formatNumber(calculation.growth, displayMode)}만원 ({formatPercent((calculation.growth) / Math.max(1, calculation.currentTotal) * 100)}%)</p>
                             {compLabel && (
                                 <p className="text-xs text-gray-400 mt-1">
-                                    ({compLabel}: {compVal >= 0 ? '+' : ''}{formatNumber(compVal)}만원, {compVal >= 0 ? '+' : ''}{formatPercent(compPct)}%)
+                                    ({compLabel}: {compVal >= 0 ? '+' : ''}{formatNumber(compVal, displayMode)}만원, {compVal >= 0 ? '+' : ''}{formatPercent(compPct)}%)
                                 </p>
                             )}
                         </div>
@@ -1879,7 +1856,7 @@ updateOrCreateChart(comparisonBarRef, {
                     <div className="flex justify-between items-center mb-4 px-4 pt-2">
                         <div className="text-sm text-gray-600 dark:text-gray-400">
                             총 {assetHistory.length}개의 기록이 있습니다. 
-                            최근 기록: {assetHistory[assetHistory.length - 1]?.date} {assetHistory[assetHistory.length - 1]?.time ? `(${assetHistory[assetHistory.length - 1].time.split(':').slice(0, 2).join(':')})` : ''} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth)}만원)
+                            최근 기록: {assetHistory[assetHistory.length - 1]?.date} {assetHistory[assetHistory.length - 1]?.time ? `(${assetHistory[assetHistory.length - 1].time.split(':').slice(0, 2).join(':')})` : ''} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth, displayMode)}만원)
                         </div>
                         <label className={`flex items-center gap-2 cursor-pointer px-3 py-1 rounded-full border transition-colors ${!isPro ? 'bg-gray-100 border-gray-200' : 'bg-blue-50 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800 hover:bg-blue-100'}`}>
                             <input 
@@ -1911,14 +1888,14 @@ updateOrCreateChart(comparisonBarRef, {
             const renderBudgetPanel = () => ( 
                 <div className="bg-blue-50 dark:bg-slate-800 rounded-lg shadow p-6">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월수입</div><div className="text-xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(monthlySalary)}만원</div></div>
-                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월별 지출</div><div className="text-xl font-bold text-red-600 dark:text-red-400">{formatNumber(totalMonthlyExpense)}만원</div></div>
-                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월납입 가능액</div><div className="text-xl font-bold text-green-600 dark:text-green-400">{formatNumber(maxSectorMonthlyContrib)}만원</div></div>
-                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월납입 사용액</div><div className={`text-xl font-bold ${totalSectorMonthlyContrib > maxSectorMonthlyContrib ? 'text-red-600' : 'text-blue-600 dark:text-blue-400'}`}>{formatNumber(totalSectorMonthlyContrib)}만원</div></div>
+                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월수입</div><div className="text-xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(monthlySalary, displayMode)}만원</div></div>
+                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월별 지출</div><div className="text-xl font-bold text-red-600 dark:text-red-400">{formatNumber(totalMonthlyExpense, displayMode)}만원</div></div>
+                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월납입 가능액</div><div className="text-xl font-bold text-green-600 dark:text-green-400">{formatNumber(maxSectorMonthlyContrib, displayMode)}만원</div></div>
+                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월납입 사용액</div><div className={`text-xl font-bold ${totalSectorMonthlyContrib > maxSectorMonthlyContrib ? 'text-red-600' : 'text-blue-600 dark:text-blue-400'}`}>{formatNumber(totalSectorMonthlyContrib, displayMode)}만원</div></div>
                     </div>
                     {totalSectorMonthlyContrib > maxSectorMonthlyContrib && (<div className="bg-red-100 dark:bg-red-900/40 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded my-4">⚠️ 월납입 한도를 초과했습니다. 월수입외 납입을 이용하거나 월납입을 줄여주세요.</div>)}
-                    <div className="bg-white dark:bg-gray-900 rounded-lg p-4 my-4"><h4 className="text-sm font-medium text-gray-700 dark:text-white mb-3">💡 잔여액 계산식</h4><div className="text-sm space-y-2"><div className="flex justify-between text-gray-600 dark:text-gray-300"><span>월수입</span><span className="font-medium text-blue-600 dark:text-blue-400">+{formatNumber(monthlySalary)}만원</span></div><div className="flex justify-between text-gray-600 dark:text-gray-300"><span>월별 지출</span><span className="font-medium text-red-600 dark:text-red-400">-{formatNumber(totalMonthlyExpense)}만원</span></div><hr className="border-gray-200 dark:border-gray-700" /><div className="flex justify-between font-medium text-gray-700 dark:text-white"><span>월납입 가능액</span><span className="text-green-600 dark:text-green-400">{formatNumber(maxSectorMonthlyContrib)}만원</span></div><div className="text-xs text-gray-500 dark:text-gray-400 mt-2">현재 월납입 설정:</div>{autoDepositBreakdown.map((item, index) => (<div key={index} className="flex justify-between text-xs text-gray-600 dark:text-gray-300"><span className={`text-${sectorInfo[item.sector]?.color || 'gray'}-600 dark:text-${sectorInfo[item.sector]?.color || 'gray'}-400`}>{sectorInfo[item.sector]?.icon} {item.name}</span><span className="font-medium">-{formatNumber(item.amount)}만원</span></div>))}<hr className="border-gray-200 dark:border-gray-700" /><div className="flex justify-between font-bold text-gray-800 dark:text-white"><span>잔여액</span><span className="text-green-600 dark:text-green-400">{formatNumber(autoDepositAmount)}만원</span></div></div></div>
-                    <div className="flex flex-col sm:flex-row items-center justify-between bg-white dark:bg-gray-900 rounded-lg p-4 gap-4 mt-4"><div className="text-center sm:text-left"><div className="text-sm text-gray-600 dark:text-white">잔여액</div><div className="text-2xl font-bold text-green-600 dark:text-green-400">{formatNumber(autoDepositAmount)}만원</div><div className="text-xs text-gray-500 dark:text-gray-400">월납입 가능액 {formatNumber(maxSectorMonthlyContrib)}만원 - 월납입 사용액 {formatNumber(totalSectorMonthlyContrib)}만원</div></div><div className="flex flex-col sm:flex-row items-center gap-4"><div><label className="block text-sm text-gray-600 dark:text-gray-400 text-center sm:text-left mb-1">월급/지출 및 잔여액 관리 계좌</label><select className="border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2" value={mainCashFlowAccount} onChange={e => setMainCashFlowAccount(e.target.value)}>{Object.values(assets).flat().filter(item => item.name !== '새 항목').map((asset, idx) => (<option key={idx} value={asset.name}>{asset.name}</option>))}</select></div></div></div>
+                    <div className="bg-white dark:bg-gray-900 rounded-lg p-4 my-4"><h4 className="text-sm font-medium text-gray-700 dark:text-white mb-3">💡 잔여액 계산식</h4><div className="text-sm space-y-2"><div className="flex justify-between text-gray-600 dark:text-gray-300"><span>월수입</span><span className="font-medium text-blue-600 dark:text-blue-400">+{formatNumber(monthlySalary, displayMode)}만원</span></div><div className="flex justify-between text-gray-600 dark:text-gray-300"><span>월별 지출</span><span className="font-medium text-red-600 dark:text-red-400">-{formatNumber(totalMonthlyExpense, displayMode)}만원</span></div><hr className="border-gray-200 dark:border-gray-700" /><div className="flex justify-between font-medium text-gray-700 dark:text-white"><span>월납입 가능액</span><span className="text-green-600 dark:text-green-400">{formatNumber(maxSectorMonthlyContrib, displayMode)}만원</span></div><div className="text-xs text-gray-500 dark:text-gray-400 mt-2">현재 월납입 설정:</div>{autoDepositBreakdown.map((item, index) => (<div key={index} className="flex justify-between text-xs text-gray-600 dark:text-gray-300"><span className={`text-${sectorInfo[item.sector]?.color || 'gray'}-600 dark:text-${sectorInfo[item.sector]?.color || 'gray'}-400`}>{sectorInfo[item.sector]?.icon} {item.name}</span><span className="font-medium">-{formatNumber(item.amount, displayMode)}만원</span></div>))}<hr className="border-gray-200 dark:border-gray-700" /><div className="flex justify-between font-bold text-gray-800 dark:text-white"><span>잔여액</span><span className="text-green-600 dark:text-green-400">{formatNumber(autoDepositAmount, displayMode)}만원</span></div></div></div>
+                    <div className="flex flex-col sm:flex-row items-center justify-between bg-white dark:bg-gray-900 rounded-lg p-4 gap-4 mt-4"><div className="text-center sm:text-left"><div className="text-sm text-gray-600 dark:text-white">잔여액</div><div className="text-2xl font-bold text-green-600 dark:text-green-400">{formatNumber(autoDepositAmount, displayMode)}만원</div><div className="text-xs text-gray-500 dark:text-gray-400">월납입 가능액 {formatNumber(maxSectorMonthlyContrib, displayMode)}만원 - 월납입 사용액 {formatNumber(totalSectorMonthlyContrib, displayMode)}만원</div></div><div className="flex flex-col sm:flex-row items-center gap-4"><div><label className="block text-sm text-gray-600 dark:text-gray-400 text-center sm:text-left mb-1">월급/지출 및 잔여액 관리 계좌</label><select className="border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2" value={mainCashFlowAccount} onChange={e => setMainCashFlowAccount(e.target.value)}>{Object.values(assets).flat().filter(item => item.name !== '새 항목').map((asset, idx) => (<option key={idx} value={asset.name}>{asset.name}</option>))}</select></div></div></div>
                 </div>
             );
 
@@ -2085,7 +2062,7 @@ updateOrCreateChart(comparisonBarRef, {
                                                         </div>
                                                     )}
                                                     <div className="text-sm">
-                                                        <div className="text-gray-600 dark:text-gray-300">예상: {formatNumber(projectedAmount)}만원</div>
+                                                        <div className="text-gray-600 dark:text-gray-300">예상: {formatNumber(projectedAmount, displayMode)}만원</div>
                                                         <div className={`text-gray-500 dark:text-gray-400`}>
                                                             비중: <span className={`${(() => {
                                                                 const validSectorTotal = projectedSectorTotals[sectorKey]?.amount || 0;
@@ -2167,7 +2144,7 @@ updateOrCreateChart(comparisonBarRef, {
                                                         </div>
                                                     )}
                                                     <div className="text-sm">
-                                                        <div className="text-gray-600 dark:text-gray-300">예상잔액: {formatNumber(projectedAmount)}만원</div>
+                                                        <div className="text-gray-600 dark:text-gray-300">예상잔액: {formatNumber(projectedAmount, displayMode)}만원</div>
                                                     </div>
                                                     <button onClick={() => removeAsset(sectorKey, index)} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
                                                 </div>
@@ -2347,6 +2324,98 @@ updateOrCreateChart(comparisonBarRef, {
                 </div>
             );
 
+            const renderDetailAnalysisPanel = () => (
+                <div className="overflow-x-auto -mx-6 px-6">
+                    <table className="w-full text-sm dark:text-gray-300 min-w-[800px]">
+                        <thead className="bg-gray-100 dark:bg-gray-700">
+                            <tr>
+                                <th className="p-3 text-left">섹터/항목</th>
+                                <th className="p-3 text-right">현재 금액</th>
+                                <th className="p-3 text-right">예상 금액</th>
+                                <th className="p-3 text-right">증감률</th>
+                                <th className="p-3 text-right">현재 비중</th>
+                                <th className="p-3 text-right">예상 비중</th>
+                                <th className="p-3 text-right">목표 비중</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {Object.keys(sectorInfo).map(sectorKey => {
+                                const current = currentSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
+                                const projected = projectedSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
+                                const growthRate = current.amount > 0 ? ((projected.amount - current.amount) / current.amount * 100) : 0;
+                                const isPositiveGood = sectorKey === 'loan' ? growthRate <= 0 : growthRate >= 0;
+                                const rebalanceStatus = getRebalanceStatus(sectorKey, projected.percentage);
+                                const targetPct = (rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length));
+                                
+                                return (
+                                    <React.Fragment key={sectorKey}>
+                                        <tr className={`border-t dark:border-gray-700 ${sectorInfo[sectorKey].bgClass} ${rebalanceStatus}`}>
+                                            <td className="p-3 font-semibold">
+                                                {sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}
+                                            </td>
+                                            <td className="p-3 text-right">{formatNumber(current.amount)}</td>
+                                            <td className="p-3 text-right">{formatNumber(projected.amount)}</td>
+                                            <td className={`p-3 text-right ${isPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatPercent(growthRate)}%</td>
+                                            <td className="p-3 text-right">{formatPercent(current.percentage)}%</td>
+                                            <td className="p-3 text-right">{formatPercent(projected.percentage)}%</td>
+                                            <td className="p-3 text-right">{formatPercent(targetPct)}%</td>
+                                        </tr>
+                                        {assets[sectorKey]?.map((asset, idx) => {
+                                            const projectedAmount = calculation.projected[sectorKey]?.[idx]?.amount || 0;
+                                            const assetGrowth = projectedAmount - asset.amount;
+                                            const assetGrowthRate = asset.amount > 0 ? (assetGrowth / asset.amount * 100) : 0;
+                                            const isAssetPositiveGood = sectorKey === 'loan' ? assetGrowthRate <= 0 : assetGrowthRate >= 0;
+                                            const sectorTotal = projected.amount || 1;
+                                            const currentAssetPercentageInPortfolio = (currentGrossTotal > 0) ? (asset.amount / currentGrossTotal * 100) : 0;
+                                            const assetPercentageInPortfolio = (projectedAmount / projectedGrossTotal * 100);
+                                            const currentAssetPercentageInSector = (current.amount > 0) ? (asset.amount / current.amount * 100) : 0;
+                                            const projectedAssetPercentageInSector = (projected.amount > 0) ? (projectedAmount / projected.amount * 100) : 0;
+                                            
+                                            return (
+                                                <tr key={`${sectorKey}-${idx}`} className="border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                                                    <td className="p-3 pl-8 text-sm dark:text-gray-400">└ {asset.name}</td>
+                                                    <td className="p-3 text-right text-sm">{formatNumber(asset.amount)}</td>
+                                                    <td className="p-3 text-right text-sm">{formatNumber(projectedAmount)}</td>
+                                                    <td className={`p-3 text-right text-sm ${isAssetPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatPercent(assetGrowthRate)}%</td>
+                                                    <td className="p-3 text-right text-sm">
+                                                        {sectorKey !== 'loan' ? `${formatPercent(currentAssetPercentageInPortfolio)}% (${formatPercent(currentAssetPercentageInSector)}%)` : '-'}
+                                                    </td>
+                                                    <td className="p-3 text-right text-sm">
+                                                        {sectorKey !== 'loan' ? `${formatPercent(assetPercentageInPortfolio)}% (${formatPercent(projectedAssetPercentageInSector)}%)` : '-'}
+                                                    </td>
+                                                    <td className="p-3 text-right text-sm">-</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </React.Fragment>
+                                );
+                            })}
+                            <tr className="border-t-2 border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-700">
+                                <td className="p-3 font-bold">총계</td>
+                                <td className="p-3 text-right font-bold">{formatNumber(calculation.currentTotal)}</td>
+                                <td className="p-3 text-right font-bold">{formatNumber(calculation.projectedTotal)}</td>
+                                <td className="p-3 text-right font-bold text-green-600 dark:text-green-400">{formatPercent(calculation.growth / calculation.currentTotal * 100)}%</td>
+                                <td className="p-3 text-right font-bold">100.0%</td>
+                                <td className="p-3 text-right font-bold">100.0%</td>
+                                <td className="p-3 text-right font-bold">100.0%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            );
+
+            const renderAssumptionsPanel = () => (
+                <div className="text-sm text-gray-700 dark:text-gray-300">
+                    <ul className="list-disc list-inside space-y-1">
+                        <li>수익률은 월복리로 계산됩니다.</li>
+                        <li>{applyTax ? '배당소득세(15.4%) 포함 세후 수익률 적용' : '배당소득세 제외 세전 수익률 적용'}</li>
+                        <li>대출 상환은 지정된 상환계좌에서 자동으로 차감됩니다. 잔액 부족 시 경고가 표시됩니다.</li>
+                        <li>월수입외 납입은 지정된 출금통장에서 차감됩니다.</li>
+                        <li>리밸런싱: 경고(노란색), 위험(빨간색) 임계값에 따라 표시됩니다.</li>
+                    </ul>
+                </div>
+            );
+
             // [수정] 모든 Hook 선언이 끝난 후, 실제 렌더링 직전에 로딩 상태를 체크하여 Hook 규칙 위반 해결
             if (isLoading) {
                 return (
@@ -2357,23 +2426,10 @@ updateOrCreateChart(comparisonBarRef, {
                 );
             }
 
-            const renderFunctions = { renderSummaryPanel, renderScenarioPanel, renderChartsPanel, renderHistoryPanel, renderBudgetPanel, renderMemoPanel, renderRebalancePanel, renderAssetsPanel, renderExpensesPanel, renderEventsPanel };
+            const renderFunctions = { renderSummaryPanel, renderScenarioPanel, renderChartsPanel, renderHistoryPanel, renderBudgetPanel, renderMemoPanel, renderRebalancePanel, renderAssetsPanel, renderExpensesPanel, renderEventsPanel, renderDetailAnalysisPanel, renderAssumptionsPanel };
 
             // [추가] 사이드바 내비게이션 항목 정의
-            const navLabels = {
-                summary: { title: "요약 및 설정", icon: "📊" },
-                scenario: { title: "시나리오 비교", icon: "🔀" },
-                charts: { title: "포트폴리오 차트", icon: "🍩" },
-                history: { title: "자산 히스토리", icon: "📈" },
-                budget: { title: "예산 관리", icon: "💰" },
-                memo: { title: "메모", icon: "📝" },
-                rebalance: { title: "리밸런싱", icon: "⚠️" },
-                assets: { title: "자산 상세입력", icon: "🏦" },
-                expenses: { title: "지출 관리", icon: "💸" },
-                events: { title: "이벤트 관리", icon: "🎉" },
-                'detail-analysis': { title: "상세 분석", icon: "🔍" },
-                assumptions: { title: "가정 사항", icon: "💡" }
-            };
+            const navLabels = window.navLabels || {};
 
             return (
                 (calculation.error || layoutOrder.length === 0) ? 
@@ -2556,7 +2612,7 @@ updateOrCreateChart(comparisonBarRef, {
                                     onToggle: () => togglePanelCollapse(panelId),
                                 };
 
-                                const { renderSummaryPanel, renderScenarioPanel, renderChartsPanel, renderHistoryPanel, renderBudgetPanel, renderMemoPanel, renderRebalancePanel, renderAssetsPanel, renderExpensesPanel, renderEventsPanel } = renderFunctions; 
+                                const { renderSummaryPanel, renderScenarioPanel, renderChartsPanel, renderHistoryPanel, renderBudgetPanel, renderMemoPanel, renderRebalancePanel, renderAssetsPanel, renderExpensesPanel, renderEventsPanel, renderDetailAnalysisPanel, renderAssumptionsPanel } = renderFunctions; 
 
                                 switch (panelId) {
                                     case 'summary':
@@ -2629,102 +2685,21 @@ updateOrCreateChart(comparisonBarRef, {
                                                 {renderEventsPanel()}
                                             </PanelWrapper>
                                         );
+                                    case 'detail-analysis':
+                                        return (
+                                            <PanelWrapper key={panelId} {...panelProps} title="🔍 상세 분석">
+                                                {renderDetailAnalysisPanel()}
+                                            </PanelWrapper>
+                                        );
+                                    case 'assumptions':
+                                        return (
+                                            <PanelWrapper key={panelId} {...panelProps} title="💡 계산 가정사항">
+                                                {renderAssumptionsPanel()}
+                                            </PanelWrapper>
+                                        );
                                     default: return null;
                                 }
                             })}
-                            {/* 상세 분석 테이블 */}
-                            <PanelWrapper id="detail-analysis" title="🔍 상세 분석" isCollapsed={!!panelCollapseState['detail-analysis']} onToggle={() => togglePanelCollapse('detail-analysis')}>
-                                <div className="overflow-x-auto -mx-6 px-6">
-                                    <table className="w-full text-sm dark:text-gray-300 min-w-[800px]">
-                                        <thead className="bg-gray-100 dark:bg-gray-700">
-                                            <tr>
-                                                <th className="p-3 text-left">섹터/항목</th>
-                                                <th className="p-3 text-right">현재 금액</th>
-                                                <th className="p-3 text-right">예상 금액</th>
-                                                <th className="p-3 text-right">증감률</th>
-                                                <th className="p-3 text-right">현재 비중</th>
-                                                <th className="p-3 text-right">예상 비중</th>
-                                                <th className="p-3 text-right">목표 비중</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {Object.keys(sectorInfo).map(sectorKey => {
-                                                const current = currentSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
-                                                const projected = projectedSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
-                                                const growthRate = current.amount > 0 ? ((projected.amount - current.amount) / current.amount * 100) : 0;
-                                                const isPositiveGood = sectorKey === 'loan' ? growthRate <= 0 : growthRate >= 0;
-                                                const rebalanceStatus = getRebalanceStatus(sectorKey, projected.percentage);
-                                                const targetPct = (rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length));
-                                                
-                                                return (
-                                                    <React.Fragment key={sectorKey}>
-                                                        <tr className={`border-t dark:border-gray-700 ${sectorInfo[sectorKey].bgClass} ${rebalanceStatus}`}>
-                                                            <td className="p-3 font-semibold">
-                                                                {sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}
-                                                            </td>
-                                                            <td className="p-3 text-right">{formatNumber(current.amount)}</td>
-                                                            <td className="p-3 text-right">{formatNumber(projected.amount)}</td>
-                                                            <td className={`p-3 text-right ${isPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatPercent(growthRate)}%</td>
-                                                            <td className="p-3 text-right">{formatPercent(current.percentage)}%</td>
-                                                            <td className="p-3 text-right">{formatPercent(projected.percentage)}%</td>
-                                                            <td className="p-3 text-right">{formatPercent(targetPct)}%</td>
-                                                        </tr>
-                                                        {assets[sectorKey]?.map((asset, idx) => {
-                                                            const projectedAmount = calculation.projected[sectorKey]?.[idx]?.amount || 0;
-                                                            const assetGrowth = projectedAmount - asset.amount;
-                                                            const assetGrowthRate = asset.amount > 0 ? (assetGrowth / asset.amount * 100) : 0;
-                                                            const isAssetPositiveGood = sectorKey === 'loan' ? assetGrowthRate <= 0 : assetGrowthRate >= 0;
-                                                            const sectorTotal = projected.amount || 1;
-                                                            const currentAssetPercentageInPortfolio = (currentGrossTotal > 0) ? (asset.amount / currentGrossTotal * 100) : 0;
-                                                            const assetPercentageInPortfolio = (projectedAmount / projectedGrossTotal * 100);
-                                                            const currentAssetPercentageInSector = (current.amount > 0) ? (asset.amount / current.amount * 100) : 0;
-                                                            const projectedAssetPercentageInSector = (projected.amount > 0) ? (projectedAmount / projected.amount * 100) : 0;
-                                                            
-                                                            return (
-                                                                <tr key={`${sectorKey}-${idx}`} className="border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-                                                                    <td className="p-3 pl-8 text-sm dark:text-gray-400">└ {asset.name}</td>
-                                                                    <td className="p-3 text-right text-sm">{formatNumber(asset.amount)}</td>
-                                                                    <td className="p-3 text-right text-sm">{formatNumber(projectedAmount)}</td>
-                                                                    <td className={`p-3 text-right text-sm ${isAssetPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatPercent(assetGrowthRate)}%</td>
-                                                                    <td className="p-3 text-right text-sm">
-                                                                        {sectorKey !== 'loan' ? `${formatPercent(currentAssetPercentageInPortfolio)}% (${formatPercent(currentAssetPercentageInSector)}%)` : '-'}
-                                                                    </td>
-                                                                    <td className="p-3 text-right text-sm">
-                                                                        {sectorKey !== 'loan' ? `${formatPercent(assetPercentageInPortfolio)}% (${formatPercent(projectedAssetPercentageInSector)}%)` : '-'}
-                                                                    </td>
-                                                                    <td className="p-3 text-right text-sm">-</td>
-                                                                </tr>
-                                                            );
-                                                        })}
-                                                    </React.Fragment>
-                                                );
-                                            })}
-                                            <tr className="border-t-2 border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-700">
-                                                <td className="p-3 font-bold">총계</td>
-                                                <td className="p-3 text-right font-bold">{formatNumber(calculation.currentTotal)}</td>
-                                                <td className="p-3 text-right font-bold">{formatNumber(calculation.projectedTotal)}</td>
-                                                <td className="p-3 text-right font-bold text-green-600 dark:text-green-400">{formatPercent(calculation.growth / calculation.currentTotal * 100)}%</td>
-                                                <td className="p-3 text-right font-bold">100.0%</td>
-                                                <td className="p-3 text-right font-bold">100.0%</td>
-                                                <td className="p-3 text-right font-bold">100.0%</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </PanelWrapper>
-
-                        {/* ===== 가정사항 ===== */}
-                        <PanelWrapper id="assumptions" title="💡 계산 가정사항" isCollapsed={!!panelCollapseState['assumptions']} onToggle={() => togglePanelCollapse('assumptions')} className="bg-blue-50 dark:bg-blue-900/20 rounded-lg shadow">
-                            <div className="text-sm text-gray-700 dark:text-gray-300">
-                                <ul className="list-disc list-inside space-y-1">
-                                    <li>수익률은 월복리로 계산됩니다.</li>
-                                    <li>{applyTax ? '배당소득세(15.4%) 포함 세후 수익률 적용' : '배당소득세 제외 세전 수익률 적용'}</li>
-                                    <li>대출 상환은 지정된 상환계좌에서 자동으로 차감됩니다. 잔액 부족 시 경고가 표시됩니다.</li>
-                                    <li>월수입외 납입은 지정된 출금통장에서 차감됩니다.</li>
-                                    <li>리밸런싱: 경고(노란색), 위험(빨간색) 임계값에 따라 표시됩니다.</li>
-                                </ul>
-                            </div>
-                        </PanelWrapper>
                         </div>
 
                         {/* ===== 모바일 버튼 ===== */}

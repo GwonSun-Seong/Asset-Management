@@ -1,13 +1,42 @@
 // utils.js - 유틸리티 함수들
 
 // 숫자 포맷팅 함수
-const formatNumber = (num) => {
+const formatNumber = (num, displayMode) => {
     if (displayMode === 'percent') return '***'; // [추가] 금액 숨김 모드
     return Math.round(num).toLocaleString();
 };
 
 // 퍼센트 포맷팅 함수
 const formatPercent = (num) => num.toFixed(1);
+
+// 대출 상환 방식에 따른 월 상환금 계산 함수
+const calculateLoanPayment = (principal, annualRate, months, method) => {
+    if (principal <= 0) return { payment: 0, interest: 0, principalRepay: 0, totalPayment: 0 };
+    const monthlyRate = annualRate / 100 / 12;
+    let payment = 0, interest = principal * monthlyRate, principalRepay = 0;
+
+    if (method === '만기일시') {
+        payment = interest; // 매달 이자만 납부
+        principalRepay = 0;
+    } else if (method === '원금균등') {
+        principalRepay = months > 0 ? principal / months : 0;
+        payment = principalRepay + interest;
+    } else { // '원리금균등'이 기본값
+        if (months <= 0) payment = principal + interest;
+        else if (monthlyRate === 0) payment = months > 0 ? principal / months : principal;
+        else payment = (principal * monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+        principalRepay = payment - interest;
+    }
+    return { payment, interest, principalRepay, totalPayment: payment };
+};
+
+// 날짜 차이(개월 수) 계산 함수
+const getMonthDiff = (start, end) => {
+    if (!start || !end) return 0;
+    const [sY, sM] = start.split('-').map(Number);
+    const [eY, eM] = end.split('-').map(Number);
+    return (eY - sY) * 12 + (eM - sM);
+};
 
 // 총 자산 계산 (부채 제외)
 const calculateGrossTotal = (assetData) => {
@@ -268,3 +297,5 @@ window.formatPercent = formatPercent;
 window.calculateGrossTotal = calculateGrossTotal;
 window.getSectorTotals = getSectorTotals;
 window.calculateMonthlyProjection = calculateMonthlyProjection;
+window.calculateLoanPayment = calculateLoanPayment;
+window.getMonthDiff = getMonthDiff;
