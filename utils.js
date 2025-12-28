@@ -1,6 +1,13 @@
 // utils.js - 유틸리티 함수들
 
+// 숫자 포맷팅 함수
+const formatNumber = (num) => {
+    if (displayMode === 'percent') return '***'; // [추가] 금액 숨김 모드
+    return Math.round(num).toLocaleString();
+};
 
+// 퍼센트 포맷팅 함수
+const formatPercent = (num) => num.toFixed(1);
 
 // 총 자산 계산 (부채 제외)
 const calculateGrossTotal = (assetData) => {
@@ -256,6 +263,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 };
 
 // 전역 객체에 노출
+window.formatNumber = formatNumber;
 window.formatPercent = formatPercent;
 window.calculateGrossTotal = calculateGrossTotal;
 window.getSectorTotals = getSectorTotals;

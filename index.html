@@ -560,13 +560,6 @@
             const setTargetAmount = (value) => setAppData(prev => ({ ...prev, targetAmount: value }));
             const setGoalMode = (value) => setAppData(prev => ({ ...prev, goalMode: value }));
             const setDisplayMode = (value) => setAppData(prev => ({ ...prev, displayMode: value })); 
-            
-            // ===== 유틸리티 함수들 =====
-            const formatNumber = (num) => {
-                if (appData?.displayMode === 'percent') return '***'; // [추가] 금액 숨김 모드
-                return Math.round(num).toLocaleString();
-            };
-            
             const setRebalancingAlerts = (value) => setAppData(prev => ({ ...prev, rebalancingAlerts: typeof value === 'function' ? value(prev.rebalancingAlerts) : value }));
             const setBaseMonth = (value) => setAppData(prev => ({ ...prev, baseMonth: value }));
             const setRebalancingTargets = (value) => setAppData(prev => ({ ...prev, rebalancingTargets: typeof value === 'function' ? value(prev.rebalancingTargets) : value }));
