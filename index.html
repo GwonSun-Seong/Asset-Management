@@ -1278,6 +1278,21 @@
                 return () => clearTimeout(timer);
             }, [appData, isPro, verifiedEmail, isDemoMode, isCloudLoaded, isInitialized]);
 
+            // [추가] 동기화 에러 시 자동 재시도 로직 (짧은 주기로 재시도)
+            useEffect(() => {
+                let retryTimer;
+                if (syncStatus === 'error' && verifiedEmail && isPro && !isDemoMode && isInitialized) {
+                    retryTimer = setTimeout(() => {
+                        // 세션 만료 에러가 아닌 경우에만 자동 재시도
+                        if (syncError && !syncError.includes('세션이 만료')) {
+                            console.log('Sync error detected. Retrying save...');
+                            saveToCloud(appDataRef.current, true);
+                        }
+                    }, 3000); // 3초마다 재시도
+                }
+                return () => clearTimeout(retryTimer);
+            }, [syncStatus, syncError, verifiedEmail, isPro, isDemoMode, isInitialized]);
+
             // 클라우드 데이터 불러오기
             // [수정] isManual 인자 추가
             const fetchFromCloud = async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null) => {
@@ -1439,7 +1454,7 @@
                     console.error('Fetch error:', err);
                     setSyncStatusError(err.message || '데이터 로드 실패');
                     setSyncStatus('error');
-                    alert(`데이터 동기화 오류: ${err.message}`); // [추가] 사용자 알림
+                    if (isManual) alert(`데이터 동기화 오류: ${err.message}`); // [수정] 수동일 때만 알림
                 } finally {
                     setIsLoadingCloud(false);
                 }
@@ -1810,7 +1825,7 @@
                     const newIndex = index + direction;
                     if (newIndex < 0 || newIndex >= prev.length) return prev;
                     const newOrder = [...prev];
-                    [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], prev[index]];
+                    [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]];
                     return newOrder;
                 });
             };
@@ -3487,8 +3502,8 @@ updateOrCreateChart(comparisonBarRef, {
                                     id: panelId,
                                     moveUp: () => movePanel(panelId, -1),
                                     moveDown: () => movePanel(panelId, 1),
-                                    isFirst: index === 0,
-                                    isLast: index === layoutOrder.length - 1,
+                                    isFirst: layoutOrder.indexOf(panelId) === 0,
+                                    isLast: layoutOrder.indexOf(panelId) === layoutOrder.length - 1,
                                     isCollapsed: !!panelCollapseState[panelId],
                                     onToggle: () => togglePanelCollapse(panelId),
                                 };
@@ -3606,7 +3621,7 @@ updateOrCreateChart(comparisonBarRef, {
                     </div>
                     {/* ===== 블로그 배너 ===== */}
                     {!isPro && (
-                        <a href="https://blog.naver.com/zocdoc" target="_blank" rel="noopener noreferrer" title="블로그 방문하기" className="fixed bottom-5 right-5 z-50 p-3 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:shadow-xl transition-all transform hover:scale-110">
+                        <a href="https://blog.naver.com/zocdoc" target="_blank" rel="noopener noreferrer" title="블로그 방문하기" className="hidden sm:block fixed bottom-5 right-5 z-50 p-3 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:shadow-xl transition-all transform hover:scale-110">
                             <img src="https://blogpfthumb-phinf.pstatic.net/MjAyMzExMDlfMTY2/MDAxNjk5NTM1OTEzNTY2.eBsibH7tHEJ5FeB3gSWJ3hGqz6mbgqM2TsSKS7c2QRog.CNgc4PQL7zumVLSD72sVI_EB6tsPO_Cwd_LKNj0MiyAg.JPEG.whrekrdl/161.jpg/161.jpg?type=w161" alt="네이버 블로그" className="w-10 h-10"/>
                         </a>
                     )}
