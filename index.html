@@ -22,6 +22,7 @@
     <script src="utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-gradient@0.6.1/dist/chartjs-plugin-gradient.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -185,6 +186,83 @@
             );
         };
 
+        const encryptData = (data, key) => {
+            const jsonStr = JSON.stringify(data);
+            const compressed = pako.deflate(jsonStr);
+            const wordArray = CryptoJS.lib.WordArray.create(compressed);
+            return CryptoJS.AES.encrypt(wordArray, key).toString();
+        };
+
+        const decryptData = (ciphertext, key) => {
+            const decrypted = CryptoJS.AES.decrypt(ciphertext, key);
+            if (decrypted.sigBytes <= 0) throw new Error('Decryption failed');
+            const typedArray = new Uint8Array(decrypted.sigBytes);
+            const words = decrypted.words;
+            for (let i = 0; i < decrypted.sigBytes; i++) {
+                typedArray[i] = (words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
+            }
+            const decompressed = pako.inflate(typedArray, { to: 'string' });
+            return JSON.parse(decompressed);
+        };
+
+        // [추가] 암호화 모드 선택 모달
+        const EncryptionModal = ({ isOpen, onSelect }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
+                        <div className="p-8">
+                            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">🔐 데이터 보안 방식 선택</h3>
+                            <p className="text-gray-600 dark:text-gray-400 mb-8">PRO 사용자를 위한 클라우드 데이터 암호화 방식을 선택해주세요.</p>
+                            <div className="space-y-4">
+                                <button onClick={() => onSelect('secure')} className="w-full text-left p-5 border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 rounded-xl hover:border-blue-600 transition-all group">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="font-bold text-blue-700 dark:text-blue-400">보안 모드 (권장)</span>
+                                        <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">Secure</span>
+                                    </div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-300">사용자 비밀번호로 암호화합니다. 개발자도 데이터를 읽을 수 없으며, 비밀번호 분실 시 복구가 불가능합니다.</p>
+                                </button>
+                                <button onClick={() => onSelect('normal')} className="w-full text-left p-5 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-gray-300 dark:hover:border-gray-600 transition-all">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="font-bold text-gray-800 dark:text-gray-200">일반 모드</span>
+                                        <span className="text-xs bg-gray-500 text-white px-2 py-0.5 rounded-full">Normal</span>
+                                    </div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-300">기기/계정 ID를 기반으로 자동 암호화합니다. 편리하지만 이론적으로 개발자가 접근할 수 있습니다.</p>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // [추가] 비밀번호 입력 모달
+        const PasswordPromptModal = ({ isOpen, onConfirm, onCancel }) => {
+            const [password, setPassword] = React.useState('');
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in duration-300">
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">🔑 보안 비밀번호 입력</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">데이터 복호화를 위해 보안 모드 비밀번호를 입력해주세요.</p>
+                        <input 
+                            type="password" 
+                            className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl px-4 py-3 mb-6 focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="비밀번호 입력"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && onConfirm(password)}
+                            autoFocus
+                        />
+                        <div className="flex gap-3">
+                            <button onClick={onCancel} className="flex-1 py-3 text-gray-600 dark:text-gray-400 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors">취소</button>
+                            <button onClick={() => onConfirm(password)} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">확인</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // [추가] PRO 기능 안내 모달
         const ProFeaturesModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
@@ -246,14 +324,14 @@
             const tooltipRef = useRef(null);
 
             const steps = [
-                { id: 'header-actions', title: '기본값 및 시나리오 관리', content: '데이터를 저장·불러오기 하거나 분석 결과를 PDF로 내보낼 수 있습니다.' },
-                { id: 'summary', title: '요약 및 설정', content: '현재 자산 현황과 물가 상승률을 반영한 미래의 실질 가치를 파악할 수 있습니다.' },
-                { id: 'charts', title: '포트폴리오 차트', content: '자산의 구성 비율과 시간에 따른 성장 곡선을 시각적으로 확인할 수 있습니다.' },
-                { id: 'budget', title: '월납입 예산 관리', content: '월급과 지출을 바탕으로 매달 저축 가능한 금액을 계산하고 관리할 수 있습니다.' },
-                { id: 'rebalance', title: '리밸런싱', content: '설정한 목표 비중과 현재 비중의 차이를 체크하여 투자 계획을 수정할 수 있습니다.' },
-                { id: 'assets', title: '자산 상세 입력', content: '예적금, 주식, 부동산 등 보유하신 모든 자산을 섹터별로 상세히 기록할 수 있습니다.' },
-                { id: 'events', title: '이벤트성 수입/지출', content: '상여금이나 여행 등 비정기적인 재무 이벤트를 설정하여 시뮬레이션에 반영할 수 있습니다.' },
-                { id: 'detail-analysis', title: '상세 분석', content: '모든 시뮬레이션 결과 수치를 상세한 표 데이터로 한눈에 분석할 수 있습니다.' }
+                { id: 'header-actions', title: '기본값 및 시나리오 관리', content: '설정한 데이터를 저장하거나 불러오고, PDF로 내보낼 수 있습니다.', isPro: true },
+                { id: 'summary', title: '요약 및 설정', content: '현재 자산 상황과 인플레이션을 반영한 실질 가치를 한눈에 파악할 수 있습니다.', isPro: true },
+                { id: 'charts', title: '포트폴리오 차트', content: '자산 구성과 미래 성장 곡선을 시각적 그래프로 확인할 수 있습니다.' },
+                { id: 'budget', title: '월납입 예산 관리', content: '월급과 지출을 기반으로 매달 저축 가능한 금액을 계산하고 관리할 수 있습니다.' },
+                { id: 'rebalance', title: '리밸런싱', content: '목표 비중과 현재 비중의 차이를 체크하여 최적의 비중을 유지할 수 있습니다.', isPro: true },
+                { id: 'assets', title: '자산 상세 입력', content: '보유하신 모든 자산 항목을 섹터별로 상세히 기록할 수 있습니다.' },
+                { id: 'events', title: '이벤트성 수입/지출', content: '상여금이나 여행 등 비정기적인 재무 이벤트를 설정해 볼 수 있습니다.' },
+                { id: 'detail-analysis', title: '상세 분석', content: '모든 시뮬레이션 결과를 상세한 표 데이터로 분석할 수 있습니다.' }
             ];
 
             useEffect(() => {
@@ -313,7 +391,7 @@
             const current = steps[currentStep];
 
             return (
-                <div className="absolute inset-0 z-[9999] pointer-events-none overflow-hidden transition-colors duration-500">
+                <div className="absolute inset-0 z-[9999] pointer-events-none overflow-hidden transition-colors duration-500" style={{ height: document.documentElement.scrollHeight }}>
                     {/* Spotlight Hole */}
                     <div 
                         className="absolute rounded-lg transition-all duration-500 ease-in-out pointer-events-auto"
@@ -473,6 +551,7 @@
             const [syncError, setSyncStatusError] = useState(''); // [추가] 구체적 에러 메시지
             const [isLoadingCloud, setIsLoadingCloud] = useState(false); // [추가] 클라우드 로딩 상태
             const [isLoading, setIsLoading] = useState(true); // [추가] 앱 초기 로딩 상태
+            const [isInitialized, setIsInitialized] = useState(false); // [추가] 초기화 완료 상태
             const isFetchingRef = useRef(false); // [추가] 동기화 무한 루프 방지를 위한 Ref
             const isProcessing = useRef(false); // [추가] 상태 업데이트 락(Lock)
             const [isCloudLoaded, setIsCloudLoaded] = useState(false); // [추가] 클라우드 데이터 로드 완료 여부 (Race Condition 방지)
@@ -490,6 +569,14 @@
             // Cloudflare 빌드 시점에 환경 변수로 교체될 플레이스홀더
             const SUPABASE_URL = '__SUPABASE_URL__';
             const SUPABASE_KEY = '__SUPABASE_KEY__';
+            const SECURITY_KEY = '__SECURITY_KEY__';
+
+            // [추가] 암호화 유틸리티 (컴포넌트 내부로 이동하여 SECURITY_KEY 참조)
+            const getEncryptionKey = (mode, secret, userId) => {
+                if (mode === 'secure') return secret;
+                const salt = SECURITY_KEY;
+                return userId + salt;
+            };
             
             const supabase = useMemo(() => {
                 if (SUPABASE_URL.startsWith('__') || SUPABASE_KEY.startsWith('__')) return null;
@@ -527,6 +614,12 @@
             const [isQuickPanelOpen, setIsQuickPanelOpen] = useState(false); // [추가] 모바일 퀵 패널 상태
             const [isGuideOpen, setIsGuideOpen] = useState(false); // [추가] 온보딩 가이드 상태
             const [showSaveToast, setShowSaveToast] = useState(false); // [추가] 저장 피드백 상태
+            const [encryptionMode, setEncryptionMode] = useState(null); // [추가] 암호화 모드
+            const [userSecretKey, setUserSecretKey] = useState(() => sessionStorage.getItem('assetDashboardSecretKey') || ''); // [수정] 세션 스토리지 연동
+            const [isEncryptionModalOpen, setIsEncryptionModalOpen] = useState(false); // [추가] 암호화 선택 모달
+            const [isPasswordPromptOpen, setIsPasswordPromptOpen] = useState(false); // [추가] 비밀번호 입력 모달
+            const pendingCiphertext = useRef(null);
+            const pendingSave = useRef(false);
             // [수정] 레이아웃 및 패널 상태 관리
             const [layoutOrder, setLayoutOrder] = useState(() => {
                 try {
@@ -662,6 +755,7 @@
 
                     // 3. 모든 체크 완료 후 UI 렌더링 허용
                     setIsLoading(false);
+                    setIsInitialized(true);
                 };
                 
                 loadInitialData();
@@ -675,21 +769,40 @@
                 }
             }, [isLoading]);
 
+            // [추가] appData 상태 추적을 위한 Ref (단축키 stale closure 방지)
+            const appDataRef = useRef(appData);
+            useEffect(() => {
+                appDataRef.current = appData;
+            }, [appData]);
+
+            // [추가] 보안 키 세션 유지
+            useEffect(() => {
+                if (userSecretKey) {
+                    sessionStorage.setItem('assetDashboardSecretKey', userSecretKey);
+                }
+            }, [userSecretKey]);
+
             // [추가] 키보드 단축키 (Alt + S) 저장 로직
             useEffect(() => {
                 const handleKeyDown = (e) => {
                     if (e.altKey && (e.key === 's' || e.key === 'S')) {
                         e.preventDefault();
                         
-                        if (appData) {
+                        const currentData = appDataRef.current;
+                        if (currentData) {
                             // 1. 로컬 저장
-                            const currentDataStr = JSON.stringify(appData);
+                            const currentDataStr = JSON.stringify(currentData);
                             localStorage.setItem('assetDashboardDataV3', currentDataStr);
                             localStorage.setItem('assetDashboardLastUpdate', new Date().toISOString());
                             
                             // 2. 클라우드 저장 (PRO인 경우 force flag 사용)
                             if (isPro && verifiedEmail) {
-                                saveToCloud(appData, true);
+                                if (encryptionMode === 'secure' && !userSecretKey) {
+                                    pendingSave.current = true;
+                                    setIsPasswordPromptOpen(true);
+                                } else {
+                                    saveToCloud(currentData, true);
+                                }
                             }
 
                             // 3. 피드백 표시
@@ -701,16 +814,37 @@
 
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [appData, isPro, verifiedEmail, saveToCloud]);
+            }, [isPro, verifiedEmail, encryptionMode, userSecretKey, saveToCloud]);
 
             // [추가] 클라우드 저장 헬퍼 함수 (중복 로직 제거 및 강제 저장 지원)
             // [수정] 초기 로딩 시점의 상태 불일치 해결을 위해 email, proStatus 오버라이드 인자 추가
-            const saveToCloud = async (dataToSave, force = false, emailOverride = null, proOverride = null) => {
+            const saveToCloud = async (dataToSave, force = false, emailOverride = null, proOverride = null, keyOverride = null) => {
                 const targetEmail = emailOverride || verifiedEmail;
+                const targetPro = proOverride !== null ? proOverride : isPro;
 
-                if (!targetEmail || isDemoMode || !supabase || !dataToSave) return;
+                if (!targetEmail || isDemoMode || !supabase || !dataToSave || !isInitialized) return;
                 // 강제 저장이 아니고, 클라우드 로드 전이거나 로드 중이면 중단
                 if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
+
+                // 암호화 처리
+                let payloadData = dataToSave;
+                if (targetPro && encryptionMode) {
+                    // [추가] 보안 모드인데 키가 없는 경우 입력 유도 (세션 스토리지 포함 확인)
+                    if (encryptionMode === 'secure' && !userSecretKey && !sessionStorage.getItem('assetDashboardSecretKey')) {
+                        pendingSave.current = true;
+                        setIsPasswordPromptOpen(true);
+                        return;
+                    }
+
+                    try {
+                        const key = keyOverride || getEncryptionKey(encryptionMode, userSecretKey, userProfile?.id || targetEmail);
+                        payloadData = encryptData(dataToSave, key);
+                    } catch (err) {
+                        console.error('Encryption error:', err);
+                        setSyncStatus('error');
+                        return;
+                    }
+                }
 
                 const currentDataStr = JSON.stringify(dataToSave);
                 // 강제 저장이 아니고, 변경 사항이 없으면 중단
@@ -722,7 +856,8 @@
                         .from('user_assets')
                         .upsert({ 
                             email: targetEmail, 
-                            data: dataToSave,
+                            data: payloadData,
+                            encryption_type: targetPro ? encryptionMode : null,
                             updated_at: new Date().toISOString()
                         }, { onConflict: 'email' })
                         .select('updated_at')
@@ -1131,13 +1266,13 @@
 
             // 실시간 클라우드 동기화 (Debounced)
             useEffect(() => {
-                if (!appData) return;
+                if (!appData || !isInitialized) return;
                 const AUTO_SYNC_DELAY = 2000; // [설정] 자동 동기화 대기 시간 (ms) - 현재 2초
                 const timer = setTimeout(() => {
                     saveToCloud(appData);
                 }, AUTO_SYNC_DELAY);
                 return () => clearTimeout(timer);
-            }, [JSON.stringify(appData), isPro, verifiedEmail, isDemoMode, isCloudLoaded]);
+            }, [JSON.stringify(appData), isPro, verifiedEmail, isDemoMode, isCloudLoaded, isInitialized]);
 
             // 클라우드 데이터 불러오기
             // [수정] isManual 인자 추가
@@ -1150,13 +1285,58 @@
                 try {
                     const { data, error } = await withTimeout(supabase
                         .from('user_assets')
-                        .select('data, updated_at')
+                        .select('data, updated_at, encryption_type')
                         .eq('email', email)
                         .maybeSingle());
                     
                     if (error) throw error;
 
                     if (data && data.data) {
+                        const encType = data.encryption_type;
+                        const isLegacy = !encType || encType === 'none';
+                        
+                        // 암호화 모드 설정 체크
+                        if (pro && isLegacy) {
+                            setEncryptionMode(null);
+                            setIsEncryptionModalOpen(true);
+                        } else if (pro) {
+                            setEncryptionMode(encType);
+                        }
+
+                        let decryptedData = data.data;
+                        if (!isLegacy) {
+                            if (encType === 'secure' && !userSecretKey) {
+                                pendingCiphertext.current = data.data;
+                                setIsPasswordPromptOpen(true);
+                                return;
+                            }
+                            
+                            try {
+                                const key = getEncryptionKey(encType, userSecretKey, userProfile?.id || email);
+                                decryptedData = decryptData(data.data, key);
+                            } catch (err) {
+                                setSyncStatus('error');
+                                setSyncStatusError('복호화 실패. 비밀번호를 확인해주세요.');
+                                alert('복호화 실패. 비밀번호를 확인해주세요. 데이터가 암호화되어 읽을 수 없습니다.');
+                                return;
+                            }
+                        } else {
+                            // [추가] 레거시 데이터 파싱 (Raw JSON 또는 단순 pako 압축)
+                            try {
+                                if (typeof decryptedData === 'string') {
+                                    try {
+                                        decryptedData = JSON.parse(decryptedData);
+                                    } catch (e) {
+                                        const binaryString = atob(decryptedData);
+                                        const uint8 = new Uint8Array(binaryString.length);
+                                        for(let i = 0; i < binaryString.length; i++) uint8[i] = binaryString.charCodeAt(i);
+                                        const inflated = pako.inflate(uint8, { to: 'string' });
+                                        decryptedData = JSON.parse(inflated);
+                                    }
+                                }
+                            } catch (err) { console.error('Legacy data parsing error:', err); }
+                        }
+
                         const localLastUpdate = localStorage.getItem('assetDashboardLastUpdate');
                         const cloudLastUpdate = data.updated_at;
 
@@ -1200,11 +1380,16 @@
                             
                             // [핵심] 데이터를 불러오는 동안 자동 저장(Sync)이 트리거되지 않도록 락 설정
                             isFetchingRef.current = true;
-                            setAppData(data.data);
+                            setAppData(decryptedData);
                             localStorage.setItem('assetDashboardLastUpdate', cloudLastUpdate);
-                            lastSavedDataRef.current = JSON.stringify(data.data); // [추가] 로드된 데이터를 기준점으로 설정
+                            lastSavedDataRef.current = JSON.stringify(decryptedData); // [추가] 로드된 데이터를 기준점으로 설정
                             // React 렌더링 사이클 이후 락 해제
                             setTimeout(() => { isFetchingRef.current = false; }, 500);
+
+                            // [추가] 레거시 데이터인 경우 현재 설정된 암호화 모드로 즉시 마이그레이션 실행
+                            if (isLegacy && pro && encryptionMode) {
+                                saveToCloud(decryptedData, true);
+                            }
                         }
 
                         setSyncStatus('synced');
@@ -1236,6 +1421,41 @@
                     alert(`데이터 동기화 오류: ${err.message}`); // [추가] 사용자 알림
                 } finally {
                     setIsLoadingCloud(false);
+                }
+            };
+
+            // [추가] 암호화 모드 선택 핸들러
+            const handleEncryptionSelect = (mode) => {
+                setEncryptionMode(mode);
+                setIsEncryptionModalOpen(false);
+                if (mode === 'secure') {
+                    setIsPasswordPromptOpen(true);
+                } else {
+                    saveToCloud(appData, true);
+                }
+            };
+
+            // [추가] 비밀번호 입력 확인 핸들러
+            const handlePasswordConfirm = (password) => {
+                setUserSecretKey(password);
+                setIsPasswordPromptOpen(false);
+                
+                if (pendingCiphertext.current) {
+                    try {
+                        const key = getEncryptionKey('secure', password, userProfile?.id || verifiedEmail);
+                        const decrypted = decryptData(pendingCiphertext.current, key);
+                        setAppData(decrypted);
+                        pendingCiphertext.current = null;
+                        setSyncStatus('synced');
+                        setIsCloudLoaded(true);
+                    } catch (err) {
+                        alert('복호화 실패. 비밀번호를 다시 확인해주세요.');
+                        setIsPasswordPromptOpen(true);
+                    }
+                } else if (pendingSave.current) {
+                    pendingSave.current = false;
+                    const key = getEncryptionKey('secure', password, userProfile?.id || verifiedEmail);
+                    saveToCloud(appData, true, null, null, key);
                 }
             };
 
@@ -1489,6 +1709,8 @@
                 }
 
                 let months = 0;
+                let lastNetWorth = -Infinity;
+                let stagnationCount = 0;
 
                 // [수정] 메인 계산 로직을 사용하여 목표 달성 시뮬레이션
                 while (months < 600) { // 최대 50년(600개월)까지만 계산
@@ -1511,6 +1733,20 @@
                     }
 
                     const finalProjection = projections[projections.length - 1];
+
+                    // [추가] 자산 정체/감소 체크 (3개월 연속)
+                    if (finalProjection.total <= lastNetWorth) {
+                        stagnationCount++;
+                    } else {
+                        stagnationCount = 0;
+                    }
+                    lastNetWorth = finalProjection.total;
+
+                    if (stagnationCount >= 3) {
+                        setGoalSeekResult('자산이 정체되거나 감소하고 있어 목표 달성이 불가능합니다.');
+                        return;
+                    }
+
                     if (finalProjection.total >= targetAmount) {
                         setGoalSeekResult(`목표 달성까지 약 ${months}개월 소요됩니다.`);
                         setProjectionMonths(months);
@@ -3402,6 +3638,15 @@ updateOrCreateChart(comparisonBarRef, {
                         onClose={() => setIsGuideOpen(false)} 
                         scrollToPanel={scrollToPanel}
                         isPro={isPro}
+                    />
+                    <EncryptionModal 
+                        isOpen={isEncryptionModalOpen} 
+                        onSelect={handleEncryptionSelect} 
+                    />
+                    <PasswordPromptModal 
+                        isOpen={isPasswordPromptOpen} 
+                        onConfirm={handlePasswordConfirm}
+                        onCancel={() => setIsPasswordPromptOpen(false)}
                     />
                     {/* [추가] 저장 완료 토스트 */}
                     {showSaveToast && (
