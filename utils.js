@@ -1,5 +1,11 @@
 // utils.js - 유틸리티 함수들
 
+// [추가] 정밀한 금융 계산을 위한 Decimal 헬퍼 (Decimal.js 로드 확인)
+const toD = (val) => {
+    if (window.Decimal) return new window.Decimal(val || 0);
+    return { mul: (v) => toD(val * v), div: (v) => toD(val / v), add: (v) => toD(val + v), sub: (v) => toD(val - v), toNumber: () => val, pow: (v) => toD(Math.pow(val, v)), lte: (v) => val <= v, isZero: () => val === 0 };
+};
+
 // 숫자 포맷팅 함수
 const formatNumber = (num, displayMode) => {
     if (displayMode === 'percent') return '***'; // [추가] 금액 숨김 모드
@@ -11,23 +17,32 @@ const formatPercent = (num) => num.toFixed(1);
 
 // 대출 상환 방식에 따른 월 상환금 계산 함수
 const calculateLoanPayment = (principal, annualRate, months, method) => {
-    if (principal <= 0) return { payment: 0, interest: 0, principalRepay: 0, totalPayment: 0 };
-    const monthlyRate = annualRate / 100 / 12;
-    let payment = 0, interest = principal * monthlyRate, principalRepay = 0;
+    const p = toD(principal);
+    if (p.lte(0)) return { payment: 0, interest: 0, principalRepay: 0, totalPayment: 0 };
+    const monthlyRate = toD(annualRate).div(100).div(12);
+    let payment = toD(0), interest = p.mul(monthlyRate), principalRepay = toD(0);
 
     if (method === '만기일시') {
         payment = interest; // 매달 이자만 납부
-        principalRepay = 0;
+        principalRepay = toD(0);
     } else if (method === '원금균등') {
-        principalRepay = months > 0 ? principal / months : 0;
-        payment = principalRepay + interest;
+        principalRepay = months > 0 ? p.div(months) : toD(0);
+        payment = principalRepay.add(interest);
     } else { // '원리금균등'이 기본값
-        if (months <= 0) payment = principal + interest;
-        else if (monthlyRate === 0) payment = months > 0 ? principal / months : principal;
-        else payment = (principal * monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-        principalRepay = payment - interest;
+        if (months <= 0) payment = p.add(interest);
+        else if (monthlyRate.isZero()) payment = months > 0 ? p.div(months) : p;
+        else {
+            const ratePow = monthlyRate.add(1).pow(months);
+            payment = p.mul(monthlyRate).mul(ratePow).div(ratePow.sub(1));
+        }
+        principalRepay = payment.sub(interest);
     }
-    return { payment, interest, principalRepay, totalPayment: payment };
+    return { 
+        payment: payment.toNumber(), 
+        interest: interest.toNumber(), 
+        principalRepay: principalRepay.toNumber(), 
+        totalPayment: payment.toNumber() 
+    };
 };
 
 // 날짜 차이(개월 수) 계산 함수
@@ -69,7 +84,8 @@ const getSectorTotals = (assetData, total) => {
 const calculateMonthlyProjection = (initialData, monthsToProject) => {
     if (!initialData) return { projections: [], warnings: [] };
 
-    const data = JSON.parse(JSON.stringify(initialData)); // Deep copy
+    // [최적화] structuredClone을 사용하여 더 빠른 깊은 복사 수행 (지원되지 않는 환경 대비 fallback 유지)
+    const data = typeof structuredClone === 'function' ? structuredClone(initialData) : JSON.parse(JSON.stringify(initialData));
     const warnings = [];
     const monthlyProjections = [];
 
@@ -97,18 +113,37 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         }
     });
 
-    const calculateTotal = (assetData) => {
+    // [최적화] 루프 진입 전 필요한 계좌 참조 및 이벤트 인덱스 미리 계산
+    const allAccountsFlat = Object.values(currentAssets).flat();
+    const cashFlowAccount = allAccountsFlat.find(d => d.name === mainCashFlowAccount);
+    
+    const precalculateEventIndices = (events) => events.map(event => ({
+        ...event,
+        startIdx: typeof event.startMonth === 'string' ? getMonthDiff(baseMonth, event.startMonth) + 1 : event.startMonth,
+        endIdx: typeof event.endMonth === 'string' ? getMonthDiff(baseMonth, event.endMonth) + 1 : event.endMonth
+    }));
+
+    const incomeEventsWithIndices = precalculateEventIndices(safeIncomeEvents);
+    const expenseEventsWithIndices = precalculateEventIndices(safeExpenseEvents);
+
+    // 대출 상환 계좌 미리 매핑
+    if (currentAssets.loan) {
+        currentAssets.loan.forEach(loan => {
+            loan._repaymentAccountRef = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
+        });
+    }
+
+    // [최적화] 루프 외부로 이동하여 불필요한 함수 재선언 방지
+    const _internalCalculateTotal = (assetData) => {
         let sum = 0;
         Object.keys(assetData).forEach(sector => {
-            const sectorSum = (assetData[sector]||[]).reduce((s,a)=> s + (a.amount||0), 0);
+            const sectorSum = (assetData[sector] || []).reduce((s, a) => s + (a.amount || 0), 0);
             sum += (sector === 'loan') ? -sectorSum : sectorSum;
         });
         return sum;
     };
 
     for (let month = 0; month <= monthsToProject; month++) {
-        const allAccountsFlat = Object.values(currentAssets).flat();
-
         if (month > 0) { // Skip initial state for calculations, only record it
             // 1. 이자/수익률 적용
             Object.keys(currentAssets).forEach(sector => {
@@ -117,28 +152,24 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     if (asset.amount > 0) {
                         const feeRate = (asset.feeRate || 0) / 100;
                         const effectiveRate = (asset.rate / 100) * (1 - feeRate);
-                        asset.amount *= (1 + effectiveRate / 12);
-                            // 부동 소수점 오차 방지
-                            asset.amount = Math.round(asset.amount * 10000) / 10000;
+                        // [수정] Decimal을 사용한 정밀 계산 및 원 단위 보정
+                        const nextAmount = toD(asset.amount).mul(toD(1).add(toD(effectiveRate).div(12)));
+                        asset.amount = Math.round(nextAmount.toNumber() * 10000) / 10000;
                     }
                 });
             });
 
             // 2. 이벤트 적용
-            safeIncomeEvents.forEach(event => {
-                const startIdx = typeof event.startMonth === 'string' ? getMonthDiff(baseMonth, event.startMonth) + 1 : event.startMonth;
-                const endIdx = typeof event.endMonth === 'string' ? getMonthDiff(baseMonth, event.endMonth) + 1 : event.endMonth;
-                if (month >= startIdx && month <= endIdx) {
+            incomeEventsWithIndices.forEach(event => {
+                if (month >= event.startIdx && month <= event.endIdx) {
                     if (currentAssets[event.targetSector] && currentAssets[event.targetSector][event.targetAsset]) {
                         currentAssets[event.targetSector][event.targetAsset].amount += event.amount;
                     }
                 }
             });
 
-            safeExpenseEvents.forEach(event => {
-                const startIdx = typeof event.startMonth === 'string' ? getMonthDiff(baseMonth, event.startMonth) + 1 : event.startMonth;
-                const endIdx = typeof event.endMonth === 'string' ? getMonthDiff(baseMonth, event.endMonth) + 1 : event.endMonth;
-                if (month >= startIdx && month <= endIdx) {
+            expenseEventsWithIndices.forEach(event => {
+                if (month >= event.startIdx && month <= event.endIdx) {
                     const arr = currentAssets[event.targetSector];
                     if (arr && arr[event.targetAsset]) {
                         arr[event.targetAsset].amount = Math.max(0, arr[event.targetAsset].amount - event.amount);
@@ -148,8 +179,6 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
             // 3. 현금 흐름 및 납입 처리
             let cashInHand = monthlyAvailableCash;
-            const allAccountsFlat = Object.values(currentAssets).flat();
-            const cashFlowAccount = allAccountsFlat.find(d => d.name === mainCashFlowAccount);
 
             // 3a. 월급 기반 월납입 (자산 증식)
             Object.keys(currentAssets).forEach(sector => {
@@ -177,7 +206,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
                 if (loanMonthAtSimMonth < 1 || loan.amount <= 0) return;
 
-                const repaymentAccount = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
+                const repaymentAccount = loan._repaymentAccountRef;
                 if (!repaymentAccount) {
                     warnings.push({ month, type: 'repayment', message: `[${loan.name}]의 상환계좌(${loan.repaymentAccount})를 찾을 수 없습니다.` });
                     return;
@@ -259,7 +288,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         }
 
         // Record current state
-        const currentTotal = calculateTotal(currentAssets);
+        const currentTotal = _internalCalculateTotal(currentAssets);
         const currentGross = Object.keys(currentAssets).filter(k=>k!=='loan').reduce((s,k)=> s + (currentAssets[k]||[]).reduce((sum,a)=>sum+(a.amount||0),0),0);
         const sectorTotals = {};
         Object.keys(currentAssets).forEach(sector => {

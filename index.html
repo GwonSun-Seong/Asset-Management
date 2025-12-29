@@ -22,6 +22,7 @@
     <script src="utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/decimal.js/10.4.3/decimal.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-gradient@0.6.1/dist/chartjs-plugin-gradient.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -287,23 +288,18 @@
                                 <tbody className="divide-y dark:divide-gray-700">
                                     <tr>
                                         <td className="px-4 py-3 dark:text-gray-300">데이터 저장</td>
-                                        <td className="px-4 py-3 text-center text-gray-500">Local storage</td>
-                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">Cloud Sync</td>
+                                        <td className="px-4 py-3 text-center text-gray-500">로컬 저장</td>
+                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">클라우드 동기화</td>
                                     </tr>
                                     <tr>
                                         <td className="px-4 py-3 dark:text-gray-300">테마 설정</td>
                                         <td className="px-4 py-3 text-center text-gray-500">-</td>
-                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">Theme Toggle</td>
+                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">다크모드 완벽 지원</td>
                                     </tr>
                                     <tr>
-                                        <td className="px-4 py-3 dark:text-gray-300">분석 도구</td>
-                                        <td className="px-4 py-3 text-center text-gray-500">Basic stats</td>
-                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">Inflation Analysis</td>
-                                    </tr>
-                                    <tr>
-                                        <td className="px-4 py-3 dark:text-gray-300">시뮬레이션</td>
-                                        <td className="px-4 py-3 text-center text-gray-500">-</td>
-                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">Scenario Comparison</td>
+                                        <td className="px-4 py-3 dark:text-gray-300">자산 히스토리</td>
+                                        <td className="px-4 py-3 text-center text-gray-500">히스토리 기록</td>
+                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">히스토리 + 미래 예상 자산</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -569,6 +565,7 @@
             // Cloudflare 빌드 시점에 환경 변수로 교체될 플레이스홀더
             const SUPABASE_URL = '__SUPABASE_URL__';
             const SUPABASE_KEY = '__SUPABASE_KEY__';
+            // [보안 주의] SECURITY_KEY는 클라이언트 사이드에 노출되므로, 실제 서비스 시에는 Edge Functions 등 서버 사이드에서 암호화 로직을 처리하는 것이 권장됩니다.
             const SECURITY_KEY = '__SECURITY_KEY__';
 
             // [추가] 암호화 유틸리티 (컴포넌트 내부로 이동하여 SECURITY_KEY 참조)
@@ -822,7 +819,7 @@
                 const targetEmail = emailOverride || verifiedEmail;
                 const targetPro = proOverride !== null ? proOverride : isPro;
 
-                if (!targetEmail || isDemoMode || !supabase || !dataToSave || !isInitialized) return;
+                if (!targetEmail || isDemoMode || !supabase || !dataToSave || !isInitialized || !isCloudLoaded) return;
                 // 강제 저장이 아니고, 클라우드 로드 전이거나 로드 중이면 중단
                 if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
 
@@ -851,7 +848,14 @@
                 if (!force && currentDataStr === lastSavedDataRef.current) return;
 
                 setSyncStatus('syncing');
+                setSyncStatusError('');
                 try {
+                    // 세션 유효성 확인
+                    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                    if (sessionError || !session) {
+                        throw new Error('세션이 만료되었습니다. 다시 로그인해주세요.');
+                    }
+
                     const { data, error } = await withTimeout(supabase
                         .from('user_assets')
                         .upsert({ 
@@ -891,7 +895,7 @@
                         // 현재 구조에서는 클라우드 동기화 useEffect에서 lastSavedDataRef를 활용하므로 여기선 놔둠.
                     }
                 } 
-            }, [JSON.stringify(appData), isDemoMode]);
+            }, [appData, isDemoMode]);
 
             // useRef를 사용하여 첫 렌더링인지 추적하는 변수 추가
             const isInitialMount = useRef(true);
@@ -1130,6 +1134,7 @@
                 if (isManualCheck) setIsLoadingCloud(true);
                 isCheckingSubscriptionRef.current = true;
 
+                setSyncStatus('syncing'); // [추가] 티어 확인 시작 시 노란색 상태 표시
                 // [수정] 로그인 상태 우선 반영 (DB 조회 실패하더라도 로그인은 유지)
                 setVerifiedEmail(session.user.email);
                 setUserProfile(session.user.user_metadata);
@@ -1175,14 +1180,17 @@
                         if (proStatus) {
                             await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
                         }
+                        else {
+                            setSyncStatus('idle'); // [추가] FREE 유저는 체크 완료 후 대기 상태로
+                        }
                     } else {
                         console.warn('Profile fetch error after retries:', fetchError);
-                        // DB 에러가 나도 로그인은 유지하되 PRO 권한만 false로 설정
-                        // DB 조회 실패 시 기존 권한 유지
+                        setSyncStatus('error'); // [추가]
                         if (isManualCheck) alert('서버 연결 상태가 좋지 않아 구독 정보를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.');
                     }
                 } catch (err) {
                     console.error('Subscription check error:', err);
+                    setSyncStatus('error'); // [추가]
                     // 에러 발생 시에도 기존 권한 유지
                     if (isManualCheck) alert('구독 상태 확인 중 오류가 발생했습니다.');
                 } finally {
@@ -1272,7 +1280,7 @@
                     saveToCloud(appData);
                 }, AUTO_SYNC_DELAY);
                 return () => clearTimeout(timer);
-            }, [JSON.stringify(appData), isPro, verifiedEmail, isDemoMode, isCloudLoaded, isInitialized]);
+            }, [appData, isPro, verifiedEmail, isDemoMode, isCloudLoaded, isInitialized]);
 
             // 클라우드 데이터 불러오기
             // [수정] isManual 인자 추가
@@ -1283,6 +1291,14 @@
                 setIsLoadingCloud(true);
                 setSyncStatusError('');
                 try {
+                    // 세션 유효성 확인
+                    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                    if (sessionError || !session) {
+                        setSyncStatus('error');
+                        setSyncStatusError('세션이 만료되었습니다. 다시 로그인해주세요.');
+                        return;
+                    }
+
                     const { data, error } = await withTimeout(supabase
                         .from('user_assets')
                         .select('data, updated_at, encryption_type')
@@ -1295,29 +1311,38 @@
                         const encType = data.encryption_type;
                         const isLegacy = !encType || encType === 'none';
                         
-                        // 암호화 모드 설정 체크
-                        if (pro && isLegacy) {
-                            setEncryptionMode(null);
-                            setIsEncryptionModalOpen(true);
-                        } else if (pro) {
-                            setEncryptionMode(encType);
+                        // 암호화 모드 설정 체크 (PRO 사용자만 해당)
+                        if (pro) {
+                            if (isLegacy) {
+                                setEncryptionMode(null);
+                                setIsEncryptionModalOpen(true);
+                            } else {
+                                // 이미 설정된 암호화 타입이 있다면 자동으로 채택 (팝업 억제)
+                                setEncryptionMode(encType);
+                            }
                         }
 
                         let decryptedData = data.data;
                         if (!isLegacy) {
-                            if (encType === 'secure' && !userSecretKey) {
-                                pendingCiphertext.current = data.data;
-                                setIsPasswordPromptOpen(true);
-                                return;
-                            }
-                            
-                            try {
-                                const key = getEncryptionKey(encType, userSecretKey, userProfile?.id || email);
-                                decryptedData = decryptData(data.data, key);
-                            } catch (err) {
+                            if (pro) {
+                                if (encType === 'secure' && !userSecretKey) {
+                                    pendingCiphertext.current = data.data;
+                                    setIsPasswordPromptOpen(true);
+                                    return;
+                                }
+                                try {
+                                    const key = getEncryptionKey(encType, userSecretKey, userProfile?.id || email);
+                                    decryptedData = decryptData(data.data, key);
+                                } catch (err) {
+                                    setSyncStatus('error');
+                                setSyncStatusError('복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다.');
+                                alert('복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다. 보안 모드인 경우 비밀번호를 다시 확인해주세요.');
+                                    return;
+                                }
+                            } else {
+                                // FREE 사용자는 암호화된 데이터를 처리할 수 없음 (팝업 없이 에러 처리)
                                 setSyncStatus('error');
-                                setSyncStatusError('복호화 실패. 비밀번호를 확인해주세요.');
-                                alert('복호화 실패. 비밀번호를 확인해주세요. 데이터가 암호화되어 읽을 수 없습니다.');
+                                setSyncStatusError('암호화된 데이터입니다. PRO 기능이 필요합니다.');
                                 return;
                             }
                         } else {
@@ -1708,54 +1733,48 @@
                     return;
                 }
 
-                let months = 0;
+                // [최적화] 매달 시뮬레이션을 새로 돌리는 대신, 한 번의 긴 시뮬레이션(600개월) 후 결과 탐색
+                const MAX_MONTHS = 600;
+                const result = calculateMonthlyProjection(appData, MAX_MONTHS);
+                
+                if (result.error) {
+                    setGoalSeekResult(`계산 중 오류 발생`);
+                    return;
+                }
+
+                const projections = result.projections;
                 let lastNetWorth = -Infinity;
                 let stagnationCount = 0;
+                let targetMonth = -1;
 
-                // [수정] 메인 계산 로직을 사용하여 목표 달성 시뮬레이션
-                while (months < 600) { // 최대 50년(600개월)까지만 계산
-                    months++;
-                    const result = calculateMonthlyProjection(appData, months);
-                    const projections = result.projections;
-
-                    // 계산 중 오류 발생 시 중단
-                    if (result.error) {
-                        setGoalSeekResult(`계산 중 오류 발생: ${projections.message}`);
-                        // 오류가 발생한 입력란으로 포커스 이동
-                        if (projections.refId) {
-                            const targetElement = assetInputRefs.current[projections.refId];
-                            if (targetElement) {
-                                targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                setTimeout(() => targetElement.focus(), 500);
-                            }
-                        }
-                        return;
-                    }
-
-                    const finalProjection = projections[projections.length - 1];
-
-                    // [추가] 자산 정체/감소 체크 (3개월 연속)
-                    if (finalProjection.total <= lastNetWorth) {
+                for (let i = 1; i < projections.length; i++) {
+                    const p = projections[i];
+                    
+                    // 자산 정체 체크
+                    if (p.total <= lastNetWorth) {
                         stagnationCount++;
                     } else {
                         stagnationCount = 0;
                     }
-                    lastNetWorth = finalProjection.total;
+                    lastNetWorth = p.total;
 
                     if (stagnationCount >= 3) {
-                        setGoalSeekResult('자산이 정체되거나 감소하고 있어 목표 달성이 불가능합니다.');
+                        setGoalSeekResult('자산 정체/감소로 인해 목표 달성이 불가능합니다.');
                         return;
                     }
 
-                    if (finalProjection.total >= targetAmount) {
-                        setGoalSeekResult(`목표 달성까지 약 ${months}개월 소요됩니다.`);
-                        setProjectionMonths(months);
-                        return;
+                    if (p.total >= targetAmount) {
+                        targetMonth = p.month;
+                        break;
                     }
                 }
-                
-                // 매월 시뮬레이션
-                setGoalSeekResult('현재 조건으로는 50년 내 목표 달성이 어렵습니다.');
+
+                if (targetMonth !== -1) {
+                    setGoalSeekResult(`목표 달성까지 약 ${targetMonth}개월 소요됩니다.`);
+                    setProjectionMonths(targetMonth);
+                } else {
+                    setGoalSeekResult('현재 조건으로는 50년 내 목표 달성이 어렵습니다.');
+                }
             };
 
             // [추가] 레이아웃 이동 함수
@@ -1842,7 +1861,7 @@
                     monthlyProjections: monthlyProjections,
                     warnings: warnings
                 };
-            }, [JSON.stringify(appData), inflationRate, projectionMonths]);
+            }, [appData, inflationRate, projectionMonths]);
 
 
 
@@ -1906,7 +1925,7 @@
     // [추가] 다크모드 대응 색상 정의
     const textColor = darkMode ? '#e5e7eb' : '#111827';
     const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
-    const chartBorderColor = darkMode ? '#111827' : '#ffffff';
+    const chartBorderColor = darkMode ? '#1e293b' : '#ffffff';
 
     // 차트 데이터 준비
     const filteredKeys = Object.keys(currentSectorTotals).filter(k => k !== 'loan');
@@ -1932,10 +1951,14 @@
     // [최적화] 차트 업데이트/생성 헬퍼 함수
     const updateOrCreateChart = (ref, config) => {
         if (ref.current) {
-            if (ref.current._chart) {
-                ref.current._chart.destroy();
+            const chart = ref.current._chart;
+            if (chart) {
+                chart.data = config.data;
+                chart.options = config.options;
+                chart.update();
+            } else {
+                ref.current._chart = new Chart(ref.current, config);
             }
-            ref.current._chart = new Chart(ref.current, config);
         }
     };
 
@@ -1988,12 +2011,17 @@
                     }
                 },
                 tooltip: {
-                    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                    backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                    titleColor: darkMode ? '#f8fafc' : '#1e293b',
+                    bodyColor: darkMode ? '#cbd5e1' : '#475569',
+                    borderColor: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+                    borderWidth: 1,
                     titleFont: { size: 14, weight: 'bold' },
                     bodyFont: { size: 13 },
                     padding: 12,
-                    cornerRadius: 8,
+                    cornerRadius: 12,
                     displayColors: true,
+                    usePointStyle: true,
                     callbacks: {
                         label: function(context) {
                             const label = context.label || '';
@@ -2059,12 +2087,17 @@
                     }
                 },
                 tooltip: {
-                    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                    backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                    titleColor: darkMode ? '#f8fafc' : '#1e293b',
+                    bodyColor: darkMode ? '#cbd5e1' : '#475569',
+                    borderColor: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+                    borderWidth: 1,
                     titleFont: { size: 14, weight: 'bold' },
                     bodyFont: { size: 13 },
                     padding: 12,
-                    cornerRadius: 8,
+                    cornerRadius: 12,
                     displayColors: true,
+                    usePointStyle: true,
                     callbacks: {
                         label: function(context) {
                             const label = context.label || '';
@@ -2089,7 +2122,7 @@ updateOrCreateChart(comparisonBarRef, {
             { 
                 label: '현재', 
                 data: currentData, 
-                backgroundColor: 'rgba(156, 163, 175, 0.7)',
+                backgroundColor: 'rgba(59, 130, 246, 0.7)',
                 borderColor: chartBorderColor,
                 borderWidth: 2,
                 borderRadius: 6,
@@ -2101,8 +2134,8 @@ updateOrCreateChart(comparisonBarRef, {
                 backgroundColor: (context) => {
                     const ctx = context.chart.ctx;
                     const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-                    gradient.addColorStop(0, 'rgba(96, 165, 250, 0.9)');
-                    gradient.addColorStop(1, 'rgba(59, 130, 246, 0.8)');
+                    gradient.addColorStop(0, 'rgba(74, 222, 128, 0.9)');
+                    gradient.addColorStop(1, 'rgba(22, 163, 74, 0.8)');
                     return gradient;
                 },
                 borderColor: chartBorderColor,
@@ -2648,9 +2681,7 @@ updateOrCreateChart(comparisonBarRef, {
                                 checked={showProjectionInHistory} 
                                 onChange={(e) => {
                                     if (!isPro) {
-                                        if (confirm('미래 예상 자산 표시 기능은 PRO 버전에서만 제공됩니다. 후원하시겠습니까?')) {
-                                            window.open('https://blog.naver.com/zocdoc', '_blank');
-                                        }
+                                        setIsProModalOpen(true); // PRO 기능 안내 모달 띄우기
                                         return;
                                     }
                                     setShowProjectionInHistory(e.target.checked);
@@ -2787,10 +2818,10 @@ updateOrCreateChart(comparisonBarRef, {
                                 </button>
                                 <div className="flex items-center gap-2">
                                     <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-full p-1"> 
-                                        <button onClick={() => moveAssetSector(sectorKey, -1)} disabled={index === 0} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed" title="위로 이동">
+                                        <button onClick={() => moveAssetSector(sectorKey, -1)} disabled={assetSectorOrder.indexOf(sectorKey) === 0} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed" title="위로 이동">
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
                                         </button> 
-                                        <button onClick={() => moveAssetSector(sectorKey, 1)} disabled={index === assetSectorOrder.length - 1} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed" title="아래로 이동">
+                                        <button onClick={() => moveAssetSector(sectorKey, 1)} disabled={assetSectorOrder.indexOf(sectorKey) === assetSectorOrder.length - 1} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed" title="아래로 이동">
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
                                         </button>
                                     </div>
@@ -3271,11 +3302,11 @@ updateOrCreateChart(comparisonBarRef, {
                                                             {isPro ? 'PRO' : 'FREE'}
                                                         </span>
                                                         {/* [추가] 모바일 메뉴 내 동기화 상태 표시 */}
-                                                        {isPro && (
+                                                        {verifiedEmail && (isPro || syncStatus === 'syncing') && (
                                                             <div className="flex items-center gap-1 mt-1">
                                                                 <span className={`text-[9px] flex items-center gap-1 ${syncStatus === 'synced' ? 'text-green-600' : syncStatus === 'syncing' ? 'text-yellow-600' : syncStatus === 'error' ? 'text-red-600' : 'text-gray-400'}`}>
                                                                     <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'synced' ? 'bg-green-500' : syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-300'}`}></span>
-                                                                    {syncStatus === 'synced' ? '동기화됨' : syncStatus === 'syncing' ? '동기화 중' : syncStatus === 'error' ? '동기화 실패' : '대기'}
+                                                                    {syncStatus === 'synced' ? '동기화됨' : syncStatus === 'syncing' ? '불러오는 중' : syncStatus === 'error' ? '동기화 실패' : '대기'}
                                                                 </span>
                                                             </div>
                                                         )}
@@ -3315,10 +3346,10 @@ updateOrCreateChart(comparisonBarRef, {
                                         Cloud Sync
                                         {syncStatus === 'error' && <span title={syncError} className="cursor-help text-red-500">⚠️</span>}
                                     </span>
-                                    {verifiedEmail && isPro && (
+                                    {verifiedEmail && (isPro || syncStatus === 'syncing') && (
                                         <div className="flex items-center gap-1.5">
                                             <span className={`text-[9px] font-medium ${syncStatus === 'synced' ? 'text-green-600' : syncStatus === 'syncing' ? 'text-yellow-600' : syncStatus === 'error' ? 'text-red-600' : 'text-gray-400'}`}>
-                                                {syncStatus === 'synced' ? '동기화됨' : syncStatus === 'syncing' ? '동기화 중' : syncStatus === 'error' ? '동기화 실패' : '대기'}
+                                                {syncStatus === 'synced' ? '동기화됨' : syncStatus === 'syncing' ? '불러오는 중' : syncStatus === 'error' ? '동기화 실패' : '대기'}
                                             </span>
                                             <div className={`w-2 h-2 rounded-full ${syncStatus === 'synced' ? 'bg-green-500' : syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-300'}`}></div>
                                         </div>
