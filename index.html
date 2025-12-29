@@ -185,6 +185,178 @@
             );
         };
 
+        // [추가] PRO 기능 안내 모달
+        const ProFeaturesModal = ({ isOpen, onClose }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">PRO 기능 안내</h3>
+                            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <table className="w-full text-sm text-left">
+                                <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                                    <tr>
+                                        <th className="px-4 py-2">기능</th>
+                                        <th className="px-4 py-2 text-center">FREE</th>
+                                        <th className="px-4 py-2 text-center text-blue-600 dark:text-blue-400">PRO</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y dark:divide-gray-700">
+                                    <tr>
+                                        <td className="px-4 py-3 dark:text-gray-300">데이터 저장</td>
+                                        <td className="px-4 py-3 text-center text-gray-500">Local storage</td>
+                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">Cloud Sync</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="px-4 py-3 dark:text-gray-300">테마 설정</td>
+                                        <td className="px-4 py-3 text-center text-gray-500">-</td>
+                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">Theme Toggle</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="px-4 py-3 dark:text-gray-300">분석 도구</td>
+                                        <td className="px-4 py-3 text-center text-gray-500">Basic stats</td>
+                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">Inflation Analysis</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="px-4 py-3 dark:text-gray-300">시뮬레이션</td>
+                                        <td className="px-4 py-3 text-center text-gray-500">-</td>
+                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">Scenario Comparison</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div className="mt-6 flex flex-col gap-2">
+                                <button onClick={() => window.open('https://blog.naver.com/zocdoc', '_blank')} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors">개발자 후원하고 PRO 활성화하기</button>
+                                <button onClick={onClose} className="w-full py-2 text-gray-500 text-sm hover:underline">나중에 하기</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // [추가] 온보딩 가이드 컴포넌트
+        const OnboardingGuide = ({ isOpen, onClose, scrollToPanel, isPro }) => {
+            const [currentStep, setCurrentStep] = useState(0);
+            const [spotlightStyle, setSpotlightStyle] = useState(null);
+            const tooltipRef = useRef(null);
+
+            const steps = [
+                { id: 'header-actions', title: '기본값 및 시나리오 관리', content: '데이터를 저장·불러오기 하거나 분석 결과를 PDF로 내보낼 수 있습니다.' },
+                { id: 'summary', title: '요약 및 설정', content: '현재 자산 현황과 물가 상승률을 반영한 미래의 실질 가치를 파악할 수 있습니다.' },
+                { id: 'charts', title: '포트폴리오 차트', content: '자산의 구성 비율과 시간에 따른 성장 곡선을 시각적으로 확인할 수 있습니다.' },
+                { id: 'budget', title: '월납입 예산 관리', content: '월급과 지출을 바탕으로 매달 저축 가능한 금액을 계산하고 관리할 수 있습니다.' },
+                { id: 'rebalance', title: '리밸런싱', content: '설정한 목표 비중과 현재 비중의 차이를 체크하여 투자 계획을 수정할 수 있습니다.' },
+                { id: 'assets', title: '자산 상세 입력', content: '예적금, 주식, 부동산 등 보유하신 모든 자산을 섹터별로 상세히 기록할 수 있습니다.' },
+                { id: 'events', title: '이벤트성 수입/지출', content: '상여금이나 여행 등 비정기적인 재무 이벤트를 설정하여 시뮬레이션에 반영할 수 있습니다.' },
+                { id: 'detail-analysis', title: '상세 분석', content: '모든 시뮬레이션 결과 수치를 상세한 표 데이터로 한눈에 분석할 수 있습니다.' }
+            ];
+
+            useEffect(() => {
+                if (isOpen) {
+                    const step = steps[currentStep];
+                    scrollToPanel(step.id);
+                    
+                    // 스크롤 애니메이션 대기 후 스포트라이트 위치 계산
+                    setTimeout(() => {
+                        const el = document.getElementById(step.id);
+                        if (el) {
+                            const rect = el.getBoundingClientRect();
+                            const padding = 10;
+                            
+                            // Tooltip height estimation (fallback to 220 if not yet rendered)
+                            const tooltipHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 220;
+                            
+                            // Dynamic Flip Logic based on viewport position
+                            let tooltipTop;
+                            if (rect.top < window.innerHeight / 2) {
+                                // Top half -> place below element
+                                tooltipTop = rect.bottom + window.scrollY + 15;
+                            } else {
+                                // Bottom half -> place above element
+                                tooltipTop = rect.top + window.scrollY - tooltipHeight - 15;
+                            }
+
+                            setSpotlightStyle({
+                                top: rect.top + window.scrollY - padding,
+                                left: rect.left + window.scrollX - padding,
+                                width: rect.width + (padding * 2),
+                                height: rect.height + (padding * 2),
+                                tooltipTop: tooltipTop,
+                                tooltipLeft: Math.min(window.innerWidth - 340, Math.max(20, rect.left + window.scrollX + (rect.width / 2) - 160))
+                            });
+                        }
+                    }, 500);
+                }
+            }, [currentStep, isOpen]);
+
+            if (!isOpen || !spotlightStyle) return null;
+
+            const handleNext = () => {
+                if (currentStep < steps.length - 1) setCurrentStep(prev => prev + 1);
+                else handleComplete();
+            };
+
+            const handlePrev = () => {
+                if (currentStep > 0) setCurrentStep(prev => prev - 1);
+            };
+
+            const handleComplete = () => {
+                localStorage.setItem('asset_planner_guide_completed', 'true');
+                onClose();
+            };
+
+            const current = steps[currentStep];
+
+            return (
+                <div className="absolute inset-0 z-[9999] pointer-events-none overflow-hidden transition-colors duration-500">
+                    {/* Spotlight Hole */}
+                    <div 
+                        className="absolute rounded-lg transition-all duration-500 ease-in-out pointer-events-auto"
+                        style={{
+                            top: spotlightStyle.top,
+                            left: spotlightStyle.left,
+                            width: spotlightStyle.width,
+                            height: spotlightStyle.height,
+                            boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.7)'
+                        }}
+                    />
+
+                    {/* Tooltip Card */}
+                    <div 
+                        ref={tooltipRef}
+                        className="absolute pointer-events-auto w-72 sm:w-80 bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 transition-all duration-500"
+                        style={{
+                            top: spotlightStyle.tooltipTop,
+                            left: spotlightStyle.tooltipLeft
+                        }}
+                    >
+                        <div className="flex justify-between items-start mb-2">
+                            <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Step {currentStep + 1} of {steps.length}</span>
+                            {current.isPro && isPro && (
+                                <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-bold">PRO FEATURE</span>
+                            )}
+                        </div>
+                        <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-2">{current.title}</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">{current.content}</p>
+                        <div className="flex justify-between items-center">
+                            <button onClick={handleComplete} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 underline">Skip</button>
+                            <div className="flex gap-2">
+                                <button onClick={handlePrev} disabled={currentStep === 0} className="px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg disabled:opacity-30">이전</button>
+                                <button onClick={handleNext} className="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md">
+                                    {currentStep === steps.length - 1 ? '시작하기' : '다음'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // [수정] 패널 래퍼 컴포넌트 (접기/펴기 기능 추가)
         const PanelWrapper = ({ id, title, moveUp, moveDown, isFirst, isLast, isCollapsed, onToggle, children, className = "bg-white dark:bg-gray-900 rounded-lg shadow" }) => {
             return (
@@ -289,6 +461,8 @@
             const sectorInfo = window.sectorInfo;
             // ===== 모든 상태를 먼저 선언 =====
             const [appData, setAppData] = useState(null);
+            const [darkMode, setDarkMode] = useState(() => localStorage.getItem('assetDashboardDarkMode') === 'true');
+            const [inflationRate, setInflationRate] = useState(2.5);
             const [scenarios, setScenarios] = useState([]);
             const [originalUserData, setOriginalUserData] = useState(null); // [추가] 원본 데이터 캐시
             const [isDemoMode, setIsDemoMode] = useState(false); // [추가] 데모 모드 상태
@@ -349,6 +523,10 @@
             const [importSelection, setImportSelection] = useState({ appData: true, scenarios: true, assetHistory: true });            
             const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false); // [추가] 개인정보처리방침 모달 상태
             const [isSuggestionModalOpen, setIsSuggestionModalOpen] = useState(false); // [추가] 기능 제안 모달 상태
+            const [isProModalOpen, setIsProModalOpen] = useState(false); // [추가] PRO 기능 안내 모달 상태
+            const [isQuickPanelOpen, setIsQuickPanelOpen] = useState(false); // [추가] 모바일 퀵 패널 상태
+            const [isGuideOpen, setIsGuideOpen] = useState(false); // [추가] 온보딩 가이드 상태
+            const [showSaveToast, setShowSaveToast] = useState(false); // [추가] 저장 피드백 상태
             // [수정] 레이아웃 및 패널 상태 관리
             const [layoutOrder, setLayoutOrder] = useState(() => {
                 try {
@@ -400,7 +578,7 @@
             const scrollToPanel = (id) => {
                 const element = document.getElementById(id);
                 if (element) {
-                    const headerOffset = 80;
+                    const headerOffset = 100;
                     const elementPosition = element.getBoundingClientRect().top;
                     const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
                     window.scrollTo({ top: offsetPosition, behavior: "smooth" });
@@ -448,18 +626,11 @@
                             setAppData(mergedData); // [수정] parsedData 대신 mergedData 사용
                             setOriginalUserData(parsedData); // [추가]
                             lastSavedDataRef.current = JSON.stringify(mergedData); // [추가] 초기 로드 시점 데이터 기록
-
-                            // [추가] 로컬 데이터에 다크모드 설정이 있다면 즉시 적용 (깜빡임 방지)
-                            if (mergedData.darkMode) {
-                                document.documentElement.classList.add('dark');
-                                document.documentElement.style.colorScheme = 'dark';
-                            }
                         } else {
                             setAppData(baseData);
                             setOriginalUserData(baseData); // [추가]
                             lastSavedDataRef.current = JSON.stringify(baseData);
                         }
-                        
                     } catch (error) {
                         console.error("로컬 데이터 로드 오류 (초기화 진행):", error);
                         // [수정] 데이터 손상 시 로컬스토리지 초기화하여 무한 로딩/에러 방지
@@ -495,6 +666,42 @@
                 
                 loadInitialData();
             }, []);
+
+            // [추가] 온보딩 가이드 트리거 로직
+            useEffect(() => {
+                const guideCompleted = localStorage.getItem('asset_planner_guide_completed');
+                if (!isLoading && !guideCompleted) {
+                    setIsGuideOpen(true);
+                }
+            }, [isLoading]);
+
+            // [추가] 키보드 단축키 (Alt + S) 저장 로직
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (e.altKey && (e.key === 's' || e.key === 'S')) {
+                        e.preventDefault();
+                        
+                        if (appData) {
+                            // 1. 로컬 저장
+                            const currentDataStr = JSON.stringify(appData);
+                            localStorage.setItem('assetDashboardDataV3', currentDataStr);
+                            localStorage.setItem('assetDashboardLastUpdate', new Date().toISOString());
+                            
+                            // 2. 클라우드 저장 (PRO인 경우 force flag 사용)
+                            if (isPro && verifiedEmail) {
+                                saveToCloud(appData, true);
+                            }
+
+                            // 3. 피드백 표시
+                            setShowSaveToast(true);
+                            setTimeout(() => setShowSaveToast(false), 2000);
+                        }
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [appData, isPro, verifiedEmail, saveToCloud]);
 
             // [추가] 클라우드 저장 헬퍼 함수 (중복 로직 제거 및 강제 저장 지원)
             // [수정] 초기 로딩 시점의 상태 불일치 해결을 위해 email, proStatus 오버라이드 인자 추가
@@ -697,7 +904,6 @@
                 projectionMonths = 12, monthlySalary = 280, assets = {}, monthlyExpenses = [],
                 targetAmount = 10000, 
                 goalMode = 'period', displayMode = 'amount',
-                darkMode = false,
                 rebalancingAlerts = {}, baseMonth = new Date().toISOString().slice(0,7),
                 mainCashFlowAccount = '생활비통장',
                 rebalancingTargets = {},
@@ -719,7 +925,6 @@
             }));
 
             // [이동] Setter 함수들을 handleDarkModeToggle보다 상단으로 이동하여 참조 오류 방지
-            const setDarkMode = (value) => setAppData(prev => ({ ...prev, darkMode: value }));
             const setMainCashFlowAccount = (value) => setAppData(prev => ({ ...prev, mainCashFlowAccount: value }));
             const setIncomeEvents = (value) => setAppData(prev => ({ 
                 ...prev, 
@@ -741,10 +946,7 @@
             // [추가] 다크모드 토글 핸들러 (PRO 제한 로직)
             const handleDarkModeToggle = () => {
                 if (!isPro) {
-                    if (confirm('다크 라이트 전환 기능은 PRO 버전(개발자 후원)에서만 제공됩니다. 개발자를 후원하시겠습니까?')) {
-                        window.open('https://blog.naver.com/zocdoc', '_blank');
-                    }
-                    return;
+                    return setIsProModalOpen(true);
                 }
                 setDarkMode(!darkMode);
             };
@@ -758,6 +960,7 @@
                     document.documentElement.classList.remove('dark');
                     document.documentElement.style.colorScheme = 'light';
                 }
+                localStorage.setItem('assetDashboardDarkMode', darkMode);
             }, [darkMode]);
 
             // [추가] PRO 권한 상실 시 히스토리 예상 자산 표시 강제 해제
@@ -1002,12 +1205,6 @@
                             lastSavedDataRef.current = JSON.stringify(data.data); // [추가] 로드된 데이터를 기준점으로 설정
                             // React 렌더링 사이클 이후 락 해제
                             setTimeout(() => { isFetchingRef.current = false; }, 500);
-                        }
-
-                        // [추가] 클라우드 데이터 로드 직후 다크모드 즉시 적용 (PRO 유저 경험 개선)
-                        if (shouldLoad && data.data.darkMode) {
-                            document.documentElement.classList.add('dark');
-                            document.documentElement.style.colorScheme = 'dark';
                         }
 
                         setSyncStatus('synced');
@@ -1362,13 +1559,20 @@
                         projectedTotal: 0,
                         growth: 0,
                         grand: 0,
+                        realValue: 0,
                         monthlyProjections: [],
                         warnings: []
                     };
                 }
                 
                 const months = projectionMonths;
-                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection(appData, months);
+                // [수정] 인플레이션 보정 및 이벤트 배열 안전성 확보 (undefined 방지)
+                const safeAppData = {
+                    ...appData,
+                    incomeEvents: Array.isArray(appData.incomeEvents) ? appData.incomeEvents : [],
+                    expenseEvents: Array.isArray(appData.expenseEvents) ? appData.expenseEvents : []
+                };
+                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate }, months);
 
                 if (!monthlyProjections || monthlyProjections.length === 0) {
                     return { error: true, warnings: [] };
@@ -1387,18 +1591,22 @@
 
                 const currentTotal = calculateTotal(appData.assets);
                 const projectedTotal = finalProjection ? finalProjection.total : currentTotal;
+                
+                // [추가] 인플레이션 보정 현재 가치 계산 (Summary 패널 효율성 개선)
+                const realValue = projectedTotal / Math.pow(1 + inflationRate / 100, months / 12);
 
                 return {
                     initial: appData.assets,
                     projected: finalProjection ? finalProjection.assets : appData.assets,
                     currentTotal,
                     projectedTotal,
+                    realValue,
                     growth: projectedTotal - currentTotal,
                     grand: currentTotal,
                     monthlyProjections: monthlyProjections,
                     warnings: warnings
                 };
-            }, [JSON.stringify(appData)]);
+            }, [JSON.stringify(appData), inflationRate, projectionMonths]);
 
 
 
@@ -2075,12 +2283,15 @@ updateOrCreateChart(comparisonBarRef, {
                         <div className="mt-6"> 
                             <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">{projectionMonths}개월 후 예상 <span className="text-gray-400 text-sm">({(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d = new Date(y||new Date().getFullYear(), (m||1)-1, 1); d.setMonth(d.getMonth()+projectionMonths); return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`; } catch { return ''; } })()})</span></h2>
                             <p className="text-3xl font-bold text-green-600 dark:text-green-400">{formatNumber(calculation.projectedTotal, displayMode)}만원</p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">예상 증가액: +{formatNumber(calculation.growth, displayMode)}만원 ({formatPercent((calculation.growth) / Math.max(1, calculation.currentTotal) * 100)}%)</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">예상 증가액: +{formatNumber(calculation.growth, displayMode)}만원 ({formatPercent((calculation.growth) / Math.max(1, calculation.currentTotal) * 100)}%)</p>         
                             {compLabel && (
                                 <p className="text-xs text-gray-400 mt-1">
                                     ({compLabel}: {compVal >= 0 ? '+' : ''}{formatNumber(compVal, displayMode)}만원, {compVal >= 0 ? '+' : ''}{formatPercent(compPct)}%)
                                 </p>
                             )}
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                인플레이션 고려 시: {formatNumber(calculation.realValue, displayMode)}만원
+                            </p>
                         </div>
                     </div>
                     <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6"> 
@@ -2140,6 +2351,10 @@ updateOrCreateChart(comparisonBarRef, {
                                     </button>
                                 </div>
                             )}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">연간 인플레이션 증가율 (%)</label>
+                                <input type="number" step="0.1" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={inflationRate} onChange={(e) => setInflationRate(Number(e.target.value))} />
+                            </div>
                              
                             {goalMode === 'target' && goalSeekResult && (
                                 <div className="mt-2 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg">
@@ -2777,7 +2992,7 @@ updateOrCreateChart(comparisonBarRef, {
                     { layoutOrder.length === 0 ? '레이아웃 로딩 중...' : '계산 오류 발생. 설정을 확인해주세요.' }
                 </div>
                 :
-                    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+                    <div className="relative min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors pb-20 sm:pb-0">
                     <div className="sticky top-0 z-50 bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                             <div className="flex justify-between items-center h-16">
@@ -2791,7 +3006,7 @@ updateOrCreateChart(comparisonBarRef, {
                                         {isPro ? 'PRO' : 'FREE'}
                                     </span>
                                 </div>
-                                <div className="hidden sm:flex items-center gap-2 sm:gap-4"> 
+                                <div id="header-actions" className="hidden sm:flex items-center gap-2 sm:gap-4"> 
                                     <button onClick={handleDarkModeToggle} className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
                                         {!isPro && (
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1.5 text-gray-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg>
@@ -3141,8 +3356,59 @@ updateOrCreateChart(comparisonBarRef, {
                         onClose={() => setIsSuggestionModalOpen(false)} 
                         onSubmit={handleSuggestionSubmit}
                     />
+                    <ProFeaturesModal 
+                        isOpen={isProModalOpen} 
+                        onClose={() => setIsProModalOpen(false)} 
+                    />
                     {calculation.warnings?.length > 0 && (
                         <div className="fixed inset-0 border-[6px] border-red-500 pointer-events-none z-[9999] animate-pulse opacity-60"></div>
+                    )}
+
+                    {/* Mobile Floating Quick Panel (Upgrade) */}
+                    <button 
+                        onClick={() => setIsQuickPanelOpen(true)}
+                        className="sm:hidden fixed bottom-6 right-6 z-50 w-14 h-14 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center text-2xl hover:bg-blue-700 transition-transform active:scale-95"
+                        aria-label="Quick Menu"
+                    >
+                        ⚡
+                    </button>
+
+                    {isQuickPanelOpen && (
+                        <div className="sm:hidden fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end justify-center p-4" onClick={() => setIsQuickPanelOpen(false)}>
+                            <div className="bg-white dark:bg-gray-800 w-full rounded-2xl p-6 shadow-2xl animate-in slide-in-from-bottom duration-300" onClick={e => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">빠른 이동</h3>
+                                    <button onClick={() => setIsQuickPanelOpen(false)} className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4">
+                                    {layoutOrder.filter(id => navLabels[id]).map(id => (
+                                        <button 
+                                            key={id} 
+                                            onClick={() => { scrollToPanel(id); setIsQuickPanelOpen(false); }}
+                                            className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                        >
+                                            <span className="text-2xl">{navLabels[id]?.icon}</span>
+                                            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400 text-center">{navLabels[id]?.title}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <OnboardingGuide 
+                        isOpen={isGuideOpen} 
+                        onClose={() => setIsGuideOpen(false)} 
+                        scrollToPanel={scrollToPanel}
+                        isPro={isPro}
+                    />
+                    {/* [추가] 저장 완료 토스트 */}
+                    {showSaveToast && (
+                        <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[100] bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                            <span className="text-green-400 text-xl">✓</span>
+                            <span className="text-sm font-bold tracking-tight">데이터가 안전하게 저장되었습니다!</span>
+                        </div>
                     )}
                     </div>
             );
