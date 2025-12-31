@@ -58,7 +58,7 @@
             const { useState, useMemo, useEffect, useRef } = React;
 
         // [개선] 재시도 로직을 포함한 타임아웃 헬퍼 함수 (컴포넌트 외부로 이동하여 성능 최적화)
-        const withRetry = async (fn, maxAttempts = 3, timeoutMs = 12000, delayMs = 2000) => {
+        const withRetry = async (fn, maxAttempts = 3, timeoutMs = 12000, delayMs = 2000, onRetry) => {
             let lastError;
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 try {
@@ -71,6 +71,7 @@
                 } catch (error) {
                     lastError = error;
                     if (attempt < maxAttempts) {
+                        if (onRetry) onRetry(attempt + 1, maxAttempts);
                         await new Promise(resolve => setTimeout(resolve, delayMs));
                     }
                 }
@@ -334,65 +335,86 @@
             );
         };
 
+        // [추가] 온보딩 가이드 단계 정의 (컴포넌트 외부로 이동)
+        const ONBOARDING_STEPS = [
+            { id: 'header-actions', title: '기본값 및 시나리오 관리', content: '설정한 데이터를 저장하거나 불러오고, PDF로 내보낼 수 있습니다.', isPro: true },
+            { id: 'summary', title: '요약 및 설정', content: '현재 자산 상황과 인플레이션을 반영한 실질 가치를 한눈에 파악할 수 있습니다.', isPro: true },
+            { id: 'charts', title: '포트폴리오 차트', content: '자산 구성과 미래 성장 곡선을 시각적 그래프로 확인할 수 있습니다.' },
+            { id: 'budget', title: '월납입 예산 관리', content: '월급과 지출을 기반으로 매달 저축 가능한 금액을 계산하고 관리할 수 있습니다.' },
+            { id: 'rebalance', title: '리밸런싱', content: '목표 비중과 현재 비중의 차이를 체크하여 최적의 비중을 유지할 수 있습니다.', isPro: true },
+            { id: 'assets', title: '자산 상세 입력', content: '보유하신 모든 자산 항목을 섹터별로 상세히 기록할 수 있습니다.' },
+            { id: 'events', title: '이벤트성 수입/지출', content: '상여금이나 여행 등 비정기적인 재무 이벤트를 설정해 볼 수 있습니다.' },
+            { id: 'detail-analysis', title: '상세 분석', content: '모든 시뮬레이션 결과를 상세한 표 데이터로 분석할 수 있습니다.' }
+        ];
+
         // [추가] 온보딩 가이드 컴포넌트
         const OnboardingGuide = ({ isOpen, onClose, scrollToPanel, isPro }) => {
             const [currentStep, setCurrentStep] = useState(0);
             const [spotlightStyle, setSpotlightStyle] = useState(null);
             const tooltipRef = useRef(null);
 
-            const steps = [
-                { id: 'header-actions', title: '기본값 및 시나리오 관리', content: '설정한 데이터를 저장하거나 불러오고, PDF로 내보낼 수 있습니다.', isPro: true },
-                { id: 'summary', title: '요약 및 설정', content: '현재 자산 상황과 인플레이션을 반영한 실질 가치를 한눈에 파악할 수 있습니다.', isPro: true },
-                { id: 'charts', title: '포트폴리오 차트', content: '자산 구성과 미래 성장 곡선을 시각적 그래프로 확인할 수 있습니다.' },
-                { id: 'budget', title: '월납입 예산 관리', content: '월급과 지출을 기반으로 매달 저축 가능한 금액을 계산하고 관리할 수 있습니다.' },
-                { id: 'rebalance', title: '리밸런싱', content: '목표 비중과 현재 비중의 차이를 체크하여 최적의 비중을 유지할 수 있습니다.', isPro: true },
-                { id: 'assets', title: '자산 상세 입력', content: '보유하신 모든 자산 항목을 섹터별로 상세히 기록할 수 있습니다.' },
-                { id: 'events', title: '이벤트성 수입/지출', content: '상여금이나 여행 등 비정기적인 재무 이벤트를 설정해 볼 수 있습니다.' },
-                { id: 'detail-analysis', title: '상세 분석', content: '모든 시뮬레이션 결과를 상세한 표 데이터로 분석할 수 있습니다.' }
-            ];
-
             useEffect(() => {
                 if (isOpen) {
-                    const step = steps[currentStep];
-                    scrollToPanel(step.id);
+                    const step = ONBOARDING_STEPS[currentStep];
+                    // [개선] 모바일 대응: 첫 단계에서 화면 너비에 따라 타겟 변경
+                    const isMobile = window.innerWidth < 640;
+                    const targetId = (isMobile && step.id === 'header-actions') ? 'mobile-menu-trigger' : step.id;
+                    const el = document.getElementById(targetId);
                     
-                    // 스크롤 애니메이션 대기 후 스포트라이트 위치 계산
-                    setTimeout(() => {
-                        const el = document.getElementById(step.id);
-                        if (el) {
-                            const rect = el.getBoundingClientRect();
-                            const padding = 10;
-                            
-                            // Tooltip height estimation (fallback to 220 if not yet rendered)
-                            const tooltipHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 220;
-                            
-                            // Dynamic Flip Logic based on viewport position
-                            let tooltipTop;
-                            if (rect.top < window.innerHeight / 2) {
-                                // Top half -> place below element
-                                tooltipTop = rect.bottom + window.scrollY + 15;
-                            } else {
-                                // Bottom half -> place above element
-                                tooltipTop = rect.top + window.scrollY - tooltipHeight - 15;
-                            }
+                    if (el) {
+                        // 1. 즉시 해당 요소 상단으로 스크롤 (레이아웃 확보)
+                        el.scrollIntoView({ behavior: 'auto', block: 'start' });
 
-                            setSpotlightStyle({
-                                top: rect.top + window.scrollY - padding,
-                                left: rect.left + window.scrollX - padding,
-                                width: rect.width + (padding * 2),
-                                height: rect.height + (padding * 2),
-                                tooltipTop: tooltipTop,
-                                tooltipLeft: Math.min(window.innerWidth - 340, Math.max(20, rect.left + window.scrollX + (rect.width / 2) - 160))
+                        // 2. 부드러운 스크롤로 요소를 화면 중앙 부근에 배치 (툴팁 가독성 및 Next 버튼 접근성 확보)
+                        setTimeout(() => {
+                            const rect = el.getBoundingClientRect();
+                            const absoluteTop = rect.top + window.scrollY;
+                            const centerOffset = (window.innerHeight / 2) - (rect.height / 2);
+                            
+                            window.scrollTo({
+                                top: absoluteTop - centerOffset,
+                                behavior: 'smooth'
                             });
-                        }
-                    }, 500);
+
+                            // 3. 스크롤 완료 시점에 맞춰 스포트라이트 및 툴팁 위치 재계산 (정확도 유지)
+                            setTimeout(() => {
+                                const updatedRect = el.getBoundingClientRect();
+                                const padding = 10;
+                                const tooltipHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 220;
+                                const tooltipWidth = tooltipRef.current ? tooltipRef.current.offsetWidth : 320;
+                                
+                                let tooltipTop, tooltipLeft;
+                                if (isMobile) {
+                                    // 모바일에서는 툴팁을 화면 중앙에 배치
+                                    tooltipTop = window.scrollY + (window.innerHeight - tooltipHeight) / 2;
+                                    tooltipLeft = (window.innerWidth - tooltipWidth) / 2;
+                                } else {
+                                    if (updatedRect.top < window.innerHeight / 2) {
+                                        tooltipTop = updatedRect.bottom + window.scrollY + 15;
+                                    } else {
+                                        tooltipTop = updatedRect.top + window.scrollY - tooltipHeight - 15;
+                                    }
+                                    tooltipLeft = Math.min(window.innerWidth - 340, Math.max(20, updatedRect.left + window.scrollX + (updatedRect.width / 2) - 160));
+                                }
+
+                                setSpotlightStyle({
+                                    top: updatedRect.top + window.scrollY - padding,
+                                    left: updatedRect.left + window.scrollX - padding,
+                                    width: updatedRect.width + (padding * 2),
+                                    height: updatedRect.height + (padding * 2),
+                                    tooltipTop: tooltipTop,
+                                    tooltipLeft: tooltipLeft
+                                });
+                            }, 500);
+                        }, 100);
+                    }
                 }
             }, [currentStep, isOpen]);
 
             if (!isOpen || !spotlightStyle) return null;
 
             const handleNext = () => {
-                if (currentStep < steps.length - 1) setCurrentStep(prev => prev + 1);
+                if (currentStep < ONBOARDING_STEPS.length - 1) setCurrentStep(prev => prev + 1);
                 else handleComplete();
             };
 
@@ -405,7 +427,7 @@
                 onClose();
             };
 
-            const current = steps[currentStep];
+            const current = ONBOARDING_STEPS[currentStep];
 
             return (
                 <div className="absolute inset-0 z-[9999] pointer-events-none overflow-hidden transition-colors duration-500" style={{ height: document.documentElement.scrollHeight }}>
@@ -431,7 +453,7 @@
                         }}
                     >
                         <div className="flex justify-between items-start mb-2">
-                            <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Step {currentStep + 1} of {steps.length}</span>
+                            <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Step {currentStep + 1} of {ONBOARDING_STEPS.length}</span>
                             {current.isPro && isPro && (
                                 <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-bold">PRO FEATURE</span>
                             )}
@@ -443,7 +465,7 @@
                             <div className="flex gap-2">
                                 <button onClick={handlePrev} disabled={currentStep === 0} className="px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg disabled:opacity-30">이전</button>
                                 <button onClick={handleNext} className="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md">
-                                    {currentStep === steps.length - 1 ? '시작하기' : '다음'}
+                                    {currentStep === ONBOARDING_STEPS.length - 1 ? '시작하기' : '다음'}
                                 </button>
                             </div>
                         </div>
@@ -749,11 +771,6 @@
                                 console.error('Session error:', error);
                                 // 초기 로딩 시 alert는 사용자 경험을 해칠 수 있으므로 로그만 남김
                             }
-
-                            if (session) {
-                                // 세션이 있으면 구독 상태 확인 및 클라우드 동기화 시도 (await로 대기)
-                                await checkSubscription(session, false, mergedData || baseData);
-                            }
                         } catch (err) {
                             console.error('Session check error:', err);
                             // 타임아웃 시 조용히 실패 처리 (초기 로드이므로)
@@ -808,7 +825,7 @@
                                     pendingSave.current = true;
                                     setIsPasswordPromptOpen(true);
                                 } else {
-                                    saveToCloud(currentData, true);
+                                    saveToCloud({ appData: currentData, scenarios, assetHistory }, true);
                                 }
                             }
 
@@ -821,21 +838,21 @@
 
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [isPro, verifiedEmail, encryptionMode, userSecretKey, saveToCloud]);
+            }, [isPro, verifiedEmail, encryptionMode, userSecretKey, saveToCloud, scenarios, assetHistory]);
 
             // [추가] 클라우드 저장 헬퍼 함수 (중복 로직 제거 및 강제 저장 지원)
             // [수정] 초기 로딩 시점의 상태 불일치 해결을 위해 email, proStatus 오버라이드 인자 추가
-            const saveToCloud = async (dataToSave, force = false, emailOverride = null, proOverride = null, keyOverride = null, modeOverride = null) => {
+            const saveToCloud = async (unifiedData, force = false, emailOverride = null, proOverride = null, keyOverride = null, modeOverride = null) => {
                 const targetEmail = emailOverride || verifiedEmail;
                 const targetPro = proOverride !== null ? proOverride : isPro;
                 const targetMode = modeOverride || encryptionMode;
 
-                if (!targetEmail || isDemoMode || !supabase || !dataToSave || !isInitialized || !isCloudLoaded) return;
+                if (!targetEmail || isDemoMode || !supabase || !unifiedData || !isInitialized || !isCloudLoaded) return;
                 // 강제 저장이 아니고, 클라우드 로드 전이거나 로드 중이면 중단
                 if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
 
-                // 암호화 처리
-                let payloadData = dataToSave;
+                // [개선] 통합 데이터 객체 암호화 처리
+                let payloadData = unifiedData;
                 if (targetPro && targetMode) {
                     // [추가] 보안 모드인데 키가 없는 경우 입력 유도 (세션 스토리지 포함 확인, keyOverride가 있으면 통과)
                     if (targetMode === 'secure' && !userSecretKey && !keyOverride && !sessionStorage.getItem('assetDashboardSecretKey')) {
@@ -846,7 +863,7 @@
 
                     try {
                         const key = keyOverride || getEncryptionKey(targetMode, userSecretKey, userProfile?.id || targetEmail);
-                        payloadData = encryptData(dataToSave, key);
+                        payloadData = encryptData(unifiedData, key);
                     } catch (err) {
                         console.error('Encryption error:', err);
                         setSyncStatus('error');
@@ -854,15 +871,18 @@
                     }
                 }
 
-                const currentDataStr = JSON.stringify(dataToSave);
+                const currentDataStr = JSON.stringify(unifiedData);
                 // 강제 저장이 아니고, 변경 사항이 없으면 중단
                 if (!force && currentDataStr === lastSavedDataRef.current) return;
 
                 setSyncStatus('syncing');
                 setSyncStatusError('');
+                const onRetry = (attempt, max) => setSyncStatusError(`Server busy, retrying (Attempt ${attempt}/${max})...`);
+
                 try {
+                    await withRetry(() => supabase.auth.refreshSession());
                     // 세션 유효성 확인
-                    const { data: { session }, error: sessionError } = await withRetry(() => supabase.auth.getSession())
+                    const { data: { session }, error: sessionError = null } = await withRetry(() => supabase.auth.getSession(), 3, 12000, 2000, onRetry)
                         .catch(err => ({ data: { session: null }, error: err }));
                         
                     if (sessionError || !session) {
@@ -873,9 +893,10 @@
                         supabase.from('user_assets').upsert({ 
                             email: targetEmail, 
                             data: payloadData,
-                                encryption_type: targetPro ? targetMode : null,
+                            encryption_type: targetPro ? targetMode : null,
                             updated_at: new Date().toISOString()
-                        }, { onConflict: 'email' }).select('updated_at').single()
+                        }, { onConflict: 'email' }).select('updated_at').single(),
+                        3, 12000, 2000, onRetry
                     );
                     
                     if (error) throw error;
@@ -1126,7 +1147,7 @@
             const handleLogout = async (skipSignOut = false) => {
                 isProcessing.current = true;
                 // 이미 세션이 종료되어 호출된 경우 signOut 중복 호출 방지
-                if (supabase && !skipSignOut) await supabase.auth.signOut();
+                if (supabase && !skipSignOut) await withRetry(() => supabase.auth.signOut());
                 setVerifiedEmail(null); 
                 setUserProfile(null);
                 setIsPro(false);
@@ -1210,16 +1231,14 @@
             const handleSuggestionSubmit = async (content) => {
                 if (!supabase) return;
                 try {
-                    const { data: { user } } = await supabase.auth.getUser();
+                    const { data: { user } } = await withRetry(() => supabase.auth.getUser());
                     if (!user) return alert('로그인이 필요합니다.');
 
                     // [수정] user_profiles 테이블의 suggestions 컬럼에 내용 추가 (Append 방식)
                     // 1. 기존 내용 조회
-                    const { data: currentProfile, error: fetchError } = await supabase
-                        .from('user_profiles')
-                        .select('suggestions')
-                        .eq('id', user.id)
-                        .maybeSingle();
+                    const { data: currentProfile, error: fetchError } = await withRetry(() => 
+                        supabase.from('user_profiles').select('suggestions').eq('id', user.id).maybeSingle()
+                    );
                     
                     if (fetchError) throw fetchError;
 
@@ -1231,10 +1250,9 @@
                         : newEntry;
 
                     // 3. 업데이트 실행
-                    const { error } = await supabase
-                        .from('user_profiles')
-                        .update({ suggestions: updatedSuggestions })
-                        .eq('id', user.id);
+                    const { error } = await withRetry(() => 
+                        supabase.from('user_profiles').update({ suggestions: updatedSuggestions }).eq('id', user.id)
+                    );
                     
                     if (error) throw error;
                     alert('소중한 의견 감사합니다! 개발자에게 전달되었습니다.');
@@ -1269,7 +1287,7 @@
             const handleLogin = async () => {
                 if (!supabase) return alert('데이터베이스 연결 설정이 필요합니다.');
                 try {
-                    const { error } = await withTimeout(supabase.auth.signInWithOAuth({
+                    const { error } = await withRetry(() => supabase.auth.signInWithOAuth({
                         provider: 'google',
                         options: { redirectTo: window.location.origin }
                     }));
@@ -1282,12 +1300,14 @@
             // 실시간 클라우드 동기화 (Debounced)
             useEffect(() => {
                 if (!appData || !isInitialized) return;
+                if (isFetchingRef.current) return;
+                if (!isCloudLoaded) return; // [수정] 클라우드 로드 완료 전 자동 저장 방지
                 const AUTO_SYNC_DELAY = 2000; // [설정] 자동 동기화 대기 시간 (ms) - 현재 2초
                 const timer = setTimeout(() => {
-                    saveToCloud(appData);
+                    saveToCloud({ appData, scenarios, assetHistory }, true);
                 }, AUTO_SYNC_DELAY);
                 return () => clearTimeout(timer);
-            }, [appData, isPro, verifiedEmail, isDemoMode, isCloudLoaded, isInitialized]);
+            }, [appData, scenarios, assetHistory, isPro, verifiedEmail, isInitialized, isCloudLoaded, isDemoMode]);
 
             // [추가] 동기화 에러 시 자동 재시도 로직 (짧은 주기로 재시도)
             useEffect(() => {
@@ -1307,14 +1327,18 @@
             // 클라우드 데이터 불러오기
             // [수정] isManual 인자 추가
             const fetchFromCloud = async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null) => {
-                if (isProcessing.current) return;
+                if (isProcessing.current || isFetchingRef.current) return;
 
+                isFetchingRef.current = true;
                 setSyncStatus('syncing');
                 setIsLoadingCloud(true);
                 setSyncStatusError('');
+                const onRetry = (attempt, max) => setSyncStatusError(`Server busy, retrying (Attempt ${attempt}/${max})...`);
+
                 try {
+                    await withRetry(() => supabase.auth.refreshSession());
                     // 세션 유효성 확인
-                    const { data: { session }, error: sessionError } = await withRetry(() => supabase.auth.getSession())
+                    const { data: { session }, error: sessionError = null } = await withRetry(() => supabase.auth.getSession(), 3, 12000, 2000, onRetry)
                         .catch(err => ({ data: { session: null }, error: err }));
 
                     if (sessionError || !session) {
@@ -1324,7 +1348,8 @@
                     }
 
                     const { data, error } = await withRetry(() => 
-                        supabase.from('user_assets').select('data, updated_at, encryption_type').eq('email', email).maybeSingle()
+                        supabase.from('user_assets').select('data, updated_at, encryption_type').eq('email', email).maybeSingle(),
+                        3, 12000, 2000, onRetry
                     );
                     
                     if (error) throw error;
@@ -1425,17 +1450,31 @@
 
                         if (shouldLoad) {
                             
-                            // [핵심] 데이터를 불러오는 동안 자동 저장(Sync)이 트리거되지 않도록 락 설정
-                            isFetchingRef.current = true;
-                            setAppData(decryptedData);
+                            // [개선] 통합 데이터 구조 대응 (appData, scenarios, assetHistory)
+                            const actualAppData = decryptedData.appData || decryptedData;
+                            
+                            // [추가] 데이터 무결성 검사
+                            if (!actualAppData || typeof actualAppData !== 'object') {
+                                throw new Error('유효하지 않은 데이터 형식입니다.');
+                            }
+
+                            setAppData(actualAppData);
+                            
+                            if (decryptedData.scenarios) {
+                                setScenarios(decryptedData.scenarios);
+                                localStorage.setItem('assetDashboardScenarios', JSON.stringify(decryptedData.scenarios));
+                            }
+                            if (decryptedData.assetHistory) {
+                                setAssetHistory(decryptedData.assetHistory);
+                                localStorage.setItem('assetDashboardHistory', JSON.stringify(decryptedData.assetHistory));
+                            }
+
                             localStorage.setItem('assetDashboardLastUpdate', cloudLastUpdate);
                             lastSavedDataRef.current = JSON.stringify(decryptedData); // [추가] 로드된 데이터를 기준점으로 설정
-                            // React 렌더링 사이클 이후 락 해제
-                            setTimeout(() => { isFetchingRef.current = false; }, 500);
 
                             // [추가] 레거시 데이터인 경우 현재 설정된 암호화 모드로 즉시 마이그레이션 실행
                             if (isLegacy && pro && encryptionMode) {
-                                saveToCloud(decryptedData, true);
+                                saveToCloud({ appData: actualAppData, scenarios, assetHistory }, true);
                             }
                         }
 
@@ -1445,15 +1484,15 @@
                         // [수정] 신규 사용자 예외 처리
                         // RLS 정책상 PRO 유저만 INSERT 가능하므로, FREE 유저는 INSERT 시도하지 않음
                         if (email) {
-                            const { data: upsertData, error: upsertError } = await withTimeout(supabase
-                                .from('user_assets')
-                                .upsert({ 
+                            const { data: upsertData, error: upsertError } = await withRetry(() => 
+                                supabase.from('user_assets').upsert({ 
                                     email: email, 
                                     data: publicDefaultData,
                                     updated_at: new Date().toISOString()
                                 }, { onConflict: 'email' })
                                 .select('updated_at')
-                                .single());
+                                .single()
+                            );
                             
                             if (upsertError) throw upsertError;
                             if (upsertData) localStorage.setItem('assetDashboardLastUpdate', upsertData.updated_at);
@@ -1468,6 +1507,7 @@
                     if (isManual) alert(`데이터 동기화 오류: ${err.message}`); // [수정] 수동일 때만 알림
                 } finally {
                     setIsLoadingCloud(false);
+                    isFetchingRef.current = false;
                 }
             };
 
@@ -1478,7 +1518,7 @@
                 if (mode === 'secure') {
                     setIsPasswordPromptOpen(true);
                 } else {
-                    saveToCloud(appData, true);
+                    saveToCloud({ appData, scenarios, assetHistory }, true);
                 }
             };
 
@@ -1487,11 +1527,18 @@
                 setUserSecretKey(password);
                 setIsPasswordPromptOpen(false);
                 
+                const unifiedData = { appData: appDataRef.current, scenarios, assetHistory };
+                
                 if (pendingCiphertext.current) {
                     try {
                         const key = getEncryptionKey('secure', password, userProfile?.id || verifiedEmail);
                         const decrypted = decryptData(pendingCiphertext.current, key);
-                        setAppData(decrypted);
+                        
+                        const actualAppData = decrypted.appData || decrypted;
+                        setAppData(actualAppData);
+                        if (decrypted.scenarios) setScenarios(decrypted.scenarios);
+                        if (decrypted.assetHistory) setAssetHistory(decrypted.assetHistory);
+                        
                         pendingCiphertext.current = null;
                         setSyncStatus('synced');
                         setIsCloudLoaded(true);
@@ -1503,7 +1550,7 @@
                     pendingSave.current = false;
                     setEncryptionMode('secure');
                     const key = getEncryptionKey('secure', password, userProfile?.id || verifiedEmail);
-                    saveToCloud(appDataRef.current, true, null, null, key, 'secure');
+                    saveToCloud(unifiedData, true, null, null, key, 'secure');
                 }
             };
 
@@ -1511,6 +1558,8 @@
             const handleModeChange = async (newMode) => {
                 if (!isPro) return setIsProModalOpen(true);
                 if (newMode === encryptionMode) return;
+                
+                const unifiedData = { appData: appDataRef.current, scenarios, assetHistory };
                 
                 if (newMode === 'secure') {
                     pendingSave.current = true;
@@ -1521,7 +1570,7 @@
                         setUserSecretKey('');
                         sessionStorage.removeItem('assetDashboardSecretKey');
                         const key = getEncryptionKey('normal', '', userProfile?.id || verifiedEmail);
-                        await saveToCloud(appDataRef.current, true, null, null, key, 'normal');
+                        await saveToCloud(unifiedData, true, null, null, key, 'normal');
                     }
                 }
             };
@@ -3343,7 +3392,7 @@ updateOrCreateChart(comparisonBarRef, {
                                 </div>
                                 <div className="sm:hidden relative">
                                     <details className="relative">
-                                        <summary className="list-none inline-flex items-center px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200">☰ 메뉴</summary>
+                                        <summary id="mobile-menu-trigger" className="list-none inline-flex items-center px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200">☰ 메뉴</summary>
                                         <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md shadow-md z-50 p-2 space-y-2">
                                             {!verifiedEmail ? (
                                                 <button onClick={handleLogin} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 flex items-center gap-2 font-bold text-blue-600 dark:text-blue-400">
@@ -3448,7 +3497,7 @@ updateOrCreateChart(comparisonBarRef, {
                                         {/* [개선] 암호화 모드 선택 UI (PRO 전용) */}
                                         {isPro && (
                                             <div className="p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-indigo-100 dark:border-indigo-800/50 mb-3">
-                                                <div className="text-[10px] font-bold text-indigo-400 uppercase mb-2 px-1">Security Mode</div>
+                                                <div className="text-[10px] font-bold text-indigo-400 uppercase mb-2 px-1">보안 설정</div>
                                                 <div className="flex flex-col gap-2">
                                                     <label className="flex items-center gap-2 px-1 py-0.5 cursor-pointer group">
                                                         <input 
@@ -3458,7 +3507,7 @@ updateOrCreateChart(comparisonBarRef, {
                                                             onChange={() => handleModeChange('normal')}
                                                             className="w-3 h-3 text-indigo-600 focus:ring-indigo-500"
                                                         />
-                                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Standard Security (Fixed Key)</span>
+                                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">일반</span>
                                                     </label>
                                                     <label className="flex items-center gap-2 px-1 py-0.5 cursor-pointer group">
                                                         <input 
@@ -3468,7 +3517,7 @@ updateOrCreateChart(comparisonBarRef, {
                                                             onChange={() => handleModeChange('secure')}
                                                             className="w-3 h-3 text-indigo-600 focus:ring-indigo-500"
                                                         />
-                                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Enhanced Security (Password)</span>
+                                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">강화</span>
                                                     </label>
                                                 </div>
                                             </div>
@@ -3478,7 +3527,7 @@ updateOrCreateChart(comparisonBarRef, {
                                             {isPro && (
                                                 <button 
                                                     onClick={async () => {
-                                                        const { data: { session } } = await supabase.auth.getSession();
+                                                        const { data: { session } } = await withRetry(() => supabase.auth.getSession());
                                                         if (session) checkSubscription(session, true);
                                                     }}
                                                     className="w-full py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all border border-blue-100 dark:border-blue-800"
@@ -3493,11 +3542,13 @@ updateOrCreateChart(comparisonBarRef, {
                                                         if (code) {
                                                             setIsLoadingCloud(true);
                                                             try {
-                                                                const { data, error } = await supabase.rpc('redeem_code', { input_code: code.trim() });
+                                                                const { data, error } = await withRetry(() => 
+                                                                    supabase.rpc('redeem_code', { input_code: code.trim() })
+                                                                );
                                                                 if (error) throw error;
                                                                 if (data) {
                                                                     alert('🎉 후원 코드가 확인되었습니다! PRO 모드가 활성화됩니다.');
-                                                                    const { data: { session } } = await supabase.auth.getSession();
+                                                                    const { data: { session } } = await withRetry(() => supabase.auth.getSession());
                                                                     if (session) checkSubscription(session, true);
                                                                 } else {
                                                                     alert('❌ 유효하지 않거나 이미 사용된 코드입니다.');
