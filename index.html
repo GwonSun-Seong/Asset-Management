@@ -57,6 +57,27 @@
     <script type="text/babel">
             const { useState, useMemo, useEffect, useRef } = React;
 
+        // [개선] 재시도 로직을 포함한 타임아웃 헬퍼 함수 (컴포넌트 외부로 이동하여 성능 최적화)
+        const withRetry = async (fn, maxAttempts = 3, timeoutMs = 12000, delayMs = 2000) => {
+            let lastError;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    return await Promise.race([
+                        fn(),
+                        new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error(`요청 시간이 초과되었습니다. (${timeoutMs / 1000}초)`)), timeoutMs)
+                        )
+                    ]);
+                } catch (error) {
+                    lastError = error;
+                    if (attempt < maxAttempts) {
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    }
+                }
+            }
+            throw lastError;
+        };
+
         // [추가] 데이터 전송 모달 컴포넌트
         const DataTransferModal = ({ isOpen, onClose, onConfirm, type, initialSelection }) => {
             const [selectedItems, setSelectedItems] = useState(initialSelection || { appData: true, scenarios: true, assetHistory: true });
@@ -550,14 +571,6 @@
             const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
 
-            // [추가] 타임아웃 헬퍼 함수 (30초)
-            const withTimeout = (promise, ms = 30000) => {
-                return Promise.race([
-                    promise,
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('요청 시간이 초과되었습니다. (30초)')), ms))
-                ]);
-            };
-
             // Cloudflare 빌드 시점에 환경 변수로 교체될 플레이스홀더
             const SUPABASE_URL = '__SUPABASE_URL__';
             const SUPABASE_KEY = '__SUPABASE_KEY__';
@@ -728,8 +741,9 @@
                     // 2. Supabase 세션 체크 (계정 정보 확인 대기)
                     if (supabase) {
                         try {
-                            // [수정] 세션 체크 타임아웃 2초로 단축
-                            const { data: { session }, error } = await withTimeout(supabase.auth.getSession(), 2000);
+                            // 초기 세션 체크는 빠른 응답을 위해 2초 타임아웃으로 3회 시도
+                            const { data: { session }, error } = await withRetry(() => supabase.auth.getSession(), 3, 2000)
+                                .catch(err => ({ data: { session: null }, error: err }));
                             
                             if (error) {
                                 console.error('Session error:', error);
@@ -811,9 +825,10 @@
 
             // [추가] 클라우드 저장 헬퍼 함수 (중복 로직 제거 및 강제 저장 지원)
             // [수정] 초기 로딩 시점의 상태 불일치 해결을 위해 email, proStatus 오버라이드 인자 추가
-            const saveToCloud = async (dataToSave, force = false, emailOverride = null, proOverride = null, keyOverride = null) => {
+            const saveToCloud = async (dataToSave, force = false, emailOverride = null, proOverride = null, keyOverride = null, modeOverride = null) => {
                 const targetEmail = emailOverride || verifiedEmail;
                 const targetPro = proOverride !== null ? proOverride : isPro;
+                const targetMode = modeOverride || encryptionMode;
 
                 if (!targetEmail || isDemoMode || !supabase || !dataToSave || !isInitialized || !isCloudLoaded) return;
                 // 강제 저장이 아니고, 클라우드 로드 전이거나 로드 중이면 중단
@@ -821,16 +836,16 @@
 
                 // 암호화 처리
                 let payloadData = dataToSave;
-                if (targetPro && encryptionMode) {
-                    // [추가] 보안 모드인데 키가 없는 경우 입력 유도 (세션 스토리지 포함 확인)
-                    if (encryptionMode === 'secure' && !userSecretKey && !sessionStorage.getItem('assetDashboardSecretKey')) {
+                if (targetPro && targetMode) {
+                    // [추가] 보안 모드인데 키가 없는 경우 입력 유도 (세션 스토리지 포함 확인, keyOverride가 있으면 통과)
+                    if (targetMode === 'secure' && !userSecretKey && !keyOverride && !sessionStorage.getItem('assetDashboardSecretKey')) {
                         pendingSave.current = true;
                         setIsPasswordPromptOpen(true);
                         return;
                     }
 
                     try {
-                        const key = keyOverride || getEncryptionKey(encryptionMode, userSecretKey, userProfile?.id || targetEmail);
+                        const key = keyOverride || getEncryptionKey(targetMode, userSecretKey, userProfile?.id || targetEmail);
                         payloadData = encryptData(dataToSave, key);
                     } catch (err) {
                         console.error('Encryption error:', err);
@@ -847,21 +862,21 @@
                 setSyncStatusError('');
                 try {
                     // 세션 유효성 확인
-                    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                    const { data: { session }, error: sessionError } = await withRetry(() => supabase.auth.getSession())
+                        .catch(err => ({ data: { session: null }, error: err }));
+                        
                     if (sessionError || !session) {
                         throw new Error('세션이 만료되었습니다. 다시 로그인해주세요.');
                     }
 
-                    const { data, error } = await withTimeout(supabase
-                        .from('user_assets')
-                        .upsert({ 
+                    const { data, error } = await withRetry(() => 
+                        supabase.from('user_assets').upsert({ 
                             email: targetEmail, 
                             data: payloadData,
-                            encryption_type: targetPro ? encryptionMode : null,
+                                encryption_type: targetPro ? targetMode : null,
                             updated_at: new Date().toISOString()
-                        }, { onConflict: 'email' })
-                        .select('updated_at')
-                        .single());
+                        }, { onConflict: 'email' }).select('updated_at').single()
+                    );
                     
                     if (error) throw error;
                     if (data) {
@@ -1148,20 +1163,16 @@
                     let profile = null;
                     let fetchError = null;
 
-                    for (let i = 0; i < 3; i++) {
-                        const { data, error } = await withTimeout(supabase
-                            .from('user_profiles')
-                            .select('is_paid')
-                            .eq('id', session.user.id)
-                            .maybeSingle(), 5000);
-                        
-                        if (!error) {
-                            profile = data;
-                            fetchError = null;
-                            break; // 성공 시 루프 탈출
-                        }
-                        fetchError = error;
-                        await new Promise(r => setTimeout(r, 1000)); // 1초 대기 후 재시도
+                    try {
+                        const result = await withRetry(
+                            () => supabase.from('user_profiles').select('is_paid').eq('id', session.user.id).maybeSingle(),
+                            3,
+                            5000
+                        );
+                        profile = result.data;
+                        fetchError = result.error;
+                    } catch (err) {
+                        fetchError = err;
                     }
                     
                     if (!fetchError) {
@@ -1303,18 +1314,18 @@
                 setSyncStatusError('');
                 try {
                     // 세션 유효성 확인
-                    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                    const { data: { session }, error: sessionError } = await withRetry(() => supabase.auth.getSession())
+                        .catch(err => ({ data: { session: null }, error: err }));
+
                     if (sessionError || !session) {
                         setSyncStatus('error');
                         setSyncStatusError('세션이 만료되었습니다. 다시 로그인해주세요.');
                         return;
                     }
 
-                    const { data, error } = await withTimeout(supabase
-                        .from('user_assets')
-                        .select('data, updated_at, encryption_type')
-                        .eq('email', email)
-                        .maybeSingle());
+                    const { data, error } = await withRetry(() => 
+                        supabase.from('user_assets').select('data, updated_at, encryption_type').eq('email', email).maybeSingle()
+                    );
                     
                     if (error) throw error;
 
@@ -1490,8 +1501,28 @@
                     }
                 } else if (pendingSave.current) {
                     pendingSave.current = false;
+                    setEncryptionMode('secure');
                     const key = getEncryptionKey('secure', password, userProfile?.id || verifiedEmail);
-                    saveToCloud(appData, true, null, null, key);
+                    saveToCloud(appDataRef.current, true, null, null, key, 'secure');
+                }
+            };
+
+            // [추가] 암호화 모드 변경 핸들러
+            const handleModeChange = async (newMode) => {
+                if (!isPro) return setIsProModalOpen(true);
+                if (newMode === encryptionMode) return;
+                
+                if (newMode === 'secure') {
+                    pendingSave.current = true;
+                    setIsPasswordPromptOpen(true);
+                } else {
+                    if (confirm('일반 보안 모드로 전환하시겠습니까?\n데이터가 기기 ID 기반으로 재암호화되어 저장됩니다.')) {
+                        setEncryptionMode('normal');
+                        setUserSecretKey('');
+                        sessionStorage.removeItem('assetDashboardSecretKey');
+                        const key = getEncryptionKey('normal', '', userProfile?.id || verifiedEmail);
+                        await saveToCloud(appDataRef.current, true, null, null, key, 'normal');
+                    }
                 }
             };
 
@@ -3413,6 +3444,36 @@ updateOrCreateChart(comparisonBarRef, {
                                                 </div>
                                             </div>
                                         </div>
+                                        
+                                        {/* [개선] 암호화 모드 선택 UI (PRO 전용) */}
+                                        {isPro && (
+                                            <div className="p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-indigo-100 dark:border-indigo-800/50 mb-3">
+                                                <div className="text-[10px] font-bold text-indigo-400 uppercase mb-2 px-1">Security Mode</div>
+                                                <div className="flex flex-col gap-2">
+                                                    <label className="flex items-center gap-2 px-1 py-0.5 cursor-pointer group">
+                                                        <input 
+                                                            type="radio" 
+                                                            name="encMode" 
+                                                            checked={encryptionMode === 'normal'} 
+                                                            onChange={() => handleModeChange('normal')}
+                                                            className="w-3 h-3 text-indigo-600 focus:ring-indigo-500"
+                                                        />
+                                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Standard Security (Fixed Key)</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-2 px-1 py-0.5 cursor-pointer group">
+                                                        <input 
+                                                            type="radio" 
+                                                            name="encMode" 
+                                                            checked={encryptionMode === 'secure'} 
+                                                            onChange={() => handleModeChange('secure')}
+                                                            className="w-3 h-3 text-indigo-600 focus:ring-indigo-500"
+                                                        />
+                                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Enhanced Security (Password)</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="grid grid-cols-1 gap-1.5 mt-2">
                                             {isPro && (
                                                 <button 
