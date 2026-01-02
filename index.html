@@ -2181,6 +2181,8 @@
                         
                         let eventFlow = 0;
                         const checkEvent = (e) => {
+                            // [수정] 시나리오 데이터 오류 방지를 위한 안전성 검사 추가
+                            if (!e.startMonth || typeof e.startMonth !== 'string' || !e.endMonth || typeof e.endMonth !== 'string') return false;
                             const [bY, bM] = baseMonth.split('-').map(Number);
                             const [sY, sM] = e.startMonth.split('-').map(Number);
                             const [eY, eM] = e.endMonth.split('-').map(Number);
@@ -2294,11 +2296,17 @@
             }, [appData, inflationRate, projectionMonths, baseMonth, applyTax]);
 
 
-
-            const currentGrossTotal = calculateGrossTotal(calculation.initial);
-            const projectedGrossTotal = calculateGrossTotal(calculation.projected);
-            const currentSectorTotals = getSectorTotals(calculation.initial, currentGrossTotal);
-            const projectedSectorTotals = getSectorTotals(calculation.projected, projectedGrossTotal);
+            // [수정] 차트 렌더링 최적화를 위한 데이터 메모이제이션 (불필요한 리렌더링 방지)
+            const { currentGrossTotal, projectedGrossTotal, currentSectorTotals, projectedSectorTotals } = useMemo(() => {
+                const cGross = calculateGrossTotal(calculation.initial);
+                const pGross = calculateGrossTotal(calculation.projected);
+                return {
+                    currentGrossTotal: cGross,
+                    projectedGrossTotal: pGross,
+                    currentSectorTotals: getSectorTotals(calculation.initial, cGross),
+                    projectedSectorTotals: getSectorTotals(calculation.projected, pGross)
+                };
+            }, [calculation]);
 
             // [추가] 차트용 키 배열 (컴포넌트 스코프로 이동하여 핸들러에서 참조 가능하도록 함)
             const filteredKeys = useMemo(() => Object.keys(currentSectorTotals).filter(k => k !== 'loan'), [currentSectorTotals]);
@@ -3008,7 +3016,7 @@
                                     <div className="col-span-2 mt-2">
                                         <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 px-1 uppercase tracking-wider">내보내기</h4>
                                         <div className="grid grid-cols-2 gap-2">
-                                            <button onClick={exportToCSV} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 shadow-sm transition-all">
+                                            <button onClick={exportToCSV} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 shadow-sm transition-all">
                                                 <span>📊</span> CSV 내보내기
                                             </button>
                                             <label className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all cursor-pointer">
@@ -3747,12 +3755,12 @@
                     <div id="dashboard-content" className="p-4 sm:p-6 max-w-[90rem] mx-auto flex flex-col lg:flex-row gap-8">
                         {/* [추가] 사이드바 내비게이션 */}
                         <aside className="hidden lg:block w-52 flex-shrink-0">
-                            <div className="space-y-4">
+                            <div className="sticky top-24 space-y-4 max-h-[calc(100vh-6rem)] overflow-y-auto custom-scrollbar">
                             {/* 클라우드 동기화 카드 */}
                             <div className="mb-4 p-3 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800 shadow-sm">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1">
-                                        Cloud Sync
+                                        내 정보
                                         {syncStatus === 'error' && <span title={syncError} className="cursor-help text-red-500">⚠️</span>}
                                     </span>
                                     {verifiedEmail && (isPro || syncStatus === 'syncing') && (
@@ -3785,8 +3793,8 @@
                                     </button>
                                 ) : (
                                     <div className="space-y-2">
-                                        <div className="flex items-center gap-2">
-                                            <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="min-w-0 flex-1">
                                                 <div className="text-[10px] font-bold text-gray-800 dark:text-gray-200 truncate">
                                                     {userProfile?.full_name || verifiedEmail}
                                                 </div>
@@ -3796,13 +3804,17 @@
                                                     </span>
                                                 </div>
                                             </div>
+                                            <button onClick={() => handleLogout()} className="text-[10px] text-gray-500 hover:text-red-500 underline decoration-gray-300 hover:decoration-red-500 underline-offset-2 transition-colors whitespace-nowrap">
+                                                로그아웃
+                                            </button>
                                         </div>
                                         
                                         {/* [개선] 암호화 모드 선택 UI (PRO 전용) */}
                                         {isPro && (
-                                            <div className="p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-indigo-100 dark:border-indigo-800/50 mb-3">
-                                                <div className="text-[10px] font-bold text-indigo-400 uppercase mb-2 px-1">보안 설정</div>
-                                                <div className="flex flex-col gap-2">
+                                            <div className="p-2 bg-white/50 dark:bg-gray-800/50 rounded-lg border border-indigo-100 dark:border-indigo-800/50 mb-2">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-[10px] font-bold text-indigo-400 uppercase shrink-0">보안</span>
+                                                    <div className="flex gap-3">
                                                     <label className="flex items-center gap-2 px-1 py-0.5 cursor-pointer group">
                                                         <input 
                                                             type="radio" 
@@ -3823,6 +3835,7 @@
                                                         />
                                                         <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">강화</span>
                                                     </label>
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
@@ -3883,12 +3896,6 @@
                                                 className="w-full py-2 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-lg text-[10px] font-bold hover:bg-yellow-100 dark:hover:bg-yellow-900/50 transition-all border border-yellow-100 dark:border-yellow-800"
                                             >
                                                 💡 기능 제안 / 버그 신고
-                                            </button>
-                                            <button 
-                                                onClick={handleLogout} 
-                                                className="w-full py-2 bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-lg text-[10px] font-bold hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 transition-all border border-gray-200 dark:border-gray-700"
-                                            >
-                                                🚪 로그아웃
                                             </button>
                                         </div>
                                     </div>
