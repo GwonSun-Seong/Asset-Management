@@ -195,8 +195,31 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             if (cashInHand < 0) {
                 warnings.push({ month, type: 'cashflow', message: `월 ${month}: 월급 기반 월납입액이 월 가용 현금을 초과합니다. (${cashInHand.toFixed(2)}만원 부족)` });
             }
-            if (cashFlowAccount) {
-                cashFlowAccount.amount += cashInHand;
+
+            // [개선] 출금 계좌 계층 구조 (Withdrawal Hierarchy) 적용
+            let deficit = -cashInHand;
+            if (cashInHand >= 0) {
+                if (cashFlowAccount) cashFlowAccount.amount += cashInHand;
+            } else {
+                // 1. 주 계좌에서 먼저 차감
+                if (cashFlowAccount) {
+                    const withdraw = Math.min(cashFlowAccount.amount, deficit);
+                    cashFlowAccount.amount -= withdraw;
+                    deficit -= withdraw;
+                }
+                // 2. 부족할 경우 투자 -> 저축 -> 기타 순으로 차감
+                if (deficit > 0) {
+                    const hierarchy = ['investment', 'savings', 'misc', 'pension', 'deposit'];
+                    for (const sector of hierarchy) {
+                        (currentAssets[sector] || []).forEach(asset => {
+                            if (asset.name === mainCashFlowAccount) return;
+                            const withdraw = Math.min(asset.amount, deficit);
+                            asset.amount -= withdraw;
+                            deficit -= withdraw;
+                        });
+                        if (deficit <= 0) break;
+                    }
+                }
             }
 
             // 3b. 대출 상환 (계좌이체 기반) (Fix #1, #3)
@@ -204,7 +227,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 const simStartToLoanStart = getMonthDiff(baseMonth, loan.loanStartDate || baseMonth);
                 const loanMonthAtSimMonth = month + simStartToLoanStart;
 
-                if (loanMonthAtSimMonth < 1 || loan.amount <= 0) return;
+                if (loanMonthAtSimMonth < 1 || loan.amount <= 0 || (loan.maturityMonth !== undefined && loanMonthAtSimMonth > loan.maturityMonth)) return;
 
                 const repaymentAccount = loan._repaymentAccountRef;
                 if (!repaymentAccount) {

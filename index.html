@@ -11,13 +11,20 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="config.js"></script>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
     <script>
-        // [추가] 시스템 다크모드 설정 무시하고 'class' 전략 사용 (수동 토글 전용)
         if (typeof tailwind !== 'undefined') {
             tailwind.config = tailwind.config || {};
             tailwind.config.darkMode = 'class';
+            tailwind.config.theme = tailwind.config.theme || {};
+            tailwind.config.theme.extend = { ...tailwind.config.theme.extend, fontFamily: { sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'Roboto', 'sans-serif'] } };
         }
     </script>
+    <style>
+        * { font-family: 'Pretendard', sans-serif !important; }
+        input, select, button, textarea { font-family: 'Pretendard', sans-serif !important; }
+        input[type="number"] { font-weight: 600 !important; }
+    </style>
     <script src="defaultData.js"></script>
     <script src="utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -45,7 +52,7 @@
         })();
     </script>
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
+<body class="bg-gray-50 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200 font-sans">
     <div id="root"></div>
 
     <script>
@@ -362,51 +369,67 @@
                     const el = document.getElementById(targetId);
                     
                     if (el) {
-                        // 1. 즉시 해당 요소 상단으로 스크롤 (레이아웃 확보)
-                        el.scrollIntoView({ behavior: 'auto', block: 'start' });
+                        // 1. Step 1: Immediate Spotlight Alignment
+                        el.scrollIntoView({ behavior: 'auto', block: 'center' });
 
-                        // 2. 부드러운 스크롤로 요소를 화면 중앙 부근에 배치 (툴팁 가독성 및 Next 버튼 접근성 확보)
-                        setTimeout(() => {
-                            const rect = el.getBoundingClientRect();
-                            const absoluteTop = rect.top + window.scrollY;
-                            const centerOffset = (window.innerHeight / 2) - (rect.height / 2);
+                        // Calculate positions immediately after scroll to ensure spotlight is correct
+                        const updatedRect = el.getBoundingClientRect();
+                        const padding = 10;
+                        const tooltipHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 220;
+                        const tooltipWidth = tooltipRef.current ? tooltipRef.current.offsetWidth : 320;
+                        
+                        let tooltipTop, tooltipLeft;
+                        if (isMobile) {
+                            tooltipTop = window.scrollY + (window.innerHeight - tooltipHeight) / 2;
+                            tooltipLeft = (window.innerWidth - tooltipWidth) / 2;
+                        } else {
+                            if (updatedRect.top < window.innerHeight / 2) {
+                                tooltipTop = updatedRect.bottom + window.scrollY + 15;
+                            } else {
+                                tooltipTop = updatedRect.top + window.scrollY - tooltipHeight - 15;
+                            }
+                            tooltipLeft = Math.min(window.innerWidth - 340, Math.max(20, updatedRect.left + window.scrollX + (updatedRect.width / 2) - 160));
+                        }
+
+                        setSpotlightStyle({
+                            top: updatedRect.top + window.scrollY - padding,
+                            left: updatedRect.left + window.scrollX - padding,
+                            width: updatedRect.width + (padding * 2),
+                            height: updatedRect.height + (padding * 2),
+                            tooltipTop: tooltipTop,
+                            tooltipLeft: tooltipLeft
+                        });
+
+                        // 2. Step 2: Delayed Smooth Slide to Guide Card (Tooltip)
+                        const timer = setTimeout(() => {
+                            const tHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 220;
+                            const targetY = tooltipTop - (window.innerHeight / 2) + (tHeight / 2);
                             
-                            window.scrollTo({
-                                top: absoluteTop - centerOffset,
-                                behavior: 'smooth'
-                            });
+                            const startY = window.scrollY;
+                            const distance = targetY - startY;
+                            const duration = 1500; // 이동 시간을 1.5초로 늘려 더 천천히 이동
+                            let startTime = null;
 
-                            // 3. 스크롤 완료 시점에 맞춰 스포트라이트 및 툴팁 위치 재계산 (정확도 유지)
-                            setTimeout(() => {
-                                const updatedRect = el.getBoundingClientRect();
-                                const padding = 10;
-                                const tooltipHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 220;
-                                const tooltipWidth = tooltipRef.current ? tooltipRef.current.offsetWidth : 320;
-                                
-                                let tooltipTop, tooltipLeft;
-                                if (isMobile) {
-                                    // 모바일에서는 툴팁을 화면 중앙에 배치
-                                    tooltipTop = window.scrollY + (window.innerHeight - tooltipHeight) / 2;
-                                    tooltipLeft = (window.innerWidth - tooltipWidth) / 2;
-                                } else {
-                                    if (updatedRect.top < window.innerHeight / 2) {
-                                        tooltipTop = updatedRect.bottom + window.scrollY + 15;
-                                    } else {
-                                        tooltipTop = updatedRect.top + window.scrollY - tooltipHeight - 15;
-                                    }
-                                    tooltipLeft = Math.min(window.innerWidth - 340, Math.max(20, updatedRect.left + window.scrollX + (updatedRect.width / 2) - 160));
+                            const smoothStep = (currentTime) => {
+                                if (!startTime) startTime = currentTime;
+                                const timeElapsed = currentTime - startTime;
+                                const progress = Math.min(timeElapsed / duration, 1);
+
+                                // Cubic Ease-InOut: 가감속을 더 뚜렷하게 적용
+                                const easing = progress < 0.5 
+                                    ? 4 * progress * progress * progress 
+                                    : (progress - 1) * (2 * progress - 2) * (2 * progress - 2) + 1;
+
+                                window.scrollTo(0, startY + distance * easing);
+
+                                if (timeElapsed < duration) {
+                                    requestAnimationFrame(smoothStep);
                                 }
+                            };
+                            requestAnimationFrame(smoothStep);
+                        }, 1000); // 1초 대기 후 부드러운 슬라이드 시작
 
-                                setSpotlightStyle({
-                                    top: updatedRect.top + window.scrollY - padding,
-                                    left: updatedRect.left + window.scrollX - padding,
-                                    width: updatedRect.width + (padding * 2),
-                                    height: updatedRect.height + (padding * 2),
-                                    tooltipTop: tooltipTop,
-                                    tooltipLeft: tooltipLeft
-                                });
-                            }, 500);
-                        }, 100);
+                        return () => clearTimeout(timer);
                     }
                 }
             }, [currentStep, isOpen]);
@@ -1076,6 +1099,7 @@
                 targetAmount = 10000, 
                 goalMode = 'period', displayMode = 'amount',
                 rebalancingAlerts = {}, baseMonth = new Date().toISOString().slice(0,7),
+                rebalanceMonths = 12, // [추가] 리밸런싱 목표 기간
                 mainCashFlowAccount = '생활비통장',
                 rebalancingTargets = {},
                 memo = '' // [추가]
@@ -1109,6 +1133,7 @@
             const setTargetAmount = (value) => setAppData(prev => ({ ...prev, targetAmount: value }));
             const setGoalMode = (value) => setAppData(prev => ({ ...prev, goalMode: value }));
             const setDisplayMode = (value) => setAppData(prev => ({ ...prev, displayMode: value })); 
+            const setRebalanceMonths = (value) => setAppData(prev => ({ ...prev, rebalanceMonths: Math.max(1, value) })); // [추가]
             const setRebalancingAlerts = (value) => setAppData(prev => ({ ...prev, rebalancingAlerts: typeof value === 'function' ? value(prev.rebalancingAlerts) : value }));
             const setBaseMonth = (value) => setAppData(prev => ({ ...prev, baseMonth: value }));
             const setRebalancingTargets = (value) => setAppData(prev => ({ ...prev, rebalancingTargets: typeof value === 'function' ? value(prev.rebalancingTargets) : value }));
@@ -1427,8 +1452,8 @@
                             const cloudTime = new Date(cloudLastUpdate).getTime();
                             const localTime = new Date(localLastUpdate).getTime();
 
-                            // [수정] 클라우드가 더 최신이거나, 로그인(초기 로드) 시점에는 타임스탬프가 같더라도 확실한 동기화를 위해 로드
-                            if (cloudTime > localTime || (isInitialLoad && cloudTime === localTime)) {
+                            // [수정] 클라우드가 더 최신인 경우에만 로드 (타임스탬프가 같으면 로컬 데이터 신뢰하여 불필요한 로드 방지)
+                            if (cloudTime > localTime) {
                                 shouldLoad = true;
                             } else if (isInitialLoad && localTime > cloudTime) {
                                 // [수정] 로그인 직후 로컬이 더 최신일 경우: 사용자에게 선택권 부여
@@ -1921,7 +1946,9 @@
                         grand: 0,
                         realValue: 0,
                         monthlyProjections: [],
-                        warnings: []
+                        warnings: [],
+                        fireMetrics: null,
+                        rebalanceInfo: null
                     };
                 }
                 
@@ -1930,9 +1957,167 @@
                 const safeAppData = {
                     ...appData,
                     incomeEvents: Array.isArray(appData.incomeEvents) ? appData.incomeEvents : [],
-                    expenseEvents: Array.isArray(appData.expenseEvents) ? appData.expenseEvents : []
+                    expenseEvents: Array.isArray(appData.expenseEvents) ? appData.expenseEvents : [],
+                    applyTax: applyTax
                 };
-                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate }, months);
+
+                const taxRate = applyTax ? 0.154 : 0;
+                const localTotalMonthlyExpense = (appData.monthlyExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+                
+                // 1. High-Precision Initial Metrics
+                let currentTotal = 0;
+                let totalNetProfitMonthlyInitial = 0;
+                let totalInvestedPrincipal = 0;
+                const sectorSums = {};
+                
+                Object.keys(appData.assets).forEach(sector => {
+                    if (!sectorSums[sector]) sectorSums[sector] = 0;
+                    (appData.assets[sector] || []).forEach(asset => {
+                        const amt = Number(asset.amount || 0);
+                        if (sector === 'loan') {
+                            currentTotal -= amt;
+                        } else {
+                            currentTotal += amt;
+                            sectorSums[sector] += amt;
+                            totalInvestedPrincipal += amt;
+                            // Monthly_Net_Profit = (Amount * rate / 1200) * (1 - feeRate / 100) * (applyTax ? 0.846 : 1)
+                            const monthlyProfit = (amt * (Number(asset.rate || 0) / 1200)) * (1 - (Number(asset.feeRate || 0) / 100)) * (1 - taxRate);
+                            totalNetProfitMonthlyInitial += monthlyProfit;
+                        }
+                    });
+                });
+
+                const weightedAvgNetRate = totalInvestedPrincipal > 0 ? (totalNetProfitMonthlyInitial / totalInvestedPrincipal) * 1200 : 0;
+
+                // 2. Individual Asset Simulation (Runway - 1200 Months)
+                let runwayMonths = 0;
+                let debtFreeMonth = -1;
+                const maxSimMonths = 1200;
+                const simAssets = JSON.parse(JSON.stringify(appData.assets));
+                
+                for (let m = 1; m <= maxSimMonths; m++) {
+                    const inflationFactor = Math.pow(1 + inflationRate / 1200, m);
+                    const monthlyExp = localTotalMonthlyExpense * inflationFactor;
+                    let totalLoanInterest = 0;
+                    let totalLoanRepayment = 0;
+                    let currentLoanBalance = 0;
+
+                    Object.keys(simAssets).forEach(sector => {
+                        if (sector === 'loan') {
+                            simAssets[sector].forEach(loan => {
+                                if (loan.amount > 0) {
+                                    const interest = loan.amount * (loan.rate / 1200);
+                                    totalLoanInterest += interest;
+                                    const principalReduction = Math.max(0, (loan.monthlyContrib || 0) - interest);
+                                    if (loan.amount <= principalReduction) {
+                                        totalLoanRepayment += (loan.amount + interest);
+                                        loan.amount = 0;
+                                    } else {
+                                        loan.amount -= principalReduction;
+                                        totalLoanRepayment += (loan.monthlyContrib || 0);
+                                    }
+                                    currentLoanBalance += loan.amount;
+                                }
+                            });
+                        }
+                    });
+                    if (currentLoanBalance <= 0 && debtFreeMonth === -1) debtFreeMonth = m - 1;
+                    
+                    let eventFlow = 0;
+                    const checkEvent = (e) => {
+                        const [bY, bM] = baseMonth.split('-').map(Number);
+                        const [sY, sM] = e.startMonth.split('-').map(Number);
+                        const [eY, eM] = e.endMonth.split('-').map(Number);
+                        const cur = bY * 12 + bM + m - 1;
+                        return cur >= (sY * 12 + sM) && cur <= (eY * 12 + eM);
+                    };
+                    safeAppData.incomeEvents.forEach(e => { if (checkEvent(e)) eventFlow += (e.amount || 0); });
+                    safeAppData.expenseEvents.forEach(e => { if (checkEvent(e)) eventFlow -= (e.amount || 0); });
+
+                    const netFlow = eventFlow - monthlyExp - totalLoanRepayment;
+                    
+                    // [Logic Fix] Subtract flow BEFORE profit
+                    let mainAcc = null;
+                    for (const s in simAssets) {
+                        mainAcc = simAssets[s].find(a => a.name === appData.mainCashFlowAccount);
+                        if (mainAcc) break;
+                    }
+                    if (mainAcc) mainAcc.amount += netFlow;
+                    else {
+                        const firstSector = Object.keys(simAssets).find(s => s !== 'loan' && simAssets[s].length > 0);
+                        if (firstSector) simAssets[firstSector][0].amount += netFlow;
+                    }
+
+                    let currentSimTotal = 0;
+                    Object.keys(simAssets).forEach(sector => {
+                        simAssets[sector].forEach(asset => {
+                            if (sector !== 'loan') {
+                                const profit = (asset.amount || 0) * (asset.rate / 1200) * (1 - (asset.feeRate || 0) / 100) * (1 - taxRate);
+                                asset.amount += profit;
+                                currentSimTotal += asset.amount;
+                            } else {
+                                currentSimTotal -= asset.amount;
+                            }
+                        });
+                    });
+
+                    if (currentSimTotal <= 0) { runwayMonths = m; break; }
+                    if (m === maxSimMonths) runwayMonths = maxSimMonths;
+                }
+
+                // 3. FIRE Indicators (Reverse Engineered)
+                const loanInterestInitial = (appData.assets.loan || []).reduce((sum, l) => sum + (Number(l.amount || 0) * Number(l.rate || 0) / 1200), 0);
+                const annualFixedExp = (localTotalMonthlyExpense + loanInterestInitial) * 12;
+                const annualFixedExpPostDebt = localTotalMonthlyExpense * 12;
+
+                const preservationPossible = weightedAvgNetRate > inflationRate;
+                let preservationCapital = 0;
+                let fireNumber = 0;
+                let immediateFireNumber = 0;
+
+                if (preservationPossible) {
+                    let netRealRate = (weightedAvgNetRate - inflationRate) / 100;
+                    const safeNetRealRate = Math.max(0.01, netRealRate); // Cap at min 1%
+
+                    // Apply 30% safety buffer to denominator
+                    preservationCapital = annualFixedExpPostDebt / (safeNetRealRate * 0.7);
+                    fireNumber = preservationCapital;
+                    immediateFireNumber = annualFixedExp / (safeNetRealRate * 0.7);
+                }
+                
+                const swr4PercentCapital = annualFixedExpPostDebt * 25; // 4% Rule Reference
+
+                // 4. Soft Rebalancing Engine (Pro-rata)
+                const disposableIncome = Math.max(0, (appData.monthlySalary || 0) - localTotalMonthlyExpense);
+                const targetMonths = appData.rebalanceMonths || 12;
+                const futureValue = currentTotal + (disposableIncome * targetMonths);
+                const sectorGaps = {};
+                let totalGap = 0;
+                const validSectors = Object.keys(sectorInfo).filter(k => k !== 'loan');
+                
+                validSectors.forEach(sector => {
+                    const targetPct = (appData.rebalancingTargets && appData.rebalancingTargets[sector] !== undefined) 
+                        ? appData.rebalancingTargets[sector] 
+                        : Math.round(100 / validSectors.length);
+                    const targetBalance = futureValue * (targetPct / 100);
+                    const currentBalance = sectorSums[sector] || 0;
+                    const gap = Math.max(0, targetBalance - currentBalance);
+                    sectorGaps[sector] = gap;
+                    totalGap += gap;
+                });
+
+                const budgetLimited = (totalGap / targetMonths) > disposableIncome;
+                const sectorRecs = {};
+                validSectors.forEach(sector => {
+                    if (totalGap === 0) sectorRecs[sector] = 0;
+                    else {
+                        sectorRecs[sector] = budgetLimited 
+                            ? (sectorGaps[sector] / totalGap) * disposableIncome 
+                            : (sectorGaps[sector] / targetMonths);
+                    }
+                });
+
+                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate, applyTax }, months);
 
                 if (!monthlyProjections || monthlyProjections.length === 0) {
                     return { error: true, warnings: [] };
@@ -1940,19 +2125,7 @@
 
                 const finalProjection = monthlyProjections[months];
 
-                const calculateTotal = (assetData) => {
-                    let sum = 0;
-                    Object.keys(assetData).forEach(sector => {
-                        const sectorSum = (assetData[sector]||[]).reduce((s,a)=> s + (a.amount||0), 0);
-                        sum += (sector === 'loan') ? -sectorSum : sectorSum;
-                    });
-                    return sum;
-                };
-
-                const currentTotal = calculateTotal(appData.assets);
                 const projectedTotal = finalProjection ? finalProjection.total : currentTotal;
-                
-                // [추가] 인플레이션 보정 현재 가치 계산 (Summary 패널 효율성 개선)
                 const realValue = projectedTotal / Math.pow(1 + inflationRate / 100, months / 12);
 
                 return {
@@ -1964,9 +2137,24 @@
                     growth: projectedTotal - currentTotal,
                     grand: currentTotal,
                     monthlyProjections: monthlyProjections,
-                    warnings: warnings
+                    warnings: warnings,
+                    fireMetrics: {
+                        runwayMonths,
+                        debtFreeMonth,
+                        preservationCapital,
+                        fireNumber,
+                        immediateFireNumber,
+                        swr4PercentCapital,
+                        preservationPossible,
+                        weightedAvgNetRate
+                    },
+                    rebalanceInfo: {
+                        recs: sectorRecs,
+                        budgetLimited,
+                        targetMonths
+                    }
                 };
-            }, [appData, inflationRate, projectionMonths]);
+            }, [appData, inflationRate, projectionMonths, baseMonth, applyTax]);
 
 
 
@@ -2666,6 +2854,46 @@ updateOrCreateChart(comparisonBarRef, {
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                 인플레이션 고려 시: {formatNumber(calculation.realValue, displayMode)}만원
                             </p>
+
+                            {/* 자립 가능성 분석 (FIRE Analysis) */}
+                            {calculation.fireMetrics && (
+                                <div className="mt-6 pt-6 border-t border-blue-200 dark:border-blue-800">
+                                    <h3 className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-3">자립 가능성 분석 (FIRE Analysis)</h3>
+                                    
+                                    {calculation.fireMetrics.weightedAvgNetRate <= inflationRate && (
+                                        <div className="mb-3 p-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-[10px] text-red-600 dark:text-red-400 font-medium">
+                                            ⚠️ 현재 수익률이 물가상승률보다 낮아 원금 유지가 불가능합니다.
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 gap-3">
+                                        <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
+                                            <span className="text-xs text-gray-500">생존 가능 기간</span>
+                                            <span className="text-xs font-bold text-gray-900 dark:text-white">
+                                                {calculation.fireMetrics.runwayMonths >= 1200 ? '100년 이상' : `${Math.floor(calculation.fireMetrics.runwayMonths / 12)}년 ${calculation.fireMetrics.runwayMonths % 12}개월`}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
+                                            <span className="text-xs text-gray-500">자산 유지 한계점</span>
+                                            <span className="text-xs font-bold text-gray-900 dark:text-white">
+                                                {calculation.fireMetrics.preservationPossible ? `${formatNumber(calculation.fireMetrics.preservationCapital, displayMode)}만원` : '불가능'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                                            <span className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold">Conservative FIRE (30% Buffer)</span>
+                                            <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                                                {calculation.fireMetrics.preservationPossible ? `${formatNumber(calculation.fireMetrics.fireNumber, displayMode)}만원` : '불가능'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
+                                            <span className="text-xs text-gray-500">Classic 4% Rule (Global Standard)</span>
+                                            <span className="text-xs font-bold text-gray-900 dark:text-white">
+                                                {formatNumber(calculation.fireMetrics.swr4PercentCapital, displayMode)}만원
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                     <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6"> 
@@ -2868,7 +3096,25 @@ updateOrCreateChart(comparisonBarRef, {
                                     100% 자동조정
                                 </button>
                             </div>
+                            {/* [추가] 리밸런싱 목표 기간 설정 및 상태 메시지 */}
+                            <div className="flex items-center gap-3">
+                                <span className="text-gray-700 dark:text-gray-200 whitespace-nowrap">목표 달성 기간:</span>
+                                <input 
+                                    type="number" 
+                                    className="w-16 border rounded px-2 py-1 text-sm bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" 
+                                    value={rebalanceMonths} 
+                                    onChange={(e) => setRebalanceMonths(Number(e.target.value))} 
+                                />
+                                <span className="text-xs text-gray-500">개월</span>
+                            </div>
                         </div>
+                        {calculation.rebalanceInfo && (
+                            <div className={`mb-4 p-3 rounded-lg border text-xs font-medium ${calculation.rebalanceInfo.budgetLimited ? 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-300' : 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300'}`}>
+                                {calculation.rebalanceInfo.budgetLimited 
+                                    ? `⚠️ 예산 부족으로 ${calculation.rebalanceInfo.targetMonths}개월 내 달성이 어렵습니다. 현재 자산 비중 결손율에 따라 비례 배분된 수치를 제안합니다.` 
+                                    : `✅ 현재 예산으로 ${calculation.rebalanceInfo.targetMonths}개월 내 목표 비중 달성이 가능합니다.`}
+                            </div>
+                        )}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             {validSectors.map(sectorKey => {
                                 const currentValue = rebalancingTargets[sectorKey] ?? defaultPct;
@@ -2919,6 +3165,15 @@ updateOrCreateChart(comparisonBarRef, {
                                         현재: {formatPercent(currentSectorTotals[sectorKey]?.percentage || 0)}% →
                                         예상: {formatPercent(projectedSectorTotals[sectorKey]?.percentage || 0)}%
                                     </span>
+                                    {sectorKey !== 'loan' && calculation.rebalanceInfo?.recs[sectorKey] > 0 && (
+                                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold shadow-sm ${
+                                            ((assets[sectorKey] || []).reduce((sum, a) => sum + Number(a.monthlyContrib || 0), 0) < calculation.rebalanceInfo.recs[sectorKey] - 0.1)
+                                            ? 'bg-blue-600 text-white' 
+                                            : 'bg-gray-400 text-white'
+                                        }`}>
+                                            권장 납입: {formatNumber(calculation.rebalanceInfo.recs[sectorKey])}만원
+                                        </span>
+                                    )}
                                     <span className="ml-2 text-xs text-gray-500">{hiddenSectors[sectorKey] ? '(접힘)' : '(펼침)'}</span>
                                 </button>
                                 <div className="flex items-center gap-2">
@@ -2938,10 +3193,6 @@ updateOrCreateChart(comparisonBarRef, {
                             {!hiddenSectors[sectorKey] && (
                             <div className="space-y-4"> 
                                 {assets[sectorKey]?.map((asset, index) => {
-                                    const projectedAmount = calculation.projected[sectorKey]?.[index]?.amount || 0;
-                                    const sectorTotal = projectedSectorTotals[sectorKey]?.amount || 1;
-                                    const assetPercentage = (projectedAmount / sectorTotal * 100);
-                                    
                                     const nameRef = el => assetInputRefs.current[`${sectorKey}-${index}-name`] = el;
                                     const amountRef = el => assetInputRefs.current[`${sectorKey}-${index}-amount`] = el;
                                     const monthlyContribRef = el => assetInputRefs.current[`${sectorKey}-${index}-monthlyContrib`] = el;
@@ -2949,7 +3200,7 @@ updateOrCreateChart(comparisonBarRef, {
                                     return (
                                         <div key={asset.id || index} className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm">
                                             {sectorKey !== 'loan' && (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3 items-center">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-center">
                                                     <input ref={nameRef} type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                                                     <div>
                                                         <label className="block text-xs text-gray-500 dark:text-gray-200">현재금액</label>
@@ -2969,37 +3220,15 @@ updateOrCreateChart(comparisonBarRef, {
                                                     </div>
                                                     <div>
                                                         <label className="block text-xs text-gray-500 dark:text-gray-200">월수입외 납입</label>
-                                                        <input type="number" min="0" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraContrib} onChange={(e) => updateAsset(sectorKey, index, 'extraContrib', e.target.value)} />
-                                                    </div>
-                                                    {asset.extraContrib > 0 && (
-                                                        <div>
-                                                            <label className="block text-xs text-gray-500 dark:text-gray-200">출금계좌</label>
-                                                            <select className="w-full border rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraFrom} onChange={(e) => updateAsset(sectorKey, index, 'extraFrom', e.target.value)}>
-                                                                {Object.values(assets).flat().filter(a => a.name !== asset.name).map((d, i) => (
-                                                                    <option key={i} value={d.name}>{d.name}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    )}
-                                                    <div className="text-sm">
-                                                        <div className="text-gray-600 dark:text-gray-300">예상: {formatNumber(projectedAmount, displayMode)}만원</div>
-                                                        <div className={`text-gray-500 dark:text-gray-400`}>
-                                                            비중: <span className={`${(() => {
-                                                                const validSectorTotal = projectedSectorTotals[sectorKey]?.amount || 0;
-                                                                const target = rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length);
-                                                                const diff = Math.abs(projectedSectorTotals[sectorKey]?.percentage - target);
-                                                                const warn = rebalancingAlerts[sectorKey]?.warning ?? 5;
-                                                                const danger = rebalancingAlerts[sectorKey]?.danger ?? 10;
-                                                                if (diff >= danger) return 'text-red-500';
-                                                                if (diff >= warn) return 'text-yellow-500';
-                                                                return 'text-green-600 dark:text-green-400';
-                                                            })()}`}>{
-                                                                (() => {
-                                                                    const validSectorTotal = projectedSectorTotals[sectorKey]?.amount || 0;
-                                                                    const assetPercentage = (validSectorTotal > 0) ? (projectedAmount / validSectorTotal * 100) : 0;
-                                                                    return formatPercent(assetPercentage);
-                                                                })()
-                                                            }%</span>
+                                                        <div className="flex gap-1">
+                                                            <input type="number" min="0" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraContrib} onChange={(e) => updateAsset(sectorKey, index, 'extraContrib', e.target.value)} />
+                                                            {asset.extraContrib > 0 && (
+                                                                <select className="w-24 border rounded px-1 py-1 text-[10px] bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraFrom} onChange={(e) => updateAsset(sectorKey, index, 'extraFrom', e.target.value)}>
+                                                                    {Object.values(assets).flat().filter(a => a.name !== asset.name).map((d, i) => (
+                                                                        <option key={i} value={d.name}>{d.name}</option>
+                                                                    ))}
+                                                                </select>
+                                                            )}
                                                         </div>
                                                     </div>
                                                     <button onClick={() => removeAsset(sectorKey, index)} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
@@ -3007,7 +3236,7 @@ updateOrCreateChart(comparisonBarRef, {
                                             )}
 
                                             {sectorKey === 'loan' && (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-3 items-center">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-center">
                                                     <input ref={nameRef} type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                                                     <div>
                                                         <label className="block text-xs text-gray-500 dark:text-gray-200">현재잔액</label>
@@ -3026,19 +3255,7 @@ updateOrCreateChart(comparisonBarRef, {
                                                         <input type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.maturityMonth ?? 12} onChange={(e) => updateAsset(sectorKey, index, 'maturityMonth', e.target.value)} />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">상환방식</label>
-                                                        <select 
-                                                            className="w-full border rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" 
-                                                            value={asset.repaymentMethod} 
-                                                            onChange={(e) => updateAsset(sectorKey, index, 'repaymentMethod', e.target.value)}
-                                                        >
-                                                            <option value="원리금균등">원리금균등</option>
-                                                            <option value="원금균등">원금균등</option>
-                                                            <option value="만기일시">만기일시</option>
-                                                        </select>
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">상환계좌 (월)</label>
+                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">상환 계좌</label>
                                                         <select 
                                                             className="w-full border rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" 
                                                             value={asset.repaymentAccount} 
@@ -3048,23 +3265,6 @@ updateOrCreateChart(comparisonBarRef, {
                                                                 <option key={i} value={d.name}>{d.name}</option>
                                                             ))}
                                                         </select>
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">추가 상환 (월수입외)</label>
-                                                        <input type="number" min="0" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraContrib} onChange={(e) => updateAsset(sectorKey, index, 'extraContrib', e.target.value)} />
-                                                    </div>
-                                                    {asset.extraContrib > 0 && (
-                                                        <div>
-                                                            <label className="block text-xs text-gray-500 dark:text-gray-200">출금계좌 (추가)</label>
-                                                            <select className="w-full border rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraFrom} onChange={(e) => updateAsset(sectorKey, index, 'extraFrom', e.target.value)}>
-                                                                {Object.values(assets).flat().filter(a => a.name !== asset.name).map((d, i) => (
-                                                                    <option key={i} value={d.name}>{d.name}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    )}
-                                                    <div className="text-sm">
-                                                        <div className="text-gray-600 dark:text-gray-300">예상잔액: {formatNumber(projectedAmount, displayMode)}만원</div>
                                                     </div>
                                                     <button onClick={() => removeAsset(sectorKey, index)} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
                                                 </div>
@@ -3339,16 +3539,9 @@ updateOrCreateChart(comparisonBarRef, {
             // [수정] 모든 Hook 선언이 끝난 후, 실제 렌더링 직전에 로딩 상태를 체크하여 Hook 규칙 위반 해결
             if (isLoading) {
                 return (
-                    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+                    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 font-sans">
                         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                        <p className="text-gray-600 dark:text-gray-400 font-medium animate-pulse mb-4">계정 정보 확인 중...</p>
-                        {/* [추가] 로딩 중 비상 로그아웃 버튼 */}
-                        <button 
-                            onClick={() => handleLogout(true)}
-                            className="text-xs text-gray-500 underline hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
-                        >
-                            로그아웃 (취소)
-                        </button>
+                        <p className="text-gray-600 dark:text-gray-400 font-medium animate-pulse">데이터를 불러오는 중입니다...</p>
                     </div>
                 );
             }
@@ -3411,7 +3604,7 @@ updateOrCreateChart(comparisonBarRef, {
                                                             <div className="flex items-center gap-1 mt-1">
                                                                 <span className={`text-[9px] flex items-center gap-1 ${syncStatus === 'synced' ? 'text-green-600' : syncStatus === 'syncing' ? 'text-yellow-600' : syncStatus === 'error' ? 'text-red-600' : 'text-gray-400'}`}>
                                                                     <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'synced' ? 'bg-green-500' : syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-300'}`}></span>
-                                                                    {syncStatus === 'synced' ? '동기화됨' : syncStatus === 'syncing' ? '불러오는 중' : syncStatus === 'error' ? '동기화 실패' : '대기'}
+                                                                    {syncStatus === 'synced' ? '동기화됨' : syncStatus === 'syncing' ? '동기화 중' : syncStatus === 'error' ? '동기화 실패' : '대기'}
                                                                 </span>
                                                             </div>
                                                         )}
@@ -3454,7 +3647,7 @@ updateOrCreateChart(comparisonBarRef, {
                                     {verifiedEmail && (isPro || syncStatus === 'syncing') && (
                                         <div className="flex items-center gap-1.5">
                                             <span className={`text-[9px] font-medium ${syncStatus === 'synced' ? 'text-green-600' : syncStatus === 'syncing' ? 'text-yellow-600' : syncStatus === 'error' ? 'text-red-600' : 'text-gray-400'}`}>
-                                                {syncStatus === 'synced' ? '동기화됨' : syncStatus === 'syncing' ? '불러오는 중' : syncStatus === 'error' ? '동기화 실패' : '대기'}
+                                                {syncStatus === 'synced' ? '동기화됨' : syncStatus === 'syncing' ? '동기화 중' : syncStatus === 'error' ? '동기화 실패' : '대기'}
                                             </span>
                                             <div className={`w-2 h-2 rounded-full ${syncStatus === 'synced' ? 'bg-green-500' : syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-300'}`}></div>
                                         </div>
