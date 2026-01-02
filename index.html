@@ -24,6 +24,7 @@
         * { font-family: 'Pretendard', sans-serif !important; }
         input, select, button, textarea { font-family: 'Pretendard', sans-serif !important; }
         input[type="number"] { font-weight: 600 !important; }
+        .tabular-nums { font-variant-numeric: tabular-nums; }
     </style>
     <script src="defaultData.js"></script>
     <script src="utils.js"></script>
@@ -247,10 +248,10 @@
                             <div className="space-y-4">
                                 <button onClick={() => onSelect('secure')} className="w-full text-left p-5 border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 rounded-xl hover:border-blue-600 transition-all group">
                                     <div className="flex justify-between items-center mb-1">
-                                        <span className="font-bold text-blue-700 dark:text-blue-400">보안 모드 (권장)</span>
+                                        <span className="font-bold text-blue-700 dark:text-blue-400">보안 모드 (종단간 암호화)</span>
                                         <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">Secure</span>
                                     </div>
-                                    <p className="text-sm text-gray-600 dark:text-gray-300">사용자 비밀번호로 암호화합니다. 개발자도 데이터를 읽을 수 없으며, 비밀번호 분실 시 복구가 불가능합니다.</p>
+                                    <p className="text-sm text-gray-600 dark:text-gray-300">사용자가 입력한 비밀번호로 직접 암호화 키를 생성합니다. 서버에는 비밀번호가 저장되지 않아 개발자도 절대 데이터를 열어볼 수 없지만, 분실 시 복구가 불가능합니다.</p>
                                 </button>
                                 <button onClick={() => onSelect('normal')} className="w-full text-left p-5 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-gray-300 dark:hover:border-gray-600 transition-all">
                                     <div className="flex justify-between items-center mb-1">
@@ -274,7 +275,7 @@
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in duration-300">
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">🔑 보안 비밀번호 입력</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">데이터 복호화를 위해 보안 모드 비밀번호를 입력해주세요.</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">입력하신 비밀번호는 브라우저 내에서 암호화 키 생성에만 사용되며 서버에 전송되거나 저장되지 않습니다.</p>
                         <input 
                             type="password" 
                             className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl px-4 py-3 mb-6 focus:ring-2 focus:ring-blue-500 outline-none"
@@ -669,8 +670,42 @@
             const [userSecretKey, setUserSecretKey] = useState(() => sessionStorage.getItem('assetDashboardSecretKey') || ''); // [수정] 세션 스토리지 연동
             const [isEncryptionModalOpen, setIsEncryptionModalOpen] = useState(false); // [추가] 암호화 선택 모달
             const [isPasswordPromptOpen, setIsPasswordPromptOpen] = useState(false); // [추가] 비밀번호 입력 모달
+            const [drillDownSector, setDrillDownSector] = useState(null); // [추가] 차트 드릴다운 상태
+            const chartInstancesRef = useRef({}); // [추가] 차트 인스턴스 관리용 Ref
             const pendingCiphertext = useRef(null);
             const pendingSave = useRef(false);
+
+            const getRGB = (colorName) => {
+                const map = {
+                    blue: '59, 130, 246',
+                    green: '34, 197, 94',
+                    indigo: '79, 70, 229',
+                    yellow: '234, 179, 8',
+                    orange: '249, 115, 22',
+                    slate: '107, 114, 128',
+                    red: '239, 68, 68',
+                    gray: '107, 114, 128',
+                    purple: '168, 85, 247',
+                    cyan: '6, 182, 212',
+                    amber: '245, 158, 11',
+                    emerald: '16, 185, 129',
+                    sky: '14, 165, 233',
+                    pink: '236, 72, 153',
+                    rose: '244, 63, 94',
+                    // [추가] 섹터 키 매핑 (드릴다운 색상 지원)
+                    deposit: '59, 130, 246',
+                    savings: '34, 197, 94',
+                    investment: '249, 115, 22',
+                    pension: '168, 85, 247',
+                    realestate: '245, 158, 11',
+                    car: '6, 182, 212',
+                    loan: '107, 114, 128',
+                    misc: '107, 114, 128'
+                };
+                if (!colorName || typeof colorName !== 'string') return map['gray'];
+                return map[colorName.toLowerCase()] || map['gray'];
+            };
+
             // [수정] 레이아웃 및 패널 상태 관리
             const [layoutOrder, setLayoutOrder] = useState(() => {
                 try {
@@ -828,6 +863,108 @@
                     sessionStorage.setItem('assetDashboardSecretKey', userSecretKey);
                 }
             }, [userSecretKey]);
+
+            // [추가] CSV 내보내기/불러오기 기능
+            const exportToCSV = () => {
+                const sectorMap = {
+                    deposit: '입출금통장',
+                    savings: '저축',
+                    investment: '투자',
+                    pension: '연금',
+                    realestate: '부동산',
+                    car: '자동차',
+                    loan: '대출',
+                    misc: '기타'
+                };
+                const headers = ['섹터', '항목명', '현재금액', '수익률', '수수료율', '월납입', '추가납입', '출금계좌', '만기개월', '대출시작일'];
+                let csvContent = headers.join(',') + '\n';
+
+                Object.keys(assets).forEach(sector => {
+                    const koreanSector = sectorMap[sector] || sector;
+                    assets[sector].forEach(asset => {
+                        const row = [
+                            koreanSector,
+                            `"${asset.name}"`,
+                            asset.amount || 0,
+                            asset.rate || 0,
+                            asset.feeRate || 0,
+                            asset.monthlyContrib || 0,
+                            asset.extraContrib || 0,
+                            `"${asset.extraFrom || ''}"`,
+                            asset.maturityMonth || '',
+                            asset.loanStartDate || ''
+                        ];
+                        csvContent += row.join(',') + '\n';
+                    });
+                });
+
+                const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `asset_data_${new Date().toISOString().slice(0,10)}.csv`;
+                link.click();
+            };
+
+            const importFromCSV = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const reverseSectorMap = {
+                            '입출금통장': 'deposit',
+                            '저축': 'savings',
+                            '투자': 'investment',
+                            '연금': 'pension',
+                            '부동산': 'realestate',
+                            '자동차': 'car',
+                            '대출': 'loan',
+                            '기타': 'misc'
+                        };
+                        const text = event.target.result;
+                        const lines = text.split('\n');
+                        const newAssets = {};
+                        Object.keys(sectorInfo).forEach(k => newAssets[k] = []);
+
+                        for (let i = 1; i < lines.length; i++) {
+                            const line = lines[i].trim();
+                            if (!line) continue;
+                            
+                            const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                            if (parts.length < 3) continue;
+
+                            const koreanSector = parts[0].trim();
+                            const sector = reverseSectorMap[koreanSector] || koreanSector;
+                            if (!newAssets[sector]) continue;
+
+                            const asset = {
+                                id: Date.now() + Math.random() + i,
+                                name: parts[1].replace(/"/g, '').trim(),
+                                amount: Number(parts[2]) || 0,
+                                rate: Number(parts[3]) || 0,
+                                feeRate: Number(parts[4]) || 0,
+                                monthlyContrib: Number(parts[5]) || 0,
+                                extraContrib: Number(parts[6]) || 0,
+                                extraFrom: parts[7]?.replace(/"/g, '').trim() || '',
+                                maturityMonth: Number(parts[8]) || 12,
+                                loanStartDate: parts[9]?.trim() || ''
+                            };
+                            newAssets[sector].push(asset);
+                        }
+
+                        if (confirm('CSV 데이터를 불러오시겠습니까? 기존 자산 데이터가 대체됩니다.')) {
+                            setAssets(newAssets);
+                            alert('CSV 데이터를 성공적으로 불러왔습니다.');
+                        }
+                    } catch (err) {
+                        console.error('CSV Import Error:', err);
+                        alert('CSV 파일을 파싱하는 중 오류가 발생했습니다.');
+                    }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
+            };
 
             // [추가] 키보드 단축키 (Alt + S) 저장 로직
             useEffect(() => {
@@ -1987,8 +2124,6 @@
                     });
                 });
 
-                const weightedAvgNetRate = totalInvestedPrincipal > 0 ? (totalNetProfitMonthlyInitial / totalInvestedPrincipal) * 1200 : 0;
-
                 // 2. Individual Asset Simulation (Runway - 1200 Months)
                 let runwayMonths = 0;
                 let debtFreeMonth = -1;
@@ -2070,21 +2205,6 @@
                 const annualFixedExp = (localTotalMonthlyExpense + loanInterestInitial) * 12;
                 const annualFixedExpPostDebt = localTotalMonthlyExpense * 12;
 
-                const preservationPossible = weightedAvgNetRate > inflationRate;
-                let preservationCapital = 0;
-                let fireNumber = 0;
-                let immediateFireNumber = 0;
-
-                if (preservationPossible) {
-                    let netRealRate = (weightedAvgNetRate - inflationRate) / 100;
-                    const safeNetRealRate = Math.max(0.01, netRealRate); // Cap at min 1%
-
-                    // Apply 30% safety buffer to denominator
-                    preservationCapital = annualFixedExpPostDebt / (safeNetRealRate * 0.7);
-                    fireNumber = preservationCapital;
-                    immediateFireNumber = annualFixedExp / (safeNetRealRate * 0.7);
-                }
-                
                 const swr4PercentCapital = annualFixedExpPostDebt * 25; // 4% Rule Reference
 
                 // 4. Soft Rebalancing Engine (Pro-rata)
@@ -2141,12 +2261,7 @@
                     fireMetrics: {
                         runwayMonths,
                         debtFreeMonth,
-                        preservationCapital,
-                        fireNumber,
-                        immediateFireNumber,
-                        swr4PercentCapital,
-                        preservationPossible,
-                        weightedAvgNetRate
+                        swr4PercentCapital
                     },
                     rebalanceInfo: {
                         recs: sectorRecs,
@@ -2196,312 +2311,239 @@
 
             // ===== 차트 설정 =====
             useEffect(() => {
-    // [수정] 차트 패널이 접혀있으면 다시 그리지 않음
-    if (panelCollapseState['charts']) return;
+                // [개선] 로딩 중이거나 차트 패널이 접혀있거나 Chart.js가 없으면 실행하지 않음
+                if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
 
-    if (!appData || !currentPieRef.current || !projectedPieRef.current || !comparisonBarRef.current) return;
+                const renderCharts = () => {
+                    const sectorLabels = {
+                    deposit: '입출금통장', savings: '저축', investment: '투자', pension: '연금',
+                    realestate: '부동산', car: '자동차', loan: '대출', misc: '기타'
+                };
 
-    // [수정] DOM 렌더링 확보를 위해 차트 생성을 약간 지연 (차트 미표시 문제 해결)
-    const renderTimer = setTimeout(() => {
+                const textColor = darkMode ? '#e5e7eb' : '#111827';
+                const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+                const chartBorderColor = darkMode ? '#1e293b' : '#ffffff';
 
-    const sectorLabels = {
-        deposit: '입출금통장',
-        savings: '저축',
-        investment: '투자',
-        pension: '연금',
-        realestate: '부동산',
-        car: '자동차',
-        loan: '대출',
-        misc: '기타'
-    };
-
-    // [추가] 다크모드 대응 색상 정의
-    const textColor = darkMode ? '#e5e7eb' : '#111827';
-    const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
-    const chartBorderColor = darkMode ? '#1e293b' : '#ffffff';
-
-    // 차트 데이터 준비
-    const filteredKeys = Object.keys(currentSectorTotals).filter(k => k !== 'loan');
-    const currentLabels = filteredKeys.map(key => sectorLabels[key]);
-    const currentData = filteredKeys.map(key => currentSectorTotals[key]?.amount || 0);
-    const projectedKeys = Object.keys(projectedSectorTotals).filter(k => k !== 'loan');
-    const projectedLabels = projectedKeys.map(key => sectorLabels[key]);
-    const projectedData = projectedKeys.map(key => projectedSectorTotals[key].amount);
-
-    const forecastDateText = (() => {
-        const [y,m] = (baseMonth || new Date().toISOString().slice(0,7)).split('-').map(Number);
-        const date = new Date(y, m - 1 + projectionMonths);
-        return `${String(date.getFullYear()).slice(2)}년 ${String(date.getMonth()+1).padStart(2,'0')}월`;
-    })();
-
-    const createGradient = (ctx, colors) => {
-        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-        gradient.addColorStop(0, colors.start);
-        gradient.addColorStop(1, colors.end);
-        return gradient;
-    };
-
-    // [최적화] 차트 업데이트/생성 헬퍼 함수
-    const updateOrCreateChart = (ref, config) => {
-        if (ref.current) {
-            const chart = ref.current._chart;
-            if (chart) {
-                chart.data = config.data;
-                chart.options = config.options;
-                chart.update();
-            } else {
-                ref.current._chart = new Chart(ref.current, config);
-            }
-        }
-    };
-
-    // 현재 포트폴리오 차트
-    updateOrCreateChart(currentPieRef, {
-        type: 'doughnut',
-        data: { 
-            labels: currentLabels, 
-            datasets: [{ 
-                data: currentData, 
-                backgroundColor: filteredKeys.map(key => {
-                    const colors = tailwind.config.theme.extend.colors[key];
-                    return createGradient(currentPieRef.current.getContext('2d'), colors);
-                }),
-                borderWidth: darkMode ? 1.5 : 3,
-                borderColor: chartBorderColor,
-                hoverBorderWidth: 5,
-                hoverBorderColor: chartBorderColor,
-                hoverOffset: 40
-            }] 
-        },
-        options: {
-            responsive: true,
-            animation: {
-                animateScale: true,
-                animateRotate: true,
-                duration: 1500,
-                easing: 'easeInOutQuart'
-            },
-            plugins: { 
-                legend: { position: 'bottom', labels: { color: textColor } },
-                title: { display: true, text: '현재 포트폴리오', color: textColor },
-                datalabels: {
-                    anchor: 'end',
-                    align: 'start',
-                    offset: 20,
-                    color: textColor,
-                    font: function(context) {
-                        return {
-                            weight: 'bold',
-                            size: context.active ? 16 : 11
-                        };
-                    },
-                    borderRadius: 4,
-                    padding: 6,
-                    formatter: (value, context) => {
-                        const total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0) || 1;
-                        const percentage = (value / total) * 100;
-                        return (percentage > 5 || context.active) ? `${percentage.toFixed(1)}%` : '';
+                // [수정] 기존 차트 인스턴스 파괴 (안전하게 처리)
+                ['currentPie', 'projectedPie', 'comparisonBar'].forEach(id => {
+                    if (chartInstancesRef.current[id]) {
+                        chartInstancesRef.current[id].destroy();
+                        chartInstancesRef.current[id] = null;
                     }
-                },
-                tooltip: {
-                    backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.9)',
-                    titleColor: darkMode ? '#f8fafc' : '#1e293b',
-                    bodyColor: darkMode ? '#cbd5e1' : '#475569',
-                    borderColor: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                    borderWidth: 1,
-                    titleFont: { size: 14, weight: 'bold' },
-                    bodyFont: { size: 13 },
-                    padding: 12,
-                    cornerRadius: 12,
-                    displayColors: true,
-                    usePointStyle: true,
-                    callbacks: {
-                        label: function(context) {
-                            const label = context.label || '';
-                            const value = Math.round(context.parsed).toLocaleString();
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = ((context.parsed / total) * 100).toFixed(1);
-                            return ` ${label}: ${value}만원 (${percentage}%)`;
+                });
+
+                // [추가] 차트 생성 헬퍼 함수
+                const initChart = (id, ref, config) => {
+                    if (ref.current) {
+                        const ctx = ref.current.getContext('2d');
+                        if (ctx) {
+                            chartInstancesRef.current[id] = new Chart(ctx, config);
                         }
                     }
-                }
-            }
-        },
-        plugins: [ChartDataLabels]
-    });
+                };
 
-    // 예상 포트폴리오 차트
-    updateOrCreateChart(projectedPieRef, {
-        type: 'doughnut',
-        data: { 
-            labels: projectedLabels, 
-            datasets: [{ 
-                data: projectedData, 
-                backgroundColor: projectedKeys.map(key => {
-                    const colors = tailwind.config.theme.extend.colors[key];
-                    return createGradient(projectedPieRef.current.getContext('2d'), colors);
-                }),
-                borderWidth: darkMode ? 1.5 : 3,
-                borderColor: chartBorderColor,
-                hoverBorderWidth: 5,
-                hoverBorderColor: chartBorderColor,
-                hoverOffset: 40
-            }] 
-        },
-        options: {
-            responsive: true,
-            animation: {
-                animateScale: true,
-                animateRotate: true,
-                duration: 1500,
-                easing: 'easeInOutQuart',
-                delay: 200
-            },
-            plugins: {
-                legend: { position: 'bottom', labels: { color: textColor } },
-                title: { display: true, text: `${projectionMonths}개월 후 예상 ${forecastDateText ? `(${forecastDateText})` : ''}`, color: textColor },
-                datalabels: {
-                    anchor: 'end', 
-                    align: 'start',
-                    offset: 20,
-                    color: textColor,
-                    font: function(context) {
-                        return {
-                            weight: 'bold',
-                            size: context.active ? 16 : 11
-                        };
-                    },
-                    borderRadius: 4,
-                    padding: 6,
-                    formatter: (value, context) => {
-                        const total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0) || 1;
-                        const percentage = (value / total) * 100;
-                        return (percentage > 5 || context.active) ? `${percentage.toFixed(1)}%` : '';
-                    }
-                },
-                tooltip: {
-                    backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.9)',
-                    titleColor: darkMode ? '#f8fafc' : '#1e293b',
-                    bodyColor: darkMode ? '#cbd5e1' : '#475569',
-                    borderColor: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                    borderWidth: 1,
-                    titleFont: { size: 14, weight: 'bold' },
-                    bodyFont: { size: 13 },
-                    padding: 12,
-                    cornerRadius: 12,
-                    displayColors: true,
-                    usePointStyle: true,
-                    callbacks: {
-                        label: function(context) {
-                            const label = context.label || '';
-                            const value = Math.round(context.parsed).toLocaleString();
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = ((context.parsed / total) * 100).toFixed(1);
-                            return ` ${label}: ${value}만원 (${percentage}%)`;
-                        }
-                    }
-                }
-            }
-        },
-        plugins: [ChartDataLabels]
-    });
+                const filteredKeys = Object.keys(currentSectorTotals).filter(k => k !== 'loan');
+                const projectedKeys = Object.keys(projectedSectorTotals).filter(k => k !== 'loan');
 
-    // 비교 차트
-updateOrCreateChart(comparisonBarRef, {
-    type: 'bar',
-    data: {
-        labels: projectedLabels,
-        datasets: [
-            { 
-                label: '현재', 
-                data: currentData, 
-                backgroundColor: 'rgba(59, 130, 246, 0.7)',
-                borderColor: chartBorderColor,
-                borderWidth: 2,
-                borderRadius: 6,
-                borderSkipped: false
-            },
-            { 
-                label: '예상', 
-                data: projectedData, 
-                backgroundColor: (context) => {
-                    const ctx = context.chart.ctx;
+                const createGradient = (ctx, colors) => {
+                    if (!ctx || !colors) return colors?.start || '#3b82f6';
                     const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-                    gradient.addColorStop(0, 'rgba(74, 222, 128, 0.9)');
-                    gradient.addColorStop(1, 'rgba(22, 163, 74, 0.8)');
+                    gradient.addColorStop(0, colors?.start || '#3b82f6');
+                    gradient.addColorStop(1, colors?.end || '#1d4ed8');
                     return gradient;
-                },
-                borderColor: chartBorderColor,
-                borderWidth: 2,
-                borderRadius: 6,
-                borderSkipped: false
-            }
-        ]
-    },
-    options: {
-        responsive: true,
-        scales: { 
-            x: { 
-                position: 'bottom',
-                ticks: { color: textColor },
-                grid: { color: gridColor }
-            }, 
-            y: { 
-                beginAtZero: true,
-                ticks: { color: textColor },
-                grid: { color: gridColor }
-            } 
-        },
-        plugins: {
-            legend: { 
-                position: 'top',
-                align: 'end',
-                labels: { usePointStyle: true, pointStyle: 'rectRounded', color: textColor }
-            },
-            title: { 
-                display: true, 
-                text: '📊 현재 자산 vs 예상 자산',
-                font: { size: 18, weight: 'bold' }, color: textColor,
-                padding: { top: 10, bottom: 20 }
-            },
-            tooltip: {
-                backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                titleFont: { size: 14, weight: 'bold' },
-                bodyFont: { size: 13 },
-                padding: 12,
-                cornerRadius: 8,
-                displayColors: true,
-                callbacks: {
-                    label: function(context) {
-                        const value = Math.round(context.parsed.y).toLocaleString();
-                        return ` ${context.dataset.label}: ${value}만원`;
+                };
+
+                // [수정] 드릴다운 및 토글 핸들러
+                const handleChartClick = (evt, elements, chart) => {
+                    if (drillDownSector) {
+                        setDrillDownSector(null); // 토글: 이미 드릴다운 상태면 해제
+                    } else if (elements && elements.length > 0) {
+                        const index = elements[0].index;
+                        // 현재/예상 차트 모두 동일한 키 순서를 사용한다고 가정
+                        const key = filteredKeys[index];
+                        setDrillDownSector(key);
                     }
+                };
+
+                // 데이터 준비
+                let currentLabels, currentData, currentColors;
+                let projectedLabels, projectedData, projectedColors;
+
+                if (drillDownSector) {
+                    // 드릴다운: 해당 섹터의 자산별 데이터
+                    const sectorAssets = assets[drillDownSector] || [];
+                    currentLabels = sectorAssets.map(a => a.name);
+                    currentData = sectorAssets.map(a => a.amount);
+                    // [수정] 드릴다운 시 알록달록한 색상 팔레트 적용
+                    const palette = [
+                        '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#6366f1', 
+                        '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4',
+                        '#84cc16', '#a855f7', '#0ea5e9', '#f43f5e', '#d946ef'
+                    ];
+                    currentColors = sectorAssets.map((_, i) => palette[i % palette.length]);
+
+                    const projAssets = calculation.projected[drillDownSector] || [];
+                    projectedLabels = projAssets.map(a => a.name);
+                    projectedData = projAssets.map(a => a.amount);
+                    projectedColors = projAssets.map((_, i) => palette[i % palette.length]);
+                } else {
+                    // 기본: 섹터별 데이터
+                    currentLabels = filteredKeys.map(key => sectorLabels[key]);
+                    currentData = filteredKeys.map(key => currentSectorTotals[key]?.amount || 0);
+                    
+                    projectedLabels = projectedKeys.map(key => sectorLabels[key]);
+                    projectedData = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
                 }
-            },
-            // 막대 차트에서는 데이터 라벨을 숨겨 깔끔하게 표시
-            datalabels: { display: false }
-        }
-    },
-    plugins: []
-}); 
 
-    }, 50); // 50ms 지연
-
-    return () => clearTimeout(renderTimer);
-            }, [calculation, panelCollapseState['charts'], darkMode]);
-
-            // [추가] 컴포넌트 언마운트 시에만 차트 인스턴스 정리
-            useEffect(() => {
-                return () => {
-                    [currentPieRef, projectedPieRef, comparisonBarRef, historyChartRef].forEach(ref => {
-                        if (ref.current && ref.current._chart) {
-                            ref.current._chart.destroy();
-                            ref.current._chart = null;
+                const commonOptions = {
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    onClick: handleChartClick,
+                    animation: { animateScale: true, animateRotate: true, duration: 1000 },
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: textColor, padding: 15, font: { family: 'Pretendard' } } },
+                        datalabels: {
+                            color: darkMode ? '#ffffff' : '#111827',
+                            anchor: 'center', // [수정] 중앙 배치
+                            align: 'center',  // [수정] 중앙 배치
+                            font: { weight: 'bold', size: 11 },
+                            formatter: (value, ctx) => {
+                                const total = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0) || 1;
+                                const pct = (value / total) * 100;
+                                return pct > 4 ? `${pct.toFixed(1)}%` : '';
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                            titleColor: darkMode ? '#f8fafc' : '#1e293b',
+                            bodyColor: darkMode ? '#cbd5e1' : '#475569',
+                            borderColor: gridColor,
+                            borderWidth: 1,
+                            padding: 10,
+                            cornerRadius: 8,
+                            callbacks: {
+                                label: (ctx) => {
+                                    const label = ctx.label || '';
+                                    const val = ctx.parsed || 0;
+                                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                    const pct = ((val / total) * 100).toFixed(1);
+                                    return ` ${label}: ${Math.round(val).toLocaleString()}만원 (${pct}%)`;
+                                }
+                            }
                         }
+                    }
+                };
+
+                // 1. 현재 포트폴리오 차트
+                if (currentPieRef.current) {
+                    const ctx = currentPieRef.current.getContext('2d');
+                    // [수정] 그라디언트 생성 로직을 config 내부로 이동하거나 미리 계산
+                    const bgColors = drillDownSector ? currentColors : filteredKeys.map(key => {
+                        const c = tailwind?.config?.theme?.extend?.colors?.[key] || { start: '#3b82f6', end: '#1d4ed8' };
+                        return createGradient(ctx, c);
+                    });
+
+                    initChart('currentPie', currentPieRef, {
+                            type: 'doughnut',
+                            data: {
+                                labels: currentLabels,
+                                datasets: [{
+                                    data: currentData,
+                                    backgroundColor: bgColors,
+                                    borderWidth: 2,
+                                    borderColor: chartBorderColor,
+                                    hoverOffset: 15
+                                }]
+                            },
+                            options: {
+                                ...commonOptions,
+                                plugins: {
+                                    ...commonOptions.plugins,
+                                    title: { display: true, text: drillDownSector ? `${sectorLabels[drillDownSector]} 상세` : '현재 포트폴리오', color: textColor, font: { size: 16, weight: 'bold' } }
+                                }
+                            },
+                            plugins: [ChartDataLabels]
+                    });
+                }
+
+                // 2. 예상 포트폴리오 차트
+                if (projectedPieRef.current) {
+                    const ctx = projectedPieRef.current.getContext('2d');
+                    const bgColors = drillDownSector ? projectedColors : projectedKeys.map(key => {
+                        const c = tailwind?.config?.theme?.extend?.colors?.[key] || { start: '#10b981', end: '#059669' };
+                        return createGradient(ctx, c);
+                    });
+
+                    initChart('projectedPie', projectedPieRef, {
+                            type: 'doughnut',
+                            data: {
+                                labels: projectedLabels,
+                                datasets: [{
+                                    data: projectedData,
+                                    backgroundColor: bgColors,
+                                    borderWidth: 2,
+                                    borderColor: chartBorderColor,
+                                    hoverOffset: 15
+                                }]
+                            },
+                            options: {
+                                ...commonOptions,
+                                plugins: {
+                                    ...commonOptions.plugins,
+                                    title: { 
+                                        display: true, 
+                                        text: drillDownSector ? `${sectorLabels[drillDownSector]} 예상` : `${projectionMonths}개월 후 예상`, 
+                                        color: textColor, 
+                                        font: { size: 16, weight: 'bold' } 
+                                    }
+                                }
+                            },
+                            plugins: [ChartDataLabels]
+                    });
+                }
+
+                // 3. 비교 차트 (바 차트)
+                if (comparisonBarRef.current) {
+                    const comparisonLabels = projectedKeys.map(key => sectorLabels[key] || key);
+                    const comparisonCurrentData = projectedKeys.map(key => currentSectorTotals[key]?.amount || 0);
+                    const comparisonProjectedData = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
+
+                    initChart('comparisonBar', comparisonBarRef, {
+                            type: 'bar',
+                            data: {
+                                labels: comparisonLabels,
+                                datasets: [
+                                    { label: '현재', data: comparisonCurrentData, backgroundColor: 'rgba(59, 130, 246, 0.7)', borderRadius: 4 },
+                                    { label: '예상', data: comparisonProjectedData, backgroundColor: 'rgba(34, 197, 94, 0.7)', borderRadius: 4 }
+                                ]
+                            },
+                            options: {
+                                maintainAspectRatio: false,
+                                responsive: true,
+                                scales: {
+                                    x: { ticks: { color: textColor }, grid: { display: false } },
+                                    y: { beginAtZero: true, ticks: { color: textColor }, grid: { color: gridColor } }
+                                },
+                                plugins: {
+                                    legend: { labels: { color: textColor } },
+                                    datalabels: { display: false },
+                                    title: { display: true, text: '현재 vs 예상 자산 비교', color: textColor, font: { size: 16, weight: 'bold' } }
+                                }
+                            }
+                    });
+                }
+                };
+
+                // [수정] setTimeout을 사용하여 DOM 렌더링 후 차트 그리기 (100ms 지연)
+                const timer = setTimeout(renderCharts, 100);
+
+                return () => {
+                    clearTimeout(timer);
+                    Object.values(chartInstancesRef.current).forEach(instance => {
+                        if (instance) instance.destroy();
                     });
                 };
-            }, []);
-
+            }, [calculation, panelCollapseState['charts'], darkMode, drillDownSector, isLoading, assets]);
 
             // [분리] 히스토리 차트 전용 useEffect
             useEffect(() => {
@@ -2597,6 +2639,7 @@ updateOrCreateChart(comparisonBarRef, {
                     },
                     options: {
                         responsive: true,
+                        maintainAspectRatio: false,
                         plugins: {
                             legend: { position: 'bottom', labels: { color: textColor } },
                             title: { display: false },
@@ -2617,13 +2660,19 @@ updateOrCreateChart(comparisonBarRef, {
                 };
 
                 if (historyChartRef.current) {
-                    if (historyChartRef.current._chart) {
-                        historyChartRef.current._chart.destroy();
+                    if (chartInstancesRef.current['historyChart']) {
+                        chartInstancesRef.current['historyChart'].destroy();
                     }
-                    historyChartRef.current._chart = new Chart(historyChartRef.current, chartConfig);
+                    chartInstancesRef.current['historyChart'] = new Chart(historyChartRef.current, chartConfig);
                 }
 
-            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode]); // [수정] darkMode 의존성 추가
+                return () => {
+                    if (chartInstancesRef.current['historyChart']) {
+                        chartInstancesRef.current['historyChart'].destroy();
+                        delete chartInstancesRef.current['historyChart'];
+                    }
+                };
+            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode]);
 
             // ===== 자산 관리 함수들 =====
             const addAsset = (sector) => setAssets(prev => ({
@@ -2860,12 +2909,6 @@ updateOrCreateChart(comparisonBarRef, {
                                 <div className="mt-6 pt-6 border-t border-blue-200 dark:border-blue-800">
                                     <h3 className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-3">자립 가능성 분석 (FIRE Analysis)</h3>
                                     
-                                    {calculation.fireMetrics.weightedAvgNetRate <= inflationRate && (
-                                        <div className="mb-3 p-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-[10px] text-red-600 dark:text-red-400 font-medium">
-                                            ⚠️ 현재 수익률이 물가상승률보다 낮아 원금 유지가 불가능합니다.
-                                        </div>
-                                    )}
-
                                     <div className="grid grid-cols-1 gap-3">
                                         <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
                                             <span className="text-xs text-gray-500">생존 가능 기간</span>
@@ -2873,20 +2916,16 @@ updateOrCreateChart(comparisonBarRef, {
                                                 {calculation.fireMetrics.runwayMonths >= 1200 ? '100년 이상' : `${Math.floor(calculation.fireMetrics.runwayMonths / 12)}년 ${calculation.fireMetrics.runwayMonths % 12}개월`}
                                             </span>
                                         </div>
+                                        {calculation.fireMetrics.debtFreeMonth > 0 && (
+                                            <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
+                                                <span className="text-xs text-gray-500">부채 상환 완료 예상</span>
+                                                <span className="text-xs font-bold text-green-600 dark:text-green-400">
+                                                    {Math.floor(calculation.fireMetrics.debtFreeMonth / 12)}년 {calculation.fireMetrics.debtFreeMonth % 12}개월 후
+                                                </span>
+                                            </div>
+                                        )}
                                         <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
-                                            <span className="text-xs text-gray-500">자산 유지 한계점</span>
-                                            <span className="text-xs font-bold text-gray-900 dark:text-white">
-                                                {calculation.fireMetrics.preservationPossible ? `${formatNumber(calculation.fireMetrics.preservationCapital, displayMode)}만원` : '불가능'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800">
-                                            <span className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold">Conservative FIRE (30% Buffer)</span>
-                                            <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300">
-                                                {calculation.fireMetrics.preservationPossible ? `${formatNumber(calculation.fireMetrics.fireNumber, displayMode)}만원` : '불가능'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
-                                            <span className="text-xs text-gray-500">Classic 4% Rule (Global Standard)</span>
+                                            <span className="text-xs text-gray-500">FIRE (4% 법칙) 필요자산</span>
                                             <span className="text-xs font-bold text-gray-900 dark:text-white">
                                                 {formatNumber(calculation.fireMetrics.swr4PercentCapital, displayMode)}만원
                                             </span>
@@ -2908,15 +2947,38 @@ updateOrCreateChart(comparisonBarRef, {
                                 <input type="month" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={baseMonth} onChange={(e) => setBaseMonth(e.target.value)} />
                             </div>
                             <div className="pt-4 border-t dark:border-gray-700">
-                                <h3 className="text-md font-semibold text-gray-700 dark:text-white mb-2">데이터 관리</h3>
-                                <div className="grid grid-cols-2 sm:grid-cols-2 gap-2">
-                                    <button onClick={() => setIsExportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-green-500 text-white text-[10px] sm:text-xs font-semibold rounded-lg hover:bg-green-600 shadow-sm transition-all">
+                                <h3 className="text-sm font-bold text-gray-700 dark:text-white mb-2">데이터 관리</h3>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button onClick={() => setIsExportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 shadow-sm transition-all">
                                         <span>📤</span> 데이터 내보내기
                                     </button>
-                                    <button onClick={() => setIsImportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-[10px] sm:text-xs font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all">
+                                    <button onClick={() => setIsImportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all">
                                         <span>📥</span> 데이터 불러오기
                                     </button>
-                                    <button onClick={saveCurrentAsset} className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-indigo-500 text-white text-sm font-semibold rounded-lg hover:bg-indigo-600 shadow-sm hover:shadow-md transition-all">
+                                    
+                                    {isPro && verifiedEmail && (
+                                        <button onClick={() => fetchFromCloud(verifiedEmail, isPro, false, true)} className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 shadow-sm transition-all">
+                                            <span>🔄</span> 클라우드 강제 동기화
+                                        </button>
+                                    )}
+
+                                    <div className="col-span-2 mt-2">
+                                        <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 px-1 uppercase tracking-wider">내보내기</h4>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button onClick={exportToCSV} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 shadow-sm transition-all">
+                                                <span>📊</span> CSV 내보내기
+                                            </button>
+                                            <label className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all cursor-pointer">
+                                                <span>📥</span> CSV 불러오기
+                                                <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" />
+                                            </label>
+                                            <button onClick={saveToPDF} className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 shadow-sm hover:shadow-md transition-all">
+                                                <span>📄</span> PDF 보고서 저장
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <button onClick={saveCurrentAsset} className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-indigo-500 text-white text-sm font-semibold rounded-lg hover:bg-indigo-600 shadow-sm hover:shadow-md transition-all mt-2">
                                         <span>💾</span> 히스토리 저장
                                     </button>
                                 </div>
@@ -2994,10 +3056,12 @@ updateOrCreateChart(comparisonBarRef, {
             );
 
             const renderChartsPanel = () => ( 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4"><canvas ref={currentPieRef} height="300"></canvas></div>
-                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4"><canvas ref={projectedPieRef} height="300"></canvas></div>
-                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4"><canvas ref={comparisonBarRef} height="300"></canvas></div>
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4 h-[350px] w-full relative"><canvas ref={currentPieRef}></canvas></div>
+                        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4 h-[350px] w-full relative"><canvas ref={projectedPieRef}></canvas></div>
+                        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4 h-[350px] w-full relative"><canvas ref={comparisonBarRef}></canvas></div>
+                    </div>
                 </div>
             );
  
@@ -3193,18 +3257,23 @@ updateOrCreateChart(comparisonBarRef, {
                             {!hiddenSectors[sectorKey] && (
                             <div className="space-y-4"> 
                                 {assets[sectorKey]?.map((asset, index) => {
+                                    const sectorTotal = assets[sectorKey]?.reduce((sum, a) => sum + Number(a.amount || 0), 0) || 1;
+                                    const assetPercentage = (Number(asset.amount || 0) / sectorTotal) * 100;
+                                    const rgb = getRGB(sectorInfo[sectorKey].color);
+                                    const amountBgStyle = { backgroundImage: `linear-gradient(to right, rgba(${rgb}, 0.15) ${assetPercentage}%, transparent ${assetPercentage}%)` };
+
                                     const nameRef = el => assetInputRefs.current[`${sectorKey}-${index}-name`] = el;
                                     const amountRef = el => assetInputRefs.current[`${sectorKey}-${index}-amount`] = el;
                                     const monthlyContribRef = el => assetInputRefs.current[`${sectorKey}-${index}-monthlyContrib`] = el;
 
                                     return (
-                                        <div key={asset.id || index} className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm">
+                                        <div key={asset.id || index} className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                                             {sectorKey !== 'loan' && (
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-center">
                                                     <input ref={nameRef} type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                                                     <div>
                                                         <label className="block text-xs text-gray-500 dark:text-gray-200">현재금액</label>
-                                                        <input ref={amountRef} type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                                                        <input ref={amountRef} type="number" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
                                                     </div>
                                                     <div>
                                                         <label className="block text-xs text-gray-500 dark:text-gray-200">수익률(%)</label>
@@ -3240,7 +3309,7 @@ updateOrCreateChart(comparisonBarRef, {
                                                     <input ref={nameRef} type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                                                     <div>
                                                         <label className="block text-xs text-gray-500 dark:text-gray-200">현재잔액</label>
-                                                        <input ref={amountRef} type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                                                        <input ref={amountRef} type="number" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
                                                     </div>
                                                     <div>
                                                         <label className="block text-xs text-gray-500 dark:text-gray-200">이자율(%)</label>
@@ -3287,7 +3356,7 @@ updateOrCreateChart(comparisonBarRef, {
                     </div>
                     <div className="space-y-3">
                         {monthlyExpenses.map((expense, index) => (
-                            <div key={index} className="bg-white dark:bg-gray-900 rounded-lg p-3 shadow-sm">
+                            <div key={index} className="bg-white dark:bg-gray-900 rounded-lg p-3 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-center">
                                     <input type="text" placeholder="지출명" className="border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-2 py-1" value={expense.name} onChange={(e) => updateExpense(index, 'name', e.target.value)} />
                                     <input type="number" placeholder="금액(만원)" className="border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-2 py-1" value={expense.amount} onChange={(e) => updateExpense(index, 'amount', e.target.value)} />
@@ -3340,7 +3409,7 @@ updateOrCreateChart(comparisonBarRef, {
                                 }
                                 
                                 return (
-                                <div key={index} className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm border dark:border-gray-700">
+                                <div key={index} className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm border dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                                     <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 items-end">
                                         <div className="md:col-span-2 lg:col-span-2">
                                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">이벤트명</label>
@@ -3466,19 +3535,19 @@ updateOrCreateChart(comparisonBarRef, {
                                 const isPositiveGood = sectorKey === 'loan' ? growthRate <= 0 : growthRate >= 0;
                                 const rebalanceStatus = getRebalanceStatus(sectorKey, projected.percentage);
                                 const targetPct = (rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length));
-                                
+
                                 return (
                                     <React.Fragment key={sectorKey}>
-                                        <tr className={`border-t dark:border-gray-700 ${sectorInfo[sectorKey].bgClass} ${rebalanceStatus}`}>
+                                        <tr className={`border-t dark:border-gray-700 ${sectorInfo[sectorKey].bgClass} hover:brightness-95 dark:hover:brightness-110 transition-all`}>
                                             <td className="p-3 font-semibold">
                                                 {sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}
                                             </td>
-                                            <td className="p-3 text-right">{formatNumber(current.amount)}</td>
-                                            <td className="p-3 text-right">{formatNumber(projected.amount)}</td>
-                                            <td className={`p-3 text-right ${isPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatPercent(growthRate)}%</td>
-                                            <td className="p-3 text-right">{formatPercent(current.percentage)}%</td>
-                                            <td className="p-3 text-right">{formatPercent(projected.percentage)}%</td>
-                                            <td className="p-3 text-right">{formatPercent(targetPct)}%</td>
+                                            <td className="p-3 text-right tabular-nums">{formatNumber(current.amount)}</td>
+                                            <td className="p-3 text-right tabular-nums">{formatNumber(projected.amount)}</td>
+                                            <td className={`p-3 text-right tabular-nums ${isPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatPercent(growthRate)}%</td>
+                                            <td className="p-3 text-right tabular-nums">{formatPercent(current.percentage)}%</td>
+                                            <td className="p-3 text-right tabular-nums">{formatPercent(projected.percentage)}%</td>
+                                            <td className="p-3 text-right tabular-nums">{formatPercent(targetPct)}%</td>
                                         </tr>
                                         {assets[sectorKey]?.map((asset, idx) => {
                                             const projectedAmount = calculation.projected[sectorKey]?.[idx]?.amount || 0;
@@ -3492,18 +3561,18 @@ updateOrCreateChart(comparisonBarRef, {
                                             const projectedAssetPercentageInSector = (projected.amount > 0) ? (projectedAmount / projected.amount * 100) : 0;
                                             
                                             return (
-                                                <tr key={`${sectorKey}-${idx}`} className="border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                                                <tr key={`${sectorKey}-${idx}`} className="border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                                                     <td className="p-3 pl-8 text-sm dark:text-gray-400">└ {asset.name}</td>
-                                                    <td className="p-3 text-right text-sm">{formatNumber(asset.amount)}</td>
-                                                    <td className="p-3 text-right text-sm">{formatNumber(projectedAmount)}</td>
-                                                    <td className={`p-3 text-right text-sm ${isAssetPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatPercent(assetGrowthRate)}%</td>
-                                                    <td className="p-3 text-right text-sm">
+                                                    <td className="p-3 text-right text-sm tabular-nums">{formatNumber(asset.amount)}</td>
+                                                    <td className="p-3 text-right text-sm tabular-nums">{formatNumber(projectedAmount)}</td>
+                                                    <td className={`p-3 text-right text-sm tabular-nums ${isAssetPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatPercent(assetGrowthRate)}%</td>
+                                                    <td className="p-3 text-right text-sm tabular-nums">
                                                         {sectorKey !== 'loan' ? `${formatPercent(currentAssetPercentageInPortfolio)}% (${formatPercent(currentAssetPercentageInSector)}%)` : '-'}
                                                     </td>
-                                                    <td className="p-3 text-right text-sm">
+                                                    <td className="p-3 text-right text-sm tabular-nums">
                                                         {sectorKey !== 'loan' ? `${formatPercent(assetPercentageInPortfolio)}% (${formatPercent(projectedAssetPercentageInSector)}%)` : '-'}
                                                     </td>
-                                                    <td className="p-3 text-right text-sm">-</td>
+                                                    <td className="p-3 text-right text-sm tabular-nums">-</td>
                                                 </tr>
                                             );
                                         })}
@@ -3512,12 +3581,12 @@ updateOrCreateChart(comparisonBarRef, {
                             })}
                             <tr className="border-t-2 border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-700">
                                 <td className="p-3 font-bold">총계</td>
-                                <td className="p-3 text-right font-bold">{formatNumber(calculation.currentTotal)}</td>
-                                <td className="p-3 text-right font-bold">{formatNumber(calculation.projectedTotal)}</td>
-                                <td className="p-3 text-right font-bold text-green-600 dark:text-green-400">{formatPercent(calculation.growth / calculation.currentTotal * 100)}%</td>
-                                <td className="p-3 text-right font-bold">100.0%</td>
-                                <td className="p-3 text-right font-bold">100.0%</td>
-                                <td className="p-3 text-right font-bold">100.0%</td>
+                                <td className="p-3 text-right font-bold tabular-nums">{formatNumber(calculation.currentTotal)}</td>
+                                <td className="p-3 text-right font-bold tabular-nums">{formatNumber(calculation.projectedTotal)}</td>
+                                <td className="p-3 text-right font-bold text-green-600 dark:text-green-400 tabular-nums">{formatPercent(calculation.growth / calculation.currentTotal * 100)}%</td>
+                                <td className="p-3 text-right font-bold tabular-nums">100.0%</td>
+                                <td className="p-3 text-right font-bold tabular-nums">100.0%</td>
+                                <td className="p-3 text-right font-bold tabular-nums">100.0%</td>
                             </tr>
                         </tbody>
                     </table>
@@ -3578,7 +3647,6 @@ updateOrCreateChart(comparisonBarRef, {
                                         )}
                                         {darkMode ? '☀️ 라이트' : '🌙 다크'}
                                     </button>
-                                    <button onClick={saveToPDF} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">📄 PDF 저장</button>
                                     <button onClick={saveScenario} className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">💾 시나리오 저장</button>
                                     <button onClick={saveAsDefault} className="inline-flex items-center px-3 py-2 border border-blue-300 dark:border-blue-800 text-sm leading-4 font-medium rounded-md text-blue-700 dark:text-blue-400 bg-white dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">⭐ 기본값 저장</button>
                                     <button onClick={loadCustomDefault} className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">↩️ 기본값 불러오기</button>
