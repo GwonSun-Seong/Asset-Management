@@ -670,7 +670,8 @@
             const [userSecretKey, setUserSecretKey] = useState(() => sessionStorage.getItem('assetDashboardSecretKey') || ''); // [수정] 세션 스토리지 연동
             const [isEncryptionModalOpen, setIsEncryptionModalOpen] = useState(false); // [추가] 암호화 선택 모달
             const [isPasswordPromptOpen, setIsPasswordPromptOpen] = useState(false); // [추가] 비밀번호 입력 모달
-            const [drillDownSector, setDrillDownSector] = useState(null); // [추가] 차트 드릴다운 상태
+            const [currentDrillDown, setCurrentDrillDown] = useState(null); // [수정] 현재 차트 드릴다운 상태
+            const [projectedDrillDown, setProjectedDrillDown] = useState(null); // [수정] 예상 차트 드릴다운 상태
             const chartInstancesRef = useRef({}); // [추가] 차트 인스턴스 관리용 Ref
             const pendingCiphertext = useRef(null);
             const pendingSave = useRef(false);
@@ -920,7 +921,11 @@
                             '부동산': 'realestate',
                             '자동차': 'car',
                             '대출': 'loan',
-                            '기타': 'misc'
+                            '기타': 'misc',
+                            // [추가] 영문 키 및 유사어 대응
+                            'deposit': 'deposit', 'savings': 'savings', 'investment': 'investment',
+                            'pension': 'pension', 'realestate': 'realestate', 'car': 'car',
+                            'loan': 'loan', 'misc': 'misc', '예적금': 'savings', '주식': 'investment', '펀드': 'investment', '부채': 'loan'
                         };
                         const text = event.target.result;
                         const lines = text.split('\n');
@@ -941,11 +946,11 @@
                             const asset = {
                                 id: Date.now() + Math.random() + i,
                                 name: parts[1].replace(/"/g, '').trim(),
-                                amount: Number(parts[2]) || 0,
-                                rate: Number(parts[3]) || 0,
-                                feeRate: Number(parts[4]) || 0,
-                                monthlyContrib: Number(parts[5]) || 0,
-                                extraContrib: Number(parts[6]) || 0,
+                                amount: Number(parts[2].replace(/,/g, '')) || 0, // [수정] 쉼표 제거 후 파싱
+                                rate: Number(parts[3].replace(/,/g, '')) || 0,
+                                feeRate: Number(parts[4].replace(/,/g, '')) || 0,
+                                monthlyContrib: Number(parts[5].replace(/,/g, '')) || 0,
+                                extraContrib: Number(parts[6].replace(/,/g, '')) || 0,
                                 extraFrom: parts[7]?.replace(/"/g, '').trim() || '',
                                 maturityMonth: Number(parts[8]) || 12,
                                 loanStartDate: parts[9]?.trim() || ''
@@ -1959,7 +1964,19 @@
 
             const loadScenario = (scenario) => {
                 if (confirm(`"${scenario.name}" 시나리오를 불러오시겠습니까?`)) {
-                    setAppData(scenario.data);
+                    // [수정] 시나리오 데이터 병합 로직 개선 (누락된 필드 보완)
+                    const base = JSON.parse(JSON.stringify(publicDefaultData));
+                    const loaded = scenario.data || {};
+                    
+                    const mergedData = {
+                        ...base,
+                        ...loaded,
+                        assets: { ...base.assets, ...(loaded.assets || {}) },
+                        monthlyExpenses: Array.isArray(loaded.monthlyExpenses) ? loaded.monthlyExpenses : base.monthlyExpenses,
+                        incomeEvents: Array.isArray(loaded.incomeEvents) ? loaded.incomeEvents : base.incomeEvents,
+                        expenseEvents: Array.isArray(loaded.expenseEvents) ? loaded.expenseEvents : base.expenseEvents,
+                    };
+                    setAppData(mergedData);
                 }
             };
 
@@ -2130,74 +2147,79 @@
                 const maxSimMonths = 1200;
                 const simAssets = JSON.parse(JSON.stringify(appData.assets));
                 
-                for (let m = 1; m <= maxSimMonths; m++) {
-                    const inflationFactor = Math.pow(1 + inflationRate / 1200, m);
-                    const monthlyExp = localTotalMonthlyExpense * inflationFactor;
-                    let totalLoanInterest = 0;
-                    let totalLoanRepayment = 0;
-                    let currentLoanBalance = 0;
+                // [수정] 초기 자산이 0 이하인 경우 생존 기간 0으로 처리
+                if (currentTotal <= 0) {
+                    runwayMonths = 0;
+                } else {
+                    for (let m = 1; m <= maxSimMonths; m++) {
+                        const inflationFactor = Math.pow(1 + inflationRate / 1200, m);
+                        const monthlyExp = localTotalMonthlyExpense * inflationFactor;
+                        let totalLoanInterest = 0;
+                        let totalLoanRepayment = 0;
+                        let currentLoanBalance = 0;
 
-                    Object.keys(simAssets).forEach(sector => {
-                        if (sector === 'loan') {
-                            simAssets[sector].forEach(loan => {
-                                if (loan.amount > 0) {
-                                    const interest = loan.amount * (loan.rate / 1200);
-                                    totalLoanInterest += interest;
-                                    const principalReduction = Math.max(0, (loan.monthlyContrib || 0) - interest);
-                                    if (loan.amount <= principalReduction) {
-                                        totalLoanRepayment += (loan.amount + interest);
-                                        loan.amount = 0;
-                                    } else {
-                                        loan.amount -= principalReduction;
-                                        totalLoanRepayment += (loan.monthlyContrib || 0);
+                        Object.keys(simAssets).forEach(sector => {
+                            if (sector === 'loan') {
+                                simAssets[sector].forEach(loan => {
+                                    if (loan.amount > 0) {
+                                        const interest = loan.amount * (loan.rate / 1200);
+                                        totalLoanInterest += interest;
+                                        const principalReduction = Math.max(0, (loan.monthlyContrib || 0) - interest);
+                                        if (loan.amount <= principalReduction) {
+                                            totalLoanRepayment += (loan.amount + interest);
+                                            loan.amount = 0;
+                                        } else {
+                                            loan.amount -= principalReduction;
+                                            totalLoanRepayment += (loan.monthlyContrib || 0);
+                                        }
+                                        currentLoanBalance += loan.amount;
                                     }
-                                    currentLoanBalance += loan.amount;
-                                }
-                            });
-                        }
-                    });
-                    if (currentLoanBalance <= 0 && debtFreeMonth === -1) debtFreeMonth = m - 1;
-                    
-                    let eventFlow = 0;
-                    const checkEvent = (e) => {
-                        const [bY, bM] = baseMonth.split('-').map(Number);
-                        const [sY, sM] = e.startMonth.split('-').map(Number);
-                        const [eY, eM] = e.endMonth.split('-').map(Number);
-                        const cur = bY * 12 + bM + m - 1;
-                        return cur >= (sY * 12 + sM) && cur <= (eY * 12 + eM);
-                    };
-                    safeAppData.incomeEvents.forEach(e => { if (checkEvent(e)) eventFlow += (e.amount || 0); });
-                    safeAppData.expenseEvents.forEach(e => { if (checkEvent(e)) eventFlow -= (e.amount || 0); });
-
-                    const netFlow = eventFlow - monthlyExp - totalLoanRepayment;
-                    
-                    // [Logic Fix] Subtract flow BEFORE profit
-                    let mainAcc = null;
-                    for (const s in simAssets) {
-                        mainAcc = simAssets[s].find(a => a.name === appData.mainCashFlowAccount);
-                        if (mainAcc) break;
-                    }
-                    if (mainAcc) mainAcc.amount += netFlow;
-                    else {
-                        const firstSector = Object.keys(simAssets).find(s => s !== 'loan' && simAssets[s].length > 0);
-                        if (firstSector) simAssets[firstSector][0].amount += netFlow;
-                    }
-
-                    let currentSimTotal = 0;
-                    Object.keys(simAssets).forEach(sector => {
-                        simAssets[sector].forEach(asset => {
-                            if (sector !== 'loan') {
-                                const profit = (asset.amount || 0) * (asset.rate / 1200) * (1 - (asset.feeRate || 0) / 100) * (1 - taxRate);
-                                asset.amount += profit;
-                                currentSimTotal += asset.amount;
-                            } else {
-                                currentSimTotal -= asset.amount;
+                                });
                             }
                         });
-                    });
+                        if (currentLoanBalance <= 0 && debtFreeMonth === -1) debtFreeMonth = m - 1;
+                        
+                        let eventFlow = 0;
+                        const checkEvent = (e) => {
+                            const [bY, bM] = baseMonth.split('-').map(Number);
+                            const [sY, sM] = e.startMonth.split('-').map(Number);
+                            const [eY, eM] = e.endMonth.split('-').map(Number);
+                            const cur = bY * 12 + bM + m - 1;
+                            return cur >= (sY * 12 + sM) && cur <= (eY * 12 + eM);
+                        };
+                        safeAppData.incomeEvents.forEach(e => { if (checkEvent(e)) eventFlow += (e.amount || 0); });
+                        safeAppData.expenseEvents.forEach(e => { if (checkEvent(e)) eventFlow -= (e.amount || 0); });
 
-                    if (currentSimTotal <= 0) { runwayMonths = m; break; }
-                    if (m === maxSimMonths) runwayMonths = maxSimMonths;
+                        const netFlow = eventFlow - monthlyExp - totalLoanRepayment;
+                        
+                        // [Logic Fix] Subtract flow BEFORE profit
+                        let mainAcc = null;
+                        for (const s in simAssets) {
+                            mainAcc = simAssets[s].find(a => a.name === appData.mainCashFlowAccount);
+                            if (mainAcc) break;
+                        }
+                        if (mainAcc) mainAcc.amount += netFlow;
+                        else {
+                            const firstSector = Object.keys(simAssets).find(s => s !== 'loan' && simAssets[s].length > 0);
+                            if (firstSector) simAssets[firstSector][0].amount += netFlow;
+                        }
+
+                        let currentSimTotal = 0;
+                        Object.keys(simAssets).forEach(sector => {
+                            simAssets[sector].forEach(asset => {
+                                if (sector !== 'loan') {
+                                    const profit = (asset.amount || 0) * (asset.rate / 1200) * (1 - (asset.feeRate || 0) / 100) * (1 - taxRate);
+                                    asset.amount += profit;
+                                    currentSimTotal += asset.amount;
+                                } else {
+                                    currentSimTotal -= asset.amount;
+                                }
+                            });
+                        });
+
+                        if (currentSimTotal <= 0) { runwayMonths = m; break; }
+                        if (m === maxSimMonths) runwayMonths = maxSimMonths;
+                    }
                 }
 
                 // 3. FIRE Indicators (Reverse Engineered)
@@ -2278,6 +2300,10 @@
             const currentSectorTotals = getSectorTotals(calculation.initial, currentGrossTotal);
             const projectedSectorTotals = getSectorTotals(calculation.projected, projectedGrossTotal);
 
+            // [추가] 차트용 키 배열 (컴포넌트 스코프로 이동하여 핸들러에서 참조 가능하도록 함)
+            const filteredKeys = useMemo(() => Object.keys(currentSectorTotals).filter(k => k !== 'loan'), [currentSectorTotals]);
+            const projectedKeys = useMemo(() => Object.keys(projectedSectorTotals).filter(k => k !== 'loan'), [projectedSectorTotals]);
+
             // ===== 리밸런싱 경고 함수 (목표 비중 기준 편차) =====
             const getRebalanceStatus = (sectorKey, percentage) => {
                 const target = rebalancingTargets[sectorKey] ?? (100 / Object.keys(sectorInfo).length);
@@ -2309,96 +2335,30 @@
 
             const autoDepositBreakdown = getAutoDepositBreakdown();
 
-            // ===== 차트 설정 =====
-            useEffect(() => {
-                // [개선] 로딩 중이거나 차트 패널이 접혀있거나 Chart.js가 없으면 실행하지 않음
-                if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
+            // ===== 차트 헬퍼 및 설정 =====
+            const createGradient = (ctx, colors) => {
+                if (!ctx || !colors) return colors?.start || '#3b82f6';
+                const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+                gradient.addColorStop(0, colors?.start || '#3b82f6');
+                gradient.addColorStop(1, colors?.end || '#1d4ed8');
+                return gradient;
+            };
 
-                const renderCharts = () => {
-                    const sectorLabels = {
-                    deposit: '입출금통장', savings: '저축', investment: '투자', pension: '연금',
-                    realestate: '부동산', car: '자동차', loan: '대출', misc: '기타'
-                };
+            const initChart = (id, ref, config) => {
+                if (ref.current) {
+                    const ctx = ref.current.getContext('2d');
+                    if (ctx) {
+                        chartInstancesRef.current[id] = new Chart(ctx, config);
+                    }
+                }
+            };
 
+            const commonChartOptions = useMemo(() => {
                 const textColor = darkMode ? '#e5e7eb' : '#111827';
                 const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
-                const chartBorderColor = darkMode ? '#1e293b' : '#ffffff';
-
-                // [수정] 기존 차트 인스턴스 파괴 (안전하게 처리)
-                ['currentPie', 'projectedPie', 'comparisonBar'].forEach(id => {
-                    if (chartInstancesRef.current[id]) {
-                        chartInstancesRef.current[id].destroy();
-                        chartInstancesRef.current[id] = null;
-                    }
-                });
-
-                // [추가] 차트 생성 헬퍼 함수
-                const initChart = (id, ref, config) => {
-                    if (ref.current) {
-                        const ctx = ref.current.getContext('2d');
-                        if (ctx) {
-                            chartInstancesRef.current[id] = new Chart(ctx, config);
-                        }
-                    }
-                };
-
-                const filteredKeys = Object.keys(currentSectorTotals).filter(k => k !== 'loan');
-                const projectedKeys = Object.keys(projectedSectorTotals).filter(k => k !== 'loan');
-
-                const createGradient = (ctx, colors) => {
-                    if (!ctx || !colors) return colors?.start || '#3b82f6';
-                    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-                    gradient.addColorStop(0, colors?.start || '#3b82f6');
-                    gradient.addColorStop(1, colors?.end || '#1d4ed8');
-                    return gradient;
-                };
-
-                // [수정] 드릴다운 및 토글 핸들러
-                const handleChartClick = (evt, elements, chart) => {
-                    if (drillDownSector) {
-                        setDrillDownSector(null); // 토글: 이미 드릴다운 상태면 해제
-                    } else if (elements && elements.length > 0) {
-                        const index = elements[0].index;
-                        // 현재/예상 차트 모두 동일한 키 순서를 사용한다고 가정
-                        const key = filteredKeys[index];
-                        setDrillDownSector(key);
-                    }
-                };
-
-                // 데이터 준비
-                let currentLabels, currentData, currentColors;
-                let projectedLabels, projectedData, projectedColors;
-
-                if (drillDownSector) {
-                    // 드릴다운: 해당 섹터의 자산별 데이터
-                    const sectorAssets = assets[drillDownSector] || [];
-                    currentLabels = sectorAssets.map(a => a.name);
-                    currentData = sectorAssets.map(a => a.amount);
-                    // [수정] 드릴다운 시 알록달록한 색상 팔레트 적용
-                    const palette = [
-                        '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#6366f1', 
-                        '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4',
-                        '#84cc16', '#a855f7', '#0ea5e9', '#f43f5e', '#d946ef'
-                    ];
-                    currentColors = sectorAssets.map((_, i) => palette[i % palette.length]);
-
-                    const projAssets = calculation.projected[drillDownSector] || [];
-                    projectedLabels = projAssets.map(a => a.name);
-                    projectedData = projAssets.map(a => a.amount);
-                    projectedColors = projAssets.map((_, i) => palette[i % palette.length]);
-                } else {
-                    // 기본: 섹터별 데이터
-                    currentLabels = filteredKeys.map(key => sectorLabels[key]);
-                    currentData = filteredKeys.map(key => currentSectorTotals[key]?.amount || 0);
-                    
-                    projectedLabels = projectedKeys.map(key => sectorLabels[key]);
-                    projectedData = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
-                }
-
-                const commonOptions = {
+                return {
                     maintainAspectRatio: false,
                     responsive: true,
-                    onClick: handleChartClick,
                     animation: { animateScale: true, animateRotate: true, duration: 1000 },
                     plugins: {
                         legend: { position: 'bottom', labels: { color: textColor, padding: 15, font: { family: 'Pretendard' } } },
@@ -2433,12 +2393,42 @@
                         }
                     }
                 };
+            }, [darkMode]);
 
-                // 1. 현재 포트폴리오 차트
-                if (currentPieRef.current) {
-                    const ctx = currentPieRef.current.getContext('2d');
-                    // [수정] 그라디언트 생성 로직을 config 내부로 이동하거나 미리 계산
-                    const bgColors = drillDownSector ? currentColors : filteredKeys.map(key => {
+            const sectorLabels = {
+                deposit: '입출금통장', savings: '저축', investment: '투자', pension: '연금',
+                realestate: '부동산', car: '자동차', loan: '대출', misc: '기타'
+            };
+            const chartBorderColor = darkMode ? '#1e293b' : '#ffffff';
+            const palette = [
+                '#3b82f6', '#22c55e', '#f97316', '#a855f7', '#f59e0b', 
+                '#06b6d4', '#6b7280', '#ef4444', '#8b5cf6', '#14b8a6'
+            ];
+
+            // [수정] 1. 현재 포트폴리오 차트 (독립 렌더링)
+            useEffect(() => {
+                if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
+
+                const renderCurrentPie = () => {
+                    if (chartInstancesRef.current['currentPie']) {
+                        chartInstancesRef.current['currentPie'].destroy();
+                        chartInstancesRef.current['currentPie'] = null;
+                    }
+
+                    let labels, data, colors;
+                    if (currentDrillDown) {
+                        const sectorAssets = assets[currentDrillDown] || [];
+                        labels = sectorAssets.map(a => a.name);
+                        data = sectorAssets.map(a => a.amount);
+                        colors = sectorAssets.map((_, i) => palette[i % palette.length]);
+                    } else {
+                        labels = filteredKeys.map(key => sectorLabels[key]);
+                        data = filteredKeys.map(key => currentSectorTotals[key]?.amount || 0);
+                    }
+
+                    if (currentPieRef.current) {
+                        const ctx = currentPieRef.current.getContext('2d');
+                        const bgColors = currentDrillDown ? colors : filteredKeys.map(key => {
                         const c = tailwind?.config?.theme?.extend?.colors?.[key] || { start: '#3b82f6', end: '#1d4ed8' };
                         return createGradient(ctx, c);
                     });
@@ -2446,9 +2436,9 @@
                     initChart('currentPie', currentPieRef, {
                             type: 'doughnut',
                             data: {
-                                labels: currentLabels,
+                                labels: labels,
                                 datasets: [{
-                                    data: currentData,
+                                    data: data,
                                     backgroundColor: bgColors,
                                     borderWidth: 2,
                                     borderColor: chartBorderColor,
@@ -2456,20 +2446,52 @@
                                 }]
                             },
                             options: {
-                                ...commonOptions,
+                                ...commonChartOptions,
+                                onClick: (evt, elements) => {
+                                    if (currentDrillDown) {
+                                        setCurrentDrillDown(null);
+                                    } else if (elements && elements.length > 0) {
+                                        const index = elements[0].index;
+                                        setCurrentDrillDown(filteredKeys[index]);
+                                    }
+                                },
                                 plugins: {
-                                    ...commonOptions.plugins,
-                                    title: { display: true, text: drillDownSector ? `${sectorLabels[drillDownSector]} 상세` : '현재 포트폴리오', color: textColor, font: { size: 16, weight: 'bold' } }
+                                    ...commonChartOptions.plugins,
+                                    title: { display: true, text: currentDrillDown ? `${sectorLabels[currentDrillDown]} 상세` : '현재 포트폴리오', color: darkMode ? '#e5e7eb' : '#111827', font: { size: 16, weight: 'bold' } }
                                 }
                             },
                             plugins: [ChartDataLabels]
                     });
                 }
+                };
+                const timer = setTimeout(renderCurrentPie, 100);
+                return () => clearTimeout(timer);
+            }, [currentDrillDown, currentSectorTotals, filteredKeys, assets, darkMode, isLoading, panelCollapseState['charts']]);
 
-                // 2. 예상 포트폴리오 차트
-                if (projectedPieRef.current) {
-                    const ctx = projectedPieRef.current.getContext('2d');
-                    const bgColors = drillDownSector ? projectedColors : projectedKeys.map(key => {
+            // [수정] 2. 예상 포트폴리오 차트 (독립 렌더링)
+            useEffect(() => {
+                if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
+
+                const renderProjectedPie = () => {
+                    if (chartInstancesRef.current['projectedPie']) {
+                        chartInstancesRef.current['projectedPie'].destroy();
+                        chartInstancesRef.current['projectedPie'] = null;
+                    }
+
+                    let labels, data, colors;
+                    if (projectedDrillDown) {
+                        const projAssets = calculation.projected[projectedDrillDown] || [];
+                        labels = projAssets.map(a => a.name);
+                        data = projAssets.map(a => a.amount);
+                        colors = projAssets.map((_, i) => palette[i % palette.length]);
+                    } else {
+                        labels = projectedKeys.map(key => sectorLabels[key]);
+                        data = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
+                    }
+
+                    if (projectedPieRef.current) {
+                        const ctx = projectedPieRef.current.getContext('2d');
+                        const bgColors = projectedDrillDown ? colors : projectedKeys.map(key => {
                         const c = tailwind?.config?.theme?.extend?.colors?.[key] || { start: '#10b981', end: '#059669' };
                         return createGradient(ctx, c);
                     });
@@ -2477,9 +2499,9 @@
                     initChart('projectedPie', projectedPieRef, {
                             type: 'doughnut',
                             data: {
-                                labels: projectedLabels,
+                                labels: labels,
                                 datasets: [{
-                                    data: projectedData,
+                                    data: data,
                                     backgroundColor: bgColors,
                                     borderWidth: 2,
                                     borderColor: chartBorderColor,
@@ -2487,13 +2509,21 @@
                                 }]
                             },
                             options: {
-                                ...commonOptions,
+                                ...commonChartOptions,
+                                onClick: (evt, elements) => {
+                                    if (projectedDrillDown) {
+                                        setProjectedDrillDown(null);
+                                    } else if (elements && elements.length > 0) {
+                                        const index = elements[0].index;
+                                        setProjectedDrillDown(projectedKeys[index]);
+                                    }
+                                },
                                 plugins: {
-                                    ...commonOptions.plugins,
+                                    ...commonChartOptions.plugins,
                                     title: { 
                                         display: true, 
-                                        text: drillDownSector ? `${sectorLabels[drillDownSector]} 예상` : `${projectionMonths}개월 후 예상`, 
-                                        color: textColor, 
+                                        text: projectedDrillDown ? `${sectorLabels[projectedDrillDown]} 예상` : `${projectionMonths}개월 후 예상`, 
+                                        color: darkMode ? '#e5e7eb' : '#111827', 
                                         font: { size: 16, weight: 'bold' } 
                                     }
                                 }
@@ -2501,13 +2531,26 @@
                             plugins: [ChartDataLabels]
                     });
                 }
+                };
+                const timer = setTimeout(renderProjectedPie, 100);
+                return () => clearTimeout(timer);
+            }, [projectedDrillDown, projectedSectorTotals, projectedKeys, calculation.projected, darkMode, isLoading, panelCollapseState['charts']]);
 
-                // 3. 비교 차트 (바 차트)
-                if (comparisonBarRef.current) {
+            // [수정] 3. 비교 차트 (독립 렌더링 - 드릴다운 영향 없음)
+            useEffect(() => {
+                if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
+
+                const renderComparisonBar = () => {
+                    if (chartInstancesRef.current['comparisonBar']) {
+                        chartInstancesRef.current['comparisonBar'].destroy();
+                        chartInstancesRef.current['comparisonBar'] = null;
+                    }
+
                     const comparisonLabels = projectedKeys.map(key => sectorLabels[key] || key);
                     const comparisonCurrentData = projectedKeys.map(key => currentSectorTotals[key]?.amount || 0);
                     const comparisonProjectedData = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
 
+                    if (comparisonBarRef.current) {
                     initChart('comparisonBar', comparisonBarRef, {
                             type: 'bar',
                             data: {
@@ -2521,39 +2564,41 @@
                                 maintainAspectRatio: false,
                                 responsive: true,
                                 scales: {
-                                    x: { ticks: { color: textColor }, grid: { display: false } },
-                                    y: { beginAtZero: true, ticks: { color: textColor }, grid: { color: gridColor } }
+                                    x: { ticks: { color: darkMode ? '#e5e7eb' : '#111827' }, grid: { display: false } },
+                                    y: { beginAtZero: true, ticks: { color: darkMode ? '#e5e7eb' : '#111827' }, grid: { color: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' } }
                                 },
                                 plugins: {
-                                    legend: { labels: { color: textColor } },
+                                    legend: { labels: { color: darkMode ? '#e5e7eb' : '#111827' } },
                                     datalabels: { display: false },
-                                    title: { display: true, text: '현재 vs 예상 자산 비교', color: textColor, font: { size: 16, weight: 'bold' } }
+                                    title: { display: true, text: '현재 vs 예상 자산 비교', color: darkMode ? '#e5e7eb' : '#111827', font: { size: 16, weight: 'bold' } }
                                 }
                             }
                     });
                 }
                 };
+                const timer = setTimeout(renderComparisonBar, 100);
+                return () => clearTimeout(timer);
+            }, [currentSectorTotals, projectedSectorTotals, projectedKeys, darkMode, isLoading, panelCollapseState['charts']]);
 
-                // [수정] setTimeout을 사용하여 DOM 렌더링 후 차트 그리기 (100ms 지연)
-                const timer = setTimeout(renderCharts, 100);
-
+            // [추가] 컴포넌트 언마운트 시 모든 차트 정리
+            useEffect(() => {
                 return () => {
-                    clearTimeout(timer);
                     Object.values(chartInstancesRef.current).forEach(instance => {
                         if (instance) instance.destroy();
                     });
                 };
-            }, [calculation, panelCollapseState['charts'], darkMode, drillDownSector, isLoading, assets]);
+            }, []);
 
             // [분리] 히스토리 차트 전용 useEffect
             useEffect(() => {
                 if (panelCollapseState['history'] || !historyChartRef.current || assetHistory.length === 0) return;
-                 
-                // [추가] 다크모드 대응 색상 정의
-                const textColor = darkMode ? '#e5e7eb' : '#111827';
-                const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+                
+                const renderHistoryChart = () => {
+                    // [추가] 다크모드 대응 색상 정의
+                    const textColor = darkMode ? '#e5e7eb' : '#111827';
+                    const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
 
-                const historyLabels = assetHistory.map(item => {
+                    const historyLabels = assetHistory.map(item => {
                     const date = new Date(item.date);
                     const timeStr = item.time ? ` ${item.time.split(':').slice(0, 2).join(':')}` : '';
                     return `${date.getMonth() + 1}/${date.getDate()}${timeStr}`;
@@ -2659,14 +2704,18 @@
                     }
                 };
 
-                if (historyChartRef.current) {
-                    if (chartInstancesRef.current['historyChart']) {
-                        chartInstancesRef.current['historyChart'].destroy();
+                    if (historyChartRef.current) {
+                        if (chartInstancesRef.current['historyChart']) {
+                            chartInstancesRef.current['historyChart'].destroy();
+                        }
+                        chartInstancesRef.current['historyChart'] = new Chart(historyChartRef.current, chartConfig);
                     }
-                    chartInstancesRef.current['historyChart'] = new Chart(historyChartRef.current, chartConfig);
-                }
+                };
+
+                const timer = setTimeout(renderHistoryChart, 100);
 
                 return () => {
+                    clearTimeout(timer);
                     if (chartInstancesRef.current['historyChart']) {
                         chartInstancesRef.current['historyChart'].destroy();
                         delete chartInstancesRef.current['historyChart'];
@@ -2955,12 +3004,6 @@
                                     <button onClick={() => setIsImportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all">
                                         <span>📥</span> 데이터 불러오기
                                     </button>
-                                    
-                                    {isPro && verifiedEmail && (
-                                        <button onClick={() => fetchFromCloud(verifiedEmail, isPro, false, true)} className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 shadow-sm transition-all">
-                                            <span>🔄</span> 클라우드 강제 동기화
-                                        </button>
-                                    )}
 
                                     <div className="col-span-2 mt-2">
                                         <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 px-1 uppercase tracking-wider">내보내기</h4>
@@ -3704,7 +3747,7 @@
                     <div id="dashboard-content" className="p-4 sm:p-6 max-w-[90rem] mx-auto flex flex-col lg:flex-row gap-8">
                         {/* [추가] 사이드바 내비게이션 */}
                         <aside className="hidden lg:block w-52 flex-shrink-0">
-                            <div className="sticky top-24 space-y-4">
+                            <div className="space-y-4">
                             {/* 클라우드 동기화 카드 */}
                             <div className="mb-4 p-3 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800 shadow-sm">
                                 <div className="flex items-center justify-between mb-2">
