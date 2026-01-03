@@ -439,15 +439,13 @@
                 return window.validateSupabaseConfig ? window.validateSupabaseConfig() : {};
             }, []);
 
-            // [Encryption Security] Ensure key exists, do not fallback to insecure defaults
+            // [수정] 암호화 키 생성 (SECURITY_KEY 누락 시 폴백 지원으로 복구)
             const getEncryptionKey = React.useCallback((mode, secret, userId) => {
                 if (mode === 'secure') return secret;
                 
-                if (!SECURITY_KEY) {
-                    console.error("⛔ Encryption blocked: SECURITY_KEY is missing or invalid.");
-                    return null;
-                }
-                return userId + SECURITY_KEY;
+                // SECURITY_KEY가 없으면 기본값 사용 (로컬 개발 호환 및 기존 데이터 접근 보장)
+                const salt = SECURITY_KEY || 'asset_planner_fallback_salt_v1';
+                return userId + salt;
             }, [SECURITY_KEY]);
             
             const supabase = useMemo(() => {
@@ -1399,9 +1397,13 @@
                                     if (!key) throw new Error('보안 키가 설정되지 않아 복호화할 수 없습니다.');
                                     decryptedData = decryptData(data.data, key);
                                 } catch (err) {
+                                    console.error("Decryption details:", err); // [추가] 상세 에러 로그 확인용
                                     setSyncStatus('error');
-                                setSyncStatusError('복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다.');
-                                addToast('복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다.', 'error');
+                                    const errMsg = err.message === 'Decryption failed' || err.message.includes('Malformed') 
+                                        ? '복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다.'
+                                        : `데이터 로드 오류: ${err.message}`;
+                                    setSyncStatusError(errMsg);
+                                    addToast(errMsg, 'error');
                                     return;
                                 }
                             } else {
