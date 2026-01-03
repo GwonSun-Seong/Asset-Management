@@ -450,7 +450,7 @@
                     console.error("Supabase client creation failed:", e);
                     return null;
                 }
-            }, []);
+            }, [SUPABASE_URL, SUPABASE_KEY]);
             
 
             const [goalSeekResult, setGoalSeekResult] = useState(null);
@@ -565,17 +565,20 @@
 
             // ===== 초기 데이터 로드 =====
             useEffect(() => {
+                // [요구사항 1] Fix the Loading State Lifecycle
                 const loadInitialData = async () => {
-                    // [추가] Supabase 초기화 상태 확인 및 로그
-                    if (!supabase) {
-                        console.log("Supabase is not configured or placeholder detected. Running in Local-only mode.");
-                        setDbStatus('disconnected');
-                    } else {
-                        setDbStatus('connected');
-                    }
+                    try {
+                        // [요구사항 5] loadServerConfig 안전 실행
+                        try {
+                            if (typeof loadServerConfig === 'function') {
+                                await loadServerConfig();
+                            }
+                        } catch (e) {
+                            console.warn("Server config load failed, proceeding with defaults:", e);
+                        }
 
-                    await loadServerConfig();
                     const baseData = publicDefaultData;
+                    let mergedData = baseData;
                     
                     // 1. 로컬 데이터 로드 시도
                     try {
@@ -589,7 +592,7 @@
                 if (savedData) {
                             const parsedData = JSON.parse(savedData);
                             // 새로운 필드들 추가
-                            const mergedData = { // 병합 로직 개선
+                            mergedData = { // 병합 로직 개선
                                 ...baseData,
                                 ...parsedData,
                                 assets: { ...baseData.assets, ...parsedData.assets }, 
@@ -625,26 +628,27 @@
                         lastSavedDataRef.current = JSON.stringify(baseData);
                     }
 
-                    // 2. Supabase 세션 체크 (계정 정보 확인 대기)
+                    // [요구사항 3] Safe Session Handling
                     if (supabase) {
-                        try {
-                            // 초기 세션 체크는 빠른 응답을 위해 2초 타임아웃으로 3회 시도
-                            const { data: { session }, error } = await withRetry(() => supabase.auth.getSession(), 3, 2000)
-                                .catch(err => ({ data: { session: null }, error: err }));
-                            
-                            if (error) {
-                                console.error('Session error:', error);
-                                // 초기 로딩 시 alert는 사용자 경험을 해칠 수 있으므로 로그만 남김
-                            }
-                        } catch (err) {
-                            console.error('Session check error:', err);
-                            // 타임아웃 시 조용히 실패 처리 (초기 로드이므로)
+                        setDbStatus('connected');
+                        const { data: { session }, error } = await withRetry(() => supabase.auth.getSession(), 3, 2000)
+                            .catch(err => ({ data: { session: null }, error: err }));
+                        
+                        if (session) {
+                            await checkSubscription(session, false, mergedData);
                         }
+                    } else {
+                        console.log("Running in Local Mode: Supabase configuration missing or invalid.");
+                        setDbStatus('local');
                     }
-
-                    // 3. 모든 체크 완료 후 UI 렌더링 허용
-                    setIsLoading(false);
-                    setIsInitialized(true);
+                    } catch (error) {
+                        console.error("Initialization error:", error);
+                        setDbStatus('error');
+                    } finally {
+                        // [요구사항 1] Ensure loading screen always disappears
+                        setIsLoading(false);
+                        setIsInitialized(true);
+                    }
                 };
                 
                 loadInitialData();
