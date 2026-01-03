@@ -5,6 +5,9 @@ tailwind.config = {
     darkMode: 'class',
     theme: {
         extend: {
+            fontFamily: {
+                sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'Roboto', 'sans-serif']
+            },
             colors: {
                 deposit: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', start: '#60a5fa', end: '#3b82f6' },
                 savings: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a', start: '#34d399', end: '#10b981' },
@@ -31,6 +34,28 @@ const sectorInfo = {
     misc: { name: '기타', color: 'misc', icon: '📦', bgClass: 'bg-gray-50 dark:bg-gray-800/50', textClass: 'text-gray-600 dark:text-gray-400' }
 };
 
+// [설정] 서버 설정 사용 여부
+window.USE_SERVER_CONFIG = false;
+
+// [설정] Supabase 연결 정보 (필요시 여기에 입력)
+window.SUPABASE_CONFIG = {
+    url: '__SUPABASE_URL__',
+    key: '__SUPABASE_KEY__'
+};
+
+// [설정] 온보딩 가이드 단계 정의
+window.ONBOARDING_STEPS = [
+    { id: 'header-actions', title: '기본값 및 시나리오 관리', content: '설정한 데이터를 저장하거나 불러오고, PDF로 내보낼 수 있습니다.', isPro: true },
+    { id: 'summary', title: '요약 및 설정', content: '현재 자산 상황과 인플레이션을 반영한 실질 가치를 한눈에 파악할 수 있습니다.', isPro: true },
+    { id: 'charts', title: '포트폴리오 차트', content: '자산 구성과 미래 성장 곡선을 시각적 그래프로 확인할 수 있습니다.' },
+    { id: 'budget', title: '월납입 예산 관리', content: '월급과 지출을 기반으로 매달 저축 가능한 금액을 계산하고 관리할 수 있습니다.' },
+    { id: 'rebalance', title: '리밸런싱', content: '목표 비중과 현재 비중의 차이를 체크하여 최적의 비중을 유지할 수 있습니다.', isPro: true },
+    { id: 'assets', title: '자산 상세 입력', content: '보유하신 모든 자산 항목을 섹터별로 상세히 기록할 수 있습니다.' },
+    { id: 'events', title: '이벤트성 수입/지출', content: '상여금이나 여행 등 비정기적인 재무 이벤트를 설정해 볼 수 있습니다.' },
+    { id: 'detail-analysis', title: '상세 분석', content: '모든 시뮬레이션 결과를 상세한 표 데이터로 분석할 수 있습니다.' }
+];
+
+
 // 전역으로 노출
 window.sectorInfo = sectorInfo;
 
@@ -48,4 +73,50 @@ window.navLabels = {
     events: { title: "이벤트 관리", icon: "🎉" },
     'detail-analysis': { title: "상세 분석", icon: "🔍" },
     assumptions: { title: "가정 사항", icon: "💡" }
+};
+
+// [추가] UI 텍스트 리소스 (i18n 준비)
+window.TEXTS = {
+    titles: {
+        summary: "요약 및 설정",
+        scenario: "시나리오 비교",
+        charts: "포트폴리오 차트",
+        history: "자산 히스토리",
+        budget: "월납입 예산 관리",
+        memo: "메모",
+        rebalance: "리밸런싱 설정",
+        assets: "자산 상세 입력",
+        expenses: "월별 지출 관리",
+        events: "이벤트 관리",
+        detailAnalysis: "상세 분석",
+        assumptions: "계산 가정사항"
+    },
+    summary: {
+        currentTotal: "현재 총자산",
+        projectedTotal: "개월 후 예상",
+        expectedIncrease: "예상 증가액",
+        inflationAdjusted: "인플레이션 고려 시",
+        fireAnalysis: "자립 가능성 분석 (FIRE Analysis)",
+        survivalPeriod: "생존 가능 기간",
+        debtFreeExpected: "부채 상환 완료 예상",
+        fireNeeded: "FIRE (4% 법칙) 필요자산"
+    },
+    settings: {
+        coreSettings: "핵심 설정",
+        monthlySalary: "월급 (만원)",
+        baseMonth: "기준월 (계산 시작)",
+        dataManagement: "데이터 관리",
+        goalSettings: "목표 설정",
+        periodBased: "기간 기준",
+        assetBased: "자산 기준",
+        expectedPeriod: "예상 기간 (개월)",
+        targetAsset: "목표 자산 (만원)",
+        calcGoal: "달성 기간 계산",
+        inflationRate: "연간 인플레이션 증가율 (%)"
+    },
+    charts: {
+        currentPortfolio: "현재 포트폴리오",
+        projectedPortfolio: "예상 포트폴리오",
+        comparison: "현재 vs 예상 자산 비교"
+    }
 };

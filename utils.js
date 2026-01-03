@@ -343,6 +343,93 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     return { projections: monthlyProjections, warnings };
 };
 
+// [추가] 재시도 로직을 포함한 타임아웃 헬퍼 함수
+const withRetry = async (fn, maxAttempts = 3, timeoutMs = 12000, delayMs = 2000, onRetry) => {
+    let lastError;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await Promise.race([
+                fn(),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error(`요청 시간이 초과되었습니다. (${timeoutMs / 1000}초)`)), timeoutMs)
+                )
+            ]);
+        } catch (error) {
+            lastError = error;
+            if (attempt < maxAttempts) {
+                if (onRetry) onRetry(attempt + 1, maxAttempts);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+        }
+    }
+    throw lastError;
+};
+
+// [추가] 데이터 암호화 함수
+const encryptData = (data, key) => {
+    if (!window.CryptoJS || !window.pako) throw new Error('CryptoJS or pako library not loaded');
+    const jsonStr = JSON.stringify(data);
+    const compressed = window.pako.deflate(jsonStr);
+    const wordArray = window.CryptoJS.lib.WordArray.create(compressed);
+    return window.CryptoJS.AES.encrypt(wordArray, key).toString();
+};
+
+// [추가] 데이터 복호화 함수
+const decryptData = (ciphertext, key) => {
+    if (!window.CryptoJS || !window.pako) throw new Error('CryptoJS or pako library not loaded');
+    const decrypted = window.CryptoJS.AES.decrypt(ciphertext, key);
+    if (decrypted.sigBytes <= 0) throw new Error('Decryption failed');
+    const typedArray = new Uint8Array(decrypted.sigBytes);
+    const words = decrypted.words;
+    for (let i = 0; i < decrypted.sigBytes; i++) {
+        typedArray[i] = (words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
+    }
+    const decompressed = window.pako.inflate(typedArray, { to: 'string' });
+    return JSON.parse(decompressed);
+};
+
+// [추가] 색상 이름으로 RGB 값 반환
+const getRGB = (colorName) => {
+    const colors = {
+        blue: '59, 130, 246',
+        green: '34, 197, 94',
+        orange: '249, 115, 22',
+        purple: '168, 85, 247',
+        yellow: '234, 179, 8',
+        cyan: '6, 182, 212',
+        gray: '107, 114, 128',
+        red: '239, 68, 68',
+        indigo: '79, 70, 229',
+        rose: '244, 63, 94',
+        emerald: '16, 185, 129',
+        amber: '245, 158, 11',
+        sky: '14, 165, 233',
+        slate: '71, 85, 105',
+        teal: '20, 184, 166',
+        pink: '236, 72, 153',
+        deposit: '59, 130, 246',
+        savings: '34, 197, 94',
+        investment: '249, 115, 22',
+        pension: '168, 85, 247',
+        realestate: '245, 158, 11',
+        car: '6, 182, 212',
+        loan: '107, 114, 128',
+        misc: '107, 114, 128'
+    };
+    if (!colorName || typeof colorName !== 'string') return colors['gray'];
+    return colors[colorName.toLowerCase()] || colors['gray'];
+};
+
+// [추가] 차트 그라데이션 생성 함수
+const createGradient = (ctx, colors) => {
+    if (!ctx || !colors) return colors?.start || '#3b82f6';
+    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+    gradient.addColorStop(0, colors?.start || '#3b82f6');
+    gradient.addColorStop(1, colors?.end || '#1d4ed8');
+    return gradient;
+};
+
+
 // 전역 객체에 노출
 window.formatNumber = formatNumber;
 window.formatPercent = formatPercent;
@@ -351,3 +438,8 @@ window.getSectorTotals = getSectorTotals;
 window.calculateMonthlyProjection = calculateMonthlyProjection;
 window.calculateLoanPayment = calculateLoanPayment;
 window.getMonthDiff = getMonthDiff;
+window.withRetry = withRetry;
+window.encryptData = encryptData;
+window.decryptData = decryptData;
+window.getRGB = getRGB;
+window.createGradient = createGradient;

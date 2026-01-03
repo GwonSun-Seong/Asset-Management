@@ -11,20 +11,19 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="config.js"></script>
+    <script type="text/babel" src="modals.js"></script>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
-    <script>
-        if (typeof tailwind !== 'undefined') {
-            tailwind.config = tailwind.config || {};
-            tailwind.config.darkMode = 'class';
-            tailwind.config.theme = tailwind.config.theme || {};
-            tailwind.config.theme.extend = { ...tailwind.config.theme.extend, fontFamily: { sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'Roboto', 'sans-serif'] } };
-        }
-    </script>
     <style>
         * { font-family: 'Pretendard', sans-serif !important; }
         input, select, button, textarea { font-family: 'Pretendard', sans-serif !important; }
         input[type="number"] { font-weight: 600 !important; }
         .tabular-nums { font-variant-numeric: tabular-nums; }
+        @keyframes slideUpFade {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-toast { animation: slideUpFade 0.3s ease-out forwards; }
     </style>
     <script src="defaultData.js"></script>
     <script src="utils.js"></script>
@@ -56,209 +55,127 @@
 <body class="bg-gray-50 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200 font-sans">
     <div id="root"></div>
 
-    <script>
-        // ===== 기본값 설정 (서버/로컬 전환 가능) =====
-        const USE_SERVER_CONFIG = false; // true: 서버에서 로드, false: 로컬 하드코딩 사용
-
-    </script>
-
     <script type="text/babel">
             const { useState, useMemo, useEffect, useRef } = React;
 
-        // [개선] 재시도 로직을 포함한 타임아웃 헬퍼 함수 (컴포넌트 외부로 이동하여 성능 최적화)
-        const withRetry = async (fn, maxAttempts = 3, timeoutMs = 12000, delayMs = 2000, onRetry) => {
-            let lastError;
-            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                try {
-                    return await Promise.race([
-                        fn(),
-                        new Promise((_, reject) => 
-                            setTimeout(() => reject(new Error(`요청 시간이 초과되었습니다. (${timeoutMs / 1000}초)`)), timeoutMs)
-                        )
-                    ]);
-                } catch (error) {
-                    lastError = error;
-                    if (attempt < maxAttempts) {
-                        if (onRetry) onRetry(attempt + 1, maxAttempts);
-                        await new Promise(resolve => setTimeout(resolve, delayMs));
-                    }
+        // [통합] SummaryPanel.js 내용 (CORS 오류 해결을 위해 파일 병합)
+        const AssetSummaryCard = ({ calculation, projectionMonths, baseMonth, displayMode }) => {
+            const formatNumber = window.formatNumber;
+            const formatPercent = window.formatPercent;
+            const TEXTS = window.TEXTS || {};
+            const lastProj = calculation.monthlyProjections && calculation.monthlyProjections[projectionMonths];
+            let compLabel = "";
+            let compVal = 0;
+            let compPct = 0;
+        
+            if (!calculation.error && projectionMonths >= 1 && calculation.monthlyProjections?.length > projectionMonths) {
+                if (projectionMonths <= 12) {
+                    const prevProj = calculation.monthlyProjections[projectionMonths - 1];
+                    compVal = lastProj.total - prevProj.total;
+                    compPct = prevProj.total !== 0 ? (compVal / Math.abs(prevProj.total)) * 100 : 0;
+                    compLabel = "전월 대비";
+                } else {
+                    const prevProj = calculation.monthlyProjections[projectionMonths - 12];
+                    compVal = lastProj.total - prevProj.total;
+                    compPct = prevProj.total !== 0 ? (compVal / Math.abs(prevProj.total)) * 100 : 0;
+                    compLabel = "1년 전 대비";
                 }
             }
-            throw lastError;
-        };
-
-        // [추가] 데이터 전송 모달 컴포넌트
-        const DataTransferModal = ({ isOpen, onClose, onConfirm, type, initialSelection }) => {
-            const [selectedItems, setSelectedItems] = useState(initialSelection || { appData: true, scenarios: true, assetHistory: true });
-
-            const handleCheckboxChange = (e) => {
-                setSelectedItems(prev => ({ ...prev, [e.target.name]: e.target.checked }));
-            };
- 
-            const handleConfirm = () => {
-                onConfirm(selectedItems);
-                onClose();
-            };
-
-            if (!isOpen) return null;
-
+        
             return (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-xl p-6 w-96">
-                        <h3 className="text-lg font-semibold mb-4">{type === 'export' ? '데이터 내보내기' : '데이터 불러오기'}</h3>
-                        <p className="text-sm text-gray-600 mb-4">
-                            {type === 'export' ? '내보낼 데이터 항목을 선택하세요.' : '불러올 데이터 항목을 선택하세요. (기존 데이터는 덮어쓰여집니다.)'}
+                <div className="md:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-xl shadow-lg p-6">
+                    <div>
+                        <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">{TEXTS.summary?.currentTotal || "현재 총자산"}</h2>
+                        <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(calculation.currentTotal, displayMode)}만원</p>
+                    </div>
+                    <div className="mt-6"> 
+                        <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">{projectionMonths}{TEXTS.summary?.projectedTotal || "개월 후 예상"} <span className="text-gray-400 text-sm">({(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d = new Date(y||new Date().getFullYear(), (m||1)-1, 1); d.setMonth(d.getMonth()+projectionMonths); return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`; } catch { return ''; } })()})</span></h2>
+                        <p className="text-3xl font-bold text-green-600 dark:text-green-400">{formatNumber(calculation.projectedTotal, displayMode)}만원</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{TEXTS.summary?.expectedIncrease || "예상 증가액"}: +{formatNumber(calculation.growth, displayMode)}만원 ({formatPercent((calculation.growth) / Math.max(1, calculation.currentTotal) * 100)}%)</p>         
+                        {compLabel && (
+                            <p className="text-xs text-gray-400 mt-1">
+                                ({compLabel}: {compVal >= 0 ? '+' : ''}{formatNumber(compVal, displayMode)}만원, {compVal >= 0 ? '+' : ''}{formatPercent(compPct)}%)
+                            </p>
+                        )}
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {TEXTS.summary?.inflationAdjusted || "인플레이션 고려 시"}: {formatNumber(calculation.realValue, displayMode)}만원
                         </p>
-                        <div className="space-y-2 mb-6">
-                            <label className="flex items-center">
-                                <input type="checkbox" name="appData" checked={selectedItems.appData} onChange={handleCheckboxChange} className="mr-2" /> 
-                                <span className="text-gray-800">기본 자산 데이터 (계좌, 지출, 이벤트, 메모 등)</span>
-                            </label>
-                            <label className="flex items-center">
-                                <input type="checkbox" name="scenarios" checked={selectedItems.scenarios} onChange={handleCheckboxChange} className="mr-2" />
-                                <span className="text-gray-800">저장된 시나리오</span>
-                            </label>
-                            <label className="flex items-center">
-                                <input type="checkbox" name="assetHistory" checked={selectedItems.assetHistory} onChange={handleCheckboxChange} className="mr-2" />
-                                <span className="text-gray-800">자산 히스토리</span>
-                            </label>
-                        </div>
-                        <div className="flex justify-end space-x-3">
-                            <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">취소</button>
-                            <button onClick={handleConfirm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">확인</button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // [추가] 개인정보처리방침 모달
-        const PrivacyPolicyModal = ({ isOpen, onClose }) => {
-            if (!isOpen) return null;
-
-            return (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-                        <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">개인정보처리방침</h3>
-                            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-                        <div className="p-6 overflow-y-auto text-sm text-gray-700 dark:text-gray-300 space-y-4">
-                            <p><strong>1. 개인정보의 처리 목적</strong><br/>
-                            '자산 플래너'(이하 '서비스')는 다음의 목적을 위하여 개인정보를 처리합니다. 처리하고 있는 개인정보는 다음의 목적 이외의 용도로는 이용되지 않으며 이용 목적이 변경되는 경우에는 별도의 동의를 받는 등 필요한 조치를 이행할 예정입니다.<br/>
-                            - 서비스 제공 및 콘텐츠 이용: 자산 시뮬레이션 데이터 저장 및 동기화 (선택 사항)</p>
-
-                            <p><strong>2. 처리하는 개인정보의 항목</strong><br/>
-                            서비스는 기본적인 기능 이용 시 별도의 개인정보를 수집하지 않으며, 모든 데이터는 사용자의 브라우저(Local Storage)에 저장됩니다.<br/>
-                            단, '클라우드 동기화(PRO)' 기능을 사용하는 경우에 한하여 다음의 정보가 수집될 수 있습니다.<br/>
-                            - 필수항목: 이메일 주소, 프로필 이미지, 이름 (Google 로그인 시 제공되는 정보)<br/>
-                            - 수집방법: Google OAuth 2.0 연동</p>
-
-                            <p><strong>3. 개인정보의 처리 및 보유 기간</strong><br/>
-                            서비스는 법령에 따른 개인정보 보유·이용기간 또는 정보주체로부터 개인정보를 수집 시에 동의받은 개인정보 보유·이용기간 내에서 개인정보를 처리·보유합니다.<br/>
-                            - 회원 탈퇴 시 즉시 파기</p>
-
-                            <p><strong>4. 쿠키(Cookie)의 운용 및 거부</strong><br/>
-                            서비스는 이용자에게 개별적인 맞춤서비스를 제공하기 위해 이용정보를 저장하고 수시로 불러오는 '쿠키(cookie)'를 사용합니다.<br/>
-                            - 쿠키 등 사용 목적: 이용자의 접속 빈도나 방문 시간 등을 분석, 이용자의 취향과 관심분야를 파악 및 자취 추적<br/>
-                            - 쿠키 설정 거부 방법: 웹브라우저 상단의 도구 - 인터넷 옵션 - 개인정보 메뉴의 옵션 설정을 통해 쿠키 저장을 거부할 수 있습니다.</p>
-                            
-                            <p><strong>5. 광고 게재</strong><br/>
-                            본 서비스는 Google AdSense를 통해 광고를 게재할 수 있으며, 이 과정에서 Google은 쿠키를 사용하여 사용자의 이전 방문 기록을 바탕으로 광고를 제공할 수 있습니다.</p>
-                        </div>
-                        <div className="p-6 border-t dark:border-gray-700 flex justify-end">
-                            <button onClick={onClose} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">닫기</button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // [추가] 기능 제안 모달
-        const SuggestionModal = ({ isOpen, onClose, onSubmit }) => {
-            const [content, setContent] = useState('');
-            const [isSubmitting, setIsSubmitting] = useState(false);
-
-            if (!isOpen) return null;
-
-            const handleSubmit = async () => {
-                if (!content.trim()) return alert('내용을 입력해주세요.');
-                setIsSubmitting(true);
-                await onSubmit(content);
-                setIsSubmitting(false);
-                setContent('');
-                onClose();
-            };
-
-            return (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">💡 기능 제안 및 의견 보내기</h3>
-                        <textarea
-                            className="w-full h-32 p-3 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-4 resize-none"
-                            placeholder="어떤 기능이 필요하신가요? 자유롭게 의견을 남겨주세요."
-                            value={content}
-                            onChange={(e) => setContent(e.target.value)}
-                        />
-                        <div className="flex justify-end gap-2">
-                            <button onClick={onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">취소</button>
-                            <button 
-                                onClick={handleSubmit} 
-                                disabled={isSubmitting}
-                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-                            >
-                                {isSubmitting ? '전송 중...' : '보내기'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const encryptData = (data, key) => {
-            const jsonStr = JSON.stringify(data);
-            const compressed = pako.deflate(jsonStr);
-            const wordArray = CryptoJS.lib.WordArray.create(compressed);
-            return CryptoJS.AES.encrypt(wordArray, key).toString();
-        };
-
-        const decryptData = (ciphertext, key) => {
-            const decrypted = CryptoJS.AES.decrypt(ciphertext, key);
-            if (decrypted.sigBytes <= 0) throw new Error('Decryption failed');
-            const typedArray = new Uint8Array(decrypted.sigBytes);
-            const words = decrypted.words;
-            for (let i = 0; i < decrypted.sigBytes; i++) {
-                typedArray[i] = (words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
-            }
-            const decompressed = pako.inflate(typedArray, { to: 'string' });
-            return JSON.parse(decompressed);
-        };
-
-        // [추가] 암호화 모드 선택 모달
-        const EncryptionModal = ({ isOpen, onSelect }) => {
-            if (!isOpen) return null;
-            return (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
-                        <div className="p-8">
-                            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">🔐 데이터 보안 방식 선택</h3>
-                            <p className="text-gray-600 dark:text-gray-400 mb-8">PRO 사용자를 위한 클라우드 데이터 암호화 방식을 선택해주세요.</p>
-                            <div className="space-y-4">
-                                <button onClick={() => onSelect('secure')} className="w-full text-left p-5 border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 rounded-xl hover:border-blue-600 transition-all group">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <span className="font-bold text-blue-700 dark:text-blue-400">보안 모드 (종단간 암호화)</span>
-                                        <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">Secure</span>
+                        {calculation.fireMetrics && (
+                            <div className="mt-6 pt-6 border-t border-blue-200 dark:border-blue-800">
+                                <h3 className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-3">{TEXTS.summary?.fireAnalysis || "자립 가능성 분석 (FIRE Analysis)"}</h3>
+                                <div className="grid grid-cols-1 gap-3">
+                                    <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
+                                        <span className="text-xs text-gray-500">{TEXTS.summary?.survivalPeriod || "생존 가능 기간"}</span>
+                                        <span className="text-xs font-bold text-gray-900 dark:text-white">
+                                            {calculation.fireMetrics.runwayMonths >= 1200 ? '100년 이상' : `${Math.floor(calculation.fireMetrics.runwayMonths / 12)}년 ${calculation.fireMetrics.runwayMonths % 12}개월`}
+                                        </span>
                                     </div>
-                                    <p className="text-sm text-gray-600 dark:text-gray-300">사용자가 입력한 비밀번호로 직접 암호화 키를 생성합니다. 서버에는 비밀번호가 저장되지 않아 개발자도 절대 데이터를 열어볼 수 없지만, 분실 시 복구가 불가능합니다.</p>
+                                    {calculation.fireMetrics.debtFreeMonth > 0 && (
+                                        <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
+                                            <span className="text-xs text-gray-500">{TEXTS.summary?.debtFreeExpected || "부채 상환 완료 예상"}</span>
+                                            <span className="text-xs font-bold text-green-600 dark:text-green-400">
+                                                {Math.floor(calculation.fireMetrics.debtFreeMonth / 12)}년 {calculation.fireMetrics.debtFreeMonth % 12}개월 후
+                                            </span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
+                                        <span className="text-xs text-gray-500">{TEXTS.summary?.fireNeeded || "FIRE (4% 법칙) 필요자산"}</span>
+                                        <span className="text-xs font-bold text-gray-900 dark:text-white">
+                                            {formatNumber(calculation.fireMetrics.swr4PercentCapital, displayMode)}만원
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const CoreSettingsCard = ({
+            monthlySalary, setMonthlySalary, baseMonth, setBaseMonth,
+            setIsExportModalOpen, setIsImportModalOpen,
+            exportToCSV, importFromCSV, saveToPDF, saveCurrentAsset
+        }) => {
+            const TEXTS = window.TEXTS || {};
+            return (
+                <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6"> 
+                    <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">{TEXTS.settings?.coreSettings || "핵심 설정"}</h2>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">{TEXTS.settings?.monthlySalary || "월급 (만원)"}</label>
+                            <input type="number" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={monthlySalary} onChange={(e) => setMonthlySalary(Number(e.target.value))} />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">{TEXTS.settings?.baseMonth || "기준월 (계산 시작)"}</label>
+                            <input type="month" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={baseMonth} onChange={(e) => setBaseMonth(e.target.value)} />
+                        </div>
+                        <div className="pt-4 border-t dark:border-gray-700">
+                            <h3 className="text-sm font-bold text-gray-700 dark:text-white mb-2">{TEXTS.settings?.dataManagement || "데이터 관리"}</h3>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button onClick={() => setIsExportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 shadow-sm transition-all">
+                                    <span>📤</span> {TEXTS.settings?.exportData || "데이터 내보내기"}
                                 </button>
-                                <button onClick={() => onSelect('normal')} className="w-full text-left p-5 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-gray-300 dark:hover:border-gray-600 transition-all">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <span className="font-bold text-gray-800 dark:text-gray-200">일반 모드</span>
-                                        <span className="text-xs bg-gray-500 text-white px-2 py-0.5 rounded-full">Normal</span>
+                                <button onClick={() => setIsImportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all">
+                                    <span>📥</span> {TEXTS.settings?.importData || "데이터 불러오기"}
+                                </button>
+                                <div className="col-span-2 mt-2">
+                                    <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 px-1 uppercase tracking-wider">내보내기</h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button onClick={exportToCSV} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 shadow-sm transition-all">
+                                            <span>📊</span> {TEXTS.settings?.exportCSV || "CSV 내보내기"}
+                                        </button>
+                                        <label className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all cursor-pointer">
+                                            <span>📥</span> {TEXTS.settings?.importCSV || "CSV 불러오기"}
+                                            <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" />
+                                        </label>
+                                        <button onClick={saveToPDF} className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 shadow-sm hover:shadow-md transition-all">
+                                            <span>📄</span> {TEXTS.settings?.savePDF || "PDF 보고서 저장"}
+                                        </button>
                                     </div>
-                                    <p className="text-sm text-gray-600 dark:text-gray-300">기기/계정 ID를 기반으로 자동 암호화합니다. 편리하지만 이론적으로 개발자가 접근할 수 있습니다.</p>
+                                </div>
+                                <button onClick={saveCurrentAsset} className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-indigo-500 text-white text-sm font-semibold rounded-lg hover:bg-indigo-600 shadow-sm hover:shadow-md transition-all mt-2">
+                                    <span>💾</span> {TEXTS.settings?.saveHistory || "히스토리 저장"}
                                 </button>
                             </div>
                         </div>
@@ -267,235 +184,126 @@
             );
         };
 
-        // [추가] 비밀번호 입력 모달
-        const PasswordPromptModal = ({ isOpen, onConfirm, onCancel }) => {
-            const [password, setPassword] = React.useState('');
-            if (!isOpen) return null;
+        const GoalSettingsCard = ({
+            goalMode, setGoalMode, setGoalSeekResult,
+            projectionMonths, setProjectionMonths, targetAmount, setTargetAmount,
+            calculateGoalSeek, goalSeekResult,
+            inflationRate, setInflationRate
+        }) => {
+            const TEXTS = window.TEXTS || {};
             return (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in duration-300">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">🔑 보안 비밀번호 입력</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">입력하신 비밀번호는 브라우저 내에서 암호화 키 생성에만 사용되며 서버에 전송되거나 저장되지 않습니다.</p>
-                        <input 
-                            type="password" 
-                            className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl px-4 py-3 mb-6 focus:ring-2 focus:ring-blue-500 outline-none"
-                            placeholder="비밀번호 입력"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && onConfirm(password)}
-                            autoFocus
-                        />
-                        <div className="flex gap-3">
-                            <button onClick={onCancel} className="flex-1 py-3 text-gray-600 dark:text-gray-400 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors">취소</button>
-                            <button onClick={() => onConfirm(password)} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">확인</button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // [추가] PRO 기능 안내 모달
-        const ProFeaturesModal = ({ isOpen, onClose }) => {
-            if (!isOpen) return null;
-            return (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-                        <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">PRO 기능 안내</h3>
-                            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6"> 
+                    <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">{TEXTS.settings?.goalSettings || "목표 설정"}</h2>
+                    <div className="mb-4">
+                        <div className="flex border border-gray-200 dark:border-gray-700 rounded-lg p-1 bg-gray-100 dark:bg-gray-900">
+                            <button onClick={() => { setGoalMode('period'); setGoalSeekResult(null); }} className={`flex-1 py-2 text-sm font-semibold rounded-md transition-colors ${goalMode === 'period' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'}`}>
+                                {TEXTS.settings?.periodBased || "기간 기준"}
+                            </button>
+                            <button onClick={() => setGoalMode('target')} className={`flex-1 py-2 text-sm font-semibold rounded-md transition-colors ${goalMode === 'target' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'}`}>
+                                {TEXTS.settings?.assetBased || "자산 기준"}
                             </button>
                         </div>
-                        <div className="p-6">
-                            <table className="w-full text-sm text-left">
-                                <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
-                                    <tr>
-                                        <th className="px-4 py-2">기능</th>
-                                        <th className="px-4 py-2 text-center">FREE</th>
-                                        <th className="px-4 py-2 text-center text-blue-600 dark:text-blue-400">PRO</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y dark:divide-gray-700">
-                                    <tr>
-                                        <td className="px-4 py-3 dark:text-gray-300">데이터 저장</td>
-                                        <td className="px-4 py-3 text-center text-gray-500">로컬 저장</td>
-                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">클라우드 동기화</td>
-                                    </tr>
-                                    <tr>
-                                        <td className="px-4 py-3 dark:text-gray-300">테마 설정</td>
-                                        <td className="px-4 py-3 text-center text-gray-500">-</td>
-                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">다크모드 완벽 지원</td>
-                                    </tr>
-                                    <tr>
-                                        <td className="px-4 py-3 dark:text-gray-300">자산 히스토리</td>
-                                        <td className="px-4 py-3 text-center text-gray-500">히스토리 기록</td>
-                                        <td className="px-4 py-3 text-center font-semibold dark:text-white">히스토리 + 미래 예상 자산</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                            <div className="mt-6 flex flex-col gap-2">
-                                <button onClick={() => window.open('https://blog.naver.com/zocdoc', '_blank')} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors">개발자 후원하고 PRO 활성화하기</button>
-                                <button onClick={onClose} className="w-full py-2 text-gray-500 text-sm hover:underline">나중에 하기</button>
+                    </div>
+                    <div className="space-y-4"> 
+                        {goalMode === 'period' ? (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">{TEXTS.settings?.expectedPeriod || "예상 기간 (개월)"}</label>
+                                <input type="number" min="0" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={projectionMonths} onChange={(e) => setProjectionMonths(Number(e.target.value))} />
                             </div>
+                        ) : (
+                            <div className="space-y-2">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">{TEXTS.settings?.targetAsset || "목표 자산 (만원)"}</label>
+                                    <input type="number" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500" value={targetAmount} onChange={(e) => setTargetAmount(Number(e.target.value))} />
+                                </div>
+                                <button onClick={calculateGoalSeek} className="w-full bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 font-semibold shadow-sm hover:shadow-md transition-all">
+                                    {TEXTS.settings?.calcGoal || "달성 기간 계산"}
+                                </button>
+                            </div>
+                        )}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">{TEXTS.settings?.inflationRate || "연간 인플레이션 증가율 (%)"}</label>
+                            <input type="number" step="0.1" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={inflationRate} onChange={(e) => setInflationRate(Number(e.target.value))} />
                         </div>
+                        {goalMode === 'target' && goalSeekResult && (
+                            <div className="mt-2 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg">
+                                <p className="text-green-800 dark:text-green-300 font-medium text-center">{goalSeekResult}</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             );
         };
 
-        // [추가] 온보딩 가이드 단계 정의 (컴포넌트 외부로 이동)
-        const ONBOARDING_STEPS = [
-            { id: 'header-actions', title: '기본값 및 시나리오 관리', content: '설정한 데이터를 저장하거나 불러오고, PDF로 내보낼 수 있습니다.', isPro: true },
-            { id: 'summary', title: '요약 및 설정', content: '현재 자산 상황과 인플레이션을 반영한 실질 가치를 한눈에 파악할 수 있습니다.', isPro: true },
-            { id: 'charts', title: '포트폴리오 차트', content: '자산 구성과 미래 성장 곡선을 시각적 그래프로 확인할 수 있습니다.' },
-            { id: 'budget', title: '월납입 예산 관리', content: '월급과 지출을 기반으로 매달 저축 가능한 금액을 계산하고 관리할 수 있습니다.' },
-            { id: 'rebalance', title: '리밸런싱', content: '목표 비중과 현재 비중의 차이를 체크하여 최적의 비중을 유지할 수 있습니다.', isPro: true },
-            { id: 'assets', title: '자산 상세 입력', content: '보유하신 모든 자산 항목을 섹터별로 상세히 기록할 수 있습니다.' },
-            { id: 'events', title: '이벤트성 수입/지출', content: '상여금이나 여행 등 비정기적인 재무 이벤트를 설정해 볼 수 있습니다.' },
-            { id: 'detail-analysis', title: '상세 분석', content: '모든 시뮬레이션 결과를 상세한 표 데이터로 분석할 수 있습니다.' }
-        ];
+        const SummaryPanel = (props) => {
+            return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 transition-colors">
+                    <AssetSummaryCard {...props} />
+                    <CoreSettingsCard {...props} />
+                    <GoalSettingsCard {...props} />
+                </div>
+            );
+        };
 
-        // [추가] 온보딩 가이드 컴포넌트
-        const OnboardingGuide = ({ isOpen, onClose, scrollToPanel, isPro }) => {
-            const [currentStep, setCurrentStep] = useState(0);
-            const [spotlightStyle, setSpotlightStyle] = useState(null);
-            const tooltipRef = useRef(null);
+        // [추가] 실행 취소/다시 실행 훅 (Undo/Redo) - 디바운싱 포함
+        const useUndoRedo = (initialState) => {
+            const [state, setState] = useState(initialState);
+            const [past, setPast] = useState([]);
+            const [future, setFuture] = useState([]);
+            const lastHistoryTime = useRef(0);
 
-            useEffect(() => {
-                if (isOpen) {
-                    const step = ONBOARDING_STEPS[currentStep];
-                    // [개선] 모바일 대응: 첫 단계에서 화면 너비에 따라 타겟 변경
-                    const isMobile = window.innerWidth < 640;
-                    const targetId = (isMobile && step.id === 'header-actions') ? 'mobile-menu-trigger' : step.id;
-                    const el = document.getElementById(targetId);
+            const set = React.useCallback((newState) => {
+                setState((currentState) => {
+                    const computedState = typeof newState === 'function' ? newState(currentState) : newState;
+                    if (JSON.stringify(currentState) === JSON.stringify(computedState)) return currentState;
                     
-                    if (el) {
-                        // 1. Step 1: Immediate Spotlight Alignment
-                        el.scrollIntoView({ behavior: 'auto', block: 'center' });
-
-                        // Calculate positions immediately after scroll to ensure spotlight is correct
-                        const updatedRect = el.getBoundingClientRect();
-                        const padding = 10;
-                        const tooltipHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 220;
-                        const tooltipWidth = tooltipRef.current ? tooltipRef.current.offsetWidth : 320;
-                        
-                        let tooltipTop, tooltipLeft;
-                        if (isMobile) {
-                            tooltipTop = window.scrollY + (window.innerHeight - tooltipHeight) / 2;
-                            tooltipLeft = (window.innerWidth - tooltipWidth) / 2;
-                        } else {
-                            if (updatedRect.top < window.innerHeight / 2) {
-                                tooltipTop = updatedRect.bottom + window.scrollY + 15;
-                            } else {
-                                tooltipTop = updatedRect.top + window.scrollY - tooltipHeight - 15;
-                            }
-                            tooltipLeft = Math.min(window.innerWidth - 340, Math.max(20, updatedRect.left + window.scrollX + (updatedRect.width / 2) - 160));
-                        }
-
-                        setSpotlightStyle({
-                            top: updatedRect.top + window.scrollY - padding,
-                            left: updatedRect.left + window.scrollX - padding,
-                            width: updatedRect.width + (padding * 2),
-                            height: updatedRect.height + (padding * 2),
-                            tooltipTop: tooltipTop,
-                            tooltipLeft: tooltipLeft
+                    const now = Date.now();
+                    // 500ms 이내의 연속된 변경(타이핑 등)은 하나의 히스토리로 처리
+                    if (now - lastHistoryTime.current > 500) {
+                        setPast(prev => {
+                            const newPast = [...prev, currentState];
+                            return newPast.slice(-30); // 최대 30단계
                         });
-
-                        // 2. Step 2: Delayed Smooth Slide to Guide Card (Tooltip)
-                        const timer = setTimeout(() => {
-                            const tHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 220;
-                            const targetY = tooltipTop - (window.innerHeight / 2) + (tHeight / 2);
-                            
-                            const startY = window.scrollY;
-                            const distance = targetY - startY;
-                            const duration = 1500; // 이동 시간을 1.5초로 늘려 더 천천히 이동
-                            let startTime = null;
-
-                            const smoothStep = (currentTime) => {
-                                if (!startTime) startTime = currentTime;
-                                const timeElapsed = currentTime - startTime;
-                                const progress = Math.min(timeElapsed / duration, 1);
-
-                                // Cubic Ease-InOut: 가감속을 더 뚜렷하게 적용
-                                const easing = progress < 0.5 
-                                    ? 4 * progress * progress * progress 
-                                    : (progress - 1) * (2 * progress - 2) * (2 * progress - 2) + 1;
-
-                                window.scrollTo(0, startY + distance * easing);
-
-                                if (timeElapsed < duration) {
-                                    requestAnimationFrame(smoothStep);
-                                }
-                            };
-                            requestAnimationFrame(smoothStep);
-                        }, 1000); // 1초 대기 후 부드러운 슬라이드 시작
-
-                        return () => clearTimeout(timer);
                     }
-                }
-            }, [currentStep, isOpen]);
+                    lastHistoryTime.current = now;
+                    setFuture([]);
+                    return computedState;
+                });
+            }, []);
 
-            if (!isOpen || !spotlightStyle) return null;
+            const undo = React.useCallback(() => {
+                setPast(prevPast => {
+                    if (prevPast.length === 0) return prevPast;
+                    const previous = prevPast[prevPast.length - 1];
+                    const newPast = prevPast.slice(0, prevPast.length - 1);
+                    setState(currentState => {
+                        setFuture(prevFuture => [currentState, ...prevFuture]);
+                        return previous;
+                    });
+                    return newPast;
+                });
+            }, []);
 
-            const handleNext = () => {
-                if (currentStep < ONBOARDING_STEPS.length - 1) setCurrentStep(prev => prev + 1);
-                else handleComplete();
-            };
+            const redo = React.useCallback(() => {
+                setFuture(prevFuture => {
+                    if (prevFuture.length === 0) return prevFuture;
+                    const next = prevFuture[0];
+                    const newFuture = prevFuture.slice(1);
+                    setState(currentState => {
+                        setPast(prevPast => [...prevPast, currentState]);
+                        return next;
+                    });
+                    return newFuture;
+                });
+            }, []);
 
-            const handlePrev = () => {
-                if (currentStep > 0) setCurrentStep(prev => prev - 1);
-            };
+            const reset = React.useCallback((newState) => {
+                setState(newState);
+                setPast([]);
+                setFuture([]);
+            }, []);
 
-            const handleComplete = () => {
-                localStorage.setItem('asset_planner_guide_completed', 'true');
-                onClose();
-            };
-
-            const current = ONBOARDING_STEPS[currentStep];
-
-            return (
-                <div className="absolute inset-0 z-[9999] pointer-events-none overflow-hidden transition-colors duration-500" style={{ height: document.documentElement.scrollHeight }}>
-                    {/* Spotlight Hole */}
-                    <div 
-                        className="absolute rounded-lg transition-all duration-500 ease-in-out pointer-events-auto"
-                        style={{
-                            top: spotlightStyle.top,
-                            left: spotlightStyle.left,
-                            width: spotlightStyle.width,
-                            height: spotlightStyle.height,
-                            boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.7)'
-                        }}
-                    />
-
-                    {/* Tooltip Card */}
-                    <div 
-                        ref={tooltipRef}
-                        className="absolute pointer-events-auto w-72 sm:w-80 bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 transition-all duration-500"
-                        style={{
-                            top: spotlightStyle.tooltipTop,
-                            left: spotlightStyle.tooltipLeft
-                        }}
-                    >
-                        <div className="flex justify-between items-start mb-2">
-                            <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Step {currentStep + 1} of {ONBOARDING_STEPS.length}</span>
-                            {current.isPro && isPro && (
-                                <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-bold">PRO FEATURE</span>
-                            )}
-                        </div>
-                        <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-2">{current.title}</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">{current.content}</p>
-                        <div className="flex justify-between items-center">
-                            <button onClick={handleComplete} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 underline">Skip</button>
-                            <div className="flex gap-2">
-                                <button onClick={handlePrev} disabled={currentStep === 0} className="px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg disabled:opacity-30">이전</button>
-                                <button onClick={handleNext} className="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md">
-                                    {currentStep === ONBOARDING_STEPS.length - 1 ? '시작하기' : '다음'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
+            return { state, setState: set, undo, redo, canUndo: past.length > 0, canRedo: future.length > 0, reset };
         };
 
         // [수정] 패널 래퍼 컴포넌트 (접기/펴기 기능 추가)
@@ -597,7 +405,8 @@
             // config.js에서 로드된 sectorInfo 사용
             const sectorInfo = window.sectorInfo;
             // ===== 모든 상태를 먼저 선언 =====
-            const [appData, setAppData] = useState(null);
+            // [수정] Undo/Redo 훅 적용
+            const { state: appData, setState: setAppData, undo, redo, canUndo, canRedo, reset: resetAppData } = useUndoRedo(null);
             const [darkMode, setDarkMode] = useState(() => localStorage.getItem('assetDashboardDarkMode') === 'true');
             const [inflationRate, setInflationRate] = useState(2.5);
             const [scenarios, setScenarios] = useState([]);
@@ -618,8 +427,8 @@
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
 
             // Cloudflare 빌드 시점에 환경 변수로 교체될 플레이스홀더
-            const SUPABASE_URL = '__SUPABASE_URL__';
-            const SUPABASE_KEY = '__SUPABASE_KEY__';
+            const SUPABASE_URL = window.SUPABASE_CONFIG?.url || '__SUPABASE_URL__';
+            const SUPABASE_KEY = window.SUPABASE_CONFIG?.key || '__SUPABASE_KEY__';
             // [보안 주의] SECURITY_KEY는 클라이언트 사이드에 노출되므로, 실제 서비스 시에는 Edge Functions 등 서버 사이드에서 암호화 로직을 처리하는 것이 권장됩니다.
             const SECURITY_KEY = '__SECURITY_KEY__';
 
@@ -664,6 +473,7 @@
             const [isSuggestionModalOpen, setIsSuggestionModalOpen] = useState(false); // [추가] 기능 제안 모달 상태
             const [isProModalOpen, setIsProModalOpen] = useState(false); // [추가] PRO 기능 안내 모달 상태
             const [isQuickPanelOpen, setIsQuickPanelOpen] = useState(false); // [추가] 모바일 퀵 패널 상태
+            const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false); // [추가] 통합 설정 모달 상태
             const [isGuideOpen, setIsGuideOpen] = useState(false); // [추가] 온보딩 가이드 상태
             const [showSaveToast, setShowSaveToast] = useState(false); // [추가] 저장 피드백 상태
             const [encryptionMode, setEncryptionMode] = useState(null); // [추가] 암호화 모드
@@ -672,40 +482,20 @@
             const [isPasswordPromptOpen, setIsPasswordPromptOpen] = useState(false); // [추가] 비밀번호 입력 모달
             const [currentDrillDown, setCurrentDrillDown] = useState(null); // [수정] 현재 차트 드릴다운 상태
             const [projectedDrillDown, setProjectedDrillDown] = useState(null); // [수정] 예상 차트 드릴다운 상태
+            
+            // [추가] 토스트 상태 관리
+            const [toasts, setToasts] = useState([]);
+            const addToast = React.useCallback((message, type = 'info') => {
+                const id = Date.now();
+                setToasts(prev => [...prev, { id, message, type }]);
+            }, []);
+            const removeToast = React.useCallback((id) => {
+                setToasts(prev => prev.filter(t => t.id !== id));
+            }, []);
+
             const chartInstancesRef = useRef({}); // [추가] 차트 인스턴스 관리용 Ref
             const pendingCiphertext = useRef(null);
             const pendingSave = useRef(false);
-
-            const getRGB = (colorName) => {
-                const map = {
-                    blue: '59, 130, 246',
-                    green: '34, 197, 94',
-                    indigo: '79, 70, 229',
-                    yellow: '234, 179, 8',
-                    orange: '249, 115, 22',
-                    slate: '107, 114, 128',
-                    red: '239, 68, 68',
-                    gray: '107, 114, 128',
-                    purple: '168, 85, 247',
-                    cyan: '6, 182, 212',
-                    amber: '245, 158, 11',
-                    emerald: '16, 185, 129',
-                    sky: '14, 165, 233',
-                    pink: '236, 72, 153',
-                    rose: '244, 63, 94',
-                    // [추가] 섹터 키 매핑 (드릴다운 색상 지원)
-                    deposit: '59, 130, 246',
-                    savings: '34, 197, 94',
-                    investment: '249, 115, 22',
-                    pension: '168, 85, 247',
-                    realestate: '245, 158, 11',
-                    car: '6, 182, 212',
-                    loan: '107, 114, 128',
-                    misc: '107, 114, 128'
-                };
-                if (!colorName || typeof colorName !== 'string') return map['gray'];
-                return map[colorName.toLowerCase()] || map['gray'];
-            };
 
             // [수정] 레이아웃 및 패널 상태 관리
             const [layoutOrder, setLayoutOrder] = useState(() => {
@@ -852,11 +642,16 @@
                 }
             }, [isLoading]);
 
-            // [추가] appData 상태 추적을 위한 Ref (단축키 stale closure 방지)
+        // [최적화] 상태 추적을 위한 Ref (단축키 및 이벤트 리스너 stale closure 방지)
             const appDataRef = useRef(appData);
-            useEffect(() => {
-                appDataRef.current = appData;
-            }, [appData]);
+        const scenariosRef = useRef(scenarios);
+        const assetHistoryRef = useRef(assetHistory);
+
+        useEffect(() => { 
+            appDataRef.current = appData; 
+            scenariosRef.current = scenarios;
+            assetHistoryRef.current = assetHistory;
+        }, [appData, scenarios, assetHistory]);
 
             // [추가] 보안 키 세션 유지
             useEffect(() => {
@@ -960,139 +755,91 @@
 
                         if (confirm('CSV 데이터를 불러오시겠습니까? 기존 자산 데이터가 대체됩니다.')) {
                             setAssets(newAssets);
-                            alert('CSV 데이터를 성공적으로 불러왔습니다.');
+                            addToast('CSV 데이터를 성공적으로 불러왔습니다.', 'success');
                         }
                     } catch (err) {
                         console.error('CSV Import Error:', err);
-                        alert('CSV 파일을 파싱하는 중 오류가 발생했습니다.');
+                        addToast('CSV 파일을 파싱하는 중 오류가 발생했습니다.', 'error');
                     }
                 };
                 reader.readAsText(file);
                 e.target.value = '';
             };
 
-            // [추가] 키보드 단축키 (Alt + S) 저장 로직
-            useEffect(() => {
-                const handleKeyDown = (e) => {
-                    if (e.altKey && (e.key === 's' || e.key === 'S')) {
-                        e.preventDefault();
-                        
-                        const currentData = appDataRef.current;
-                        if (currentData) {
-                            // 1. 로컬 저장
-                            const currentDataStr = JSON.stringify(currentData);
-                            localStorage.setItem('assetDashboardDataV3', currentDataStr);
-                            localStorage.setItem('assetDashboardLastUpdate', new Date().toISOString());
-                            
-                            // 2. 클라우드 저장 (PRO인 경우 force flag 사용)
-                            if (isPro && verifiedEmail) {
-                                if (encryptionMode === 'secure' && !userSecretKey) {
-                                    pendingSave.current = true;
-                                    setIsPasswordPromptOpen(true);
-                                } else {
-                                    saveToCloud({ appData: currentData, scenarios, assetHistory }, true);
-                                }
-                            }
+        // [최적화] 클라우드 저장 함수 (순서 조정: 리스너보다 먼저 선언되어야 함)
+        const saveToCloud = React.useCallback(async (unifiedData, force = false, emailOverride = null, proOverride = null, keyOverride = null, modeOverride = null) => {
+            const targetEmail = emailOverride || verifiedEmail;
+            const targetPro = proOverride !== null ? proOverride : isPro;
+            const targetMode = modeOverride || encryptionMode;
+            if (!targetEmail || isDemoMode || !supabase || !unifiedData || !isInitialized || !isCloudLoaded) return;
+            if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
 
-                            // 3. 피드백 표시
-                            setShowSaveToast(true);
-                            setTimeout(() => setShowSaveToast(false), 2000);
-                        }
-                    }
-                };
+            let payloadData = unifiedData;
+            if (targetPro && targetMode) {
+                if (targetMode === 'secure' && !userSecretKey && !keyOverride && !sessionStorage.getItem('assetDashboardSecretKey')) {
+                    pendingSave.current = true;
+                    setIsPasswordPromptOpen(true);
+                    return;
+                }
+                const key = keyOverride || getEncryptionKey(targetMode, userSecretKey, userProfile?.id || targetEmail);
+                payloadData = encryptData(unifiedData, key);
+            }
 
-                window.addEventListener('keydown', handleKeyDown);
-                return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [isPro, verifiedEmail, encryptionMode, userSecretKey, saveToCloud, scenarios, assetHistory]);
+            const currentDataStr = JSON.stringify(unifiedData);
+            if (!force && currentDataStr === lastSavedDataRef.current) return;
 
-            // [추가] 클라우드 저장 헬퍼 함수 (중복 로직 제거 및 강제 저장 지원)
-            // [수정] 초기 로딩 시점의 상태 불일치 해결을 위해 email, proStatus 오버라이드 인자 추가
-            const saveToCloud = async (unifiedData, force = false, emailOverride = null, proOverride = null, keyOverride = null, modeOverride = null) => {
-                const targetEmail = emailOverride || verifiedEmail;
-                const targetPro = proOverride !== null ? proOverride : isPro;
-                const targetMode = modeOverride || encryptionMode;
+            setSyncStatus('syncing');
+            try {
+                await withRetry(() => supabase.auth.refreshSession());
+                const { data, error } = await withRetry(() => 
+                    supabase.from('user_assets').upsert({ 
+                        email: targetEmail, data: payloadData,
+                        encryption_type: targetPro ? targetMode : null,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'email' }).select('updated_at').single()
+                );
+                if (error) throw error;
+                if (data) {
+                    setSyncStatus('synced');
+                    localStorage.setItem('assetDashboardLastUpdate', data.updated_at);
+                    lastSavedDataRef.current = currentDataStr;
+                }
+            } catch (error) {
+                console.error('Sync error:', error);
+                setSyncStatus('error');
+                setSyncStatusError(error.message || '저장 실패');
+            }
+        }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded]);
 
-                if (!targetEmail || isDemoMode || !supabase || !unifiedData || !isInitialized || !isCloudLoaded) return;
-                // 강제 저장이 아니고, 클라우드 로드 전이거나 로드 중이면 중단
-                if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
-
-                // [개선] 통합 데이터 객체 암호화 처리
-                let payloadData = unifiedData;
-                if (targetPro && targetMode) {
-                    // [추가] 보안 모드인데 키가 없는 경우 입력 유도 (세션 스토리지 포함 확인, keyOverride가 있으면 통과)
-                    if (targetMode === 'secure' && !userSecretKey && !keyOverride && !sessionStorage.getItem('assetDashboardSecretKey')) {
-                        pendingSave.current = true;
-                        setIsPasswordPromptOpen(true);
-                        return;
-                    }
-
-                    try {
-                        const key = keyOverride || getEncryptionKey(targetMode, userSecretKey, userProfile?.id || targetEmail);
-                        payloadData = encryptData(unifiedData, key);
-                    } catch (err) {
-                        console.error('Encryption error:', err);
-                        setSyncStatus('error');
-                        return;
+        // [최적화] 통합 키보드 단축키 리스너 (중복 제거 및 Ref 활용)
+        useEffect(() => {
+            const handleKeyDown = (e) => {
+                const isSave = ((e.ctrlKey || e.metaKey) && e.key === 's') || (e.altKey && e.key === 's');
+                if (isSave) {
+                    e.preventDefault();
+                    const currentData = appDataRef.current;
+                    if (currentData) {
+                        localStorage.setItem('assetDashboardDataV3', JSON.stringify(currentData));
+                        saveToCloud({ appData: currentData, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current }, true);
+                        setShowSaveToast(true);
+                        setTimeout(() => setShowSaveToast(false), 2000);
                     }
                 }
-
-                const currentDataStr = JSON.stringify(unifiedData);
-                // 강제 저장이 아니고, 변경 사항이 없으면 중단
-                if (!force && currentDataStr === lastSavedDataRef.current) return;
-
-                setSyncStatus('syncing');
-                setSyncStatusError('');
-                const onRetry = (attempt, max) => setSyncStatusError(`Server busy, retrying (Attempt ${attempt}/${max})...`);
-
-                try {
-                    await withRetry(() => supabase.auth.refreshSession());
-                    // 세션 유효성 확인
-                    const { data: { session }, error: sessionError = null } = await withRetry(() => supabase.auth.getSession(), 3, 12000, 2000, onRetry)
-                        .catch(err => ({ data: { session: null }, error: err }));
-                        
-                    if (sessionError || !session) {
-                        throw new Error('세션이 만료되었습니다. 다시 로그인해주세요.');
-                    }
-
-                    const { data, error } = await withRetry(() => 
-                        supabase.from('user_assets').upsert({ 
-                            email: targetEmail, 
-                            data: payloadData,
-                            encryption_type: targetPro ? targetMode : null,
-                            updated_at: new Date().toISOString()
-                        }, { onConflict: 'email' }).select('updated_at').single(),
-                        3, 12000, 2000, onRetry
-                    );
-                    
-                    if (error) throw error;
-                    if (data) {
-                        setSyncStatus('synced');
-                        localStorage.setItem('assetDashboardLastUpdate', data.updated_at);
-                        lastSavedDataRef.current = currentDataStr;
-                    }
-                } catch (error) {
-                    console.error('Sync error:', error);
-                    setSyncStatus('error');
-                    const isAuthError = error.code === '42501' || error.message?.includes('row-level security');
-                    setSyncStatusError(isAuthError ? '서버 저장 권한이 없습니다. (PRO 구독 정보 불일치)' : (error.message || '저장 실패'));
+                if (e.key === 'Escape') {
+                    setIsExportModalOpen(false); setIsImportModalOpen(false);
+                    setIsPrivacyModalOpen(false); setIsSuggestionModalOpen(false);
+                    setIsProModalOpen(false); setIsEncryptionModalOpen(false);
+                    setIsPasswordPromptOpen(false); setIsQuickPanelOpen(false);
+                    setIsGuideOpen(false);
                 }
+                if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey && canUndo) { e.preventDefault(); undo(); }
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z')) && canRedo) { e.preventDefault(); redo(); }
             };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+        
+        }, [canUndo, canRedo, undo, redo, saveToCloud]);
 
-            // ===== 데이터 자동 저장 =====
-            useEffect(() => {
-                if (appData && !isDemoMode) {
-                    const currentDataStr = JSON.stringify(appData);
-                    // [최적화] 변경사항이 있을 때만 로컬스토리지 저장
-                    if (currentDataStr !== lastSavedDataRef.current) {
-                        localStorage.setItem('assetDashboardDataV3', currentDataStr);
-                        localStorage.setItem('assetDashboardLastUpdate', new Date().toISOString());
-                        setOriginalUserData(appData);
-                        // 주의: lastSavedDataRef는 클라우드 동기화 로직에서도 사용되므로 
-                        // 여기서는 업데이트하지 않거나, 로컬 저장과 클라우드 저장의 기준을 분리해야 함.
-                        // 현재 구조에서는 클라우드 동기화 useEffect에서 lastSavedDataRef를 활용하므로 여기선 놔둠.
-                    }
-                } 
-            }, [appData, isDemoMode]);
 
             // useRef를 사용하여 첫 렌더링인지 추적하는 변수 추가
             const isInitialMount = useRef(true);
@@ -1164,10 +911,10 @@
                         return newHistory.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
                     });
                     
-                    alert(`현재 순자산 ${formatNumber(netWorth, displayMode)}만원이 히스토리에 저장되었습니다.\n(${currentDate} ${currentTime})`);
+                    addToast(`현재 순자산 ${formatNumber(netWorth, displayMode)}만원이 히스토리에 저장되었습니다.`, 'success');
                 } catch (error) {
                     console.error('자산 저장 오류:', error);
-                    alert('자산 저장 중 오류가 발생했습니다.');
+                    addToast('자산 저장 중 오류가 발생했습니다.', 'error');
                 }
             };
 
@@ -1189,7 +936,7 @@
 
                     // 클립보드에 복사
                     navigator.clipboard.writeText(compressed).then(() => {
-                        alert('자산 데이터가 클립보드에 복사되었습니다!\n다른 기기에서 "자산 불러오기" 버튼을 눌러 붙여넣기하세요.');
+                        addToast('자산 데이터가 클립보드에 복사되었습니다!', 'success');
                     }).catch(() => {
                         // 클립보드 복사 실패 시 텍스트 영역으로 표시
                         const textArea = document.createElement('textarea');
@@ -1198,11 +945,11 @@
                         textArea.select();
                         document.execCommand('copy');
                         document.body.removeChild(textArea);
-                        alert('자산 데이터가 복사되었습니다!\n다른 기기에서 "자산 불러오기" 버튼을 눌러 붙여넣기하세요.');
+                        addToast('자산 데이터가 복사되었습니다!', 'success');
                     });
                 } catch (error) {
                     console.error('데이터 내보내기 오류:', error);
-                    alert('데이터 내보내기 중 오류가 발생했습니다.');
+                    addToast('데이터 내보내기 중 오류가 발생했습니다.', 'error');
                 }
             };
 
@@ -1227,11 +974,11 @@
                         if (selection.appData && importData.appData) setAppData(importData.appData);
                         if (selection.scenarios && importData.scenarios) setScenarios(importData.scenarios);
                         if (selection.assetHistory && importData.assetHistory) setAssetHistory(importData.assetHistory);
-                        alert('자산 데이터가 성공적으로 불러와졌습니다!');
+                        addToast('자산 데이터가 성공적으로 불러와졌습니다!', 'success');
                     }
                 } catch (error) {
                     console.error('데이터 가져오기 오류:', error);
-                    alert('데이터 가져오기 중 오류가 발생했습니다.\n암호문을 다시 확인해주세요.');
+                    addToast('데이터 가져오기 중 오류가 발생했습니다. 암호문을 다시 확인해주세요.', 'error');
                 }
             };
 
@@ -1253,33 +1000,33 @@
 
             const applyTax = false;
             // ===== Setter 함수들 =====
-            const setProjectionMonths = (value) => setAppData(prev => ({ ...prev, projectionMonths: Math.max(0, value) }));
-            const setMonthlySalary = (value) => setAppData(prev => ({ ...prev, monthlySalary: value }));
-            const setAssets = (value) => setAppData(prev => ({ ...prev, assets: typeof value === 'function' ? value(prev.assets) : value }));
-            const setMonthlyExpenses = (value) => setAppData(prev => ({ 
+            // [최적화] 모든 Setter 함수에 useCallback 적용하여 자식 컴포넌트의 불필요한 리렌더링 방지
+            const setProjectionMonths = React.useCallback((value) => setAppData(prev => ({ ...prev, projectionMonths: Math.max(0, value) })), [setAppData]);
+            const setMonthlySalary = React.useCallback((value) => setAppData(prev => ({ ...prev, monthlySalary: value })), [setAppData]);
+            const setAssets = React.useCallback((value) => setAppData(prev => ({ ...prev, assets: typeof value === 'function' ? value(prev.assets) : value })), [setAppData]);
+            const setMonthlyExpenses = React.useCallback((value) => setAppData(prev => ({ 
                 ...prev, 
                 monthlyExpenses: typeof value === 'function' ? value(Array.isArray(prev.monthlyExpenses) ? prev.monthlyExpenses : []) : value 
-            }));
+            })), [setAppData]);
 
-            // [이동] Setter 함수들을 handleDarkModeToggle보다 상단으로 이동하여 참조 오류 방지
-            const setMainCashFlowAccount = (value) => setAppData(prev => ({ ...prev, mainCashFlowAccount: value }));
-            const setIncomeEvents = (value) => setAppData(prev => ({ 
+            const setMainCashFlowAccount = React.useCallback((value) => setAppData(prev => ({ ...prev, mainCashFlowAccount: value })), [setAppData]);
+            const setIncomeEvents = React.useCallback((value) => setAppData(prev => ({ 
                 ...prev, 
                 incomeEvents: typeof value === 'function' ? value(Array.isArray(prev.incomeEvents) ? prev.incomeEvents : []) : value 
-            }));
-            const setExpenseEvents = (value) => setAppData(prev => ({ 
+            })), [setAppData]);
+            const setExpenseEvents = React.useCallback((value) => setAppData(prev => ({ 
                 ...prev, 
                 expenseEvents: typeof value === 'function' ? value(Array.isArray(prev.expenseEvents) ? prev.expenseEvents : []) : value 
-            }));
+            })), [setAppData]);
             
-            const setTargetAmount = (value) => setAppData(prev => ({ ...prev, targetAmount: value }));
-            const setGoalMode = (value) => setAppData(prev => ({ ...prev, goalMode: value }));
-            const setDisplayMode = (value) => setAppData(prev => ({ ...prev, displayMode: value })); 
-            const setRebalanceMonths = (value) => setAppData(prev => ({ ...prev, rebalanceMonths: Math.max(1, value) })); // [추가]
-            const setRebalancingAlerts = (value) => setAppData(prev => ({ ...prev, rebalancingAlerts: typeof value === 'function' ? value(prev.rebalancingAlerts) : value }));
-            const setBaseMonth = (value) => setAppData(prev => ({ ...prev, baseMonth: value }));
-            const setRebalancingTargets = (value) => setAppData(prev => ({ ...prev, rebalancingTargets: typeof value === 'function' ? value(prev.rebalancingTargets) : value }));
-            const setMemo = (value) => setAppData(prev => ({ ...prev, memo: value }));
+            const setTargetAmount = React.useCallback((value) => setAppData(prev => ({ ...prev, targetAmount: value })), [setAppData]);
+            const setGoalMode = React.useCallback((value) => setAppData(prev => ({ ...prev, goalMode: value })), [setAppData]);
+            const setDisplayMode = React.useCallback((value) => setAppData(prev => ({ ...prev, displayMode: value })), [setAppData]); 
+            const setRebalanceMonths = React.useCallback((value) => setAppData(prev => ({ ...prev, rebalanceMonths: Math.max(1, value) })), [setAppData]);
+            const setRebalancingAlerts = React.useCallback((value) => setAppData(prev => ({ ...prev, rebalancingAlerts: typeof value === 'function' ? value(prev.rebalancingAlerts) : value })), [setAppData]);
+            const setBaseMonth = React.useCallback((value) => setAppData(prev => ({ ...prev, baseMonth: value })), [setAppData]);
+            const setRebalancingTargets = React.useCallback((value) => setAppData(prev => ({ ...prev, rebalancingTargets: typeof value === 'function' ? value(prev.rebalancingTargets) : value })), [setAppData]);
+            const setMemo = React.useCallback((value) => setAppData(prev => ({ ...prev, memo: value })), [setAppData]);
 
             // [추가] 다크모드 토글 핸들러 (PRO 제한 로직)
             const handleDarkModeToggle = () => {
@@ -1308,22 +1055,38 @@
                 }
             }, [isPro, showProjectionInHistory]);
 
-
-            // ===== Supabase 연동 로직 =====
-            // [수정] 로그아웃 핸들러: 무한 루프 방지를 위해 skipSignOut 파라미터 추가
-            const handleLogout = async (skipSignOut = false) => {
-                isProcessing.current = true;
-                // 이미 세션이 종료되어 호출된 경우 signOut 중복 호출 방지
-                if (supabase && !skipSignOut) await withRetry(() => supabase.auth.signOut());
+             // [최종] 로그아웃 핸들러: useCallback 통합 및 안정화
+        const handleLogout = React.useCallback(async (skipSignOut = false) => {
+            if (isProcessing.current) return;
+            isProcessing.current = true;
+            try {
+                if (supabase && !skipSignOut) {
+                    await withRetry(() => supabase.auth.signOut());
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+            } finally {
+                // [수정] 로그아웃 동작 설정에 따른 데이터 처리
+                if (logoutBehavior === 'reset') {
+                    resetAppData(window.publicDefaultData);
+                    localStorage.removeItem('assetDashboardDataV3');
+                }
                 setVerifiedEmail(null); 
                 setUserProfile(null);
                 setIsPro(false);
-                // setAppData(publicDefaultData); // [수정] 로그아웃 시 현재 데이터 유지 (로컬 모드 전환)
                 setSyncStatus('idle');
                 setSyncStatusError('');
-                setIsCloudLoaded(false); // [추가] 로드 상태 초기화
+                setIsCloudLoaded(false);
                 isProcessing.current = false;
-            };
+            }
+        }, [supabase, logoutBehavior, resetAppData]);
+
+        // [추가] 로그아웃 동작 설정 (keep: 유지, reset: 초기화)
+        const [logoutBehavior, setLogoutBehavior] = useState(() => localStorage.getItem('assetLogoutBehavior') || 'keep');
+        useEffect(() => {
+            localStorage.setItem('assetLogoutBehavior', logoutBehavior);
+        }, [logoutBehavior]);
+
 
             // [추가] 구독 상태 확인 및 데이터 로드 함수 (재사용 가능하도록 분리)
             const checkSubscription = async (session, isManualCheck = false, localDataOverride = null) => {
@@ -1368,7 +1131,7 @@
                         setIsPro(proStatus);
 
                         if (isManualCheck) {
-                            alert(`구독 상태가 확인되었습니다.\n현재 상태: ${proStatus ? 'PRO (유료)' : 'FREE (무료)'}`);
+                            addToast(`구독 상태가 확인되었습니다. (${proStatus ? 'PRO' : 'FREE'})`, 'success');
                         }
 
                         // PRO 권한이 확인된 경우에만 클라우드 데이터 로드 시도
@@ -1381,13 +1144,13 @@
                     } else {
                         console.warn('Profile fetch error after retries:', fetchError);
                         setSyncStatus('error'); // [추가]
-                        if (isManualCheck) alert('서버 연결 상태가 좋지 않아 구독 정보를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.');
+                        if (isManualCheck) addToast('서버 연결 상태가 좋지 않아 구독 정보를 확인하지 못했습니다.', 'error');
                     }
                 } catch (err) {
                     console.error('Subscription check error:', err);
                     setSyncStatus('error'); // [추가]
                     // 에러 발생 시에도 기존 권한 유지
-                    if (isManualCheck) alert('구독 상태 확인 중 오류가 발생했습니다.');
+                    if (isManualCheck) addToast('구독 상태 확인 중 오류가 발생했습니다.', 'error');
                 } finally {
                     isCheckingSubscriptionRef.current = false;
                     if (isManualCheck) setIsLoadingCloud(false);
@@ -1399,7 +1162,7 @@
                 if (!supabase) return;
                 try {
                     const { data: { user } } = await withRetry(() => supabase.auth.getUser());
-                    if (!user) return alert('로그인이 필요합니다.');
+                    if (!user) return addToast('로그인이 필요합니다.', 'error');
 
                     // [수정] user_profiles 테이블의 suggestions 컬럼에 내용 추가 (Append 방식)
                     // 1. 기존 내용 조회
@@ -1422,10 +1185,10 @@
                     );
                     
                     if (error) throw error;
-                    alert('소중한 의견 감사합니다! 개발자에게 전달되었습니다.');
+                    addToast('소중한 의견 감사합니다! 개발자에게 전달되었습니다.', 'success');
                 } catch (error) {
                     console.error('Suggestion error:', error);
-                    alert('의견 전송 중 오류가 발생했습니다.');
+                    addToast('의견 전송 중 오류가 발생했습니다.', 'error');
                 }
             };
 
@@ -1449,18 +1212,18 @@
                 });
 
                 return () => subscription.unsubscribe();
-            }, [supabase]);
+            }, [supabase, handleLogout]);
 
             const handleLogin = async () => {
-                if (!supabase) return alert('데이터베이스 연결 설정이 필요합니다.');
+                if (!supabase) return addToast('데이터베이스 연결 설정이 필요합니다.', 'error');
                 try {
                     const { error } = await withRetry(() => supabase.auth.signInWithOAuth({
                         provider: 'google',
                         options: { redirectTo: window.location.origin }
                     }));
-                    if (error) alert('로그인 오류: ' + error.message);
+                    if (error) addToast('로그인 오류: ' + error.message, 'error');
                 } catch (err) {
-                    alert('로그인 요청 시간 초과: ' + err.message);
+                    addToast('로그인 요청 시간 초과: ' + err.message, 'error');
                 }
             };
 
@@ -1550,7 +1313,7 @@
                                 } catch (err) {
                                     setSyncStatus('error');
                                 setSyncStatusError('복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다.');
-                                alert('복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다. 보안 모드인 경우 비밀번호를 다시 확인해주세요.');
+                                addToast('복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다.', 'error');
                                     return;
                                 }
                             } else {
@@ -1625,7 +1388,7 @@
                                 throw new Error('유효하지 않은 데이터 형식입니다.');
                             }
 
-                            setAppData(actualAppData);
+                            resetAppData(actualAppData); // [수정] 클라우드 로드 시 히스토리 초기화
                             
                             if (decryptedData.scenarios) {
                                 setScenarios(decryptedData.scenarios);
@@ -1671,7 +1434,7 @@
                     console.error('Fetch error:', err);
                     setSyncStatusError(err.message || '데이터 로드 실패');
                     setSyncStatus('error');
-                    if (isManual) alert(`데이터 동기화 오류: ${err.message}`); // [수정] 수동일 때만 알림
+                    if (isManual) addToast(`데이터 동기화 오류: ${err.message}`, 'error');
                 } finally {
                     setIsLoadingCloud(false);
                     isFetchingRef.current = false;
@@ -1702,7 +1465,7 @@
                         const decrypted = decryptData(pendingCiphertext.current, key);
                         
                         const actualAppData = decrypted.appData || decrypted;
-                        setAppData(actualAppData);
+                        resetAppData(actualAppData);
                         if (decrypted.scenarios) setScenarios(decrypted.scenarios);
                         if (decrypted.assetHistory) setAssetHistory(decrypted.assetHistory);
                         
@@ -1710,7 +1473,7 @@
                         setSyncStatus('synced');
                         setIsCloudLoaded(true);
                     } catch (err) {
-                        alert('복호화 실패. 비밀번호를 다시 확인해주세요.');
+                        addToast('복호화 실패. 비밀번호를 다시 확인해주세요.', 'error');
                         setIsPasswordPromptOpen(true);
                     }
                 } else if (pendingSave.current) {
@@ -1778,7 +1541,7 @@
             const saveAsDefault = () => {
                 if (confirm('현재 설정을 기본값으로 저장하시겠습니까?')) {
                     localStorage.setItem('assetDashboardCustomDefault', JSON.stringify(appData));
-                    alert('현재 설정이 기본값으로 저장되었습니다.');
+                    addToast('현재 설정이 기본값으로 저장되었습니다.', 'success');
                 }
             };
 
@@ -1793,23 +1556,23 @@
                             if (!parsed.assets) parsed.assets = fallback.assets;
                             if (!parsed.monthlySalary) parsed.monthlySalary = fallback.monthlySalary;
                             if (!parsed.projectionMonths) parsed.projectionMonths = fallback.projectionMonths;
-                            setAppData(parsed);
+                            resetAppData(parsed);
                             setOriginalUserData(parsed); // [추가]
                             setIsDemoMode(false); // [추가]
                             localStorage.setItem('assetDashboardUseDevDefaults','false');
-                            alert('저장된 기본값으로 초기화되었습니다.');
+                            addToast('저장된 기본값으로 초기화되었습니다.', 'success');
                         }
                     } else {
                         if (confirm('저장된 기본값이 없습니다.\n사이트 기본값으로 초기화하시겠습니까?')) {
-                            setAppData(publicDefaultData);
+                            resetAppData(publicDefaultData);
                             setOriginalUserData(publicDefaultData); // [추가]
                             setIsDemoMode(false); // [추가]
-                            alert('저장된 기본값이 없어 사이트 기본값으로 불러왔습니다.');
+                            addToast('저장된 기본값이 없어 사이트 기본값으로 불러왔습니다.', 'info');
                         }
                     }
                 } catch (error) {
                     console.error('기본값 로드 오류:', error);
-                    alert('기본값 로드 중 오류가 발생했습니다.');
+                    addToast('기본값 로드 중 오류가 발생했습니다.', 'error');
                 }
             };
 
@@ -1817,20 +1580,20 @@
                 // 현재: 사용자 모드 -> 다음: 프라이빗 모드
                 if (!isDemoMode && appData?.displayMode === 'amount') {
                     setAppData(prev => ({ ...prev, displayMode: 'percent' }));
-                    alert('프라이빗 모드로 전환합니다. 금액이 숨겨집니다.');
+                    addToast('프라이빗 모드로 전환합니다. 금액이 숨겨집니다.', 'info');
                 } 
                 // 현재: 프라이빗 모드 -> 다음: 데모 모드
                 else if (!isDemoMode && appData?.displayMode === 'percent') {
-                    setAppData(publicDefaultData);
+                    resetAppData(publicDefaultData);
                     setIsDemoMode(true);
-                    alert('데모 모드로 전환합니다. 이 모드에서 변경한 내용은 저장되지 않습니다.');
+                    addToast('데모 모드로 전환합니다. 이 모드에서 변경한 내용은 저장되지 않습니다.', 'info');
                 } 
                 // 현재: 데모 모드 -> 다음: 사용자 모드
                 else {
                     // displayMode를 'amount'로 되돌려야 합니다.
-                    setAppData({...originalUserData, displayMode: 'amount'});
+                    resetAppData({...originalUserData, displayMode: 'amount'});
                     setIsDemoMode(false);
-                    alert('사용자 데이터로 전환합니다.');
+                    addToast('사용자 데이터로 전환합니다.', 'success');
                 }
             };
 
@@ -1958,12 +1721,18 @@
                         createdAt: new Date().toISOString()
                     };
                     setScenarios(prev => [...prev, newScenario]);
-                    alert('시나리오가 저장되었습니다.');
+                    addToast('시나리오가 저장되었습니다.', 'success');
                 }
             };
 
             const loadScenario = (scenario) => {
                 if (confirm(`"${scenario.name}" 시나리오를 불러오시겠습니까?`)) {
+                    // [추가] 불러오기 전 현재 데이터 백업 확인
+                    if (confirm('현재 데이터를 기본값으로 백업하시겠습니까?\n(백업하지 않으면 현재 작업 내용이 덮어쓰여집니다)')) {
+                        localStorage.setItem('assetDashboardCustomDefault', JSON.stringify(appData));
+                        addToast('현재 데이터가 기본값으로 백업되었습니다.', 'success');
+                    }
+
                     // [수정] 시나리오 데이터 병합 로직 개선 (누락된 필드 보완)
                     const base = JSON.parse(JSON.stringify(publicDefaultData));
                     const loaded = scenario.data || {};
@@ -1976,7 +1745,7 @@
                         incomeEvents: Array.isArray(loaded.incomeEvents) ? loaded.incomeEvents : base.incomeEvents,
                         expenseEvents: Array.isArray(loaded.expenseEvents) ? loaded.expenseEvents : base.expenseEvents,
                     };
-                    setAppData(mergedData);
+                    resetAppData(mergedData);
                 }
             };
 
@@ -2009,7 +1778,7 @@
             // ===== 개선된 목표 달성 계산 =====
             const calculateGoalSeek = () => {
                 if (!targetAmount || targetAmount <= 0) {
-                    alert('유효한 목표 금액을 입력해주세요.');
+                    addToast('유효한 목표 금액을 입력해주세요.', 'error');
                     return;
                 }
 
@@ -2088,6 +1857,49 @@
                     return newOrder;
                 });
             };
+
+            // [최적화] 드래그 앤 드롭 핸들러 메모이제이션
+            const [draggedSectorIndex, setDraggedSectorIndex] = useState(null);
+            const handleDragStart = React.useCallback((e, index) => {
+                setDraggedSectorIndex(index);
+                e.dataTransfer.effectAllowed = "move";
+            }, []);
+
+            const handleDragOver = React.useCallback((e) => e.preventDefault(), []);
+
+            const handleDrop = React.useCallback((e, dropIndex) => {
+                e.preventDefault();
+                if (draggedSectorIndex === null || draggedSectorIndex === dropIndex) return;
+                const newOrder = [...assetSectorOrder];
+                const [draggedItem] = newOrder.splice(draggedSectorIndex, 1);
+                newOrder.splice(dropIndex, 0, draggedItem);
+                setAssetSectorOrder(newOrder);
+                setDraggedSectorIndex(null);
+            }, [draggedSectorIndex, assetSectorOrder]);
+
+            // [추가] 자산 항목 드래그 앤 드롭 상태 및 핸들러
+            const [draggedAsset, setDraggedAsset] = useState(null); // { sector, index }
+
+            const handleAssetDragStart = React.useCallback((e, sector, index) => {
+                e.stopPropagation(); // 섹터 드래그 방지
+                setDraggedAsset({ sector, index });
+                e.dataTransfer.effectAllowed = "move";
+            }, []);
+
+            const handleAssetDrop = React.useCallback((e, targetSector, targetIndex) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDraggedAsset(prev => {
+                    if (!prev || prev.sector !== targetSector || prev.index === targetIndex) return null;
+                    setAssets(currentAssets => {
+                        const list = [...currentAssets[targetSector]];
+                        const [movedItem] = list.splice(prev.index, 1);
+                        list.splice(targetIndex, 0, movedItem);
+                        return { ...currentAssets, [targetSector]: list };
+                    });
+                    return null;
+                });
+            }, [setAssets]);
 
             const calculation = useMemo(() => {
                 if (!appData || !appData.assets || typeof appData.assets !== 'object') {
@@ -2344,13 +2156,6 @@
             const autoDepositBreakdown = getAutoDepositBreakdown();
 
             // ===== 차트 헬퍼 및 설정 =====
-            const createGradient = (ctx, colors) => {
-                if (!ctx || !colors) return colors?.start || '#3b82f6';
-                const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-                gradient.addColorStop(0, colors?.start || '#3b82f6');
-                gradient.addColorStop(1, colors?.end || '#1d4ed8');
-                return gradient;
-            };
 
             const initChart = (id, ref, config) => {
                 if (ref.current) {
@@ -2428,7 +2233,9 @@
                         const sectorAssets = assets[currentDrillDown] || [];
                         labels = sectorAssets.map(a => a.name);
                         data = sectorAssets.map(a => a.amount);
-                        colors = sectorAssets.map((_, i) => palette[i % palette.length]);
+                        // [수정] 전역 getRGB 함수를 사용하여 드릴다운 색상 일관성 유지
+                        const baseRGB = window.getRGB(sectorInfo[currentDrillDown].color);
+                        colors = sectorAssets.map((_, i) => `rgba(${baseRGB}, ${0.9 - (i * 0.1)})`);
                     } else {
                         labels = filteredKeys.map(key => sectorLabels[key]);
                         data = filteredKeys.map(key => currentSectorTotals[key]?.amount || 0);
@@ -2491,7 +2298,9 @@
                         const projAssets = calculation.projected[projectedDrillDown] || [];
                         labels = projAssets.map(a => a.name);
                         data = projAssets.map(a => a.amount);
-                        colors = projAssets.map((_, i) => palette[i % palette.length]);
+                        // [수정] 전역 getRGB 함수를 사용하여 드릴다운 색상 일관성 유지
+                        const baseRGB = window.getRGB(sectorInfo[projectedDrillDown].color);
+                        colors = projAssets.map((_, i) => `rgba(${baseRGB}, ${0.9 - (i * 0.1)})`);
                     } else {
                         labels = projectedKeys.map(key => sectorLabels[key]);
                         data = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
@@ -2751,7 +2560,7 @@
                 }]
             }));
 
-            const updateAsset = (sector, index, field, value) => {
+            const updateAsset = React.useCallback((sector, index, field, value) => {
                 const numberFields = ['amount', 'rate', 'feeRate', 'monthlyContrib', 'extraContrib', 'maturityMonth']; 
 
                 let newValue = numberFields.includes(field) ? Number(value) : value; 
@@ -2765,18 +2574,24 @@
                     ...prev,
                     [sector]: prev[sector].map((asset, i) => i === index ? { ...asset, [field]: newValue } : asset)
                 }));
-            };
+            }, [setAssets]); // [수정] setAssets 의존성 명시
 
-            const removeAsset = (sector, index) => {
-                const assetToRemove = assets[sector][index];
-                if (assetToRemove.name === mainCashFlowAccount) {
-                    const allAccounts = Object.values(assets).flat();
+            const removeAsset = React.useCallback((sector, index) => {
+                const currentData = appDataRef.current;
+                if (!currentData) return;
+                const currentAssets = currentData.assets;
+                const currentMainAccount = currentData.mainCashFlowAccount;
+
+                const assetToRemove = currentAssets[sector][index];
+                
+                if (assetToRemove.name === currentMainAccount) {
+                    const allAccounts = Object.values(currentAssets).flat();
                     const nextAccount = allAccounts.find(a => a.id !== assetToRemove.id);
                     
                     if (nextAccount) {
                         setMainCashFlowAccount(nextAccount.name);
                     } else {
-                        alert('최소 한 개의 계좌는 유지되어야 하며, 주 현금흐름 계좌로 설정되어야 합니다.');
+                        addToast('최소 한 개의 계좌는 유지되어야 하며, 주 현금흐름 계좌로 설정되어야 합니다.', 'error');
                         return;
                     }
                 }
@@ -2784,7 +2599,12 @@
                     ...prev,
                     [sector]: prev[sector].filter((_, i) => i !== index)
                 }));
-            };
+            }, [setAssets, setMainCashFlowAccount, addToast]); // [수정] 의존성 명시
+
+            // [최적화] 계좌 목록 메모이제이션 (자산 이름 변경 시에만 갱신)
+            const accountOptions = useMemo(() => {
+                return Object.values(assets).flat().map(a => a.name);
+            }, [JSON.stringify(Object.values(assets).flat().map(a => a.name))]);
 
             // ===== 지출 관리 함수들 =====
             const addExpense = () => setMonthlyExpenses(prev => [...prev, { name: '새 지출', amount: 0 }]);
@@ -2921,167 +2741,6 @@
             const assetsPanelSectors = ['realestate','car','misc'];
             const loanPanelSectors = ['loan'];
 
-            const renderSummaryPanel = () => {
-                const lastProj = calculation.monthlyProjections && calculation.monthlyProjections[projectionMonths];
-                let compLabel = "";
-                let compVal = 0;
-                let compPct = 0;
-
-                if (!calculation.error && projectionMonths >= 1 && calculation.monthlyProjections?.length > projectionMonths) {
-                    if (projectionMonths <= 12) {
-                        const prevProj = calculation.monthlyProjections[projectionMonths - 1];
-                        compVal = lastProj.total - prevProj.total;
-                        compPct = prevProj.total !== 0 ? (compVal / Math.abs(prevProj.total)) * 100 : 0;
-                        compLabel = "전월 대비";
-                    } else {
-                        const prevProj = calculation.monthlyProjections[projectionMonths - 12];
-                        compVal = lastProj.total - prevProj.total;
-                        compPct = prevProj.total !== 0 ? (compVal / Math.abs(prevProj.total)) * 100 : 0;
-                        compLabel = "1년 전 대비";
-                    }
-                }
-
-                return (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 transition-colors">
-                    <div className="md:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-xl shadow-lg p-6">
-                        <div>
-                            <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">현재 총자산</h2>
-                            <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(calculation.currentTotal, displayMode)}만원</p>
-                        </div>
-                        <div className="mt-6"> 
-                            <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">{projectionMonths}개월 후 예상 <span className="text-gray-400 text-sm">({(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d = new Date(y||new Date().getFullYear(), (m||1)-1, 1); d.setMonth(d.getMonth()+projectionMonths); return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`; } catch { return ''; } })()})</span></h2>
-                            <p className="text-3xl font-bold text-green-600 dark:text-green-400">{formatNumber(calculation.projectedTotal, displayMode)}만원</p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">예상 증가액: +{formatNumber(calculation.growth, displayMode)}만원 ({formatPercent((calculation.growth) / Math.max(1, calculation.currentTotal) * 100)}%)</p>         
-                            {compLabel && (
-                                <p className="text-xs text-gray-400 mt-1">
-                                    ({compLabel}: {compVal >= 0 ? '+' : ''}{formatNumber(compVal, displayMode)}만원, {compVal >= 0 ? '+' : ''}{formatPercent(compPct)}%)
-                                </p>
-                            )}
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                인플레이션 고려 시: {formatNumber(calculation.realValue, displayMode)}만원
-                            </p>
-
-                            {/* 자립 가능성 분석 (FIRE Analysis) */}
-                            {calculation.fireMetrics && (
-                                <div className="mt-6 pt-6 border-t border-blue-200 dark:border-blue-800">
-                                    <h3 className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-3">자립 가능성 분석 (FIRE Analysis)</h3>
-                                    
-                                    <div className="grid grid-cols-1 gap-3">
-                                        <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
-                                            <span className="text-xs text-gray-500">생존 가능 기간</span>
-                                            <span className="text-xs font-bold text-gray-900 dark:text-white">
-                                                {calculation.fireMetrics.runwayMonths >= 1200 ? '100년 이상' : `${Math.floor(calculation.fireMetrics.runwayMonths / 12)}년 ${calculation.fireMetrics.runwayMonths % 12}개월`}
-                                            </span>
-                                        </div>
-                                        {calculation.fireMetrics.debtFreeMonth > 0 && (
-                                            <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
-                                                <span className="text-xs text-gray-500">부채 상환 완료 예상</span>
-                                                <span className="text-xs font-bold text-green-600 dark:text-green-400">
-                                                    {Math.floor(calculation.fireMetrics.debtFreeMonth / 12)}년 {calculation.fireMetrics.debtFreeMonth % 12}개월 후
-                                                </span>
-                                            </div>
-                                        )}
-                                        <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
-                                            <span className="text-xs text-gray-500">FIRE (4% 법칙) 필요자산</span>
-                                            <span className="text-xs font-bold text-gray-900 dark:text-white">
-                                                {formatNumber(calculation.fireMetrics.swr4PercentCapital, displayMode)}만원
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                    <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6"> 
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">핵심 설정</h2>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">월급 (만원)</label>
-                                <input type="number" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={monthlySalary} onChange={(e) => setMonthlySalary(Number(e.target.value))} />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">기준월 (계산 시작)</label>
-                                <input type="month" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={baseMonth} onChange={(e) => setBaseMonth(e.target.value)} />
-                            </div>
-                            <div className="pt-4 border-t dark:border-gray-700">
-                                <h3 className="text-sm font-bold text-gray-700 dark:text-white mb-2">데이터 관리</h3>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={() => setIsExportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 shadow-sm transition-all">
-                                        <span>📤</span> 데이터 내보내기
-                                    </button>
-                                    <button onClick={() => setIsImportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all">
-                                        <span>📥</span> 데이터 불러오기
-                                    </button>
-
-                                    <div className="col-span-2 mt-2">
-                                        <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 px-1 uppercase tracking-wider">내보내기</h4>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <button onClick={exportToCSV} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 shadow-sm transition-all">
-                                                <span>📊</span> CSV 내보내기
-                                            </button>
-                                            <label className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all cursor-pointer">
-                                                <span>📥</span> CSV 불러오기
-                                                <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" />
-                                            </label>
-                                            <button onClick={saveToPDF} className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 shadow-sm hover:shadow-md transition-all">
-                                                <span>📄</span> PDF 보고서 저장
-                                            </button>
-                                        </div>
-                                    </div>
-                                    
-                                    <button onClick={saveCurrentAsset} className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-indigo-500 text-white text-sm font-semibold rounded-lg hover:bg-indigo-600 shadow-sm hover:shadow-md transition-all mt-2">
-                                        <span>💾</span> 히스토리 저장
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6"> 
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">목표 설정</h2>
-                        <div className="mb-4">
-                            <div className="flex border border-gray-200 dark:border-gray-700 rounded-lg p-1 bg-gray-100 dark:bg-gray-900">
-                                <button onClick={() => { setGoalMode('period'); setGoalSeekResult(null); }} className={`flex-1 py-2 text-sm font-semibold rounded-md transition-colors ${goalMode === 'period' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'}`}>
-                                    기간 기준
-                                </button>
-                                <button onClick={() => setGoalMode('target')} className={`flex-1 py-2 text-sm font-semibold rounded-md transition-colors ${goalMode === 'target' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'}`}>
-                                    자산 기준
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="space-y-4"> 
-                            {goalMode === 'period' ? (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">예상 기간 (개월)</label>
-                                    <input type="number" min="0" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={projectionMonths} onChange={(e) => setProjectionMonths(Number(e.target.value))} />
-                                </div>
-                            ) : (
-                                <div className="space-y-2">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">목표 자산 (만원)</label>
-                                        <input type="number" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500" value={targetAmount} onChange={(e) => setTargetAmount(Number(e.target.value))} />
-                                    </div>
-                                    <button onClick={calculateGoalSeek} className="w-full bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 font-semibold shadow-sm hover:shadow-md transition-all">
-                                        달성 기간 계산
-                                    </button>
-                                </div>
-                            )}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">연간 인플레이션 증가율 (%)</label>
-                                <input type="number" step="0.1" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={inflationRate} onChange={(e) => setInflationRate(Number(e.target.value))} />
-                            </div>
-                             
-                            {goalMode === 'target' && goalSeekResult && (
-                                <div className="mt-2 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg">
-                                    <p className="text-green-800 dark:text-green-300 font-medium text-center">{goalSeekResult}</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-                );
-            };
-
             const renderScenarioPanel = () => ( 
                 <div className="flex flex-col lg:flex-row lg:items-start gap-6">
                     <div className="lg:w-full lg:max-w-md">
@@ -3142,8 +2801,8 @@
                             </span>
                         </label>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                        <canvas ref={historyChartRef} height="200"></canvas>
+                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 h-[600px] relative">
+                        <canvas ref={historyChartRef}></canvas>
                     </div>
                 </>
             );
@@ -3271,9 +2930,23 @@
             const renderAssetsPanel = () => (
                 <div className="space-y-8"> 
                     {assetSectorOrder.map((sectorKey, index) => (
-                        <div key={sectorKey} className={`${sectorInfo[sectorKey].bgClass} rounded-lg shadow p-6 transition-colors`}>
+                        <div 
+                            key={sectorKey} 
+                            className={`${sectorInfo[sectorKey].bgClass} rounded-lg shadow p-6 transition-colors cursor-default`}
+                            draggable="true"
+                            onDragStart={(e) => handleDragStart(e, index)}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, index)}
+                        >
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4"> 
-                                <button type="button" onClick={()=> setHiddenSectors(prev=> ({...prev, [sectorKey]: !prev[sectorKey]}))} className={`text-left text-xl font-semibold ${sectorInfo[sectorKey].textClass} flex items-center gap-2`}>
+                                <button 
+                                    type="button" 
+                                    onClick={()=> setHiddenSectors(prev=> ({...prev, [sectorKey]: !prev[sectorKey]}))} 
+                                    className={`text-left text-xl font-semibold ${sectorInfo[sectorKey].textClass} flex items-center gap-2`}
+                                    aria-expanded={!hiddenSectors[sectorKey]}
+                                    aria-controls={`sector-content-${sectorKey}`}
+                                    title="드래그하여 순서 변경 가능"
+                                >
                                     <span>{sectorInfo[sectorKey].icon}</span>
                                     {sectorInfo[sectorKey].name}
                                     <span className="text-sm bg-white dark:bg-gray-900 dark:text-white px-2 py-1 rounded">
@@ -3306,90 +2979,28 @@
                                 </div>
                             </div>
                             {!hiddenSectors[sectorKey] && (
-                            <div className="space-y-4"> 
+                            <div className="space-y-4" id={`sector-content-${sectorKey}`}> 
                                 {assets[sectorKey]?.map((asset, index) => {
                                     const sectorTotal = assets[sectorKey]?.reduce((sum, a) => sum + Number(a.amount || 0), 0) || 1;
                                     const assetPercentage = (Number(asset.amount || 0) / sectorTotal) * 100;
                                     const rgb = getRGB(sectorInfo[sectorKey].color);
-                                    const amountBgStyle = { backgroundImage: `linear-gradient(to right, rgba(${rgb}, 0.15) ${assetPercentage}%, transparent ${assetPercentage}%)` };
-
-                                    const nameRef = el => assetInputRefs.current[`${sectorKey}-${index}-name`] = el;
-                                    const amountRef = el => assetInputRefs.current[`${sectorKey}-${index}-amount`] = el;
-                                    const monthlyContribRef = el => assetInputRefs.current[`${sectorKey}-${index}-monthlyContrib`] = el;
 
                                     return (
-                                        <div key={asset.id || index} className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                                            {sectorKey !== 'loan' && (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-center">
-                                                    <input ref={nameRef} type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">현재금액</label>
-                                                        <input ref={amountRef} type="number" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">수익률(%)</label>
-                                                        <input type="number" step="0.1" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">수수료/세금(%)</label>
-                                                        <input type="number" step="0.001" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.feeRate ?? 0} onChange={(e) => updateAsset(sectorKey, index, 'feeRate', e.target.value)} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">월납입</label>
-                                                        <input ref={monthlyContribRef} type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">월수입외 납입</label>
-                                                        <div className="flex gap-1">
-                                                            <input type="number" min="0" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraContrib} onChange={(e) => updateAsset(sectorKey, index, 'extraContrib', e.target.value)} />
-                                                            {asset.extraContrib > 0 && (
-                                                                <select className="w-24 border rounded px-1 py-1 text-[10px] bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraFrom} onChange={(e) => updateAsset(sectorKey, index, 'extraFrom', e.target.value)}>
-                                                                    {Object.values(assets).flat().filter(a => a.name !== asset.name).map((d, i) => (
-                                                                        <option key={i} value={d.name}>{d.name}</option>
-                                                                    ))}
-                                                                </select>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <button onClick={() => removeAsset(sectorKey, index)} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
-                                                </div>
-                                            )}
-
-                                            {sectorKey === 'loan' && (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-center">
-                                                    <input ref={nameRef} type="text" placeholder="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">현재잔액</label>
-                                                        <input ref={amountRef} type="number" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">이자율(%)</label>
-                                                        <input type="number" step="0.1" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">월 상환액</label>
-                                                        <input ref={monthlyContribRef} type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">만기(개월)</label>
-                                                        <input type="number" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.maturityMonth ?? 12} onChange={(e) => updateAsset(sectorKey, index, 'maturityMonth', e.target.value)} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 dark:text-gray-200">상환 계좌</label>
-                                                        <select 
-                                                            className="w-full border rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" 
-                                                            value={asset.repaymentAccount} 
-                                                            onChange={(e) => updateAsset(sectorKey, index, 'repaymentAccount', e.target.value)}
-                                                        >
-                                                            {Object.values(assets).flat().filter(a => a.name !== asset.name).map((d, i) => (
-                                                                <option key={i} value={d.name}>{d.name}</option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                    <button onClick={() => removeAsset(sectorKey, index)} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
-                                                </div>
-                                            )}
-                                        </div>
+                                        <AssetRow 
+                                            key={asset.id || index}
+                                            sectorKey={sectorKey}
+                                            index={index}
+                                            asset={asset}
+                                            updateAsset={updateAsset}
+                                            removeAsset={removeAsset}
+                                            accountOptions={accountOptions}
+                                            assetInputRefs={assetInputRefs}
+                                            sectorInfo={sectorInfo}
+                                            sectorTotal={sectorTotal}
+                                            rgb={rgb}
+                                            onAssetDragStart={handleAssetDragStart}
+                                            onAssetDrop={handleAssetDrop}
+                                        />
                                     );
                                 })}
                             </div>
@@ -3666,7 +3277,7 @@
                 );
             }
 
-            const renderFunctions = { renderSummaryPanel, renderScenarioPanel, renderChartsPanel, renderHistoryPanel, renderBudgetPanel, renderMemoPanel, renderRebalancePanel, renderAssetsPanel, renderExpensesPanel, renderEventsPanel, renderDetailAnalysisPanel, renderAssumptionsPanel };
+            const renderFunctions = { renderScenarioPanel, renderChartsPanel, renderHistoryPanel, renderBudgetPanel, renderMemoPanel, renderRebalancePanel, renderAssetsPanel, renderExpensesPanel, renderEventsPanel, renderDetailAnalysisPanel, renderAssumptionsPanel };
 
             // [추가] 사이드바 내비게이션 항목 정의
             const navLabels = window.navLabels || {};
@@ -3698,6 +3309,11 @@
                                         )}
                                         {darkMode ? '☀️ 라이트' : '🌙 다크'}
                                     </button>
+                                    {/* [추가] 실행 취소/다시 실행 버튼 */}
+                                    <div className="flex items-center bg-white dark:bg-gray-700 rounded-md border border-gray-300 dark:border-gray-600">
+                                        <button onClick={undo} disabled={!canUndo} className="px-3 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed border-r border-gray-300 dark:border-gray-600" title="실행 취소 (Ctrl+Z)">↩</button>
+                                        <button onClick={redo} disabled={!canRedo} className="px-3 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed" title="다시 실행 (Ctrl+Y)">↪</button>
+                                    </div>
                                     <button onClick={saveScenario} className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">💾 시나리오 저장</button>
                                     <button onClick={saveAsDefault} className="inline-flex items-center px-3 py-2 border border-blue-300 dark:border-blue-800 text-sm leading-4 font-medium rounded-md text-blue-700 dark:text-blue-400 bg-white dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">⭐ 기본값 저장</button>
                                     <button onClick={loadCustomDefault} className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">↩️ 기본값 불러오기</button>
@@ -3718,6 +3334,11 @@
                                                         <span className={`ml-2 text-[9px] px-1 rounded font-bold ${isPro ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
                                                             {isPro ? 'PRO' : 'FREE'}
                                                         </span>
+                                                {/* [추가] 모바일 메뉴 내 실행 취소/다시 실행 */}
+                                                <div className="flex items-center gap-2 mt-2">
+                                                    <button onClick={undo} disabled={!canUndo} className="flex-1 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded disabled:opacity-30">↩ 실행 취소</button>
+                                                    <button onClick={redo} disabled={!canRedo} className="flex-1 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded disabled:opacity-30">↪ 다시 실행</button>
+                                                </div>
                                                         {/* [추가] 모바일 메뉴 내 동기화 상태 표시 */}
                                                         {verifiedEmail && (isPro || syncStatus === 'syncing') && (
                                                             <div className="flex items-center gap-1 mt-1">
@@ -3793,63 +3414,16 @@
                                     </button>
                                 ) : (
                                     <div className="space-y-2">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div className="min-w-0 flex-1">
-                                                <div className="text-[10px] font-bold text-gray-800 dark:text-gray-200 truncate">
-                                                    {userProfile?.full_name || verifiedEmail}
-                                                </div>
-                                                <div className="flex items-center gap-1 mt-0.5">
-                                                    <span className={`text-[8px] px-1 rounded font-bold ${isPro ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
-                                                        {isPro ? 'PRO' : 'FREE'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <button onClick={() => handleLogout()} className="text-[10px] text-gray-500 hover:text-red-500 underline decoration-gray-300 hover:decoration-red-500 underline-offset-2 transition-colors whitespace-nowrap">
-                                                로그아웃
-                                            </button>
+                                        <div className="text-[11px] font-bold text-gray-800 dark:text-gray-200 truncate mb-1">
+                                            {userProfile?.full_name || verifiedEmail}
                                         </div>
-                                        
-                                        {/* [개선] 암호화 모드 선택 UI (PRO 전용) */}
-                                        {isPro && (
-                                            <div className="p-2 bg-white/50 dark:bg-gray-800/50 rounded-lg border border-indigo-100 dark:border-indigo-800/50 mb-2">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <span className="text-[10px] font-bold text-indigo-400 uppercase shrink-0">보안</span>
-                                                    <div className="flex gap-3">
-                                                    <label className="flex items-center gap-2 px-1 py-0.5 cursor-pointer group">
-                                                        <input 
-                                                            type="radio" 
-                                                            name="encMode" 
-                                                            checked={encryptionMode === 'normal'} 
-                                                            onChange={() => handleModeChange('normal')}
-                                                            className="w-3 h-3 text-indigo-600 focus:ring-indigo-500"
-                                                        />
-                                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">일반</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-2 px-1 py-0.5 cursor-pointer group">
-                                                        <input 
-                                                            type="radio" 
-                                                            name="encMode" 
-                                                            checked={encryptionMode === 'secure'} 
-                                                            onChange={() => handleModeChange('secure')}
-                                                            className="w-3 h-3 text-indigo-600 focus:ring-indigo-500"
-                                                        />
-                                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">강화</span>
-                                                    </label>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        <div className="grid grid-cols-1 gap-1.5 mt-2">
+                                        <div className="grid grid-cols-1 gap-2">
                                             {isPro && (
                                                 <button 
-                                                    onClick={async () => {
-                                                        const { data: { session } } = await withRetry(() => supabase.auth.getSession());
-                                                        if (session) checkSubscription(session, true);
-                                                    }}
-                                                    className="w-full py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all border border-blue-100 dark:border-blue-800"
+                                                    onClick={() => setIsSettingsModalOpen(true)}
+                                                    className="w-full py-2.5 bg-indigo-600 text-white rounded-lg text-[11px] font-bold hover:bg-indigo-700 transition-all shadow-md flex items-center justify-center gap-2"
                                                 >
-                                                    💳 구독 상태 확인
+                                                    ⚙️ 앱 설정 및 보안
                                                 </button>
                                             )}
                                             {!isPro && (
@@ -3864,15 +3438,15 @@
                                                                 );
                                                                 if (error) throw error;
                                                                 if (data) {
-                                                                    alert('🎉 후원 코드가 확인되었습니다! PRO 모드가 활성화됩니다.');
+                                                                    addToast('🎉 후원 코드가 확인되었습니다! PRO 모드가 활성화됩니다.', 'success');
                                                                     const { data: { session } } = await withRetry(() => supabase.auth.getSession());
                                                                     if (session) checkSubscription(session, true);
                                                                 } else {
-                                                                    alert('❌ 유효하지 않거나 이미 사용된 코드입니다.');
+                                                                    addToast('❌ 유효하지 않거나 이미 사용된 코드입니다.', 'error');
                                                                 }
                                                             } catch (err) {
                                                                 console.error('Redeem error:', err);
-                                                                alert('오류가 발생했습니다: ' + err.message);
+                                                                addToast('오류가 발생했습니다: ' + err.message, 'error');
                                                             } finally {
                                                                 setIsLoadingCloud(false);
                                                             }
@@ -3883,19 +3457,14 @@
                                                     🎫 후원 코드 등록
                                                 </button>
                                             )}
-                                            {isPro && (
-                                            <button 
-                                                onClick={() => fetchFromCloud(verifiedEmail, isPro, false, true)} 
-                                                className="w-full py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg text-[10px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all border border-indigo-100 dark:border-indigo-800"
-                                            >
-                                                🔄 클라우드 강제 동기화
-                                            </button>
-                                            )}
                                             <button 
                                                 onClick={() => setIsSuggestionModalOpen(true)} 
                                                 className="w-full py-2 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-lg text-[10px] font-bold hover:bg-yellow-100 dark:hover:bg-yellow-900/50 transition-all border border-yellow-100 dark:border-yellow-800"
                                             >
                                                 💡 기능 제안 / 버그 신고
+                                            </button>
+                                            <button onClick={() => handleLogout()} className="w-full py-1.5 text-[10px] text-gray-500 hover:text-red-500 transition-colors">
+                                                🚪 로그아웃
                                             </button>
                                         </div>
                                     </div>
@@ -3935,21 +3504,43 @@
 
                                 switch (panelId) {
                                     case 'summary':
-                                        return (
-                                            <PanelWrapper {...panelProps} title="📊 요약 및 설정" className="bg-white dark:bg-gray-900 rounded-lg shadow">
-                                                {renderSummaryPanel()}
-                                                {calculation.warnings && calculation.warnings.length > 0 && (
-                                                    <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded shadow-sm">
-                                                        <h3 className="text-sm font-bold text-red-800 dark:text-red-400 mb-2 flex items-center gap-2">⚠️ 시뮬레이션 경고 ({calculation.warnings.length}건)</h3>
-                                                        <ul className="text-xs text-red-700 dark:text-red-300 list-disc list-inside space-y-1 max-h-40 overflow-y-auto">
-                                                            {calculation.warnings.map((w, i) => (
-                                                                <li key={i}>[월 {w.month}] {w.message}</li>
-                                                            ))}
-                                                        </ul>
-                                                    </div>
-                                                )}
-                                            </PanelWrapper>
-                                        );
+                                        return <PanelWrapper {...panelProps} title="📊 요약 및 설정" className="bg-white dark:bg-gray-900 rounded-lg shadow">
+    <SummaryPanel 
+        calculation={calculation}
+        projectionMonths={projectionMonths}
+        baseMonth={baseMonth}
+        displayMode={displayMode}
+        monthlySalary={monthlySalary}
+        setMonthlySalary={setMonthlySalary}
+        setBaseMonth={setBaseMonth}
+        setIsExportModalOpen={setIsExportModalOpen}
+        setIsImportModalOpen={setIsImportModalOpen}
+        exportToCSV={exportToCSV}
+        importFromCSV={importFromCSV}
+        saveToPDF={saveToPDF}
+        saveCurrentAsset={saveCurrentAsset}
+        goalMode={goalMode}
+        setGoalMode={setGoalMode}
+        setGoalSeekResult={setGoalSeekResult}
+        setProjectionMonths={setProjectionMonths}
+        targetAmount={targetAmount}
+        setTargetAmount={setTargetAmount}
+        calculateGoalSeek={calculateGoalSeek}
+        goalSeekResult={goalSeekResult}
+        inflationRate={inflationRate}
+        setInflationRate={setInflationRate}
+    />
+    {calculation.warnings && calculation.warnings.length > 0 && (
+        <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded shadow-sm">
+            <h3 className="text-sm font-bold text-red-800 dark:text-red-400 mb-2 flex items-center gap-2">⚠️ 시뮬레이션 경고 ({calculation.warnings.length}건)</h3>
+            <ul className="text-xs text-red-700 dark:text-red-300 list-disc list-inside space-y-1 max-h-40 overflow-y-auto">
+                {calculation.warnings.map((w, i) => (
+                    <li key={i}>[월 {w.month}] {w.message}</li>
+                ))}
+            </ul>
+        </div>
+    )}
+</PanelWrapper>;
                                     case 'scenario': 
                                         return scenarios.length > 0 && (
                                             <PanelWrapper key={panelId} {...panelProps} title="🔀 시나리오 비교" className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow">
@@ -4048,33 +3639,28 @@
                             <img src="https://blogpfthumb-phinf.pstatic.net/MjAyMzExMDlfMTY2/MDAxNjk5NTM1OTEzNTY2.eBsibH7tHEJ5FeB3gSWJ3hGqz6mbgqM2TsSKS7c2QRog.CNgc4PQL7zumVLSD72sVI_EB6tsPO_Cwd_LKNj0MiyAg.JPEG.whrekrdl/161.jpg/161.jpg?type=w161" alt="네이버 블로그" className="w-10 h-10"/>
                         </a>
                     )}
-                    <DataTransferModal 
-                        isOpen={isExportModalOpen} 
-                        onClose={() => setIsExportModalOpen(false)} 
-                        onConfirm={handleExport} 
-                        type="export"
-                        initialSelection={exportSelection}
-                    />
-                    <DataTransferModal 
-                        isOpen={isImportModalOpen} 
-                        onClose={() => setIsImportModalOpen(false)} 
-                        onConfirm={(selection) => handleImport(selection)} 
-                        type="import"
-                        initialSelection={importSelection}
-                    />
-                    <PrivacyPolicyModal 
-                        isOpen={isPrivacyModalOpen} 
-                        onClose={() => setIsPrivacyModalOpen(false)} 
-                    />
-                    <SuggestionModal 
-                        isOpen={isSuggestionModalOpen} 
-                        onClose={() => setIsSuggestionModalOpen(false)} 
-                        onSubmit={handleSuggestionSubmit}
-                    />
-                    <ProFeaturesModal 
-                        isOpen={isProModalOpen} 
-                        onClose={() => setIsProModalOpen(false)} 
-                    />
+                    {DataTransferModal && (
+                        <>
+                            <DataTransferModal 
+                                isOpen={isExportModalOpen} 
+                                onClose={() => setIsExportModalOpen(false)} 
+                                onConfirm={handleExport} 
+                                type="export"
+                                initialSelection={exportSelection}
+                            />
+                            <DataTransferModal 
+                                isOpen={isImportModalOpen} 
+                                onClose={() => setIsImportModalOpen(false)} 
+                                onConfirm={(selection) => handleImport(selection)} 
+                                type="import"
+                                initialSelection={importSelection}
+                            />
+                        </>
+                    )}
+                    {PrivacyPolicyModal && <PrivacyPolicyModal isOpen={isPrivacyModalOpen} onClose={() => setIsPrivacyModalOpen(false)} />}
+                    {SuggestionModal && <SuggestionModal isOpen={isSuggestionModalOpen} onClose={() => setIsSuggestionModalOpen(false)} onSubmit={handleSuggestionSubmit} />}
+                    {ProFeaturesModal && <ProFeaturesModal isOpen={isProModalOpen} onClose={() => setIsProModalOpen(false)} />}
+                    
                     {calculation.warnings?.length > 0 && (
                         <div className="fixed inset-0 border-[6px] border-red-500 pointer-events-none z-[9999] animate-pulse opacity-60"></div>
                     )}
@@ -4119,21 +3705,35 @@
                             </div>
                         </div>
                     )}
-                    <OnboardingGuide 
+                    {window.OnboardingGuide && <OnboardingGuide 
                         isOpen={isGuideOpen} 
                         onClose={() => setIsGuideOpen(false)} 
                         scrollToPanel={scrollToPanel}
                         isPro={isPro}
-                    />
-                    <EncryptionModal 
+                   
+                        />
+                    }
+                    {window.EncryptionModal && <EncryptionModal 
                         isOpen={isEncryptionModalOpen} 
                         onSelect={handleEncryptionSelect} 
-                    />
-                    <PasswordPromptModal 
+                    />}
+                    {window.PasswordPromptModal && <PasswordPromptModal 
                         isOpen={isPasswordPromptOpen} 
                         onConfirm={handlePasswordConfirm}
                         onCancel={() => setIsPasswordPromptOpen(false)}
-                    />
+                    />}
+                    {window.SettingsModal && <SettingsModal 
+                        isOpen={isSettingsModalOpen} 
+                        onClose={() => setIsSettingsModalOpen(false)}
+                        encryptionMode={encryptionMode}
+                        onModeChange={handleModeChange}
+                        darkMode={darkMode}
+                        onThemeToggle={handleDarkModeToggle}
+                        logoutBehavior={logoutBehavior}
+                        onLogoutBehaviorChange={setLogoutBehavior}
+                        onSyncNow={() => fetchFromCloud(verifiedEmail, isPro, false, true)}
+                        onLogout={handleLogout}
+                    />}
                     {/* [추가] 저장 완료 토스트 */}
                     {showSaveToast && (
                         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[100] bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -4141,6 +3741,12 @@
                             <span className="text-sm font-bold tracking-tight">데이터가 안전하게 저장되었습니다!</span>
                         </div>
                     )}
+                    {/* [추가] 토스트 컨테이너 */}
+                    <div className="fixed bottom-5 left-1/2 transform -translate-x-1/2 z-[110] flex flex-col gap-2 pointer-events-none">
+                        {Toast && toasts.map(toast => (
+                            <Toast key={toast.id} message={toast.message} type={toast.type} onClose={() => removeToast(toast.id)} />
+                        ))}
+                    </div>
                     </div>
             );
         };
@@ -4379,6 +3985,111 @@
                 </div>
             );
         };
+        
+        // [최적화] 자산 입력 행 컴포넌트 분리 및 React.memo 적용
+        // 개별 항목 수정 시 다른 항목들의 불필요한 리렌더링 방지
+        const AssetRow = React.memo(({ 
+            sectorKey, 
+            index, 
+            asset, 
+            updateAsset, 
+            removeAsset, 
+            accountOptions, 
+            assetInputRefs,
+            sectorInfo,
+            sectorTotal,
+            rgb,
+            onAssetDragStart,
+            onAssetDrop
+        }) => {
+            const nameRef = el => { if(assetInputRefs && assetInputRefs.current) assetInputRefs.current[`${sectorKey}-${index}-name`] = el; };
+            const amountRef = el => { if(assetInputRefs && assetInputRefs.current) assetInputRefs.current[`${sectorKey}-${index}-amount`] = el; };
+            const monthlyContribRef = el => { if(assetInputRefs && assetInputRefs.current) assetInputRefs.current[`${sectorKey}-${index}-monthlyContrib`] = el; };
+
+            const assetPercentage = (Number(asset.amount || 0) / sectorTotal) * 100;
+            const amountBgStyle = { backgroundImage: `linear-gradient(to right, rgba(${rgb}, 0.15) ${assetPercentage}%, transparent ${assetPercentage}%)` };
+
+            return (
+                <div className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-3" role="group" aria-label={`${asset.name} 입력 행`}>
+                    <div 
+                        className="cursor-move text-gray-400 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-400 touch-none"
+                        draggable="true"
+                        onDragStart={(e) => onAssetDragStart(e, sectorKey, index)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => onAssetDrop(e, sectorKey, index)}
+                        title="드래그하여 순서 변경"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8h16M4 16h16" /></svg>
+                    </div>
+                    <div className="flex-1">
+                    {sectorKey !== 'loan' ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-center">
+                            <input ref={nameRef} type="text" placeholder="항목명" aria-label="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">현재금액</label>
+                                <input ref={amountRef} type="number" aria-label="현재금액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">수익률(%)</label>
+                                <input type="number" step="0.1" aria-label="수익률" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">수수료/세금(%)</label>
+                                <input type="number" step="0.001" aria-label="수수료 및 세금" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.feeRate ?? 0} onChange={(e) => updateAsset(sectorKey, index, 'feeRate', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월납입</label>
+                                <input ref={monthlyContribRef} type="number" aria-label="월납입액" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월수입외 납입</label>
+                                <div className="flex gap-1">
+                                    <input type="number" min="0" aria-label="월수입외 추가 납입액" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraContrib} onChange={(e) => updateAsset(sectorKey, index, 'extraContrib', e.target.value)} />
+                                    {asset.extraContrib > 0 && (
+                                        <select aria-label="추가 납입 출처 계좌" className="w-24 border rounded px-1 py-1 text-[10px] bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraFrom} onChange={(e) => updateAsset(sectorKey, index, 'extraFrom', e.target.value)}>
+                                            {accountOptions.filter(name => name !== asset.name).map((name, i) => (
+                                                <option key={i} value={name}>{name}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
+                            </div>
+                            <button onClick={() => removeAsset(sectorKey, index)} aria-label={`${asset.name} 삭제`} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-center">
+                            <input ref={nameRef} type="text" placeholder="항목명" aria-label="대출명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">현재잔액</label>
+                                <input ref={amountRef} type="number" aria-label="대출 잔액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">이자율(%)</label>
+                                <input type="number" step="0.1" aria-label="대출 이자율" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월 상환액</label>
+                                <input ref={monthlyContribRef} type="number" aria-label="월 상환액" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">만기(개월)</label>
+                                <input type="number" aria-label="대출 만기 개월 수" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.maturityMonth ?? 12} onChange={(e) => updateAsset(sectorKey, index, 'maturityMonth', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">상환 계좌</label>
+                                <select aria-label="상환 출금 계좌" className="w-full border rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.repaymentAccount} onChange={(e) => updateAsset(sectorKey, index, 'repaymentAccount', e.target.value)}>
+                                    {accountOptions.filter(name => name !== asset.name).map((name, i) => (
+                                        <option key={i} value={name}>{name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <button onClick={() => removeAsset(sectorKey, index)} aria-label={`${asset.name} 삭제`} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
+                        </div>
+                    )}
+                    </div>
+                </div>
+            );
+        });
 
      
 
