@@ -449,8 +449,8 @@ const validateSupabaseConfig = () => {
     const conf = window.SUPABASE_CONFIG || {};
     const isInvalid = (val, ph) => !val || val === ph;
     
-    const url = isInvalid(conf.SUPABASE_URL, '__SUPABASE_URL__') ? null : conf.SUPABASE_URL;
-    const key = isInvalid(conf.SUPABASE_KEY, '__SUPABASE_KEY__') ? null : conf.SUPABASE_KEY;
+    const url = isInvalid(conf.SUPABASE_URL, '__SUPABASE' + '_URL__') ? null : conf.SUPABASE_URL;
+    const key = isInvalid(conf.SUPABASE_KEY, '__SUPABASE' + '_KEY__') ? null : conf.SUPABASE_KEY;
     
     if (isInvalid(conf.SECURITY_KEY, '__SECURITY' + '_KEY__')) {
         console.warn("⚠️ Security Key Not Injected");
