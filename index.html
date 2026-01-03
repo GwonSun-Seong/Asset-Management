@@ -426,11 +426,44 @@
             const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
 
-             const SUPABASE_URL = (window.SUPABASE_CONFIG?.url !== '__SUPABASE_URL__' && window.SUPABASE_CONFIG?.url) || '__SUPABASE_URL__';
-            const SUPABASE_KEY = (window.SUPABASE_CONFIG?.key !== '__SUPABASE_KEY__' && window.SUPABASE_CONFIG?.key) || '__SUPABASE_KEY__';
-            const SECURITY_KEY = (window.SUPABASE_CONFIG?.securityKey !== '__SECURITY_KEY__' && window.SUPABASE_CONFIG?.securityKey) || '__SECURITY_KEY__';
+            // [수정] 플레이스홀더 로드 시점 문제 해결: window.SUPABASE_CONFIG 변경 감시
+            const [supabaseConfig, setSupabaseConfig] = useState(() => {
+                const url = (window.SUPABASE_CONFIG?.url !== '__SUPABASE_URL__' && window.SUPABASE_CONFIG?.url) || '__SUPABASE_URL__';
+                const key = (window.SUPABASE_CONFIG?.key !== '__SUPABASE_KEY__' && window.SUPABASE_CONFIG?.key) || '__SUPABASE_KEY__';
+                const securityKey = (window.SUPABASE_CONFIG?.securityKey !== '__SECURITY_KEY__' && window.SUPABASE_CONFIG?.securityKey) || '__SECURITY_KEY__';
+                return { url, key, securityKey };
+            });
 
+            // [추가] window.SUPABASE_CONFIG 변경 감시 (config.js가 나중에 로드될 수 있음)
+            useEffect(() => {
+                const checkConfig = () => {
+                    const url = (window.SUPABASE_CONFIG?.url !== '__SUPABASE_URL__' && window.SUPABASE_CONFIG?.url) || '__SUPABASE_URL__';
+                    const key = (window.SUPABASE_CONFIG?.key !== '__SUPABASE_KEY__' && window.SUPABASE_CONFIG?.key) || '__SUPABASE_KEY__';
+                    const securityKey = (window.SUPABASE_CONFIG?.securityKey !== '__SECURITY_KEY__' && window.SUPABASE_CONFIG?.securityKey) || '__SECURITY_KEY__';
+                    
+                    // 플레이스홀더가 아닌 실제 값으로 변경되었을 때만 업데이트
+                    if (url !== '__SUPABASE_URL__' && key !== '__SUPABASE_KEY__' && 
+                        (supabaseConfig.url === '__SUPABASE_URL__' || supabaseConfig.key === '__SUPABASE_KEY__')) {
+                        setSupabaseConfig({ url, key, securityKey });
+                    }
+                };
 
+                // 즉시 한 번 체크
+                checkConfig();
+
+                // 주기적으로 체크 (config.js가 비동기로 로드될 수 있음)
+                const interval = setInterval(checkConfig, 100);
+                const timeout = setTimeout(() => clearInterval(interval), 5000); // 5초 후 중단
+
+                return () => {
+                    clearInterval(interval);
+                    clearTimeout(timeout);
+                };
+            }, [supabaseConfig.url, supabaseConfig.key]);
+
+            const SUPABASE_URL = supabaseConfig.url;
+            const SUPABASE_KEY = supabaseConfig.key;
+            const SECURITY_KEY = supabaseConfig.securityKey;
 
             // [추가] 암호화 유틸리티 (컴포넌트 내부로 이동하여 SECURITY_KEY 참조)
             const getEncryptionKey = (mode, secret, userId) => {
@@ -565,7 +598,7 @@
 
             // ===== 초기 데이터 로드 =====
             useEffect(() => {
-                // [요구사항 1] Fix the Loading State Lifecycle
+                // [요구사항 3] Fix the Infinite Loading (Lifecycle Management)
                 const loadInitialData = async () => {
                     try {
                         // [요구사항 5] loadServerConfig 안전 실행
@@ -631,21 +664,21 @@
                     // [요구사항 3] Safe Session Handling
                     if (supabase) {
                         setDbStatus('connected');
-                        const { data: { session }, error } = await withRetry(() => supabase.auth.getSession(), 3, 2000)
+                        const { data: { session } } = await withRetry(() => supabase.auth.getSession(), 3, 2000)
                             .catch(err => ({ data: { session: null }, error: err }));
                         
                         if (session) {
                             await checkSubscription(session, false, mergedData);
                         }
                     } else {
-                        console.log("Running in Local Mode: Supabase configuration missing or invalid.");
+                        console.log('Mode: Local Storage');
                         setDbStatus('local');
                     }
                     } catch (error) {
                         console.error("Initialization error:", error);
                         setDbStatus('error');
                     } finally {
-                        // [요구사항 1] Ensure loading screen always disappears
+                        // [요구사항 3] Crucial: Loading screen always disappears
                         setIsLoading(false);
                         setIsInitialized(true);
                     }
@@ -1080,10 +1113,15 @@
                 }
             }, [isPro, showProjectionInHistory]);
 
-             // [최종] 로그아웃 핸들러: useCallback 통합 및 안정화
+             // [최종] 로그아웃 핸들러: useCallback 통합 및 안정화 (중복 호출 방지 강화)
         const handleLogout = React.useCallback(async (skipSignOut = false) => {
-            if (isProcessing.current) return;
+            // [개선] 중복 호출 방지: 이미 처리 중이면 즉시 반환
+            if (isProcessing.current) {
+                console.log('Logout already in progress, skipping...');
+                return;
+            }
             isProcessing.current = true;
+            
             try {
                 if (supabase && !skipSignOut) {
                     await withRetry(() => supabase.auth.signOut(), 2, 500);
@@ -1102,7 +1140,10 @@
                 setSyncStatus('idle');
                 setSyncStatusError('');
                 setIsCloudLoaded(false);
-                isProcessing.current = false;
+                // [개선] 처리 완료 후 플래그 해제 (약간의 지연을 두어 중복 호출 완전 방지)
+                setTimeout(() => {
+                    isProcessing.current = false;
+                }, 100);
             }
         }, [supabase, logoutBehavior, resetAppData, withRetry]);
 
@@ -1222,17 +1263,33 @@
                 if (!supabase) return;
 
                 // onAuthStateChange는 로그인/로그아웃 이벤트 감지용
+                let isHandlingAuthChange = false; // [개선] 중복 호출 방지 플래그
 
                 const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-                    if (session && !isProcessing.current) {
-                        // [수정] 이벤트 타입 체크 완화: 세션이 있고 데이터 로드 중이 아니면 상태 동기화
-                        // SIGNED_IN 뿐만 아니라 INITIAL_SESSION(새로고침) 등 유효 세션 이벤트 대응
-                        if (!isFetchingRef.current && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
-                            await checkSubscription(session);
+                    // [개선] 중복 호출 방지: 이미 처리 중이면 무시
+                    if (isHandlingAuthChange) {
+                        console.log('Auth state change already handling, skipping...');
+                        return;
+                    }
+                    isHandlingAuthChange = true;
+
+                    try {
+                        if (session && !isProcessing.current) {
+                            // [수정] 이벤트 타입 체크 완화: 세션이 있고 데이터 로드 중이 아니면 상태 동기화
+                            // SIGNED_IN 뿐만 아니라 INITIAL_SESSION(새로고침) 등 유효 세션 이벤트 대응
+                            if (!isFetchingRef.current && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+                                await checkSubscription(session);
+                            }
+                        } else if (!session && !isProcessing.current) {
+                            // 세션이 없으면 로컬 상태 초기화 (이미 로그아웃된 상태이므로 signOut 호출 안 함)
+                            // [개선] handleLogout이 이미 처리 중이 아닐 때만 호출
+                            await handleLogout(true);
                         }
-                    } else if (!session) {
-                        // 세션이 없으면 로컬 상태 초기화 (이미 로그아웃된 상태이므로 signOut 호출 안 함)
-                        handleLogout(true);
+                    } finally {
+                        // [개선] 처리 완료 후 플래그 해제 (약간의 지연을 두어 중복 호출 완전 방지)
+                        setTimeout(() => {
+                            isHandlingAuthChange = false;
+                        }, 200);
                     }
                 });
 
