@@ -447,13 +447,6 @@
             // [수정] 설정 검증 및 추출 (utils.js의 헬퍼 사용 - 플레이스홀더 필터링)
             const { SUPABASE_URL, SUPABASE_KEY, SECURITY_KEY } = useMemo(() => window.validateSupabaseConfig ? window.validateSupabaseConfig() : {}, []);
 
-            // [추가] 암호화 유틸리티 (컴포넌트 내부로 이동하여 SECURITY_KEY 참조)
-            const getEncryptionKey = React.useCallback((mode, secret, userId) => {
-                if (mode === 'secure') return secret;
-                if (!SECURITY_KEY) return null;
-                return userId + SECURITY_KEY;
-            }, [SECURITY_KEY]);
-            
             const supabase = useMemo(() => {
                 // 플레이스홀더 체크: 빌드가 안 되었거나 환경변수가 없으면 클라이언트 생성 안 함
                 if (!window.supabase || !SUPABASE_URL || !SUPABASE_KEY) {
@@ -714,7 +707,7 @@
                             return;
                         }
                     }
-                    key = getEncryptionKey(targetMode, secret, userProfile?.id || targetEmail);
+                    key = window.getEncryptionKey(targetMode, secret, targetEmail, SECURITY_KEY);
                 }
 
                 if (!key) {
@@ -760,7 +753,7 @@
         }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded, withRetry, getEncryptionKey]);
 
         // 클라우드 데이터 불러오기
-        const fetchFromCloud = React.useCallback(async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null, userIdOverride = null) => {
+        const fetchFromCloud = React.useCallback(async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null) => {
             if (!supabase || isProcessing.current || isFetchingRef.current) return;
             isFetchingRef.current = true; // Lock fetching
             setSyncStatus('syncing');
@@ -827,7 +820,7 @@
 
                     if (isManual || !localTime || cloudTime > localTime) {
                         const actualAppData = decryptedData.appData || decryptedData;
-                        lastSavedDataRef.current = JSON.stringify(decryptedData);
+                        lastSavedDataRef.current = JSON.stringify(decryptedData); // Sync snapshot immediately
                         resetAppData(actualAppData);
                         if (decryptedData.scenarios) setScenarios(decryptedData.scenarios);
                         if (decryptedData.assetHistory) setAssetHistory(decryptedData.assetHistory);
@@ -846,9 +839,9 @@
                 addToast(`데이터 로드 실패: ${err.message}`, 'error');
             } finally {
                 setIsLoadingCloud(false);
-                isFetchingRef.current = false; // Always unlock fetching
+                isFetchingRef.current = false;
             }
-        }, [supabase, withRetry, getEncryptionKey, resetAppData, saveToCloud, addToast, encryptionMode, userSecretKey, userProfile, verifiedEmail, isPro]);
+        }, [supabase, withRetry, resetAppData, saveToCloud, addToast, encryptionMode, userSecretKey, userProfile, verifiedEmail, isPro, SECURITY_KEY]);
 
         // 로그아웃 핸들러
         const handleLogout = React.useCallback(async (skipSignOut = false) => {
@@ -899,7 +892,7 @@
                         const proStatus = profile ? profile.is_paid : false;
                         setIsPro(proStatus);
                         if (proStatus) {
-                            await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride, session.user.id);
+                            await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
                         } else {
                             setSyncStatus('idle');
                         }
@@ -1350,7 +1343,7 @@
                 const unifiedData = { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current };
                 if (pendingCiphertext.current) {
                     try {
-                        const key = getEncryptionKey('secure', password, userProfile?.id || verifiedEmail);
+                        const key = window.getEncryptionKey('secure', password, verifiedEmail, SECURITY_KEY);
                         const decrypted = decryptData(pendingCiphertext.current, key);
                         resetAppData(decrypted.appData || decrypted);
                         if (decrypted.scenarios) setScenarios(decrypted.scenarios);
@@ -1365,7 +1358,7 @@
                 } else if (pendingSave.current) {
                     pendingSave.current = false;
                     setEncryptionMode('secure');
-                    const key = getEncryptionKey('secure', password, userProfile?.id || verifiedEmail);
+                    const key = window.getEncryptionKey('secure', password, verifiedEmail, SECURITY_KEY);
                     saveToCloud(unifiedData, true, null, null, key, 'secure');
                 }
             };
@@ -1381,7 +1374,7 @@
                     setEncryptionMode('normal');
                     setUserSecretKey('');
                     sessionStorage.removeItem('assetDashboardSecretKey');
-                    const key = getEncryptionKey('normal', '', userProfile?.id || verifiedEmail);
+                    const key = window.getEncryptionKey('normal', '', verifiedEmail, SECURITY_KEY);
                     await saveToCloud({ appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current }, true, null, null, key, 'normal');
                 }
             };
@@ -3537,7 +3530,7 @@
                             </div>
                         </div>
                     )}
-                    {window.OnboardingGuide && <OnboardingGuide 
+                    {window.OnboardingGuide && <window.OnboardingGuide 
                         isOpen={isGuideOpen} 
                         onClose={() => {
                             setIsGuideOpen(false);
@@ -3548,16 +3541,16 @@
                    
                         />
                     }
-                    {window.EncryptionModal && <EncryptionModal 
+                    {window.EncryptionModal && <window.EncryptionModal 
                         isOpen={isEncryptionModalOpen} 
                         onSelect={handleEncryptionSelect} 
                     />}
-                    {window.PasswordPromptModal && <PasswordPromptModal 
+                    {window.PasswordPromptModal && <window.PasswordPromptModal 
                         isOpen={isPasswordPromptOpen} 
                         onConfirm={handlePasswordConfirm}
                         onCancel={() => setIsPasswordPromptOpen(false)}
                     />}
-                    {window.SettingsModal && <SettingsModal 
+                    {window.SettingsModal && <window.SettingsModal 
                         isOpen={isSettingsModalOpen} 
                         onClose={() => setIsSettingsModalOpen(false)}
                         encryptionMode={encryptionMode}

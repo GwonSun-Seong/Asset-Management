@@ -431,6 +431,17 @@ const createGradient = (ctx, colors) => {
     return gradient;
 };
 
+// [수정] 일관된 암호화 키 생성 로직
+const getEncryptionKey = (mode, secret, email, securityKey) => {
+    if (mode === 'secure') return secret || null;
+    
+    // Normal 모드: 일관성을 위해 UUID 대신 이메일을 식별자로 사용
+    const placeholder = '__SECURITY' + '_KEY__';
+    if (!securityKey || securityKey === placeholder) return null;
+    
+    return email + securityKey;
+};
+
 // [추가] Supabase 환경변수 검증 및 추출 헬퍼
 const validateSupabaseConfig = () => {
     const conf = window.SUPABASE_CONFIG || {};
@@ -438,10 +449,6 @@ const validateSupabaseConfig = () => {
     
     const url = isInvalid(conf.SUPABASE_URL, '__SUPABASE' + '_URL__') ? null : conf.SUPABASE_URL;
     const key = isInvalid(conf.SUPABASE_KEY, '__SUPABASE' + '_KEY__') ? null : conf.SUPABASE_KEY;
-    
-    if (isInvalid(conf.SECURITY_KEY, '__SECURITY' + '_KEY__')) {
-        console.warn("⚠️ Security Key Not Injected");
-    }
     const sec = isInvalid(conf.SECURITY_KEY, '__SECURITY' + '_KEY__') ? null : conf.SECURITY_KEY;
 
     if (!url || !key) {
@@ -465,3 +472,4 @@ window.decryptData = decryptData;
 window.getRGB = getRGB;
 window.createGradient = createGradient;
 window.validateSupabaseConfig = validateSupabaseConfig;
+window.getEncryptionKey = getEncryptionKey;
