@@ -702,18 +702,27 @@
 
             let payloadData = unifiedData;
             if (targetPro && targetMode) {
-                let secret = null;
-                if (targetMode === 'secure') {
-                    secret = keyOverride || userSecretKey || sessionStorage.getItem('assetDashboardSecretKey');
-                    if (!secret) {
-                        pendingSave.current = true;
-                        setIsPasswordPromptOpen(true);
-                        return;
-                    }
-                }
-                const key = getEncryptionKey(targetMode, secret, userProfile?.id || targetEmail);
+                let key = keyOverride;
+                
                 if (!key) {
-                    addToast('보안 키 설정 오류로 저장이 중단되었습니다.', 'error');
+                    let secret = null;
+                    if (targetMode === 'secure') {
+                        secret = userSecretKey || sessionStorage.getItem('assetDashboardSecretKey');
+                        if (!secret) {
+                            pendingSave.current = true;
+                            setIsPasswordPromptOpen(true);
+                            return;
+                        }
+                    }
+                    key = getEncryptionKey(targetMode, secret, userProfile?.id || targetEmail);
+                }
+
+                if (!key) {
+                    if (targetMode === 'normal') {
+                        addToast('Cloud sync disabled: System Security Key missing.', 'error');
+                    } else {
+                        addToast('보안 키 설정 오류로 저장이 중단되었습니다.', 'error');
+                    }
                     setSyncStatus('error');
                     return;
                 }
@@ -751,7 +760,7 @@
         }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded, withRetry, getEncryptionKey]);
 
         // 클라우드 데이터 불러오기
-        const fetchFromCloud = React.useCallback(async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null) => {
+        const fetchFromCloud = React.useCallback(async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null, userIdOverride = null) => {
             if (!supabase || isProcessing.current || isFetchingRef.current) return;
             isFetchingRef.current = true;
             setSyncStatus('syncing');
@@ -776,15 +785,23 @@
                             if (!secret) {
                                 pendingCiphertext.current = data.data;
                                 setIsPasswordPromptOpen(true);
+                                // [Fix] Reset loading flags on early return
+                                setIsLoadingCloud(false);
+                                isFetchingRef.current = false;
                                 return;
                             }
                         }
                         
-                        const key = getEncryptionKey(encType, secret, userProfile?.id || email);
+                        // [Fix] Use userIdOverride if available (from checkSubscription) to avoid stale state
+                        const currentUserId = userIdOverride || userProfile?.id;
+                        const key = getEncryptionKey(encType, secret, currentUserId || email);
+
                         // [수정] 일반 모드에서 보안 키(SECURITY_KEY)가 없는 경우 예외 처리 (초기화 묻지 않음)
                         if (!key && encType === 'normal') {
                             addToast('시스템 보안 키가 설정되지 않아 데이터를 불러올 수 없습니다. (환경변수 확인 필요)', 'error');
                             setSyncStatus('error');
+                            setIsLoadingCloud(false);
+                            isFetchingRef.current = false;
                             return;
                         }
 
@@ -799,11 +816,15 @@
                                     decryptedData = decryptData(data.data, legacyKey);
                                     console.log("Legacy key decryption successful. Migrating data to new key standard...");
                                     // 마이그레이션 성공: 새 키로 데이터를 다시 저장하여 마이그레이션 완료
-                                    saveToCloud(decryptedData, true, email, pro);
+                                    // [Fix] Pass the new key explicitly to avoid race condition with stale userProfile
+                                    const newKey = getEncryptionKey(encType, null, currentUserId || email);
+                                    saveToCloud(decryptedData, true, email, pro, newKey, 'normal');
                                 } catch (legacyErr) {
                                     addToast('데이터 복호화 실패: 보안 키가 변경되었거나 데이터가 손상되었습니다.', 'error');
                                     console.error("Decryption failed with both primary and legacy keys:", legacyErr);
                                     setSyncStatus('error');
+                                    setIsLoadingCloud(false);
+                                    isFetchingRef.current = false;
                                     return;
                                 }
                             } else {
@@ -811,6 +832,8 @@
                                 addToast('데이터 복호화 실패: 비밀번호가 다르거나 데이터가 손상되었습니다.', 'error');
                                 console.error("Decryption failed:", err);
                                 setSyncStatus('error');
+                                setIsLoadingCloud(false);
+                                isFetchingRef.current = false;
                                 return;
                             }
                         }
@@ -891,7 +914,7 @@
                         const proStatus = profile ? profile.is_paid : false;
                         setIsPro(proStatus);
                         if (proStatus) {
-                            await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
+                            await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride, session.user.id);
                         } else {
                             setSyncStatus('idle');
                         }
