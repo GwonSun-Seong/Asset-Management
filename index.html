@@ -434,6 +434,13 @@
             const [isCloudLoaded, setIsCloudLoaded] = useState(false); // [추가] 클라우드 데이터 로드 완료 여부 (Race Condition 방지)
             const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
+            
+            // [추가] 하단에 있던 상태들을 초기화 순서 보장을 위해 위로 이동
+            const [assetHistory, setAssetHistory] = React.useState([]);
+            const [showProjectionInHistory, setShowProjectionInHistory] = useState(false);
+            const [logoutBehavior, setLogoutBehavior] = useState(() => localStorage.getItem('assetLogoutBehavior') || 'keep');
+            useEffect(() => { localStorage.setItem('assetLogoutBehavior', logoutBehavior); }, [logoutBehavior]);
+
 
             // [Robust Initialization] Environment Variable Extraction & Validation
             const { SUPABASE_URL, SUPABASE_KEY, SECURITY_KEY } = useMemo(() => {
@@ -681,6 +688,162 @@
             assetHistoryRef.current = assetHistory;
         }, [appData, scenarios, assetHistory]);
 
+            // [통합 및 이동] 모든 주요 헬퍼 함수들을 Effect 이전에 정의하여 ReferenceError 방지
+
+            // 로그아웃 핸들러
+            const handleLogout = React.useCallback(async (skipSignOut = false) => {
+                if (isProcessing.current) return;
+                isProcessing.current = true;
+                try {
+                    if (supabase && !skipSignOut) {
+                        await withRetry(() => supabase.auth.signOut(), 2, 500);
+                    }
+                } catch (error) {
+                    console.error('Logout error:', error);
+                } finally {
+                    if (!skipSignOut && logoutBehavior === 'reset') {
+                        resetAppData(window.publicDefaultData);
+                        localStorage.removeItem('assetDashboardDataV3');
+                    }
+                    setVerifiedEmail(null); 
+                    setUserProfile(null);
+                    setIsPro(false);
+                    setSyncStatus('idle');
+                    setSyncStatusError('');
+                    setIsCloudLoaded(false);
+                    setTimeout(() => { isProcessing.current = false; }, 100);
+                }
+            }, [supabase, logoutBehavior, resetAppData, withRetry]);
+
+            // 클라우드 저장 함수
+            const saveToCloud = React.useCallback(async (unifiedData, force = false, emailOverride = null, proOverride = null, keyOverride = null, modeOverride = null) => {
+                if (!supabase) return;
+                const targetEmail = emailOverride || verifiedEmail;
+                const targetPro = proOverride !== null ? proOverride : isPro;
+                const targetMode = modeOverride || encryptionMode;
+                if (!targetEmail || isDemoMode || !unifiedData || !isInitialized || !isCloudLoaded) return;
+                if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
+                const currentDataStr = JSON.stringify(unifiedData);
+                if (!force && currentDataStr === lastSavedDataRef.current) return;
+
+                let payloadData = unifiedData;
+                if (targetPro && targetMode) {
+                    const secret = keyOverride || userSecretKey || sessionStorage.getItem('assetDashboardSecretKey');
+                    if (targetMode === 'secure' && !secret) {
+                        pendingSave.current = true;
+                        setIsPasswordPromptOpen(true);
+                        return;
+                    }
+                    const key = getEncryptionKey(targetMode, secret, userProfile?.id || targetEmail);
+                    if (!key) return;
+                    payloadData = encryptData(unifiedData, key);
+                }
+                setSyncStatus('syncing');
+                try {
+                    const { data, error } = await withRetry(() => 
+                        supabase.from('user_assets').upsert({ 
+                            email: targetEmail, data: payloadData,
+                            encryption_type: targetPro ? targetMode : null,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'email' }).select('updated_at').single()
+                    );
+                    if (error) throw error;
+                    if (data) {
+                        setSyncStatus('synced');
+                        localStorage.setItem('assetDashboardLastUpdate', data.updated_at);
+                        lastSavedDataRef.current = currentDataStr;
+                    }
+                } catch (error) {
+                    setSyncStatus('error');
+                    setSyncStatusError(error.message || '저장 실패');
+                }
+            }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded, withRetry, getEncryptionKey]);
+
+            // 클라우드 데이터 불러오기
+            const fetchFromCloud = React.useCallback(async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null) => {
+                if (!supabase || isProcessing.current || isFetchingRef.current) return;
+                isFetchingRef.current = true;
+                setSyncStatus('syncing');
+                setIsLoadingCloud(true);
+                try {
+                    const { data, error } = await withRetry(() => 
+                        supabase.from('user_assets').select('data, updated_at, encryption_type').eq('email', email).maybeSingle()
+                    );
+                    if (error) throw error;
+                    if (data && data.data) {
+                        const encType = data.encryption_type;
+                        const isLegacy = !encType || encType === 'none';
+                        if (pro && isLegacy) setIsEncryptionModalOpen(true);
+                        else if (pro) setEncryptionMode(encType);
+
+                        let decryptedData = data.data;
+                        if (!isLegacy && pro) {
+                            if (encType === 'secure' && !userSecretKey) {
+                                pendingCiphertext.current = data.data;
+                                setIsPasswordPromptOpen(true);
+                                return;
+                            }
+                            const key = getEncryptionKey(encType, userSecretKey, userProfile?.id || email);
+                            try {
+                                decryptedData = decryptData(data.data, key);
+                            } catch (err) {
+                                if (encType === 'normal' && confirm("보안 키 불일치로 복호화에 실패했습니다. 클라우드 데이터를 초기화하시겠습니까?")) {
+                                    saveToCloud({ appData: localDataOverride || appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current }, true, email, pro);
+                                    return;
+                                }
+                                throw err;
+                            }
+                        }
+                        const cloudTime = new Date(data.updated_at).getTime();
+                        const localTime = new Date(localStorage.getItem('assetDashboardLastUpdate') || 0).getTime();
+                        if (isManual || !localTime || cloudTime > localTime) {
+                            const actualAppData = decryptedData.appData || decryptedData;
+                            lastSavedDataRef.current = JSON.stringify(decryptedData);
+                            resetAppData(actualAppData);
+                            if (decryptedData.scenarios) setScenarios(decryptedData.scenarios);
+                            if (decryptedData.assetHistory) setAssetHistory(decryptedData.assetHistory);
+                            localStorage.setItem('assetDashboardLastUpdate', data.updated_at);
+                        } else if (isInitialLoad && localTime > cloudTime && !confirm("기기의 데이터가 더 최신입니다. 클라우드 데이터를 불러오시겠습니까?")) {
+                            saveToCloud({ appData: localDataOverride || appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current }, true, email, pro);
+                        }
+                        setSyncStatus('synced');
+                        setIsCloudLoaded(true);
+                    } else {
+                        setIsCloudLoaded(true);
+                        setSyncStatus('synced');
+                    }
+                } catch (err) {
+                    setSyncStatus('error');
+                    addToast(`데이터 로드 실패: ${err.message}`, 'error');
+                } finally {
+                    setIsLoadingCloud(false);
+                    isFetchingRef.current = false;
+                }
+            }, [supabase, withRetry, getEncryptionKey, resetAppData, saveToCloud, addToast, encryptionMode, userSecretKey, userProfile, verifiedEmail, isPro]);
+
+            // 구독 상태 확인 및 데이터 로드 함수
+            const checkSubscription = React.useCallback(async (session, isManualCheck = false, localDataOverride = null) => {
+                if (!session?.user || (isCheckingSubscriptionRef.current && !isManualCheck)) return;
+                if (isManualCheck) setIsLoadingCloud(true);
+                isCheckingSubscriptionRef.current = true;
+                setSyncStatus('syncing');
+                setVerifiedEmail(session.user.email);
+                setUserProfile(session.user.user_metadata);
+
+                if (!navigator.onLine) {
+                    isCheckingSubscriptionRef.current = false;
+                    if (isManualCheck) setIsLoadingCloud(false);
+                    return;
+                }
+
+                try {
+                    const { data: profile, error: fetchError } = await withRetry(
+                        () => supabase.from('user_profiles').select('is_paid').eq('id', session.user.id).maybeSingle()
+                    );
+                    if (!fetchError) {
+                        const proStatus = profile ? profile.is_paid : false;
+                        setIsPro(proStatus);
+                        if (proStatus) await fetchFromCloud(session.user.email, proStatus,
             // [추가] 보안 키 세션 유지
             useEffect(() => {
                 if (userSecretKey) {
