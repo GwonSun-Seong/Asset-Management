@@ -442,9 +442,11 @@
                     const securityKey = (window.SUPABASE_CONFIG?.securityKey !== '__SECURITY_KEY__' && window.SUPABASE_CONFIG?.securityKey) || '__SECURITY_KEY__';
                     
                     // 플레이스홀더가 아닌 실제 값으로 변경되었을 때만 업데이트
-                    if (url !== '__SUPABASE_URL__' && key !== '__SUPABASE_KEY__' && 
-                        (supabaseConfig.url === '__SUPABASE_URL__' || supabaseConfig.key === '__SUPABASE_KEY__')) {
-                        setSupabaseConfig({ url, key, securityKey });
+                    // 현재 상태와 비교하여 변경사항이 있을 때만 업데이트
+                    if (url !== '__SUPABASE_URL__' && key !== '__SUPABASE_KEY__') {
+                        if (supabaseConfig.url !== url || supabaseConfig.key !== key || supabaseConfig.securityKey !== securityKey) {
+                            setSupabaseConfig({ url, key, securityKey });
+                        }
                     }
                 };
 
@@ -452,14 +454,15 @@
                 checkConfig();
 
                 // 주기적으로 체크 (config.js가 비동기로 로드될 수 있음)
+                // 더 긴 시간 동안 체크 (10초까지)
                 const interval = setInterval(checkConfig, 100);
-                const timeout = setTimeout(() => clearInterval(interval), 5000); // 5초 후 중단
+                const timeout = setTimeout(() => clearInterval(interval), 10000); // 10초 후 중단
 
                 return () => {
                     clearInterval(interval);
                     clearTimeout(timeout);
                 };
-            }, [supabaseConfig.url, supabaseConfig.key]);
+            }, []); // [개선] 의존성 제거하여 무한 루프 방지
 
             const SUPABASE_URL = supabaseConfig.url;
             const SUPABASE_KEY = supabaseConfig.key;
@@ -1297,9 +1300,36 @@
             }, [supabase, handleLogout]);
 
             const handleLogin = async () => {
-                if (!supabase) return addToast('데이터베이스 연결 설정이 필요합니다.', 'error');
+                // [개선] supabase가 null일 때 config 재확인 및 재시도
+                let client = supabase;
+                
+                if (!client) {
+                    // config.js가 아직 로드되지 않았을 수 있으므로 재확인
+                    const url = (window.SUPABASE_CONFIG?.url !== '__SUPABASE_URL__' && window.SUPABASE_CONFIG?.url) || '__SUPABASE_URL__';
+                    const key = (window.SUPABASE_CONFIG?.key !== '__SUPABASE_KEY__' && window.SUPABASE_CONFIG?.key) || '__SUPABASE_KEY__';
+                    const securityKey = (window.SUPABASE_CONFIG?.securityKey !== '__SECURITY_KEY__' && window.SUPABASE_CONFIG?.securityKey) || '__SECURITY_KEY__';
+                    
+                    if (url !== '__SUPABASE_URL__' && key !== '__SUPABASE_KEY__' && window.supabase) {
+                        try {
+                            // 즉시 클라이언트 생성 시도
+                            client = window.supabase.createClient(url, key);
+                            // 상태 업데이트를 트리거하여 다음 렌더링에서 사용 가능하도록
+                            setSupabaseConfig({ url, key, securityKey });
+                            console.log('Supabase client created dynamically on login attempt');
+                        } catch (e) {
+                            console.error("Failed to create Supabase client:", e);
+                        }
+                    }
+                    
+                    // 여전히 null이면 설정이 안 된 것
+                    if (!client) {
+                        addToast('데이터베이스 연결 설정이 필요합니다. config.js 파일을 확인해주세요.', 'error');
+                        return;
+                    }
+                }
+                
                 try {
-                    const { error } = await withRetry(() => supabase.auth.signInWithOAuth({
+                    const { error } = await withRetry(() => client.auth.signInWithOAuth({
                         provider: 'google',
                         options: { redirectTo: window.location.origin }
                     }));
