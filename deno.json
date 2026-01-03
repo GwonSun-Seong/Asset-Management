@@ -1,9 +1,0 @@
-{
-  "tasks": {
-    "build": "deno run -A https://deno.land/x/esbuild@v0.20.1/mod.js utils.js config.js modals.js defaultData.js --bundle --minify --outdir=dist --platform=browser --format=iife",
-    "serve": "deno run -A https://deno.land/std/http/file_server.ts . --port 8080"
-  },
-  "imports": {
-    "esbuild": "https://deno.land/x/esbuild@v0.20.1/mod.js"
-  }
-}

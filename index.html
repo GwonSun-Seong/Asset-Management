@@ -444,17 +444,15 @@
             useEffect(() => { localStorage.setItem('assetLogoutBehavior', logoutBehavior); }, [logoutBehavior]);
 
 
-            // [수정] 전역 설정에서 직접 참조 (불필요한 Memo 제거 및 실시간 참조 보장)
-            const SUPABASE_URL = window.SUPABASE_CONFIG?.SUPABASE_URL;
-            const SUPABASE_KEY = window.SUPABASE_CONFIG?.SUPABASE_KEY;
-            const SECURITY_KEY = window.SUPABASE_CONFIG?.SECURITY_KEY;
+            // [수정] 설정 검증 및 추출 (utils.js의 헬퍼 사용 - 플레이스홀더 필터링)
+            const { SUPABASE_URL, SUPABASE_KEY, SECURITY_KEY } = useMemo(() => window.validateSupabaseConfig ? window.validateSupabaseConfig() : {}, []);
 
             // [추가] 암호화 유틸리티 (컴포넌트 내부로 이동하여 SECURITY_KEY 참조)
-            const getEncryptionKey = (mode, secret, userId) => {
+            const getEncryptionKey = React.useCallback((mode, secret, userId) => {
                 if (mode === 'secure') return secret;
-                const salt = SECURITY_KEY;
-                return userId + salt;
-            };
+                if (!SECURITY_KEY) return null;
+                return userId + SECURITY_KEY;
+            }, [SECURITY_KEY]);
             
             const supabase = useMemo(() => {
                 // 플레이스홀더 체크: 빌드가 안 되었거나 환경변수가 없으면 클라이언트 생성 안 함
@@ -463,18 +461,6 @@
                     return null;
                 }
                 
-                // 실제 URL 형식인지 확인
-                if (!SUPABASE_URL.includes('http://') && !SUPABASE_URL.includes('https://')) {
-                    console.warn("Supabase: Invalid URL format", SUPABASE_URL);
-                    return null;
-                }
-                
-                // KEY 길이 확인 (Supabase anon key는 보통 100자 이상)
-                if (SUPABASE_KEY.length < 50) {
-                    console.warn("Supabase: Key too short (likely dummy)", SUPABASE_KEY);
-                    return null;
-                }
-
                 try {
                     return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 } catch (e) {
@@ -1290,7 +1276,7 @@
                     } else if (!SUPABASE_URL || !SUPABASE_KEY) {
                         msg += '설정값이 없습니다. (Cloudflare 환경변수 미설정)';
                     } else {
-                        msg += '연결 설정 오류 (URL 형식 또는 키 길이를 확인해주세요)';
+                        msg += 'Supabase 클라이언트 초기화 실패 (설정값을 확인해주세요)';
                     }
                     addToast(msg, 'error');
                     return;

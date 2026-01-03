@@ -431,19 +431,6 @@ const createGradient = (ctx, colors) => {
     return gradient;
 };
 
-// [추가] 암호화 키 생성 로직 (utils.js로 이동하여 일관성 유지)
-const getEncryptionKey = (mode, secret, userId, securityKey) => {
-    if (mode === 'secure') {
-        return secret || null;
-    }
-    // Normal 모드: 빌드 시 주입된 SECURITY_KEY 사용
-    // 플레이스홀더가 그대로라면 주입 실패로 간주하고 null 반환 (폴백 사용 금지)
-    if (!securityKey || securityKey === ('__SECURITY' + '_KEY__')) {
-        return null;
-    }
-    return userId + securityKey;
-};
-
 // [추가] Supabase 환경변수 검증 및 추출 헬퍼
 const validateSupabaseConfig = () => {
     const conf = window.SUPABASE_CONFIG || {};
@@ -478,4 +465,3 @@ window.decryptData = decryptData;
 window.getRGB = getRGB;
 window.createGradient = createGradient;
 window.validateSupabaseConfig = validateSupabaseConfig;
-window.getEncryptionKey = getEncryptionKey;
