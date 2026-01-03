@@ -436,22 +436,16 @@
 
             // [Robust Initialization] Environment Variable Extraction & Validation
             const { SUPABASE_URL, SUPABASE_KEY, SECURITY_KEY } = useMemo(() => {
-                const conf = window.SUPABASE_CONFIG || {};
-                const isValid = (val, ph) => val && val !== ph;
-                return {
-                    SUPABASE_URL: isValid(conf.SUPABASE_URL, '__SUPABASE_URL__') ? conf.SUPABASE_URL : null,
-                    SUPABASE_KEY: isValid(conf.SUPABASE_KEY, '__SUPABASE_KEY__') ? conf.SUPABASE_KEY : null,
-                    SECURITY_KEY: isValid(conf.SECURITY_KEY, '__SECURITY_KEY__') ? conf.SECURITY_KEY : null
-                };
+                return window.validateSupabaseConfig ? window.validateSupabaseConfig() : {};
             }, []);
 
-            // [Security Key Fallback]
+            // [Encryption Security] Ensure key exists, do not fallback to insecure defaults
             const getEncryptionKey = React.useCallback((mode, secret, userId) => {
                 if (mode === 'secure') return secret;
                 
                 if (!SECURITY_KEY) {
-                    console.warn("⚠️ SECURITY_KEY is missing. Using fallback salt (Insecure for production).");
-                    return userId + 'asset_planner_fallback_salt_v1';
+                    console.error("⛔ Encryption blocked: SECURITY_KEY is missing or invalid.");
+                    return null;
                 }
                 return userId + SECURITY_KEY;
             }, [SECURITY_KEY]);
@@ -829,7 +823,19 @@
                     return;
                 }
                 const key = getEncryptionKey(targetMode, secret, userProfile?.id || targetEmail);
-                payloadData = encryptData(unifiedData, key);
+                if (!key) {
+                    addToast('보안 키 설정 오류로 저장이 중단되었습니다.', 'error');
+                    setSyncStatus('error');
+                    return;
+                }
+                try {
+                    payloadData = encryptData(unifiedData, key);
+                } catch (e) {
+                    console.error("Encryption error:", e);
+                    addToast('데이터 암호화 중 오류가 발생했습니다.', 'error');
+                    setSyncStatus('error');
+                    return;
+                }
             }
 
             setSyncStatus('syncing');
@@ -1390,6 +1396,7 @@
                                 }
                                 try {
                                     const key = getEncryptionKey(encType, userSecretKey, userProfile?.id || email);
+                                    if (!key) throw new Error('보안 키가 설정되지 않아 복호화할 수 없습니다.');
                                     decryptedData = decryptData(data.data, key);
                                 } catch (err) {
                                     setSyncStatus('error');

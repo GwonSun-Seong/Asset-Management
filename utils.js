@@ -367,6 +367,7 @@ const withRetry = async (fn, maxAttempts = 3, timeoutMs = 12000, delayMs = 2000,
 
 // [추가] 데이터 암호화 함수
 const encryptData = (data, key) => {
+    if (!key) throw new Error('Encryption key is missing or invalid');
     if (!window.CryptoJS || !window.pako) throw new Error('CryptoJS or pako library not loaded');
     const jsonStr = JSON.stringify(data);
     const compressed = window.pako.deflate(jsonStr);
@@ -376,6 +377,7 @@ const encryptData = (data, key) => {
 
 // [추가] 데이터 복호화 함수
 const decryptData = (ciphertext, key) => {
+    if (!key) throw new Error('Decryption key is missing or invalid');
     if (!window.CryptoJS || !window.pako) throw new Error('CryptoJS or pako library not loaded');
     const decrypted = window.CryptoJS.AES.decrypt(ciphertext, key);
     if (decrypted.sigBytes <= 0) throw new Error('Decryption failed');
@@ -429,6 +431,21 @@ const createGradient = (ctx, colors) => {
     return gradient;
 };
 
+// [추가] Supabase 환경변수 검증 및 추출 헬퍼
+const validateSupabaseConfig = () => {
+    const conf = window.SUPABASE_CONFIG || {};
+    const isInvalid = (val, ph) => !val || val === ph;
+    
+    const url = isInvalid(conf.SUPABASE_URL, '__SUPABASE_URL__') ? null : conf.SUPABASE_URL;
+    const key = isInvalid(conf.SUPABASE_KEY, '__SUPABASE_KEY__') ? null : conf.SUPABASE_KEY;
+    const sec = isInvalid(conf.SECURITY_KEY, '__SECURITY_KEY__') ? null : conf.SECURITY_KEY;
+
+    if (!url || !key) {
+        console.warn("⚠️ Supabase Config Missing or Invalid: App will run in Local Storage Mode.");
+    }
+    
+    return { SUPABASE_URL: url, SUPABASE_KEY: key, SECURITY_KEY: sec };
+};
 
 // 전역 객체에 노출
 window.formatNumber = formatNumber;
@@ -443,3 +460,4 @@ window.encryptData = encryptData;
 window.decryptData = decryptData;
 window.getRGB = getRGB;
 window.createGradient = createGradient;
+window.validateSupabaseConfig = validateSupabaseConfig;
