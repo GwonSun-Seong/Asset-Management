@@ -427,10 +427,10 @@
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
 
             // Cloudflare 빌드 시점에 환경 변수로 교체될 플레이스홀더
-            const SUPABASE_URL = window.SUPABASE_CONFIG?.url || '__SUPABASE_URL__';
-            const SUPABASE_KEY = window.SUPABASE_CONFIG?.key || '__SUPABASE_KEY__';
-            // [보안 주의] SECURITY_KEY는 클라이언트 사이드에 노출되므로, 실제 서비스 시에는 Edge Functions 등 서버 사이드에서 암호화 로직을 처리하는 것이 권장됩니다.
-            const SECURITY_KEY = '__SECURITY_KEY__';
+             const SUPABASE_URL = window.SUPABASE_CONFIG?.url || window.SUPABASE_URL || '__SUPABASE_URL__';
+            const SUPABASE_KEY = window.SUPABASE_CONFIG?.key || window.SUPABASE_KEY || '__SUPABASE_KEY__';
+            const SECURITY_KEY = window.SUPABASE_CONFIG?.securityKey || window.SECURITY_KEY || '__SECURITY_KEY__';
+
 
             // [추가] 암호화 유틸리티 (컴포넌트 내부로 이동하여 SECURITY_KEY 참조)
             const getEncryptionKey = (mode, secret, userId) => {
@@ -440,8 +440,14 @@
             };
             
             const supabase = useMemo(() => {
-                if (SUPABASE_URL.startsWith('__') || SUPABASE_KEY.startsWith('__')) return null;
-                return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                const isConfigured = SUPABASE_URL && !SUPABASE_URL.startsWith('__') && SUPABASE_KEY && !SUPABASE_KEY.startsWith('__');
+                if (!window.supabase || !isConfigured) return null;
+                try {
+                    return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                } catch (e) {
+                    console.error("Supabase client creation failed:", e);
+                    return null;
+                }
             }, []);
             
 
