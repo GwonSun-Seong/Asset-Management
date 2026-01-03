@@ -425,6 +425,7 @@
             const [userProfile, setUserProfile] = useState(null); // [추가] 사용자 프로필 정보
             const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'syncing' | 'synced' | 'error'
             const [syncError, setSyncStatusError] = useState(''); // [추가] 구체적 에러 메시지
+            const [dbStatus, setDbStatus] = useState('idle'); // [추가] DB 연결 상태
             const [isLoadingCloud, setIsLoadingCloud] = useState(false); // [추가] 클라우드 로딩 상태
             const [isLoading, setIsLoading] = useState(true); // [추가] 앱 초기 로딩 상태
             const [isInitialized, setIsInitialized] = useState(false); // [추가] 초기화 완료 상태
@@ -857,7 +858,7 @@
                 setSyncStatus('error');
                 setSyncStatusError(error.message || '저장 실패');
             }
-        }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded, withRetry]);
+        }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded, withRetry, getEncryptionKey]);
 
         // [최적화] 통합 키보드 단축키 리스너 (중복 제거 및 Ref 활용)
         useEffect(() => {
@@ -1145,7 +1146,7 @@
 
 
             // [추가] 구독 상태 확인 및 데이터 로드 함수 (재사용 가능하도록 분리)
-            const checkSubscription = async (session, isManualCheck = false, localDataOverride = null) => {
+            const checkSubscription = React.useCallback(async (session, isManualCheck = false, localDataOverride = null) => {
                 if (!session?.user) return;
                 if (isCheckingSubscriptionRef.current && !isManualCheck) return; // 중복 실행 방지
                 
@@ -1211,7 +1212,7 @@
                     isCheckingSubscriptionRef.current = false;
                     if (isManualCheck) setIsLoadingCloud(false);
                 }
-            };
+            }, [supabase, withRetry, addToast]); // fetchFromCloud는 아래에서 정의되므로 deps에서 제외하거나 순서 조정 필요 (여기서는 호이스팅 활용)
 
             // [추가] 기능 제안 전송 핸들러
             const handleSuggestionSubmit = async (content) => {
@@ -1399,9 +1400,12 @@
                                 } catch (err) {
                                     console.error("Decryption details:", err); // [추가] 상세 에러 로그 확인용
                                     setSyncStatus('error');
-                                    const errMsg = err.message === 'Decryption failed' || err.message.includes('Malformed') 
-                                        ? '복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다.'
-                                        : `데이터 로드 오류: ${err.message}`;
+                                    let errMsg;
+                                    if (err.message === 'Decryption failed' || err.message.includes('Malformed')) {
+                                        errMsg = encType === 'secure' ? '복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다.' : '복호화 실패: 보안 키(SECURITY_KEY)가 일치하지 않거나 데이터가 손상되었습니다.';
+                                    } else {
+                                        errMsg = `데이터 로드 오류: ${err.message}`;
+                                    }
                                     setSyncStatusError(errMsg);
                                     addToast(errMsg, 'error');
                                     return;
@@ -1463,7 +1467,14 @@
                                     // localDataOverride가 있으면(초기 로드 시) 그것을 사용, 아니면 현재 appData 사용
                                     setIsCloudLoaded(true); // 저장 허용 상태로 변경
                                     // [수정] 상태 업데이트 전이므로 인자로 받은 email, pro 정보를 직접 전달
-                                    saveToCloud(localDataOverride || appData, true, email, pro);
+                                    
+                                    // [보완] 전체 데이터 구조(시나리오, 히스토리 포함)를 구성하여 저장
+                                    const dataToSave = {
+                                        appData: localDataOverride || appDataRef.current,
+                                        scenarios: scenariosRef.current,
+                                        assetHistory: assetHistoryRef.current
+                                    };
+                                    saveToCloud(dataToSave, true, email, pro);
                                 }
                             }
                         }
@@ -1490,7 +1501,12 @@
 
                             // [추가] 레거시 데이터인 경우 현재 설정된 암호화 모드로 즉시 마이그레이션 실행
                             if (isLegacy && pro && encryptionMode) {
-                                saveToCloud({ appData: actualAppData, scenarios, assetHistory }, true);
+                                // [보완] 현재 로컬 상태가 아닌, 방금 로드한 데이터를 기준으로 저장
+                                saveToCloud({ 
+                                    appData: actualAppData, 
+                                    scenarios: decryptedData.scenarios || [], 
+                                    assetHistory: decryptedData.assetHistory || [] 
+                                }, true);
                             }
                         }
 
@@ -1525,7 +1541,7 @@
                     setIsLoadingCloud(false);
                     isFetchingRef.current = false;
                 }
-            };
+            }, [supabase, withRetry, getEncryptionKey, decryptData, resetAppData, saveToCloud, addToast, encryptionMode, userSecretKey, userProfile]);
 
             // [추가] 암호화 모드 선택 핸들러
             const handleEncryptionSelect = (mode) => {
@@ -1620,7 +1636,7 @@
                 return () => {
                     supabase.removeChannel(channel);
                 };
-            }, [supabase, verifiedEmail, isPro]);
+            }, [supabase, verifiedEmail, isPro, fetchFromCloud]);
 
 
 
