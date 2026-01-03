@@ -442,18 +442,18 @@
             // [추가] 암호화 유틸리티 (컴포넌트 내부로 이동하여 SECURITY_KEY 참조)
             const getEncryptionKey = (mode, secret, userId) => {
                 if (mode === 'secure') return secret;
-                const salt = SECURITY_KEY;
+                // 플레이스홀더가 남아있거나 비어있으면 기본 salt 사용 (보안 강화를 위해 빌드 시 주입 권장)
+                const salt = (SECURITY_KEY && SECURITY_KEY !== '__SECURITY_KEY__') ? SECURITY_KEY : 'asset_planner_fallback_salt_v1';
                 return userId + salt;
             };
             
             const supabase = useMemo(() => {
                 if (!window.supabase) return null;
 
-                // 어떤 변수가 누락되었는지 상세 디버깅 로그 출력
+                // 필수 연결 정보(URL, KEY)만 체크하여 클라이언트 생성 허용
                 const missingVars = [];
                 if (!SUPABASE_URL || SUPABASE_URL === '__SUPABASE_URL__') missingVars.push('SUPABASE_URL');
                 if (!SUPABASE_KEY || SUPABASE_KEY === '__SUPABASE_KEY__') missingVars.push('SUPABASE_KEY');
-                if (!SECURITY_KEY || SECURITY_KEY === '__SECURITY_KEY__') missingVars.push('SECURITY_KEY');
 
                 if (missingVars.length > 0) {
                     console.warn(`[Supabase] 다음 환경변수가 설정되지 않아 로컬 모드로 동작합니다: ${missingVars.join(', ')}`);
@@ -691,14 +691,14 @@
 
         // [최적화] 상태 추적을 위한 Ref (단축키 및 이벤트 리스너 stale closure 방지)
             const appDataRef = useRef(appData);
-        const scenariosRef = useRef(scenarios);
-        const assetHistoryRef = useRef(assetHistory);
+            const scenariosRef = useRef(scenarios);
+            const assetHistoryRef = useRef(assetHistory);
 
-        useEffect(() => { 
-            appDataRef.current = appData; 
-            scenariosRef.current = scenarios;
-            assetHistoryRef.current = assetHistory;
-        }, [appData, scenarios, assetHistory]);
+            useEffect(() => { 
+                appDataRef.current = appData; 
+                scenariosRef.current = scenarios;
+                assetHistoryRef.current = assetHistory;
+            }, [appData, scenarios, assetHistory]);
 
             // [추가] 보안 키 세션 유지
             useEffect(() => {
@@ -826,19 +826,20 @@
             if (!targetEmail || isDemoMode || !unifiedData || !isInitialized || !isCloudLoaded) return;
             if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
 
+            const currentDataStr = JSON.stringify(unifiedData);
+            if (!force && currentDataStr === lastSavedDataRef.current) return;
+
             let payloadData = unifiedData;
             if (targetPro && targetMode) {
-                if (targetMode === 'secure' && !userSecretKey && !keyOverride && !sessionStorage.getItem('assetDashboardSecretKey')) {
+                const secret = keyOverride || userSecretKey || sessionStorage.getItem('assetDashboardSecretKey');
+                if (targetMode === 'secure' && !secret) {
                     pendingSave.current = true;
                     setIsPasswordPromptOpen(true);
                     return;
                 }
-                const key = keyOverride || getEncryptionKey(targetMode, userSecretKey, userProfile?.id || targetEmail);
+                const key = getEncryptionKey(targetMode, secret, userProfile?.id || targetEmail);
                 payloadData = encryptData(unifiedData, key);
             }
-
-            const currentDataStr = JSON.stringify(unifiedData);
-            if (!force && currentDataStr === lastSavedDataRef.current) return;
 
             setSyncStatus('syncing');
             try {
@@ -1253,54 +1254,28 @@
             };
 
             useEffect(() => {
-                // [수정] 초기 로딩 로직은 loadInitialData로 통합되었으므로 여기서는 Auth 리스너만 관리
                 if (!supabase) return;
 
-                // onAuthStateChange는 로그인/로그아웃 이벤트 감지용
-                let isHandlingAuthChange = false; // [개선] 중복 호출 방지 플래그
-
-                const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-                    // [개선] 중복 호출 방지: 이미 처리 중이면 무시
-                    if (isHandlingAuthChange) {
-                        console.log('Auth state change already handling, skipping...');
-                        return;
-                    }
-                    isHandlingAuthChange = true;
-
-                    try {
-                        if (session && !isProcessing.current) {
-                            // [수정] 이벤트 타입 체크 완화: 세션이 있고 데이터 로드 중이 아니면 상태 동기화
-                            // SIGNED_IN 뿐만 아니라 INITIAL_SESSION(새로고침) 등 유효 세션 이벤트 대응
-                            if (!isFetchingRef.current && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
-                                await checkSubscription(session);
-                            }
-                        } else if (!session && !isProcessing.current) {
-                            // 세션이 없으면 로컬 상태 초기화 (이미 로그아웃된 상태이므로 signOut 호출 안 함)
-                            // [개선] handleLogout이 이미 처리 중이 아닐 때만 호출
-                            await handleLogout(true);
+                const authHandler = async (event, session) => {
+                    if (isProcessing.current) return;
+                    
+                    if (session) {
+                        if (!isFetchingRef.current && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+                            await checkSubscription(session);
                         }
-                    } finally {
-                        // [개선] 처리 완료 후 플래그 해제 (약간의 지연을 두어 중복 호출 완전 방지)
-                        setTimeout(() => {
-                            isHandlingAuthChange = false;
-                        }, 200);
+                    } else if (event === 'SIGNED_OUT') {
+                        await handleLogout(true);
                     }
-                });
+                };
+
+                const { data: { subscription } } = supabase.auth.onAuthStateChange(authHandler);
 
                 return () => subscription.unsubscribe();
             }, [supabase, handleLogout]);
 
             const handleLogin = async () => {
-                if (!supabase) {
-                    const missing = [];
-                    if (!SUPABASE_URL || SUPABASE_URL === '__SUPABASE_URL__') missing.push('URL');
-                    if (!SUPABASE_KEY || SUPABASE_KEY === '__SUPABASE_KEY__') missing.push('KEY');
-                    if (!SECURITY_KEY || SECURITY_KEY === '__SECURITY_KEY__') missing.push('SECURITY_KEY');
-                    
-                    const msg = missing.length > 0 ? `누락된 설정: ${missing.join(', ')}` : 'Supabase 라이브러리 로드 실패';
-                    addToast(`데이터베이스 연결 실패 (${msg}). 빌드 커맨드를 확인하세요.`, 'error');
-                    return;
-                }
+                if (!supabase) return addToast('데이터베이스 연결 설정이 필요합니다.', 'error');
+                
                 try {
                     const { error } = await withRetry(() => supabase.auth.signInWithOAuth({
                         provider: 'google',
@@ -1469,16 +1444,13 @@
                         }
 
                         if (shouldLoad) {
-                            
-                            // [개선] 통합 데이터 구조 대응 (appData, scenarios, assetHistory)
                             const actualAppData = decryptedData.appData || decryptedData;
-                            
-                            // [추가] 데이터 무결성 검사
-                            if (!actualAppData || typeof actualAppData !== 'object') {
-                                throw new Error('유효하지 않은 데이터 형식입니다.');
-                            }
+                            if (!actualAppData || typeof actualAppData !== 'object') throw new Error('유효하지 않은 데이터 형식입니다.');
 
-                            resetAppData(actualAppData); // [수정] 클라우드 로드 시 히스토리 초기화
+                            // [중요] 상태 업데이트 전 lastSavedDataRef를 먼저 업데이트하여 자동 저장 루프 방지
+                            lastSavedDataRef.current = JSON.stringify(decryptedData);
+                            
+                            resetAppData(actualAppData);
                             
                             if (decryptedData.scenarios) {
                                 setScenarios(decryptedData.scenarios);
@@ -1490,7 +1462,6 @@
                             }
 
                             localStorage.setItem('assetDashboardLastUpdate', cloudLastUpdate);
-                            lastSavedDataRef.current = JSON.stringify(decryptedData); // [추가] 로드된 데이터를 기준점으로 설정
 
                             // [추가] 레거시 데이터인 경우 현재 설정된 암호화 모드로 즉시 마이그레이션 실행
                             if (isLegacy && pro && encryptionMode) {
@@ -3797,7 +3768,10 @@
                     )}
                     {window.OnboardingGuide && <OnboardingGuide 
                         isOpen={isGuideOpen} 
-                        onClose={() => setIsGuideOpen(false)} 
+                        onClose={() => {
+                            setIsGuideOpen(false);
+                            localStorage.setItem('asset_planner_guide_completed', 'true');
+                        }} 
                         scrollToPanel={scrollToPanel}
                         isPro={isPro}
                    
