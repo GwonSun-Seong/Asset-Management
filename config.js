@@ -38,7 +38,7 @@ const sectorInfo = {
 window.USE_SERVER_CONFIG = false;
 
 // [설정] Supabase 연결 정보
-// index.html에서 __ENV_* 플레이스홀더로 설정된 경우, 빌드 시 환경변수로 대체됨
+// index.html에서 __SUPABASE_URL__, __SUPABASE_KEY__, __SECURITY_KEY__ 플레이스홀더로 설정된 경우, 빌드 시 환경변수로 대체됨
 
 // [설정] 온보딩 가이드 단계 정의
 window.ONBOARDING_STEPS = [

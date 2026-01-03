@@ -11,11 +11,11 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // [빌드 시 환경변수 주입] Cloudflare Pages 빌드 시 deno.json의 build:cf 태스크가 __ENV_* 플레이스홀더를 실제 환경변수로 대체
+        // [빌드 시 환경변수 주입] Cloudflare Pages 빌드 시 __* 플레이스홀더를 실제 환경변수로 대체
         window.SUPABASE_CONFIG = {
-            SUPABASE_URL: '__ENV_SUPABASE_URL__',
-            SUPABASE_KEY: '__ENV_SUPABASE_KEY__',
-            SECURITY_KEY: '__ENV_SECURITY_KEY__'
+            SUPABASE_URL: '__SUPABASE_URL__',
+            SUPABASE_KEY: '__SUPABASE_KEY__',
+            SECURITY_KEY: '__SECURITY_KEY__'
         };
     </script>
     <script src="config.js"></script>
@@ -451,11 +451,10 @@
                 if (!window.supabase || !SUPABASE_URL || !SUPABASE_KEY) return null;
                 
                 // 플레이스홀더가 그대로 남아있는지 확인
-                if (SUPABASE_URL === '__ENV_SUPABASE_URL__' || SUPABASE_URL === '__SUPABASE_URL__' ||
-                    SUPABASE_KEY === '__ENV_SUPABASE_KEY__' || SUPABASE_KEY === '__SUPABASE_KEY__') {
+                if (SUPABASE_URL === '__SUPABASE_URL__' || SUPABASE_KEY === '__SUPABASE_KEY__' || SECURITY_KEY === '__SECURITY_KEY__') {
                     return null;
                 }
-                
+
                 // 실제 URL 형식인지 확인
                 if (!SUPABASE_URL.includes('http://') && !SUPABASE_URL.includes('https://')) {
                     return null;
@@ -472,7 +471,7 @@
                     console.error("Supabase client creation failed:", e);
                     return null;
                 }
-            }, [SUPABASE_URL, SUPABASE_KEY]);
+            }, [SUPABASE_URL, SUPABASE_KEY, SECURITY_KEY]);
             
 
             const [goalSeekResult, setGoalSeekResult] = useState(null);
