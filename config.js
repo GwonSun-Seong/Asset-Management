@@ -37,11 +37,13 @@ const sectorInfo = {
 // [설정] 서버 설정 사용 여부
 window.USE_SERVER_CONFIG = false;
 
-// [설정] Supabase 연결 정보 (필요시 여기에 입력)
-window.SUPABASE_CONFIG = {
-    url: '__SUPABASE_URL__',
-    key: '__SUPABASE_KEY__'
-};
+// [설정] Supabase 연결 정보 (환경변수가 없을 때만 플레이스홀더 사용)
+if (!window.SUPABASE_CONFIG || window.SUPABASE_CONFIG.url === '__ENV_SUPABASE_URL__' || !window.SUPABASE_CONFIG.url) {
+    window.SUPABASE_CONFIG = window.SUPABASE_CONFIG || {};
+    window.SUPABASE_CONFIG.url = window.SUPABASE_CONFIG.url || '__SUPABASE_URL__';
+    window.SUPABASE_CONFIG.key = window.SUPABASE_CONFIG.key || '__SUPABASE_KEY__';
+    window.SUPABASE_CONFIG.securityKey = window.SUPABASE_CONFIG.securityKey || '__SECURITY_KEY__';
+}
 
 // [설정] 온보딩 가이드 단계 정의
 window.ONBOARDING_STEPS = [

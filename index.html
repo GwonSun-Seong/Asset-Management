@@ -10,6 +10,14 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // [빌드 시 환경변수 주입] Cloudflare Pages 빌드 시 deno.json의 build:cf 태스크가 __ENV_* 플레이스홀더를 실제 환경변수로 대체
+        window.SUPABASE_CONFIG = {
+            url: '__ENV_SUPABASE_URL__',
+            key: '__ENV_SUPABASE_KEY__',
+            securityKey: '__ENV_SECURITY_KEY__'
+        };
+    </script>
     <script src="config.js"></script>
     <script type="text/babel" src="modals.js"></script>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">

@@ -1,6 +1,7 @@
 {
   "tasks": {
     "build": "deno run -A https://deno.land/x/esbuild@v0.20.1/mod.js utils.js config.js modals.js defaultData.js --bundle --minify --outdir=dist --platform=browser --format=iife",
+    "build:cf": "deno eval \"const url=Deno.env.get('SUPABASE_URL')||'__SUPABASE_URL__';const key=Deno.env.get('SUPABASE_KEY')||'__SUPABASE_KEY__';const sec=Deno.env.get('SECURITY_KEY')||'__SECURITY_KEY__';let h=await Deno.readTextFile('index.html');h=h.replace(/__ENV_SUPABASE_URL__/g,url).replace(/__ENV_SUPABASE_KEY__/g,key).replace(/__ENV_SECURITY_KEY__/g,sec);await Deno.writeTextFile('index.html',h);console.log('✅ Built');\"",
     "serve": "deno run -A https://deno.land/std/http/file_server.ts . --port 8080"
   },
   "imports": {
