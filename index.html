@@ -13,9 +13,9 @@
     <script>
         // [빌드 시 환경변수 주입] Cloudflare Pages 빌드 시 deno.json의 build:cf 태스크가 __ENV_* 플레이스홀더를 실제 환경변수로 대체
         window.SUPABASE_CONFIG = {
-            url: '__ENV_SUPABASE_URL__',
-            key: '__ENV_SUPABASE_KEY__',
-            securityKey: '__ENV_SECURITY_KEY__'
+            SUPABASE_URL: '__ENV_SUPABASE_URL__',
+            SUPABASE_KEY: '__ENV_SUPABASE_KEY__',
+            SECURITY_KEY: '__ENV_SECURITY_KEY__'
         };
     </script>
     <script src="config.js"></script>
@@ -434,20 +434,10 @@
             const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
 
-            // [수정] Supabase 설정 및 클라이언트 초기화 로직 단순화 (환경변수 주입 우선)
-            const supabaseConfig = useMemo(() => {
-                const cfg = window.SUPABASE_CONFIG || {};
-                const isInvalid = (s) => !s || s.startsWith('__ENV_') || s.startsWith('__SUPABASE_');
-                return {
-                    url: isInvalid(cfg.url) ? '' : cfg.url,
-                    key: isInvalid(cfg.key) ? '' : cfg.key,
-                    securityKey: isInvalid(cfg.securityKey) ? '' : cfg.securityKey
-                };
-            }, []);
-
-            const SUPABASE_URL = supabaseConfig.url;
-            const SUPABASE_KEY = supabaseConfig.key;
-            const SECURITY_KEY = supabaseConfig.securityKey;
+            // [수정] 전역 설정에서 직접 참조 (불필요한 Memo 제거 및 실시간 참조 보장)
+            const SUPABASE_URL = window.SUPABASE_CONFIG?.SUPABASE_URL;
+            const SUPABASE_KEY = window.SUPABASE_CONFIG?.SUPABASE_KEY;
+            const SECURITY_KEY = window.SUPABASE_CONFIG?.SECURITY_KEY;
 
             // [추가] 암호화 유틸리티 (컴포넌트 내부로 이동하여 SECURITY_KEY 참조)
             const getEncryptionKey = (mode, secret, userId) => {
@@ -457,7 +447,25 @@
             };
             
             const supabase = useMemo(() => {
+                // 플레이스홀더 체크: 빌드가 안 되었거나 환경변수가 없으면 클라이언트 생성 안 함
                 if (!window.supabase || !SUPABASE_URL || !SUPABASE_KEY) return null;
+                
+                // 플레이스홀더가 그대로 남아있는지 확인
+                if (SUPABASE_URL === '__ENV_SUPABASE_URL__' || SUPABASE_URL === '__SUPABASE_URL__' ||
+                    SUPABASE_KEY === '__ENV_SUPABASE_KEY__' || SUPABASE_KEY === '__SUPABASE_KEY__') {
+                    return null;
+                }
+                
+                // 실제 URL 형식인지 확인
+                if (!SUPABASE_URL.includes('http://') && !SUPABASE_URL.includes('https://')) {
+                    return null;
+                }
+                
+                // KEY 길이 확인 (Supabase anon key는 보통 100자 이상)
+                if (SUPABASE_KEY.length < 50) {
+                    return null;
+                }
+
                 try {
                     return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 } catch (e) {

@@ -39,38 +39,6 @@ window.USE_SERVER_CONFIG = false;
 
 // [설정] Supabase 연결 정보
 // index.html에서 __ENV_* 플레이스홀더로 설정된 경우, 빌드 시 환경변수로 대체됨
-// 실제 환경변수가 주입되었는지 확인 (http 포함 여부로 판단)
-if (!window.SUPABASE_CONFIG) {
-    window.SUPABASE_CONFIG = {};
-}
-
-// 실제 값인지 확인하는 헬퍼 함수
-const isRealValue = (val, isUrl) => {
-    if (!val || typeof val !== 'string') return false;
-    // 플레이스홀더 체크
-    if (val === '__SUPABASE_URL__' || val === '__ENV_SUPABASE_URL__') return false;
-    if (val === '__SUPABASE_KEY__' || val === '__ENV_SUPABASE_KEY__') return false;
-    if (val === '__SECURITY_KEY__' || val === '__ENV_SECURITY_KEY__') return false;
-    // URL인 경우 http 포함 여부 체크
-    if (isUrl && (!val.includes('http://') && !val.includes('https://'))) return false;
-    // KEY인 경우 최소 길이 체크 (Supabase anon key는 보통 100자 이상)
-    if (!isUrl && val.length < 50) return false;
-    return true;
-};
-
-// 실제 값이 이미 있으면 덮어쓰지 않음 (빌드 완료된 경우)
-// 플레이스홀더만 있을 때만 기본값으로 설정
-if (!isRealValue(window.SUPABASE_CONFIG.url, true)) {
-    window.SUPABASE_CONFIG.url = '__SUPABASE_URL__';
-}
-
-if (!isRealValue(window.SUPABASE_CONFIG.key, false)) {
-    window.SUPABASE_CONFIG.key = '__SUPABASE_KEY__';
-}
-
-if (!isRealValue(window.SUPABASE_CONFIG.securityKey, false)) {
-    window.SUPABASE_CONFIG.securityKey = '__SECURITY_KEY__';
-}
 
 // [설정] 온보딩 가이드 단계 정의
 window.ONBOARDING_STEPS = [
