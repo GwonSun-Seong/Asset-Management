@@ -434,71 +434,16 @@
             const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
 
-            // [수정] 플레이스홀더 로드 시점 문제 해결: window.SUPABASE_CONFIG 변경 감시
-            const [supabaseConfig, setSupabaseConfig] = useState(() => {
-                // __ENV_* 플레이스홀더가 실제 URL로 대체되었는지 확인 (빌드 완료 여부)
-                const url = window.SUPABASE_CONFIG?.url;
-                const key = window.SUPABASE_CONFIG?.key;
-                const securityKey = window.SUPABASE_CONFIG?.securityKey;
-                
-                // 실제 값이 있으면 사용, 없으면 플레이스홀더
-                const finalUrl = (url && url !== '__SUPABASE_URL__' && url !== '__ENV_SUPABASE_URL__' && (url.includes('http://') || url.includes('https://'))) 
-                    ? url : '__SUPABASE_URL__';
-                const finalKey = (key && key !== '__SUPABASE_KEY__' && key !== '__ENV_SUPABASE_KEY__' && key.length >= 50)
-                    ? key : '__SUPABASE_KEY__';
-                const finalSecurityKey = (securityKey && securityKey !== '__SECURITY_KEY__' && securityKey !== '__ENV_SECURITY_KEY__')
-                    ? securityKey : '__SECURITY_KEY__';
-                
-                return { url: finalUrl, key: finalKey, securityKey: finalSecurityKey };
-            });
-
-            // [추가] window.SUPABASE_CONFIG 변경 감시 (config.js가 나중에 로드될 수 있음)
-            useEffect(() => {
-                let mounted = true;
-                
-                const checkConfig = () => {
-                    if (!mounted) return;
-                    
-                    const url = window.SUPABASE_CONFIG?.url;
-                    const key = window.SUPABASE_CONFIG?.key;
-                    const securityKey = window.SUPABASE_CONFIG?.securityKey;
-                    
-                    // 실제 값인지 확인 (플레이스홀더가 아닌 경우)
-                    const finalUrl = (url && url !== '__SUPABASE_URL__' && url !== '__ENV_SUPABASE_URL__' && (url.includes('http://') || url.includes('https://'))) 
-                        ? url : '__SUPABASE_URL__';
-                    const finalKey = (key && key !== '__SUPABASE_KEY__' && key !== '__ENV_SUPABASE_KEY__' && key.length >= 50)
-                        ? key : '__SUPABASE_KEY__';
-                    const finalSecurityKey = (securityKey && securityKey !== '__SECURITY_KEY__' && securityKey !== '__ENV_SECURITY_KEY__')
-                        ? securityKey : '__SECURITY_KEY__';
-                    
-                    // 플레이스홀더가 아닌 실제 값으로 변경되었을 때만 업데이트
-                    if (finalUrl !== '__SUPABASE_URL__' && finalKey !== '__SUPABASE_KEY__') {
-                        // 현재 상태와 비교하여 변경사항이 있을 때만 업데이트
-                        setSupabaseConfig(prev => {
-                            if (prev.url !== finalUrl || prev.key !== finalKey || prev.securityKey !== finalSecurityKey) {
-                                return { url: finalUrl, key: finalKey, securityKey: finalSecurityKey };
-                            }
-                            return prev;
-                        });
-                    }
+            // [수정] Supabase 설정 및 클라이언트 초기화 로직 단순화 (환경변수 주입 우선)
+            const supabaseConfig = useMemo(() => {
+                const cfg = window.SUPABASE_CONFIG || {};
+                const isInvalid = (s) => !s || s.startsWith('__ENV_') || s.startsWith('__SUPABASE_');
+                return {
+                    url: isInvalid(cfg.url) ? '' : cfg.url,
+                    key: isInvalid(cfg.key) ? '' : cfg.key,
+                    securityKey: isInvalid(cfg.securityKey) ? '' : cfg.securityKey
                 };
-
-                // 즉시 한 번 체크
-                checkConfig();
-
-                // 주기적으로 체크 (config.js가 비동기로 로드될 수 있음)
-                // 더 긴 시간 동안 체크 (10초까지)
-                const interval = setInterval(checkConfig, 100);
-                const timeout = setTimeout(() => {
-                    clearInterval(interval);
-                }, 10000); // 10초 후 중단
-
-                return () => {
-                    mounted = false;
-                    clearInterval(interval);
-                    clearTimeout(timeout);
-                };
-            }, []); // [개선] 의존성 제거하여 무한 루프 방지 및 stale closure 방지
+            }, []);
 
             const SUPABASE_URL = supabaseConfig.url;
             const SUPABASE_KEY = supabaseConfig.key;
@@ -512,10 +457,7 @@
             };
             
             const supabase = useMemo(() => {
-                if (!window.supabase) return null;
-                // 플레이스홀더 상태 그대로라면 연결하지 않음
-                if (SUPABASE_URL === '__SUPABASE_URL__' || SUPABASE_KEY === '__SUPABASE_KEY__') return null;
-                
+                if (!window.supabase || !SUPABASE_URL || !SUPABASE_KEY) return null;
                 try {
                     return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 } catch (e) {
@@ -1336,44 +1278,12 @@
             }, [supabase, handleLogout]);
 
             const handleLogin = async () => {
-                // [개선] supabase가 null일 때 config 재확인 및 재시도
-                let client = supabase;
-                
-                if (!client) {
-                    // config.js가 아직 로드되지 않았을 수 있으므로 재확인
-                    const url = window.SUPABASE_CONFIG?.url;
-                    const key = window.SUPABASE_CONFIG?.key;
-                    const securityKey = window.SUPABASE_CONFIG?.securityKey;
-                    
-                    // 실제 값인지 확인 (플레이스홀더가 아닌 경우)
-                    const finalUrl = (url && url !== '__SUPABASE_URL__' && url !== '__ENV_SUPABASE_URL__' && (url.includes('http://') || url.includes('https://'))) 
-                        ? url : null;
-                    const finalKey = (key && key !== '__SUPABASE_KEY__' && key !== '__ENV_SUPABASE_KEY__' && key.length >= 50)
-                        ? key : null;
-                    const finalSecurityKey = (securityKey && securityKey !== '__SECURITY_KEY__' && securityKey !== '__ENV_SECURITY_KEY__')
-                        ? securityKey : '__SECURITY_KEY__';
-                    
-                    if (finalUrl && finalKey && window.supabase) {
-                        try {
-                            // 즉시 클라이언트 생성 시도
-                            client = window.supabase.createClient(finalUrl, finalKey);
-                            // 상태 업데이트를 트리거하여 다음 렌더링에서 사용 가능하도록
-                            setSupabaseConfig({ url: finalUrl, key: finalKey, securityKey: finalSecurityKey });
-                            console.log('Supabase client created dynamically on login attempt');
-                        } catch (e) {
-                            console.error("Failed to create Supabase client:", e);
-                        }
-                    }
-                    
-                    // 여전히 null이면 설정이 안 된 것
-                    if (!client) {
-                        addToast('데이터베이스 연결 설정이 필요합니다. Cloudflare Pages 환경변수를 확인해주세요.', 'error');
-                        return;
-                    }
+                if (!supabase) {
+                    addToast('데이터베이스 연결 설정이 필요합니다. Cloudflare Pages 환경변수를 확인해주세요.', 'error');
+                    return;
                 }
-                
                 try {
-                    const { error } = await withRetry(() => client.auth.signInWithOAuth({
+                    const { error } = await withRetry(() => supabase.auth.signInWithOAuth({
                         provider: 'google',
                         options: { redirectTo: window.location.origin }
                     }));
