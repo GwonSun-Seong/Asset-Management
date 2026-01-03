@@ -154,7 +154,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                         const effectiveRate = (asset.rate / 100) * (1 - feeRate);
                         // [수정] Decimal을 사용한 정밀 계산 및 원 단위 보정
                         const nextAmount = toD(asset.amount).mul(toD(1).add(toD(effectiveRate).div(12)));
-                        asset.amount = Math.round(nextAmount.toNumber() * 10000) / 10000;
+                        asset.amount = Number(nextAmount.toNumber().toFixed(4));
                     }
                 });
             });
@@ -380,7 +380,7 @@ const decryptData = (ciphertext, key) => {
     if (!key) throw new Error('Decryption key is missing or invalid');
     if (!window.CryptoJS || !window.pako) throw new Error('CryptoJS or pako library not loaded');
     const decrypted = window.CryptoJS.AES.decrypt(ciphertext, key);
-    if (decrypted.sigBytes <= 0) throw new Error('Decryption failed');
+    if (decrypted.sigBytes <= 0) throw new Error('Decryption failed: Invalid key or corrupted data');
     const typedArray = new Uint8Array(decrypted.sigBytes);
     const words = decrypted.words;
     for (let i = 0; i < decrypted.sigBytes; i++) {
@@ -431,6 +431,19 @@ const createGradient = (ctx, colors) => {
     return gradient;
 };
 
+// [추가] 암호화 키 생성 로직 (utils.js로 이동하여 일관성 유지)
+const getEncryptionKey = (mode, secret, userId, securityKey) => {
+    if (mode === 'secure') {
+        return secret || null;
+    }
+    // Normal 모드: 빌드 시 주입된 SECURITY_KEY 사용
+    // 플레이스홀더가 그대로라면 주입 실패로 간주하고 null 반환 (폴백 사용 금지)
+    if (!securityKey || securityKey === ('__SECURITY' + '_KEY__')) {
+        return null;
+    }
+    return userId + securityKey;
+};
+
 // [추가] Supabase 환경변수 검증 및 추출 헬퍼
 const validateSupabaseConfig = () => {
     const conf = window.SUPABASE_CONFIG || {};
@@ -438,7 +451,11 @@ const validateSupabaseConfig = () => {
     
     const url = isInvalid(conf.SUPABASE_URL, '__SUPABASE_URL__') ? null : conf.SUPABASE_URL;
     const key = isInvalid(conf.SUPABASE_KEY, '__SUPABASE_KEY__') ? null : conf.SUPABASE_KEY;
-    const sec = isInvalid(conf.SECURITY_KEY, '__SECURITY_KEY__') ? null : conf.SECURITY_KEY;
+    
+    if (isInvalid(conf.SECURITY_KEY, '__SECURITY' + '_KEY__')) {
+        console.warn("⚠️ Security Key Not Injected");
+    }
+    const sec = isInvalid(conf.SECURITY_KEY, '__SECURITY' + '_KEY__') ? null : conf.SECURITY_KEY;
 
     if (!url || !key) {
         console.warn("⚠️ Supabase Config Missing or Invalid: App will run in Local Storage Mode.");
@@ -461,3 +478,4 @@ window.decryptData = decryptData;
 window.getRGB = getRGB;
 window.createGradient = createGradient;
 window.validateSupabaseConfig = validateSupabaseConfig;
+window.getEncryptionKey = getEncryptionKey;

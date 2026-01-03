@@ -440,13 +440,10 @@
                 return window.validateSupabaseConfig ? window.validateSupabaseConfig() : {};
             }, []);
 
-            // [수정] 암호화 키 생성 (SECURITY_KEY 누락 시 폴백 지원으로 복구)
+            // [수정] utils.js의 전역 함수를 사용하여 일관성 확보
             const getEncryptionKey = React.useCallback((mode, secret, userId) => {
-                if (mode === 'secure') return secret;
-                
-                // SECURITY_KEY가 없으면 기본값 사용 (로컬 개발 호환 및 기존 데이터 접근 보장)
-                const salt = SECURITY_KEY || 'asset_planner_fallback_salt_v1';
-                return userId + salt;
+                if (typeof window.getEncryptionKey !== 'function') return null;
+                return window.getEncryptionKey(mode, secret, userId, SECURITY_KEY);
             }, [SECURITY_KEY]);
             
             const supabase = useMemo(() => {
@@ -858,7 +855,7 @@
                 setSyncStatus('error');
                 setSyncStatusError(error.message || '저장 실패');
             }
-        }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded, withRetry, getEncryptionKey]);
+        }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded, withRetry]);
 
         // [최적화] 통합 키보드 단축키 리스너 (중복 제거 및 Ref 활용)
         useEffect(() => {
@@ -1146,7 +1143,7 @@
 
 
             // [추가] 구독 상태 확인 및 데이터 로드 함수 (재사용 가능하도록 분리)
-            const checkSubscription = React.useCallback(async (session, isManualCheck = false, localDataOverride = null) => {
+            const checkSubscription = async (session, isManualCheck = false, localDataOverride = null) => {
                 if (!session?.user) return;
                 if (isCheckingSubscriptionRef.current && !isManualCheck) return; // 중복 실행 방지
                 
@@ -1212,7 +1209,7 @@
                     isCheckingSubscriptionRef.current = false;
                     if (isManualCheck) setIsLoadingCloud(false);
                 }
-            }, [supabase, withRetry, addToast]); // fetchFromCloud는 아래에서 정의되므로 deps에서 제외하거나 순서 조정 필요 (여기서는 호이스팅 활용)
+            };
 
             // [추가] 기능 제안 전송 핸들러
             const handleSuggestionSubmit = async (content) => {
@@ -1335,9 +1332,8 @@
                 return () => clearTimeout(retryTimer);
             }, [syncStatus, syncError, verifiedEmail, isPro, isDemoMode, isInitialized]);
 
-            // 클라우드 데이터 불러오기
-            // [수정] isManual 인자 추가
-            const fetchFromCloud = async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null) => {
+            // [순서 변경] fetchFromCloud를 checkSubscription 위로 이동 (참조 오류 방지)
+            const fetchFromCloud = React.useCallback(async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null) => {
                 if (!supabase) {
                     console.warn("Cloud fetch skipped: Supabase not initialized.");
                     return;
@@ -1398,14 +1394,31 @@
                                     if (!key) throw new Error('보안 키가 설정되지 않아 복호화할 수 없습니다.');
                                     decryptedData = decryptData(data.data, key);
                                 } catch (err) {
-                                    console.error("Decryption details:", err); // [추가] 상세 에러 로그 확인용
+                                    console.error("Decryption details:", err);
                                     setSyncStatus('error');
-                                    let errMsg;
-                                    if (err.message === 'Decryption failed' || err.message.includes('Malformed')) {
-                                        errMsg = encType === 'secure' ? '복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다.' : '복호화 실패: 보안 키(SECURITY_KEY)가 일치하지 않거나 데이터가 손상되었습니다.';
-                                    } else {
-                                        errMsg = `데이터 로드 오류: ${err.message}`;
+                                    
+                                    // [추가] Normal 모드 복호화 실패 시 보안 키 불일치 체크 및 초기화 제안
+                                    if (encType === 'normal' && (err.message === 'Decryption failed' || err.message.includes('Malformed'))) {
+                                        const confirmReset = confirm(
+                                            "⚠️ Build-time Security Key Mismatch\n\n" +
+                                            "현재 앱의 보안 키가 클라우드 데이터 저장 당시와 다릅니다.\n" +
+                                            "환경이 바뀌었거나 빌드 설정이 변경되었을 수 있습니다.\n\n" +
+                                            "클라우드 데이터를 초기화하고 현재 기기의 데이터로 덮어쓰시겠습니까?"
+                                        );
+                                        if (confirmReset) {
+                                            const dataToSave = {
+                                                appData: localDataOverride || appDataRef.current,
+                                                scenarios: scenariosRef.current,
+                                                assetHistory: assetHistoryRef.current
+                                            };
+                                            saveToCloud(dataToSave, true, email, pro);
+                                            return;
+                                        }
                                     }
+
+                                    const errMsg = (err.message === 'Decryption failed' || err.message.includes('Malformed'))
+                                        ? (encType === 'secure' ? '복호화 실패: 비밀번호가 틀렸거나 데이터가 손상되었습니다.' : '복호화 실패: Build-time Security Key Mismatch')
+                                        : `데이터 로드 오류: ${err.message}`;
                                     setSyncStatusError(errMsg);
                                     addToast(errMsg, 'error');
                                     return;
@@ -1464,9 +1477,7 @@
                                 } else {
                                     shouldLoad = false;
                                     // [수정] 로컬 유지를 선택했으므로, 현재 로컬 데이터를 클라우드에 강제 동기화
-                                    // localDataOverride가 있으면(초기 로드 시) 그것을 사용, 아니면 현재 appData 사용
                                     setIsCloudLoaded(true); // 저장 허용 상태로 변경
-                                    // [수정] 상태 업데이트 전이므로 인자로 받은 email, pro 정보를 직접 전달
                                     
                                     // [보완] 전체 데이터 구조(시나리오, 히스토리 포함)를 구성하여 저장
                                     const dataToSave = {
@@ -1501,12 +1512,7 @@
 
                             // [추가] 레거시 데이터인 경우 현재 설정된 암호화 모드로 즉시 마이그레이션 실행
                             if (isLegacy && pro && encryptionMode) {
-                                // [보완] 현재 로컬 상태가 아닌, 방금 로드한 데이터를 기준으로 저장
-                                saveToCloud({ 
-                                    appData: actualAppData, 
-                                    scenarios: decryptedData.scenarios || [], 
-                                    assetHistory: decryptedData.assetHistory || [] 
-                                }, true);
+                                saveToCloud({ appData: actualAppData, scenarios, assetHistory }, true);
                             }
                         }
 
@@ -1541,7 +1547,55 @@
                     setIsLoadingCloud(false);
                     isFetchingRef.current = false;
                 }
-            }, [supabase, withRetry, getEncryptionKey, decryptData, resetAppData, saveToCloud, addToast, encryptionMode, userSecretKey, userProfile]);
+            }, [supabase, withRetry, getEncryptionKey, resetAppData, saveToCloud, addToast, encryptionMode, userSecretKey, userProfile, verifiedEmail, isPro]);
+
+            // [추가] 구독 상태 확인 및 데이터 로드 함수
+            const checkSubscription = React.useCallback(async (session, isManualCheck = false, localDataOverride = null) => {
+                if (!session?.user) return;
+                if (isCheckingSubscriptionRef.current && !isManualCheck) return;
+                
+                if (isManualCheck) setIsLoadingCloud(true);
+                isCheckingSubscriptionRef.current = true;
+                setSyncStatus('syncing');
+                setVerifiedEmail(session.user.email);
+                setUserProfile(session.user.user_metadata);
+
+                try {
+                    const { data: profile, error: fetchError } = await withRetry(
+                        () => supabase.from('user_profiles').select('is_paid').eq('id', session.user.id).maybeSingle()
+                    );
+                    
+                    const proStatus = profile ? profile.is_paid : false;
+                    setIsPro(proStatus);
+                    if (proStatus) {
+                        await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
+                    } else {
+                        setSyncStatus('idle');
+                    }
+                } catch (err) {
+                    console.error('Subscription check error:', err);
+                    setSyncStatus('error');
+                } finally {
+                    isCheckingSubscriptionRef.current = false;
+                    if (isManualCheck) setIsLoadingCloud(false);
+                }
+            }, [supabase, withRetry, fetchFromCloud]);
+
+            // [추가] Auth 리스너 통합 관리
+            useEffect(() => {
+                if (!supabase) return;
+                const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+                    if (isProcessing.current) return;
+                    if (session) {
+                        if (!isFetchingRef.current && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+                            await checkSubscription(session);
+                        }
+                    } else if (event === 'SIGNED_OUT') {
+                        await handleLogout(true);
+                    }
+                });
+                return () => subscription.unsubscribe();
+            }, [supabase, handleLogout, checkSubscription]);
 
             // [추가] 암호화 모드 선택 핸들러
             const handleEncryptionSelect = (mode) => {
@@ -1636,7 +1690,7 @@
                 return () => {
                     supabase.removeChannel(channel);
                 };
-            }, [supabase, verifiedEmail, isPro, fetchFromCloud]);
+            }, [supabase, verifiedEmail, isPro]);
 
 
 
