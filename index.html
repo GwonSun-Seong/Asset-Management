@@ -448,7 +448,7 @@
             const { SUPABASE_URL, SUPABASE_KEY, SECURITY_KEY } = useMemo(() => window.validateSupabaseConfig ? window.validateSupabaseConfig() : {}, []);
 
             // [추가] 암호화 유틸리티 (컴포넌트 내부로 이동하여 SECURITY_KEY 참조)
-            const getEncryptionKey = React.useCallback((mode, secret, userId) => {
+            const getEncryptionKey = React.useCallback((mode, secret, userId) => { // userId is email for legacy compatibility
                 if (mode === 'secure') return secret;
                 if (!SECURITY_KEY) return null;
                 return userId + SECURITY_KEY;
@@ -714,7 +714,8 @@
                             return;
                         }
                     }
-                    key = getEncryptionKey(targetMode, secret, userProfile?.id || targetEmail);
+                    // [수정] 키 생성 시 Email을 사용하여 fetchFromCloud와 일치시킴 (Legacy 호환)
+                    key = getEncryptionKey(targetMode, secret, targetEmail);
                 }
 
                 if (!key) {
@@ -793,8 +794,8 @@
                         }
                         
                         // [Fix] Use userIdOverride if available (from checkSubscription) to avoid stale state
-                        const currentUserId = userIdOverride || userProfile?.id;
-                        const key = getEncryptionKey(encType, secret, currentUserId || email);
+                        // Revert to using email as the primary identifier for the key to match legacy logic.
+                        const key = getEncryptionKey(encType, secret, email);
 
                         // [수정] 일반 모드에서 보안 키(SECURITY_KEY)가 없는 경우 예외 처리 (초기화 묻지 않음)
                         if (!key && encType === 'normal') {
@@ -808,26 +809,7 @@
                         try {
                             decryptedData = decryptData(data.data, key);
                         } catch (err) {
-                            // [수정] 복호화 실패 시, 레거시 키(이메일 기반)로 재시도 (UUID 도입에 따른 마이그레이션)
-                            if (encType === 'normal') {
-                                console.warn("Primary key (UUID-based) decryption failed. Attempting legacy (email-based) key...");
-                                try {
-                                    const legacyKey = getEncryptionKey(encType, null, email); // userId 대신 email 사용
-                                    decryptedData = decryptData(data.data, legacyKey);
-                                    console.log("Legacy key decryption successful. Migrating data to new key standard...");
-                                    // 마이그레이션 성공: 새 키로 데이터를 다시 저장하여 마이그레이션 완료
-                                    // [Fix] Pass the new key explicitly to avoid race condition with stale userProfile
-                                    const newKey = getEncryptionKey(encType, null, currentUserId || email);
-                                    saveToCloud(decryptedData, true, email, pro, newKey, 'normal');
-                                } catch (legacyErr) {
-                                    addToast('데이터 복호화 실패: 보안 키가 변경되었거나 데이터가 손상되었습니다.', 'error');
-                                    console.error("Decryption failed with both primary and legacy keys:", legacyErr);
-                                    setSyncStatus('error');
-                                    setIsLoadingCloud(false);
-                                    isFetchingRef.current = false;
-                                    return;
-                                }
-                            } else {
+                            if (encType === 'secure') {
                                 // 보안 모드이거나, 일반 모드에서도 레거시 키로 실패한 경우
                                 addToast('데이터 복호화 실패: 비밀번호가 다르거나 데이터가 손상되었습니다.', 'error');
                                 console.error("Decryption failed:", err);
@@ -835,6 +817,23 @@
                                 setIsLoadingCloud(false);
                                 isFetchingRef.current = false;
                                 return;
+                            } else { 
+                                // [추가] 일반 모드 복호화 실패 시 UUID 기반 키로 재시도 (자동 복구 로직)
+                                console.warn("Primary key (Email) decryption failed. Attempting fallback (UUID)...");
+                                try {
+                                    const uuid = userIdOverride || userProfile?.id;
+                                    const fallbackKey = uuid ? getEncryptionKey(encType, secret, uuid) : null;
+                                    decryptedData = decryptData(data.data, fallbackKey);
+                                    console.log("Fallback key (UUID) decryption successful. Migrating data to Email key...");
+                                    saveToCloud(decryptedData, true, email, pro); // Email 키로 재저장하여 마이그레이션
+                                } catch (fallbackErr) {
+                                    addToast('데이터 복호화 실패: 보안 키가 변경되었거나 데이터가 손상되었습니다.', 'error');
+                                    console.error("Decryption failed (Primary & Fallback):", fallbackErr);
+                                    setSyncStatus('error');
+                                    setIsLoadingCloud(false);
+                                    isFetchingRef.current = false;
+                                    return;
+                                }
                             }
                         }
                     }
