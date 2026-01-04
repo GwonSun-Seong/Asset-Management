@@ -602,9 +602,14 @@
                     try {
                         const savedData = localStorage.getItem('assetDashboardDataV3');
                         const savedScenarios = localStorage.getItem('assetDashboardScenarios');
+                const savedHistory = localStorage.getItem('assetDashboardHistory');
 
                 if (savedScenarios) {
                     setScenarios(JSON.parse(savedScenarios));
+                }
+                // [수정] 자산 히스토리 로딩 로직을 초기 데이터 로드에 통합하여 순서 보장
+                if (savedHistory) {
+                    setAssetHistory(JSON.parse(savedHistory));
                 }
 
                 if (savedData) {
@@ -670,7 +675,7 @@
                 };
                 
                 loadInitialData();
-            }, [supabase, withRetry]);
+            }, [supabase]);
 
             // [추가] 온보딩 가이드 트리거 로직
             useEffect(() => {
@@ -733,7 +738,7 @@
                     console.error("Encryption error:", e);
                     addToast('데이터 암호화 중 오류가 발생했습니다.', 'error');
                     setSyncStatus('error');
-                    return;
+                    return; // Early return on encryption failure
                 }
             }
 
@@ -757,7 +762,7 @@
                 console.error('Sync error:', error);
                 setSyncStatus('error');
                 setSyncStatusError(error.message || '저장 실패');
-            }
+            } // This finally block was removed as it was empty and unnecessary
         }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded, withRetry, getEncryptionKey]);
 
         // 클라우드 데이터 불러오기
@@ -886,7 +891,7 @@
                 console.error('Logout error:', error);
             } finally {
                 if (!skipSignOut && logoutBehavior === 'reset') {
-                    resetAppData(window.publicDefaultData);
+                    resetAppData(window.publicDefaultData || {});
                     localStorage.removeItem('assetDashboardDataV3');
                 }
                 setVerifiedEmail(null); 
@@ -900,7 +905,7 @@
                 sessionStorage.removeItem('assetDashboardSecretKey');
                 setTimeout(() => { isProcessing.current = false; }, 100);
             }
-        }, [supabase, logoutBehavior, resetAppData, withRetry]);
+        }, [supabase, logoutBehavior, resetAppData]);
 
             // 구독 상태 확인 및 데이터 로드 함수
             const checkSubscription = React.useCallback(async (session, isManualCheck = false, localDataOverride = null) => {
@@ -1030,37 +1035,21 @@
         }, [canUndo, canRedo, undo, redo, saveToCloud, scenarios, assetHistory]);
 
 
-            // useRef를 사용하여 첫 렌더링인지 추적하는 변수 추가
-            const isInitialMount = useRef(true);
-
+            // [수정] 시나리오 데이터 저장 (히스토리 저장 방식과 통일)
             useEffect(() => {
-                // 첫 렌더링일 경우, 아무것도 하지 않고 스위치만 false로 변경
-                if (isInitialMount.current) {
-                    isInitialMount.current = false;
-                } else {
-                    // 첫 렌더링이 아닐 때만 localStorage에 저장
+                // 초기 로드 시 불필요한 저장을 막기 위해 isInitialized 확인
+                if (isInitialized) {
                     localStorage.setItem('assetDashboardScenarios', JSON.stringify(scenarios));
                 }
-            }, [scenarios]);
-
-            // ===== 자산 히스토리 관리 =====
-            React.useEffect(() => {
-                try {
-                    const savedHistory = localStorage.getItem('assetDashboardHistory');
-                    if (savedHistory) {
-                        setAssetHistory(JSON.parse(savedHistory));
-                    }
-                } catch (error) {
-                    console.error('히스토리 데이터 로드 오류:', error);
-                }
-            }, []);
+            }, [scenarios, isInitialized]);
 
             // 히스토리 데이터 저장
             React.useEffect(() => {
-                if (assetHistory.length > 0) {
+                // 초기 로드 시 불필요한 저장을 막기 위해 isInitialized 확인
+                if (isInitialized && assetHistory.length > 0) {
                     localStorage.setItem('assetDashboardHistory', JSON.stringify(assetHistory));
                 }
-            }, [assetHistory]);
+            }, [assetHistory, isInitialized]);
 
             // 현재 자산 저장 함수
             const saveCurrentAsset = () => {
