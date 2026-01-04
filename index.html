@@ -440,7 +440,7 @@
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
             
             // [추가] 하단에 있던 상태들을 초기화 순서 보장을 위해 위로 이동
-            const [assetHistory, setAssetHistory] = React.useState([]);
+            const [assetHistory, setAssetHistory] = useState([]);
             const [showProjectionInHistory, setShowProjectionInHistory] = useState(false);
             const [logoutBehavior, setLogoutBehavior] = useState(() => localStorage.getItem('assetLogoutBehavior') || 'keep');
             useEffect(() => { localStorage.setItem('assetLogoutBehavior', logoutBehavior); }, [logoutBehavior]);
@@ -551,10 +551,10 @@
             const [assetSectorOrder, setAssetSectorOrder] = useState(() => {
                 try {
                     const savedOrder = localStorage.getItem('assetDashboardAssetSectorOrder');
-                    const defaultOrder = ['deposit', 'savings', 'investment', 'pension', 'realestate', 'car', 'loan', 'misc'];
+                    const defaultOrder = window.DEFAULT_SECTOR_ORDER || ['deposit', 'savings', 'investment', 'pension', 'realestate', 'car', 'loan', 'misc'];
                     return savedOrder ? JSON.parse(savedOrder) : defaultOrder;
                 } catch {
-                    return ['deposit', 'savings', 'investment', 'pension', 'realestate', 'car', 'loan', 'misc'];
+                    return window.DEFAULT_SECTOR_ORDER || ['deposit', 'savings', 'investment', 'pension', 'realestate', 'car', 'loan', 'misc'];
                 }
             });
             useEffect(() => {
@@ -795,21 +795,33 @@
                         try {
                             decryptedData = decryptData(data.data, key);
                         } catch (err) {
-                            if (encType === 'normal') {
-                                // [Fix] Safe Recovery: Block overwrite if local data is default
-                                const isLocalDataDefault = JSON.stringify(appDataRef.current) === JSON.stringify(window.publicDefaultData);
-                                if (isLocalDataDefault) {
-                                    addToast("Decryption failed. Cloud data is inaccessible with this security key. Since your local data is empty/default, overwriting is blocked to prevent data loss. Please check your build environment variables.", 'error');
-                                } else if (confirm("Security key mismatch. Your cloud data is inaccessible. Would you like to overwrite the cloud with your current local data to fix this?")) {
-                                    const localData = localDataOverride || { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current };
-                                    await saveToCloud(localData, true, email, pro);
+                            let recovered = false;
+                            // [추가] 이전 버전 데이터(이메일 솔트 없음) 복구 시도 (Fallback)
+                            if (encType === 'normal' && SECURITY_KEY && key !== SECURITY_KEY) {
+                                try {
+                                    decryptedData = decryptData(data.data, SECURITY_KEY);
+                                    recovered = true;
+                                    addToast('이전 보안 형식의 데이터를 변환하여 불러왔습니다.', 'success');
+                                } catch (e) { /* Fallback failed */ }
+                            }
+
+                            if (!recovered) {
+                                if (encType === 'normal') {
+                                    // [Fix] Safe Recovery: Block overwrite if local data is default
+                                    const isLocalDataDefault = JSON.stringify(appDataRef.current) === JSON.stringify(window.publicDefaultData);
+                                    if (isLocalDataDefault) {
+                                        addToast("Decryption failed. Cloud data is inaccessible with this security key. Since your local data is empty/default, overwriting is blocked to prevent data loss. Please check your build environment variables.", 'error');
+                                    } else if (confirm("Security key mismatch. Your cloud data is inaccessible. Would you like to overwrite the cloud with your current local data to fix this?")) {
+                                        const localData = localDataOverride || { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current };
+                                        await saveToCloud(localData, true, email, pro);
+                                    }
+                                    return;
+                                } else {
+                                    addToast('데이터 복호화 실패: 비밀번호가 다르거나 데이터가 손상되었습니다.', 'error');
+                                    console.error("Decryption failed:", err);
+                                    setSyncStatus('error');
+                                    return; // Stop further processing
                                 }
-                                return;
-                            } else {
-                                addToast('데이터 복호화 실패: 비밀번호가 다르거나 데이터가 손상되었습니다.', 'error');
-                                console.error("Decryption failed:", err);
-                                setSyncStatus('error');
-                                return; // Stop further processing
                             }
                         }
                     }
@@ -3459,8 +3471,7 @@
                         }} 
                         scrollToPanel={scrollToPanel}
                         isPro={isPro}
-                   
-                        />
+                    />
                     }
                     {window.EncryptionModal && <window.EncryptionModal 
                         isOpen={isEncryptionModalOpen} 
