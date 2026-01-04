@@ -433,11 +433,15 @@ const createGradient = (ctx, colors) => {
 
 // [수정] 일관된 암호화 키 생성 로직
 const getEncryptionKey = (mode, secret, email, securityKey) => {
-    if (mode === 'secure') return secret || null;
+    // [수정] 강화 모드: 이메일 + 사용자 설정 비밀번호 조합으로 보안 강화
+    if (mode === 'secure') {
+        return (email && secret) ? email + secret : null;
+    }
     
-    // Normal 모드: 일관성을 위해 UUID 대신 이메일을 식별자로 사용
+    // Normal 모드: 일관성을 위해 이메일을 식별자로 사용 (Salt Consistency)
     const placeholder = '__SECURITY' + '_KEY__';
-    if (!securityKey || securityKey === placeholder) return null;
+    // [Fix] Hardened Placeholder Check: Ensure placeholder string is never used as salt
+    if (!securityKey || securityKey.includes(placeholder)) return null;
     
     return email + securityKey;
 };
@@ -445,10 +449,11 @@ const getEncryptionKey = (mode, secret, email, securityKey) => {
 // [추가] Supabase 환경변수 검증 및 추출 헬퍼
 const validateSupabaseConfig = () => {
     const conf = window.SUPABASE_CONFIG || {};
-    const isInvalid = (val, ph) => !val || val === ph;
+    const isInvalid = (val, ph) => !val || val === ph || (typeof val === 'string' && val.includes(ph));
     
     const url = isInvalid(conf.SUPABASE_URL, '__SUPABASE' + '_URL__') ? null : conf.SUPABASE_URL;
     const key = isInvalid(conf.SUPABASE_KEY, '__SUPABASE' + '_KEY__') ? null : conf.SUPABASE_KEY;
+    // [Fix] Hardened Placeholder Check for SECURITY_KEY
     const sec = isInvalid(conf.SECURITY_KEY, '__SECURITY' + '_KEY__') ? null : conf.SECURITY_KEY;
 
     if (!url || !key) {

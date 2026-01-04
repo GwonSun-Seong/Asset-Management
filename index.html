@@ -36,11 +36,11 @@
         .animate-toast { animation: slideUpFade 0.3s ease-out forwards; }
     </style>
     <script src="defaultData.js"></script>
-    <script src="utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/decimal.js/10.4.3/decimal.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-gradient@0.6.1/dist/chartjs-plugin-gradient.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -257,63 +257,67 @@
 
         // [추가] 실행 취소/다시 실행 훅 (Undo/Redo) - 디바운싱 포함
         const useUndoRedo = (initialState) => {
-            const [state, setState] = useState(initialState);
-            const [past, setPast] = useState([]);
-            const [future, setFuture] = useState([]);
+            // [수정] 상태 관리를 하나의 객체로 통합하여 setState 내부 사이드 이펙트 제거
+            const [history, setHistory] = useState({
+                past: [],
+                present: initialState,
+                future: []
+            });
+            const { past, present, future } = history;
             const lastHistoryTime = useRef(0);
 
             const set = React.useCallback((newState) => {
-                setState((currentState) => {
-                    const computedState = typeof newState === 'function' ? newState(currentState) : newState;
-                    if (JSON.stringify(currentState) === JSON.stringify(computedState)) return currentState;
-                    
-                    const now = Date.now();
-                    // 500ms 이내의 연속된 변경(타이핑 등)은 하나의 히스토리로 처리
-                    if (now - lastHistoryTime.current > 500) {
-                        setPast(prev => {
-                            const newPast = [...prev, currentState];
-                            return newPast.slice(-30); // 최대 30단계
-                        });
-                    }
-                    lastHistoryTime.current = now;
-                    setFuture([]);
-                    return computedState;
+                const now = Date.now();
+                setHistory(curr => {
+                    const computedState = typeof newState === 'function' ? newState(curr.present) : newState;
+                    if (JSON.stringify(curr.present) === JSON.stringify(computedState)) return curr;
+
+                    const shouldSave = now - lastHistoryTime.current > 500;
+                    if (shouldSave) lastHistoryTime.current = now;
+
+                    return {
+                        past: shouldSave ? [...curr.past, curr.present].slice(-30) : curr.past,
+                        present: computedState,
+                        future: []
+                    };
                 });
             }, []);
 
             const undo = React.useCallback(() => {
-                setPast(prevPast => {
-                    if (prevPast.length === 0) return prevPast;
-                    const previous = prevPast[prevPast.length - 1];
-                    const newPast = prevPast.slice(0, prevPast.length - 1);
-                    setState(currentState => {
-                        setFuture(prevFuture => [currentState, ...prevFuture]);
-                        return previous;
-                    });
-                    return newPast;
+                setHistory(curr => {
+                    if (curr.past.length === 0) return curr;
+                    const previous = curr.past[curr.past.length - 1];
+                    const newPast = curr.past.slice(0, curr.past.length - 1);
+                    return {
+                        past: newPast,
+                        present: previous,
+                        future: [curr.present, ...curr.future]
+                    };
                 });
             }, []);
 
             const redo = React.useCallback(() => {
-                setFuture(prevFuture => {
-                    if (prevFuture.length === 0) return prevFuture;
-                    const next = prevFuture[0];
-                    const newFuture = prevFuture.slice(1);
-                    setState(currentState => {
-                        setPast(prevPast => [...prevPast, currentState]);
-                        return next;
-                    });
-                    return newFuture;
+                setHistory(curr => {
+                    if (curr.future.length === 0) return curr;
+                    const next = curr.future[0];
+                    const newFuture = curr.future.slice(1);
+                    return {
+                        past: [...curr.past, curr.present],
+                        present: next,
+                        future: newFuture
+                    };
                 });
             }, []);
 
             const reset = React.useCallback((newState) => {
-                setState(newState);
-                setPast([]);
-                setFuture([]);
+                setHistory({
+                    past: [],
+                    present: newState,
+                    future: []
+                });
             }, []);
 
-            return { state, setState: set, undo, redo, canUndo: past.length > 0, canRedo: future.length > 0, reset };
+            return { state: present, setState: set, undo, redo, canUndo: past.length > 0, canRedo: future.length > 0, reset };
         };
 
         // [수정] 패널 래퍼 컴포넌트 (접기/펴기 기능 추가)
@@ -559,9 +563,6 @@
                 localStorage.setItem('assetDashboardAssetSectorOrder', JSON.stringify(assetSectorOrder));
             }, [assetSectorOrder]);
 
-            // [추가] 입력 필드 참조를 위한 ref
-            const assetInputRefs = useRef({});
-            
             // [추가] 패널 이동 함수
             const scrollToPanel = (id) => {
                 const element = document.getElementById(id);
@@ -779,35 +780,34 @@
                             if (!secret) {
                                 pendingCiphertext.current = data.data;
                                 setIsPasswordPromptOpen(true);
-                                return; // Early return, finally block will handle cleanup
+                                return; // finally block will handle state reset
                             }
                         }
                         
-                        // [Fix] Use userIdOverride if available (from checkSubscription) to avoid stale state
-                        const currentUserId = userIdOverride || userProfile?.id;
-                        const key = getEncryptionKey(encType, secret, currentUserId || email);
+                        // [Fix] Consistent Encryption Identity: Always use email via global helper
+                        const key = window.getEncryptionKey(encType, secret, email, SECURITY_KEY);
 
-                        // [수정] 일반 모드에서 보안 키(SECURITY_KEY)가 없는 경우 예외 처리 (초기화 묻지 않음)
+                        // [수정] 일반 모드에서 보안 키(SECURITY_KEY)가 없는 경우 예외 처리
                         if (!key && encType === 'normal') {
                             addToast('시스템 보안 키가 설정되지 않아 데이터를 불러올 수 없습니다. (환경변수 확인 필요)', 'error');
                             setSyncStatus('error');
-                            return; // Early return
+                            return; // finally block will handle state reset
                         }
 
                         try {
                             decryptedData = decryptData(data.data, key);
                         } catch (err) {
-                            // [수정] 복호화 실패 시, 레거시 키(이메일 기반)로 재시도 (UUID 도입에 따른 마이그레이션)
                             if (encType === 'normal') {
-                                // [Fix] Force Overwrite Logic
-                                if (confirm("Decryption failed due to a security key mismatch. Would you like to overwrite your cloud data with your current local data to fix this?")) {
+                                // [Fix] Safe Recovery: Block overwrite if local data is default
+                                const isLocalDataDefault = JSON.stringify(appDataRef.current) === JSON.stringify(window.publicDefaultData);
+                                if (isLocalDataDefault) {
+                                    addToast("Decryption failed. Cloud data is inaccessible with this security key. Since your local data is empty/default, overwriting is blocked to prevent data loss. Please check your build environment variables.", 'error');
+                                } else if (confirm("Security key mismatch. Your cloud data is inaccessible. Would you like to overwrite the cloud with your current local data to fix this?")) {
                                     const localData = localDataOverride || { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current };
                                     await saveToCloud(localData, true, email, pro);
                                 }
-                                setSyncStatus('error');
-                                return; // Stop further processing
+                                return;
                             } else {
-                                // 보안 모드이거나, 일반 모드에서도 레거시 키로 실패한 경우
                                 addToast('데이터 복호화 실패: 비밀번호가 다르거나 데이터가 손상되었습니다.', 'error');
                                 console.error("Decryption failed:", err);
                                 setSyncStatus('error');
@@ -820,7 +820,7 @@
 
                     if (isManual || !localTime || cloudTime > localTime) {
                         const actualAppData = decryptedData.appData || decryptedData;
-                        lastSavedDataRef.current = JSON.stringify(decryptedData); // Sync snapshot immediately
+                        lastSavedDataRef.current = JSON.stringify(decryptedData); // Sync snapshot immediately to prevent auto-save loop
                         resetAppData(actualAppData);
                         if (decryptedData.scenarios) setScenarios(decryptedData.scenarios);
                         if (decryptedData.assetHistory) setAssetHistory(decryptedData.assetHistory);
@@ -839,7 +839,7 @@
                 addToast(`데이터 로드 실패: ${err.message}`, 'error');
             } finally {
                 setIsLoadingCloud(false);
-                isFetchingRef.current = false;
+                isFetchingRef.current = false; // Always unlock fetching regardless of return path
             }
         }, [supabase, withRetry, resetAppData, saveToCloud, addToast, encryptionMode, userSecretKey, userProfile, verifiedEmail, isPro, SECURITY_KEY]);
 
@@ -2239,7 +2239,9 @@
                     const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
 
                     const historyLabels = assetHistory.map(item => {
-                    const date = new Date(item.date);
+                    // [수정] 날짜 파싱 오류 수정 (UTC -> Local 변환 문제 방지)
+                    const [y, m, d] = item.date.split('-').map(Number);
+                    const date = new Date(y, m - 1, d);
                     const timeStr = item.time ? ` ${item.time.split(':').slice(0, 2).join(':')}` : '';
                     return `${date.getMonth() + 1}/${date.getDate()}${timeStr}`;
                 });
@@ -2393,11 +2395,40 @@
                 }
 
                 if ((field === 'monthlyContrib' || field === 'extraContrib') && newValue < 0) return;
-                setAssets(prev => ({
-                    ...prev,
-                    [sector]: prev[sector].map((asset, i) => i === index ? { ...asset, [field]: newValue } : asset)
-                }));
-            }, [setAssets]); // [수정] setAssets 의존성 명시
+                
+                // [수정] 자산 이름 변경 시 참조(상환계좌, 이체출처 등)도 함께 업데이트하여 시뮬레이션 오류 방지
+                setAppData(prevData => {
+                    const prevAssets = prevData.assets;
+                    const targetAsset = prevAssets[sector][index];
+                    const oldName = targetAsset.name;
+                    
+                    // 1. 자산 정보 업데이트
+                    const newSectorAssets = prevAssets[sector].map((a, i) => 
+                        i === index ? { ...a, [field]: newValue } : a
+                    );
+                    const newAssets = { ...prevAssets, [sector]: newSectorAssets };
+                    let newData = { ...prevData, assets: newAssets };
+
+                    // 2. 이름이 변경된 경우, 해당 이름을 참조하는 다른 설정들도 업데이트
+                    if (field === 'name' && oldName !== newValue) {
+                        // 주 현금흐름 계좌 이름 업데이트
+                        if (prevData.mainCashFlowAccount === oldName) {
+                            newData.mainCashFlowAccount = newValue;
+                        }
+                        // 다른 자산에서의 참조 업데이트 (대출 상환계좌, 추가납입 출처)
+                        Object.keys(newAssets).forEach(s => {
+                            newAssets[s] = newAssets[s].map(a => {
+                                let changed = false;
+                                let newA = { ...a };
+                                if (newA.extraFrom === oldName) { newA.extraFrom = newValue; changed = true; }
+                                if (s === 'loan' && newA.repaymentAccount === oldName) { newA.repaymentAccount = newValue; changed = true; }
+                                return changed ? newA : a;
+                            });
+                        });
+                    }
+                    return newData;
+                });
+            }, [setAppData]);
 
             const removeAsset = React.useCallback((sector, index) => {
                 const currentData = appDataRef.current;
@@ -3823,17 +3854,12 @@
             updateAsset, 
             removeAsset, 
             accountOptions, 
-            assetInputRefs,
             sectorInfo,
             sectorTotal,
             rgb,
             onAssetDragStart,
             onAssetDrop
         }) => {
-            const nameRef = el => { if(assetInputRefs && assetInputRefs.current) assetInputRefs.current[`${sectorKey}-${index}-name`] = el; };
-            const amountRef = el => { if(assetInputRefs && assetInputRefs.current) assetInputRefs.current[`${sectorKey}-${index}-amount`] = el; };
-            const monthlyContribRef = el => { if(assetInputRefs && assetInputRefs.current) assetInputRefs.current[`${sectorKey}-${index}-monthlyContrib`] = el; };
-
             const assetPercentage = (Number(asset.amount || 0) / sectorTotal) * 100;
             const amountBgStyle = { backgroundImage: `linear-gradient(to right, rgba(${rgb}, 0.15) ${assetPercentage}%, transparent ${assetPercentage}%)` };
 
@@ -3852,10 +3878,10 @@
                     <div className="flex-1">
                     {sectorKey !== 'loan' ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-center">
-                            <input ref={nameRef} type="text" placeholder="항목명" aria-label="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
+                            <input type="text" placeholder="항목명" aria-label="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">현재금액</label>
-                                <input ref={amountRef} type="number" aria-label="현재금액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                                <input type="number" aria-label="현재금액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">수익률(%)</label>
@@ -3867,7 +3893,7 @@
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월납입</label>
-                                <input ref={monthlyContribRef} type="number" aria-label="월납입액" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
+                                <input type="number" aria-label="월납입액" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월수입외 납입</label>
@@ -3886,10 +3912,10 @@
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-center">
-                            <input ref={nameRef} type="text" placeholder="항목명" aria-label="대출명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
+                            <input type="text" placeholder="항목명" aria-label="대출명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">현재잔액</label>
-                                <input ref={amountRef} type="number" aria-label="대출 잔액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                                <input type="number" aria-label="대출 잔액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">이자율(%)</label>
@@ -3897,7 +3923,7 @@
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월 상환액</label>
-                                <input ref={monthlyContribRef} type="number" aria-label="월 상환액" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
+                                <input type="number" aria-label="월 상환액" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">만기(개월)</label>
