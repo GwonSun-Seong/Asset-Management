@@ -807,6 +807,14 @@
 
                             if (!recovered) {
                                 if (encType === 'normal') {
+                                    // [수정] 덮어쓰기 전 유효한 보안 키가 있는지 먼저 확인 (무한 루프 방지)
+                                    const newKey = window.getEncryptionKey('normal', null, email, SECURITY_KEY);
+                                    if (!newKey) {
+                                        addToast("시스템 보안 키(SECURITY_KEY)가 설정되지 않아 데이터를 덮어쓸 수 없습니다. 환경변수를 확인하거나 설정에서 '보안 모드'로 전환하세요.", 'error');
+                                        setSyncStatus('error');
+                                        return;
+                                    }
+
                                     // [Fix] Safe Recovery: Block overwrite if local data is default
                                     const isLocalDataDefault = JSON.stringify(appDataRef.current) === JSON.stringify(window.publicDefaultData);
                                     if (isLocalDataDefault) {
@@ -814,6 +822,10 @@
                                     } else if (confirm("Security key mismatch. Your cloud data is inaccessible. Would you like to overwrite the cloud with your current local data to fix this?")) {
                                         const localData = localDataOverride || { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current };
                                         await saveToCloud(localData, true, email, pro);
+                                        // [추가] 덮어쓰기 성공 시 즉시 상태 업데이트하여 재진입 방지
+                                        setIsCloudLoaded(true);
+                                        setSyncStatus('synced');
+                                        addToast('클라우드 데이터가 현재 로컬 데이터로 갱신되었습니다.', 'success');
                                     }
                                     return;
                                 } else {
