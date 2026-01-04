@@ -503,6 +503,11 @@
             const [currentDrillDown, setCurrentDrillDown] = useState(null); // [수정] 현재 차트 드릴다운 상태
             const [projectedDrillDown, setProjectedDrillDown] = useState(null); // [수정] 예상 차트 드릴다운 상태
             
+            // [추가] 메모 관련 상태
+            const [currentMemoIndex, setCurrentMemoIndex] = useState(0);
+            const [isEditingMemoTitle, setIsEditingMemoTitle] = useState(false);
+            const [tempMemoTitle, setTempMemoTitle] = useState('');
+            
             // [추가] 토스트 상태 관리
             const [toasts, setToasts] = useState([]);
             const addToast = React.useCallback((message, type = 'info') => {
@@ -1204,6 +1209,12 @@
             // [추가] 다크모드 토글 핸들러 (PRO 제한 로직)
             const handleDarkModeToggle = () => {
                 if (!isPro) {
+                    if (!verifiedEmail) {
+                        if (confirm('PRO 기능(다크모드 등)을 확인하거나 후원하려면 로그인이 필요합니다.\n로그인하시겠습니까?')) {
+                            handleLogin();
+                        }
+                        return;
+                    }
                     return setIsProModalOpen(true);
                 }
                 setDarkMode(!darkMode);
@@ -1660,6 +1671,32 @@
 
             // [추가] 자산 항목 드래그 앤 드롭 상태 및 핸들러
             const [draggedAsset, setDraggedAsset] = useState(null); // { sector, index }
+
+            // [추가] 패널(빠른 이동) 드래그 앤 드롭 상태 및 핸들러
+            const [draggedPanelId, setDraggedPanelId] = useState(null);
+
+            const handlePanelDragStart = React.useCallback((e, id) => {
+                setDraggedPanelId(id);
+                e.dataTransfer.effectAllowed = "move";
+            }, []);
+
+            const handlePanelDragOver = React.useCallback((e) => e.preventDefault(), []);
+
+            const handlePanelDrop = React.useCallback((e, targetId) => {
+                e.preventDefault();
+                if (!draggedPanelId || draggedPanelId === targetId) return;
+
+                setLayoutOrder(prev => {
+                    const oldIndex = prev.indexOf(draggedPanelId);
+                    const newIndex = prev.indexOf(targetId);
+                    if (oldIndex === -1 || newIndex === -1) return prev;
+                    const newOrder = [...prev];
+                    newOrder.splice(oldIndex, 1);
+                    newOrder.splice(newIndex, 0, draggedPanelId);
+                    return newOrder;
+                });
+                setDraggedPanelId(null);
+            }, [draggedPanelId]);
 
             const handleAssetDragStart = React.useCallback((e, sector, index) => {
                 e.stopPropagation(); // 섹터 드래그 방지
@@ -2344,7 +2381,8 @@
                     newValue = 0; // 숫자가 아닌 값이 들어오면 0으로 처리
                 }
 
-                if ((field === 'monthlyContrib' || field === 'extraContrib') && newValue < 0) return;
+                // [수정] 유효성 검사 강화: 음수 입력 방지 (수익률 제외)
+                if (numberFields.includes(field) && newValue < 0 && field !== 'rate') return;
                 
                 // [수정] 자산 이름 변경 시 참조(상환계좌, 이체출처 등)도 함께 업데이트하여 시뮬레이션 오류 방지
                 setAppData(prevData => {
@@ -2412,9 +2450,11 @@
 
             // ===== 지출 관리 함수들 =====
             const addExpense = () => setMonthlyExpenses(prev => [...prev, { name: '새 지출', amount: 0 }]);
-            const updateExpense = (index, field, value) => setMonthlyExpenses(prev => prev.map((expense, i) => 
-                i === index ? { ...expense, [field]: field === 'name' ? value : Number(value) } : expense
-            ));
+            const updateExpense = (index, field, value) => setMonthlyExpenses(prev => prev.map((expense, i) => {
+                if (i !== index) return expense;
+                if (field === 'amount' && Number(value) < 0) return expense; // [추가] 음수 방지
+                return { ...expense, [field]: field === 'name' ? value : Number(value) };
+            }));
             const removeExpense = (index) => setMonthlyExpenses(prev => prev.filter((_, i) => i !== index));
 
             // ===== 섹터 정보 (함수 정의 전에 위치) =====
@@ -2588,6 +2628,12 @@
                                 checked={showProjectionInHistory} 
                                 onChange={(e) => {
                                     if (!isPro) {
+                                        if (!verifiedEmail) {
+                                            if (confirm('PRO 기능(미래 예상 자산 표시)을 확인하거나 후원하려면 로그인이 필요합니다.\n로그인하시겠습니까?')) {
+                                                handleLogin();
+                                            }
+                                            return;
+                                        }
                                         setIsProModalOpen(true); // PRO 기능 안내 모달 띄우기
                                         return;
                                     }
@@ -2621,9 +2667,117 @@
                 </div>
             );
 
-            const renderMemoPanel = () => ( 
-                <textarea className="w-full h-32 p-3 border dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="여기에 자유롭게 메모를 남겨보세요. (자동 저장됩니다)" value={memo} onChange={(e) => setMemo(e.target.value)} />
-            );
+            const renderMemoPanel = () => {
+                // 하위 호환성: 문자열이면 배열로 변환하여 처리
+                const rawMemo = memo;
+                const memos = Array.isArray(rawMemo) 
+                    ? rawMemo 
+                    : [{ id: 'default', title: '기본 메모', content: typeof rawMemo === 'string' ? rawMemo : '' }];
+                
+                // 인덱스 안전 장치
+                const activeIndex = Math.min(currentMemoIndex, memos.length - 1);
+                const currentMemo = memos[activeIndex] || { title: '', content: '' };
+
+                const handleUpdateMemo = (field, value) => {
+                    const newMemos = [...memos];
+                    newMemos[activeIndex] = { ...newMemos[activeIndex], [field]: value };
+                    setMemo(newMemos);
+                };
+
+                const handleAddMemo = () => {
+                    const newMemos = [...memos, { id: Date.now(), title: `메모 ${memos.length + 1}`, content: '' }];
+                    setMemo(newMemos);
+                    setCurrentMemoIndex(newMemos.length - 1);
+                };
+
+                const handleDeleteMemo = () => {
+                    if (confirm('이 메모를 삭제하시겠습니까?')) {
+                        if (memos.length <= 1) {
+                            setMemo([{ id: Date.now(), title: '기본 메모', content: '' }]);
+                        } else {
+                            const newMemos = memos.filter((_, i) => i !== activeIndex);
+                            setMemo(newMemos);
+                            setCurrentMemoIndex(Math.max(0, activeIndex - 1));
+                        }
+                    }
+                };
+
+                const startEditingTitle = () => {
+                    setTempMemoTitle(currentMemo.title);
+                    setIsEditingMemoTitle(true);
+                };
+
+                const saveTitle = () => {
+                    handleUpdateMemo('title', tempMemoTitle);
+                    setIsEditingMemoTitle(false);
+                };
+
+                return (
+                    <div className="flex flex-col h-full">
+                        <div className="flex items-center justify-between mb-2 bg-gray-100 dark:bg-gray-800 p-2 rounded-t-lg border-b dark:border-gray-700">
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => setCurrentMemoIndex(Math.max(0, activeIndex - 1))} 
+                                    disabled={activeIndex === 0}
+                                    className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+                                </button>
+                                <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                                    {activeIndex + 1} / {memos.length}
+                                </span>
+                                <button 
+                                    onClick={() => setCurrentMemoIndex(Math.min(memos.length - 1, activeIndex + 1))} 
+                                    disabled={activeIndex === memos.length - 1}
+                                    className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                                </button>
+                            </div>
+
+                            <div className="flex-1 mx-4 flex items-center justify-center">
+                                {isEditingMemoTitle ? (
+                                    <div className="flex items-center gap-2 w-full max-w-[200px]">
+                                        <input 
+                                            type="text" 
+                                            value={tempMemoTitle} 
+                                            onChange={(e) => setTempMemoTitle(e.target.value)}
+                                            className="w-full px-2 py-1 text-sm text-gray-900 bg-white border border-blue-500 rounded focus:outline-none"
+                                            autoFocus
+                                            onKeyDown={(e) => e.key === 'Enter' && saveTitle()}
+                                        />
+                                        <button onClick={saveTitle} className="text-green-600 hover:text-green-700">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2 group cursor-pointer" onClick={startEditingTitle}>
+                                        <span className="font-bold text-gray-700 dark:text-gray-200 text-sm truncate max-w-[150px] sm:max-w-[200px]">
+                                            {currentMemo.title}
+                                        </span>
+                                        <svg className="w-3 h-3 text-gray-400 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                                <button onClick={handleAddMemo} className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded" title="새 메모 추가">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
+                                </button>
+                                <button onClick={handleDeleteMemo} className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded" title="현재 메모 삭제">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <textarea 
+                            className="w-full h-40 p-3 border-x border-b dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded-b-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none" 
+                            placeholder="여기에 자유롭게 메모를 남겨보세요." 
+                            value={currentMemo.content} 
+                            onChange={(e) => handleUpdateMemo('content', e.target.value)} 
+                        />
+                    </div>
+                );
+            };
 
             const renderRebalancePanel = () => {
                 const validSectors = Object.keys(sectorInfo).filter(k=>k!=='loan');
@@ -2977,7 +3131,86 @@
             );
 
             const renderDetailAnalysisPanel = () => (
-                <div className="overflow-x-auto -mx-6 px-6">
+                <>
+                    {/* [추가] 모바일 카드 뷰 (반응형 UX 개선) */}
+                    <div className="sm:hidden space-y-4">
+                        {Object.keys(sectorInfo).map(sectorKey => {
+                            const current = currentSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
+                            const projected = projectedSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
+                            const growthRate = current.amount > 0 ? ((projected.amount - current.amount) / current.amount * 100) : 0;
+                            const isPositiveGood = sectorKey === 'loan' ? growthRate <= 0 : growthRate >= 0;
+                            const targetPct = (rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length));
+
+                            return (
+                                <div key={sectorKey} className={`p-4 rounded-lg shadow-sm ${sectorInfo[sectorKey].bgClass} border dark:border-gray-700`}>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h4 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                            {sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}
+                                        </h4>
+                                        <span className={`text-xs font-bold px-2 py-1 rounded ${isPositiveGood ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
+                                            증감율: {formatPercent(growthRate)}%
+                                        </span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                                        <div>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400 block">현재 금액</span>
+                                            <span className="font-semibold tabular-nums">{formatNumber(current.amount)}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400 block">예상 금액</span>
+                                            <span className="font-semibold tabular-nums">{formatNumber(projected.amount)}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400 block">현재 비중</span>
+                                            <span className="tabular-nums">{formatPercent(current.percentage)}%</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400 block">목표 비중</span>
+                                            <span className="tabular-nums">{formatPercent(targetPct)}%</span>
+                                        </div>
+                                    </div>
+                                    
+                                    {assets[sectorKey]?.length > 0 && (
+                                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                                            {assets[sectorKey].map((asset, idx) => {
+                                                const projectedAmount = calculation.projected[sectorKey]?.[idx]?.amount || 0;
+                                                const assetGrowth = projectedAmount - asset.amount;
+                                                const assetGrowthRate = asset.amount > 0 ? (assetGrowth / asset.amount * 100) : 0;
+                                                const isAssetPositiveGood = sectorKey === 'loan' ? assetGrowthRate <= 0 : assetGrowthRate >= 0;
+                                                
+                                                return (
+                                                    <div key={`${sectorKey}-${idx}`} className="flex justify-between items-center text-xs bg-white/50 dark:bg-black/20 p-2 rounded">
+                                                        <span className="font-medium truncate flex-1">{asset.name}</span>
+                                                        <div className="text-right">
+                                                            <div>{formatNumber(asset.amount)} → {formatNumber(projectedAmount)}</div>
+                                                            <div className={`${isAssetPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                                {formatPercent(assetGrowthRate)}%
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                        <div className="p-4 rounded-lg shadow-sm bg-gray-100 dark:bg-gray-800 border dark:border-gray-700">
+                            <div className="flex justify-between items-center mb-2">
+                                <h4 className="font-bold text-gray-900 dark:text-white">총계</h4>
+                                <span className="text-xs font-bold px-2 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                    {formatPercent(calculation.growth / calculation.currentTotal * 100)}%
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                <div><span className="text-xs text-gray-500 dark:text-gray-400 block">현재 총자산</span><span className="font-bold tabular-nums">{formatNumber(calculation.currentTotal)}</span></div>
+                                <div><span className="text-xs text-gray-500 dark:text-gray-400 block">예상 총자산</span><span className="font-bold tabular-nums">{formatNumber(calculation.projectedTotal)}</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 데스크탑 테이블 뷰 */}
+                    <div className="hidden sm:block overflow-x-auto -mx-6 px-6">
                     <table className="w-full text-sm dark:text-gray-300 min-w-[800px]">
                         <thead className="bg-gray-100 dark:bg-gray-700">
                             <tr>
@@ -3054,6 +3287,7 @@
                         </tbody>
                     </table>
                 </div>
+                </>
             );
 
             const renderAssumptionsPanel = () => (
@@ -3277,13 +3511,24 @@
                             </div>
 
                             <div className="space-y-1 bg-white dark:bg-gray-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800">
-                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 px-2">빠른 이동</div>
+                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 px-2">빠른 이동 (순서 변경 가능)</div>
                                 {layoutOrder.filter(id => {
                                     if (id === 'scenario') return scenarios.length > 0;
                                     if (id === 'history') return assetHistory.length > 0;
                                     return true;
                                 }).map(id => (
-                                    <button key={id} onClick={() => scrollToPanel(id)} className="w-full text-left px-2 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all flex items-center gap-2 group">
+                                    <button 
+                                        key={id} 
+                                        draggable="true"
+                                        onDragStart={(e) => handlePanelDragStart(e, id)}
+                                        onDragOver={handlePanelDragOver}
+                                        onDrop={(e) => handlePanelDrop(e, id)}
+                                        onClick={() => scrollToPanel(id)} 
+                                        className={`w-full text-left px-2 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 group ${
+                                            draggedPanelId === id ? 'bg-blue-50 dark:bg-blue-900/40 opacity-50 border border-dashed border-blue-300' : 'text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                                        }`}
+                                    >
+                                        <span className="text-gray-300 group-hover:text-gray-500 cursor-grab active:cursor-grabbing">⋮⋮</span>
                                         <span className="group-hover:scale-110 transition-transform">{navLabels[id]?.icon}</span>
                                         <span className="truncate">{navLabels[id]?.title}</span>
                                     </button>

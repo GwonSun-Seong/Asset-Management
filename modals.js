@@ -175,7 +175,22 @@ window.PasswordPromptModal = ({ isOpen, onConfirm, onCancel }) => {
 };
 
 window.ProFeaturesModal = ({ isOpen, onClose }) => {
+    const [showQR, setShowQR] = useState(false);
+
+    // 모달이 열릴 때마다 QR 상태 초기화
+    useEffect(() => {
+        if (isOpen) setShowQR(false);
+    }, [isOpen]);
+
     if (!isOpen) return null;
+
+    const handleSponsor = () => {
+        const url = 'https://qr.kakaopay.com/FGJxu28x73b600069';
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        if (isMobile) window.location.href = url;
+        else setShowQR(true);
+    };
+
     return (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden">
@@ -205,9 +220,29 @@ window.ProFeaturesModal = ({ isOpen, onClose }) => {
                                 <td className="px-4 py-3 text-center text-gray-500">-</td>
                                 <td className="px-4 py-3 text-center font-semibold dark:text-white">다크모드 완벽 지원</td>
                             </tr>
+                            <tr>
+                                <td className="px-4 py-3 dark:text-gray-300">자산 미래 예측 그래프</td>
+                                <td className="px-4 py-3 text-center text-gray-500">-</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">제공</td>
+                            </tr>
+                            <tr>
+                                <td className="px-4 py-3 dark:text-gray-300">보안 기능</td>
+                                <td className="px-4 py-3 text-center text-gray-500">기본</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">강화 (종단간 암호화)</td>
+                            </tr>
                         </tbody>
                     </table>
-                    <button onClick={() => window.open('https://blog.naver.com/zocdoc', '_blank')} className="w-full mt-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors">개발자 후원하고 PRO 활성화하기</button>
+                    {showQR ? (
+                        <div className="mt-6 text-center animate-in zoom-in duration-300 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 font-bold">휴대폰으로 QR을 스캔해주세요</p>
+                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent('https://qr.kakaopay.com/FGJxu28x73b600069')}`} alt="카카오페이 후원 QR" className="mx-auto rounded-lg shadow-md mb-3" />
+                            <button onClick={() => setShowQR(false)} className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 underline">돌아가기</button>
+                        </div>
+                    ) : (
+                        <button onClick={handleSponsor} className="w-full mt-6 py-3 bg-yellow-400 text-black rounded-lg font-bold hover:bg-yellow-500 transition-colors shadow-md flex items-center justify-center gap-2">
+                            <span>🎁</span> 개발자 후원하고 PRO 활성화하기
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
