@@ -39,6 +39,13 @@ window.USE_SERVER_CONFIG = false;
 
 // [설정] Supabase 연결 정보
 // Cloudflare Pages 빌드 시 sed 명령어로 __SUPABASE_URL__, __SUPABASE_KEY__, __SECURITY_KEY__가 주입됩니다.
+if (!window.SUPABASE_CONFIG) {
+    window.SUPABASE_CONFIG = {
+        SUPABASE_URL: '__SUPABASE_URL__',
+        SUPABASE_KEY: '__SUPABASE_KEY__',
+        SECURITY_KEY: '__SECURITY_KEY__'
+    };
+}
 
 // [설정] 온보딩 가이드 단계 정의
 window.ONBOARDING_STEPS = [

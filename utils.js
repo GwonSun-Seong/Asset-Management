@@ -463,6 +463,106 @@ const validateSupabaseConfig = () => {
     return { SUPABASE_URL: url, SUPABASE_KEY: key, SECURITY_KEY: sec };
 };
 
+// [추가] CSV 생성 헬퍼
+const generateCSV = (assets) => {
+    const sectorMap = {
+        deposit: '입출금통장', savings: '저축', investment: '투자', pension: '연금',
+        realestate: '부동산', car: '자동차', loan: '대출', misc: '기타'
+    };
+    const headers = ['섹터', '항목명', '현재금액', '수익률', '수수료율', '월납입', '추가납입', '출금계좌', '만기개월', '대출시작일'];
+    let csvContent = headers.join(',') + '\n';
+
+    Object.keys(assets).forEach(sector => {
+        const koreanSector = sectorMap[sector] || sector;
+        (assets[sector] || []).forEach(asset => {
+            const row = [
+                koreanSector,
+                `"${asset.name}"`,
+                asset.amount || 0,
+                asset.rate || 0,
+                asset.feeRate || 0,
+                asset.monthlyContrib || 0,
+                asset.extraContrib || 0,
+                `"${asset.extraFrom || ''}"`,
+                asset.maturityMonth || '',
+                asset.loanStartDate || ''
+            ];
+            csvContent += row.join(',') + '\n';
+        });
+    });
+    return csvContent;
+};
+
+// [추가] CSV 파싱 헬퍼
+const parseCSV = (text) => {
+    const reverseSectorMap = {
+        '입출금통장': 'deposit', '저축': 'savings', '투자': 'investment', '연금': 'pension',
+        '부동산': 'realestate', '자동차': 'car', '대출': 'loan', '기타': 'misc',
+        'deposit': 'deposit', 'savings': 'savings', 'investment': 'investment',
+        'pension': 'pension', 'realestate': 'realestate', 'car': 'car',
+        'loan': 'loan', 'misc': 'misc', '예적금': 'savings', '주식': 'investment', '펀드': 'investment', '부채': 'loan'
+    };
+    
+    const lines = text.split('\n');
+    const newAssets = {};
+    // 기본 섹터 초기화
+    ['deposit', 'savings', 'investment', 'pension', 'realestate', 'car', 'loan', 'misc'].forEach(k => newAssets[k] = []);
+
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+        if (parts.length < 3) continue;
+
+        const koreanSector = parts[0].trim();
+        const sector = reverseSectorMap[koreanSector] || koreanSector;
+        if (!newAssets[sector]) newAssets[sector] = [];
+
+        const asset = {
+            id: Date.now() + Math.random() + i,
+            name: parts[1].replace(/"/g, '').trim(),
+            amount: Number(parts[2].replace(/,/g, '')) || 0,
+            rate: Number(parts[3].replace(/,/g, '')) || 0,
+            feeRate: Number(parts[4].replace(/,/g, '')) || 0,
+            monthlyContrib: Number(parts[5].replace(/,/g, '')) || 0,
+            extraContrib: Number(parts[6].replace(/,/g, '')) || 0,
+            extraFrom: parts[7]?.replace(/"/g, '').trim() || '',
+            maturityMonth: Number(parts[8]) || 12,
+            loanStartDate: parts[9]?.trim() || ''
+        };
+        newAssets[sector].push(asset);
+    }
+    return newAssets;
+};
+
+// [추가] 데이터 압축 (Base64)
+const compressData = (data) => {
+    if (!window.pako) throw new Error('pako library not loaded');
+    const jsonString = JSON.stringify(data);
+    const compressedDataArray = window.pako.deflate(jsonString);
+    // 대용량 데이터 처리를 위해 String.fromCharCode.apply 대신 반복문 사용
+    let binaryString = '';
+    const len = compressedDataArray.length;
+    for (let i = 0; i < len; i++) {
+        binaryString += String.fromCharCode(compressedDataArray[i]);
+    }
+    return btoa(binaryString);
+};
+
+// [추가] 데이터 압축 해제 (Base64)
+const decompressData = (base64String) => {
+    if (!window.pako) throw new Error('pako library not loaded');
+    const binaryString = atob(base64String);
+    const len = binaryString.length;
+    const compressedDataArray = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        compressedDataArray[i] = binaryString.charCodeAt(i);
+    }
+    const jsonString = window.pako.inflate(compressedDataArray, { to: 'string' });
+    return JSON.parse(jsonString);
+};
+
 // 전역 객체에 노출
 window.formatNumber = formatNumber;
 window.formatPercent = formatPercent;
@@ -478,3 +578,7 @@ window.getRGB = getRGB;
 window.createGradient = createGradient;
 window.validateSupabaseConfig = validateSupabaseConfig;
 window.getEncryptionKey = getEncryptionKey;
+window.generateCSV = generateCSV;
+window.parseCSV = parseCSV;
+window.compressData = compressData;
+window.decompressData = decompressData;

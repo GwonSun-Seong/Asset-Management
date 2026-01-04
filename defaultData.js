@@ -82,6 +82,19 @@ async function loadServerConfig() {
     }
 }
 
+// [추가] 기본 레이아웃 순서 정의
+const DEFAULT_LAYOUT_ORDER = [
+    'summary', 'scenario', 'charts', 'history', 'budget', 'memo', 
+    'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'
+];
+
+// [추가] 기본 자산 섹터 순서 정의
+const DEFAULT_SECTOR_ORDER = [
+    'deposit', 'savings', 'investment', 'pension', 'realestate', 'car', 'loan', 'misc'
+];
+
 // 전역으로 노출
 window.publicDefaultData = publicDefaultData;
 window.loadServerConfig = loadServerConfig;
+window.DEFAULT_LAYOUT_ORDER = DEFAULT_LAYOUT_ORDER;
+window.DEFAULT_SECTOR_ORDER = DEFAULT_SECTOR_ORDER;

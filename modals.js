@@ -371,3 +371,84 @@ window.SettingsModal = ({
         </div>
     );
 };
+
+// [추가] 모바일 퀵 메뉴 (Bottom Sheet)
+window.MobileQuickMenu = ({ isOpen, onClose, layoutOrder, scenarios, assetHistory, onNavigate }) => {
+    if (!isOpen) return null;
+    const navLabels = window.navLabels || {};
+    
+    return (
+        <div className="sm:hidden fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end justify-center p-4" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 w-full rounded-2xl p-6 shadow-2xl animate-in slide-in-from-bottom duration-300" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">메뉴 바로가기</h3>
+                    <button onClick={onClose} className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                    {layoutOrder.filter(id => {
+                        if (!navLabels[id]) return false;
+                        if (id === 'scenario') return scenarios.length > 0;
+                        if (id === 'history') return assetHistory.length > 0;
+                        return true;
+                    }).map(id => (
+                        <button 
+                            key={id} 
+                            onClick={() => { onNavigate(id); onClose(); }}
+                            className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        >
+                            <span className="text-2xl">{navLabels[id]?.icon}</span>
+                            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400 text-center">{navLabels[id]?.title}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// [추가] 에러 바운더리 컴포넌트
+window.ErrorBoundary = class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+
+    componentDidCatch(error, errorInfo) {
+        console.error('Error caught by boundary:', error, errorInfo);
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="min-h-screen bg-red-50 flex flex-col items-center justify-center gap-4 p-4 text-red-800">
+                    <div className="text-center max-w-md bg-white p-8 rounded-lg shadow-lg border border-red-200">
+                        <h2 className="text-2xl font-bold mb-2">앗, 문제가 발생했습니다!</h2>
+                        <p className="text-sm mb-4 text-gray-600">컴포넌트를 렌더링하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.</p>
+                        <button 
+                            onClick={() => this.setState({ hasError: false, error: null })}
+                            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                        >
+                            다시 시도
+                        </button>
+                    </div>
+                    {this.state.error && (
+                        <details className="text-gray-600 text-xs max-w-md">
+                            <summary className="cursor-pointer">Error details</summary>
+                            <pre className="mt-2 p-2 bg-red-900/20 rounded overflow-auto">
+                                {this.state.error.message}
+                            </pre>
+                        </details>
+                    )}
+                </div>
+            );
+        }
+
+        return this.props.children;
+    }
+};

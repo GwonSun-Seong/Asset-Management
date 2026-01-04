@@ -10,16 +10,6 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        // [빌드 시 환경변수 주입] Cloudflare Pages 빌드 시 __* 플레이스홀더를 실제 환경변수로 대체
-        if (!window.SUPABASE_CONFIG) {
-            window.SUPABASE_CONFIG = {
-                SUPABASE_URL: '__SUPABASE_URL__',
-                SUPABASE_KEY: '__SUPABASE_KEY__',
-                SECURITY_KEY: '__SECURITY_KEY__'
-            };
-        }
-    </script>
     <script src="config.js"></script>
     <script type="text/babel" src="modals.js"></script>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
@@ -418,6 +408,14 @@
         const AssetDashboard = () => {
             // config.js에서 로드된 sectorInfo 사용
             const sectorInfo = window.sectorInfo || {};
+            
+            // [수정] utils.js의 유틸리티 함수들을 로컬 스코프로 가져오기 (ReferenceError 방지)
+            const { 
+                formatNumber, formatPercent, calculateGrossTotal, getSectorTotals, 
+                calculateMonthlyProjection, withRetry, encryptData, decryptData, 
+                getRGB, createGradient 
+            } = window;
+
             // ===== 모든 상태를 먼저 선언 =====
             // [수정] Undo/Redo 훅 적용
             const { state: appData, setState: setAppData, undo, redo, canUndo, canRedo, reset: resetAppData } = useUndoRedo(null);
@@ -523,7 +521,7 @@
             const [layoutOrder, setLayoutOrder] = useState(() => {
                 try {
                     const savedOrder = localStorage.getItem('assetDashboardLayoutOrder');
-                    const defaultOrder = ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'];
+                    const defaultOrder = window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'];
                     if (savedOrder) {
                         const parsed = JSON.parse(savedOrder);
                         const missing = defaultOrder.filter(id => !parsed.includes(id));
@@ -531,7 +529,7 @@
                     }
                     return defaultOrder;
                 } catch {
-                    return ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'];
+                    return window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'];
                 }
             });
             useEffect(() => {
@@ -864,6 +862,9 @@
                 setSyncStatus('idle');
                 setSyncStatusError('');
                 setIsCloudLoaded(false);
+                // [추가] 로그아웃 시 보안 키 세션 및 상태 초기화 (보안 강화)
+                setUserSecretKey('');
+                sessionStorage.removeItem('assetDashboardSecretKey');
                 setTimeout(() => { isProcessing.current = false; }, 100);
             }
         }, [supabase, logoutBehavior, resetAppData, withRetry]);
@@ -926,38 +927,8 @@
 
             // [추가] CSV 내보내기/불러오기 기능
             const exportToCSV = () => {
-                const sectorMap = {
-                    deposit: '입출금통장',
-                    savings: '저축',
-                    investment: '투자',
-                    pension: '연금',
-                    realestate: '부동산',
-                    car: '자동차',
-                    loan: '대출',
-                    misc: '기타'
-                };
-                const headers = ['섹터', '항목명', '현재금액', '수익률', '수수료율', '월납입', '추가납입', '출금계좌', '만기개월', '대출시작일'];
-                let csvContent = headers.join(',') + '\n';
-
-                Object.keys(assets).forEach(sector => {
-                    const koreanSector = sectorMap[sector] || sector;
-                    assets[sector].forEach(asset => {
-                        const row = [
-                            koreanSector,
-                            `"${asset.name}"`,
-                            asset.amount || 0,
-                            asset.rate || 0,
-                            asset.feeRate || 0,
-                            asset.monthlyContrib || 0,
-                            asset.extraContrib || 0,
-                            `"${asset.extraFrom || ''}"`,
-                            asset.maturityMonth || '',
-                            asset.loanStartDate || ''
-                        ];
-                        csvContent += row.join(',') + '\n';
-                    });
-                });
-
+                // [수정] utils.js의 generateCSV 사용
+                const csvContent = window.generateCSV(assets);
                 const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
@@ -972,51 +943,9 @@
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     try {
-                        const reverseSectorMap = {
-                            '입출금통장': 'deposit',
-                            '저축': 'savings',
-                            '투자': 'investment',
-                            '연금': 'pension',
-                            '부동산': 'realestate',
-                            '자동차': 'car',
-                            '대출': 'loan',
-                            '기타': 'misc',
-                            // [추가] 영문 키 및 유사어 대응
-                            'deposit': 'deposit', 'savings': 'savings', 'investment': 'investment',
-                            'pension': 'pension', 'realestate': 'realestate', 'car': 'car',
-                            'loan': 'loan', 'misc': 'misc', '예적금': 'savings', '주식': 'investment', '펀드': 'investment', '부채': 'loan'
-                        };
                         const text = event.target.result;
-                        const lines = text.split('\n');
-                        const newAssets = {};
-                        Object.keys(sectorInfo).forEach(k => newAssets[k] = []);
-
-                        for (let i = 1; i < lines.length; i++) {
-                            const line = lines[i].trim();
-                            if (!line) continue;
-                            
-                            const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-                            if (parts.length < 3) continue;
-
-                            const koreanSector = parts[0].trim();
-                            const sector = reverseSectorMap[koreanSector] || koreanSector;
-                            if (!newAssets[sector]) continue;
-
-                            const asset = {
-                                id: Date.now() + Math.random() + i,
-                                name: parts[1].replace(/"/g, '').trim(),
-                                amount: Number(parts[2].replace(/,/g, '')) || 0, // [수정] 쉼표 제거 후 파싱
-                                rate: Number(parts[3].replace(/,/g, '')) || 0,
-                                feeRate: Number(parts[4].replace(/,/g, '')) || 0,
-                                monthlyContrib: Number(parts[5].replace(/,/g, '')) || 0,
-                                extraContrib: Number(parts[6].replace(/,/g, '')) || 0,
-                                extraFrom: parts[7]?.replace(/"/g, '').trim() || '',
-                                maturityMonth: Number(parts[8]) || 12,
-                                loanStartDate: parts[9]?.trim() || ''
-                            };
-                            newAssets[sector].push(asset);
-                        }
-
+                        // [수정] utils.js의 parseCSV 사용
+                        const newAssets = window.parseCSV(text);
                         if (confirm('CSV 데이터를 불러오시겠습니까? 기존 자산 데이터가 대체됩니다.')) {
                             setAssets(newAssets);
                             addToast('CSV 데이터를 성공적으로 불러왔습니다.', 'success');
@@ -1144,10 +1073,8 @@
                     exportData.exportDate = new Date().toISOString();
                     exportData.version = '1.0';
  
-                    const jsonString = JSON.stringify(exportData);
-                    const compressedDataArray = pako.deflate(jsonString);
-                    const binaryString = String.fromCharCode.apply(null, compressedDataArray);
-                    const compressed = btoa(binaryString);
+                    // [수정] utils.js의 compressData 사용
+                    const compressed = window.compressData(exportData);
 
                     // 클립보드에 복사
                     navigator.clipboard.writeText(compressed).then(() => {
@@ -1173,13 +1100,8 @@
                 if (!compressedData) return;
                 
                 try {
-                    const binaryString = atob(compressedData);
-                    const compressedDataArray = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) {
-                        compressedDataArray[i] = binaryString.charCodeAt(i);
-                    }
-                    const jsonString = pako.inflate(compressedDataArray, { to: 'string' });
-                    const importData = JSON.parse(jsonString);
+                    // [수정] utils.js의 decompressData 사용
+                    const importData = window.decompressData(compressedData);
                     
                     if (!importData.version) {
                         throw new Error('잘못된 데이터 형식입니다.');
@@ -2031,15 +1953,7 @@
                 };
             }, [darkMode]);
 
-            const sectorLabels = {
-                deposit: '입출금통장', savings: '저축', investment: '투자', pension: '연금',
-                realestate: '부동산', car: '자동차', loan: '대출', misc: '기타'
-            };
             const chartBorderColor = darkMode ? '#1e293b' : '#ffffff';
-            const palette = [
-                '#3b82f6', '#22c55e', '#f97316', '#a855f7', '#f59e0b', 
-                '#06b6d4', '#6b7280', '#ef4444', '#8b5cf6', '#14b8a6'
-            ];
 
             // [수정] 1. 현재 포트폴리오 차트 (독립 렌더링)
             useEffect(() => {
@@ -2060,7 +1974,7 @@
                         const baseRGB = window.getRGB(sectorInfo[currentDrillDown].color);
                         colors = sectorAssets.map((_, i) => `rgba(${baseRGB}, ${0.9 - (i * 0.1)})`);
                     } else {
-                        labels = filteredKeys.map(key => sectorLabels[key]);
+                        labels = filteredKeys.map(key => sectorInfo[key]?.name || key);
                         data = filteredKeys.map(key => currentSectorTotals[key]?.amount || 0);
                     }
 
@@ -2095,7 +2009,7 @@
                                 },
                                 plugins: {
                                     ...commonChartOptions.plugins,
-                                    title: { display: true, text: currentDrillDown ? `${sectorLabels[currentDrillDown]} 상세` : '현재 포트폴리오', color: darkMode ? '#e5e7eb' : '#111827', font: { size: 16, weight: 'bold' } }
+                                    title: { display: true, text: currentDrillDown ? `${sectorInfo[currentDrillDown]?.name || currentDrillDown} 상세` : '현재 포트폴리오', color: darkMode ? '#e5e7eb' : '#111827', font: { size: 16, weight: 'bold' } }
                                 }
                             },
                             plugins: [ChartDataLabels]
@@ -2125,7 +2039,7 @@
                         const baseRGB = window.getRGB(sectorInfo[projectedDrillDown].color);
                         colors = projAssets.map((_, i) => `rgba(${baseRGB}, ${0.9 - (i * 0.1)})`);
                     } else {
-                        labels = projectedKeys.map(key => sectorLabels[key]);
+                        labels = projectedKeys.map(key => sectorInfo[key]?.name || key);
                         data = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
                     }
 
@@ -2162,7 +2076,7 @@
                                     ...commonChartOptions.plugins,
                                     title: { 
                                         display: true, 
-                                        text: projectedDrillDown ? `${sectorLabels[projectedDrillDown]} 예상` : `${projectionMonths}개월 후 예상`, 
+                                        text: projectedDrillDown ? `${sectorInfo[projectedDrillDown]?.name || projectedDrillDown} 예상` : `${projectionMonths}개월 후 예상`, 
                                         color: darkMode ? '#e5e7eb' : '#111827', 
                                         font: { size: 16, weight: 'bold' } 
                                     }
@@ -2186,7 +2100,7 @@
                         chartInstancesRef.current['comparisonBar'] = null;
                     }
 
-                    const comparisonLabels = projectedKeys.map(key => sectorLabels[key] || key);
+                    const comparisonLabels = projectedKeys.map(key => sectorInfo[key]?.name || key);
                     const comparisonCurrentData = projectedKeys.map(key => currentSectorTotals[key]?.amount || 0);
                     const comparisonProjectedData = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
 
@@ -2591,10 +2505,6 @@
             };
 
 
-            const savingsPanelSectors = ['deposit','savings','investment','misc'];
-            const assetsPanelSectors = ['realestate','car','misc'];
-            const loanPanelSectors = ['loan'];
-
             const renderScenarioPanel = () => ( 
                 <div className="flex flex-col lg:flex-row lg:items-start gap-6">
                     <div className="lg:w-full lg:max-w-md">
@@ -2850,7 +2760,6 @@
                                             updateAsset={updateAsset}
                                             removeAsset={removeAsset}
                                             accountOptions={accountOptions}
-                                            assetInputRefs={assetInputRefs}
                                             sectorInfo={sectorInfo}
                                             sectorTotal={sectorTotal}
                                             rgb={rgb}
@@ -3532,35 +3441,16 @@
                         </svg>
                     </button>
 
-                    {isQuickPanelOpen && (
-                        <div className="sm:hidden fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end justify-center p-4" onClick={() => setIsQuickPanelOpen(false)}>
-                            <div className="bg-white dark:bg-gray-800 w-full rounded-2xl p-6 shadow-2xl animate-in slide-in-from-bottom duration-300" onClick={e => e.stopPropagation()}>
-                                <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">메뉴 바로가기</h3>
-                                    <button onClick={() => setIsQuickPanelOpen(false)} className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
-                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                                    </button>
-                                </div>
-                                <div className="grid grid-cols-3 gap-4">
-                                    {layoutOrder.filter(id => {
-                                        if (!navLabels[id]) return false;
-                                        if (id === 'scenario') return scenarios.length > 0;
-                                        if (id === 'history') return assetHistory.length > 0;
-                                        return true;
-                                    }).map(id => (
-                                        <button 
-                                            key={id} 
-                                            onClick={() => { scrollToPanel(id); setIsQuickPanelOpen(false); }}
-                                            className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                        >
-                                            <span className="text-2xl">{navLabels[id]?.icon}</span>
-                                            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400 text-center">{navLabels[id]?.title}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    {/* [수정] 모바일 퀵 메뉴를 modals.js로 이동 */}
+                    {window.MobileQuickMenu && <window.MobileQuickMenu 
+                        isOpen={isQuickPanelOpen}
+                        onClose={() => setIsQuickPanelOpen(false)}
+                        layoutOrder={layoutOrder}
+                        scenarios={scenarios}
+                        assetHistory={assetHistory}
+                        onNavigate={scrollToPanel}
+                    />}
+
                     {window.OnboardingGuide && <window.OnboardingGuide 
                         isOpen={isGuideOpen} 
                         onClose={() => {
@@ -3572,7 +3462,7 @@
                    
                         />
                     }
-                    {window.EncryptionModal && <window.EncryptionModal 
+                    {window.EncryptionModal && <window.EncryptionMㅊodal 
                         isOpen={isEncryptionModalOpen} 
                         onSelect={handleEncryptionSelect} 
                     />}
@@ -3945,52 +3835,8 @@
             );
         });
 
-     
-
-        // 에러 바운더리 컴포넌트
-        class ErrorBoundary extends React.Component {
-            constructor(props) {
-                super(props);
-                this.state = { hasError: false, error: null };
-            }
-
-            static getDerivedStateFromError(error) {
-                return { hasError: true, error };
-            }
-
-            componentDidCatch(error, errorInfo) {
-                console.error('Error caught by boundary:', error, errorInfo);
-            }
-
-            render() {
-                if (this.state.hasError) {
-                    return (
-                        <div className="min-h-screen bg-red-50 flex flex-col items-center justify-center gap-4 p-4 text-red-800">
-                            <div className="text-center max-w-md bg-white p-8 rounded-lg shadow-lg border border-red-200">
-                                <h2 className="text-2xl font-bold mb-2">앗, 문제가 발생했습니다!</h2>
-                                <p className="text-sm mb-4 text-gray-600">컴포넌트를 렌더링하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.</p>
-                                <button 
-                                    onClick={() => this.setState({ hasError: false, error: null })}
-                                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
-                                >
-                                    다시 시도
-                                </button>
-                            </div>
-                            {this.state.error && (
-                                <details className="text-gray-600 text-xs max-w-md">
-                                    <summary className="cursor-pointer">Error details</summary>
-                                    <pre className="mt-2 p-2 bg-red-900/20 rounded overflow-auto">
-                                        {this.state.error.message}
-                                    </pre>
-                                </details>
-                            )}
-                        </div>
-                    );
-                }
-
-                return this.props.children;
-            }
-        }
+        // [수정] modals.js로 이동된 ErrorBoundary 사용
+        const ErrorBoundary = window.ErrorBoundary || React.Fragment;
 
         ReactDOM.createRoot(document.getElementById('root')).render(
             <ErrorBoundary>
