@@ -107,7 +107,7 @@ window.TEXTS = {
     },
     settings: {
         coreSettings: "핵심 설정",
-        monthlySalary: "월급 (만원)",
+        monthlySalary: "월 고정 수입 (만원)",
         baseMonth: "기준월 (계산 시작)",
         dataManagement: "데이터 관리",
         goalSettings: "목표 설정",
