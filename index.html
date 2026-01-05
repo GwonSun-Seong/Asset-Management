@@ -58,6 +58,17 @@
     <script type="text/babel">
             const { useState, useMemo, useEffect, useRef } = React;
 
+        // [추가] 스마트 툴팁 가이드 컴포넌트
+        const TooltipGuide = ({ tip }) => (
+            <div className="group relative inline-block ml-1 align-middle">
+                <svg className="w-4 h-4 text-gray-400 cursor-help hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-56 p-2.5 bg-gray-800/95 backdrop-blur text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 text-center leading-relaxed border border-gray-700 font-normal">
+                    {tip}
+                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800/95"></div>
+                </div>
+            </div>
+        );
+
         // [통합] SummaryPanel.js 내용 (CORS 오류 해결을 위해 파일 병합)
         const AssetSummaryCard = ({ calculation, projectionMonths, baseMonth, displayMode }) => {
             const formatNumber = window.formatNumber || ((n) => Number(n || 0).toLocaleString());
@@ -99,13 +110,20 @@
                         )}
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                             {TEXTS.summary?.inflationAdjusted || "인플레이션 고려 시"}: {formatNumber(calculation.realValue, displayMode)}만원
+                            <TooltipGuide tip="물가 상승률을 반영하여 현재 가치로 환산한 금액입니다." />
                         </p>
                         {calculation.fireMetrics && (
                             <div className="mt-6 pt-6 border-t border-blue-200 dark:border-blue-800">
-                                <h3 className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-3">{TEXTS.summary?.fireAnalysis || "자립 가능성 분석 (FIRE Analysis)"}</h3>
+                                <h3 className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-3 flex items-center">
+                                    {TEXTS.summary?.fireAnalysis || "자립 가능성 분석 (FIRE Analysis)"}
+                                    <TooltipGuide tip="경제적 자립을 통해 조기 은퇴가 가능한지 분석합니다." />
+                                </h3>
                                 <div className="grid grid-cols-1 gap-3">
                                     <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
-                                        <span className="text-xs text-gray-500">{TEXTS.summary?.survivalPeriod || "생존 가능 기간"}</span>
+                                        <span className="text-xs text-gray-500 flex items-center">
+                                            {TEXTS.summary?.survivalPeriod || "생존 가능 기간"}
+                                            <TooltipGuide tip="추가 소득 없이 현재 자산으로 생활 가능한 예상 기간입니다." />
+                                        </span>
                                         <span className="text-xs font-bold text-gray-900 dark:text-white">
                                             {calculation.totalMonthlyExpense > 0 ? (
                                                 calculation.fireMetrics.runwayMonths >= 1200 ? '100년 이상' : `${Math.floor(calculation.fireMetrics.runwayMonths / 12)}년 ${calculation.fireMetrics.runwayMonths % 12}개월`
@@ -114,16 +132,11 @@
                                             )}
                                         </span>
                                     </div>
-                                    {calculation.fireMetrics.debtFreeMonth > 0 && (
-                                        <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
-                                            <span className="text-xs text-gray-500">{TEXTS.summary?.debtFreeExpected || "부채 상환 완료 예상"}</span>
-                                            <span className="text-xs font-bold text-green-600 dark:text-green-400">
-                                                {Math.floor(calculation.fireMetrics.debtFreeMonth / 12)}년 {calculation.fireMetrics.debtFreeMonth % 12}개월 후
-                                            </span>
-                                        </div>
-                                    )}
                                     <div className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
-                                        <span className="text-xs text-gray-500">{TEXTS.summary?.fireNeeded || "FIRE (4% 법칙) 필요자산"}</span>
+                                        <span className="text-xs text-gray-500 flex items-center">
+                                            {TEXTS.summary?.fireNeeded || "FIRE (4% 법칙) 필요자산"}
+                                            <TooltipGuide tip="연간 지출의 25배를 모으면 매년 4%씩 인출해도 원금이 유지된다는 법칙입니다." />
+                                        </span>
                                         <span className="text-xs font-bold text-gray-900 dark:text-white">
                                             {calculation.totalMonthlyExpense > 0 ? formatNumber(calculation.fireMetrics.swr4PercentCapital, displayMode) + '만원' : '-'}
                                         </span>
@@ -410,19 +423,118 @@
             const [currentIndex, setCurrentIndex] = useState(0);
             const canvasRef = useRef(null);
             const chartInstance = useRef(null);
-
-            // [수정] 데이터 포인트 증가 (30일 추세) 및 날짜 라벨링을 위한 가상 데이터 생성
-            const items = [
+            const [isLoading, setIsLoading] = useState(false);
+            const [isLive, setIsLive] = useState(false);
+            const [marketItems, setMarketItems] = useState([
                 { name: 'USD/KRW', value: '1,340.50', change: '+0.5%', color: 'red', data: [1328, 1330, 1332, 1335, 1331, 1334, 1338, 1340, 1342, 1339, 1335, 1330, 1328, 1332, 1335, 1338, 1340, 1345, 1342, 1340, 1338, 1335, 1332, 1330, 1335, 1338, 1340, 1342, 1341, 1340.50] },
                 { name: 'S&P 500', value: '5,120.30', change: '+1.2%', color: 'green', data: [4700, 4720, 4750, 4730, 4780, 4800, 4820, 4850, 4840, 4880, 4900, 4920, 4910, 4950, 4980, 5000, 5020, 5010, 5050, 5080, 5100, 5090, 5120, 5150, 5140, 5160, 5150, 5130, 5120, 5120.30] },
                 { name: 'NASDAQ', value: '16,050.20', change: '+1.5%', color: 'green', data: [15780, 15800, 15820, 15850, 15830, 15860, 15880, 15900, 15890, 15920, 15940, 15960, 15950, 15980, 16000, 16020, 16010, 16030, 16040, 16020, 16000, 15980, 16000, 16020, 16040, 16060, 16050, 16030, 16040, 16050.20] },
                 { name: 'Bitcoin', value: '$65,400', change: '-0.8%', color: 'blue', data: [63800, 64000, 64200, 64500, 64300, 64600, 64800, 65000, 64900, 65200, 65400, 65600, 65500, 65800, 66000, 66200, 66100, 66300, 66400, 66200, 66000, 65800, 66000, 66200, 66400, 66600, 66500, 66300, 66400, 65400] },
                 { name: 'Gold', value: '$2,150.00', change: '+0.3%', color: 'orange', data: [2095, 2100, 2105, 2110, 2108, 2112, 2115, 2120, 2118, 2122, 2125, 2130, 2128, 2132, 2135, 2140, 2138, 2142, 2145, 2142, 2140, 2138, 2140, 2142, 2145, 2148, 2145, 2142, 2145, 2150] }
-            ];
+            ]);
 
-            const currentItem = items[currentIndex];
-            const nextItem = () => setCurrentIndex((prev) => (prev + 1) % items.length);
-            const prevItem = () => setCurrentIndex((prev) => (prev - 1 + items.length) % items.length);
+            // [추가] 실제 API 데이터 페칭 함수 (수동 새로고침 지원)
+            const fetchMarketData = React.useCallback(async () => {
+                setIsLoading(true);
+                    // Yahoo Finance 데이터 가져오기 헬퍼 (CORS 프록시 사용)
+                    const fetchYahooData = async (symbol) => {
+                        try {
+                            // 1개월치 일봉 데이터 요청
+                            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1mo&interval=1d`;
+                            const response = await fetch(`https://corsproxy.io/?` + encodeURIComponent(url));
+                            const json = await response.json();
+                            
+                            const result = json.chart.result[0];
+                            const quotes = result.indicators.quote[0];
+                            const prices = quotes.close.filter(p => p !== null); // null 값 제거
+                            
+                            // 현재가 및 변동률 계산
+                            const currentPrice = prices[prices.length - 1];
+                            const prevPrice = prices[prices.length - 2] || currentPrice;
+                            const changePct = ((currentPrice - prevPrice) / prevPrice * 100);
+                            
+                            return {
+                                price: currentPrice,
+                                change: changePct,
+                                data: prices
+                            };
+                        } catch (e) {
+                            console.warn(`Failed to fetch ${symbol}`, e);
+                            return null;
+                        }
+                    };
+
+                    try {
+                        // 병렬로 데이터 요청
+                        const [usdData, sp500Data, nasdaqData, goldData, btcRes] = await Promise.all([
+                            fetchYahooData('KRW=X'),   // 환율
+                            fetchYahooData('^GSPC'),   // S&P 500
+                            fetchYahooData('^IXIC'),   // NASDAQ
+                            fetchYahooData('GC=F'),    // 금 선물
+                            fetch(`https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=30&interval=daily`).catch(() => null) // 비트코인
+                        ]);
+
+                        let successCount = 0;
+                        // 비트코인 데이터 처리
+                        let btcData = null;
+                        if (btcRes) {
+                            const json = await btcRes.json();
+                            if (json.prices) {
+                                const prices = json.prices.map(p => p[1]);
+                                const current = prices[prices.length - 1];
+                                const prev = prices[prices.length - 2] || current;
+                                btcData = {
+                                    price: current,
+                                    change: ((current - prev) / prev * 100),
+                                    data: prices
+                                };
+                                successCount++;
+                            }
+                        }
+
+                        // 상태 업데이트 헬퍼
+                        const updateItem = (item, data, isCurrency = false) => {
+                            if (!data) return item;
+                            successCount++;
+                            const sign = data.change >= 0 ? '+' : '';
+                            const color = data.change >= 0 ? 'red' : 'blue'; // 한국식: 상승=빨강
+                            const formattedValue = isCurrency 
+                                ? `$${data.price.toLocaleString(undefined, {maximumFractionDigits: 2})}`
+                                : data.price.toLocaleString(undefined, {maximumFractionDigits: 2});
+
+                            return {
+                                ...item,
+                                value: formattedValue,
+                                change: `${sign}${data.change.toFixed(2)}%`,
+                                color: color,
+                                data: data.data
+                            };
+                        };
+                        
+                        setMarketItems(prev => prev.map(item => {
+                            if (item.name === 'USD/KRW') return updateItem(item, usdData, false);
+                            if (item.name === 'S&P 500') return updateItem(item, sp500Data, false);
+                            if (item.name === 'NASDAQ') return updateItem(item, nasdaqData, false);
+                            if (item.name === 'Gold') return updateItem(item, goldData, true);
+                            if (item.name === 'Bitcoin') return updateItem(item, btcData, true);
+                            return item;
+                        }));
+                        
+                        if (successCount > 0) setIsLive(true);
+                    } catch (e) {
+                        console.warn("Market data fetch failed, using fallback data", e);
+                    } finally {
+                        setIsLoading(false);
+                    }
+            }, []);
+
+            useEffect(() => {
+                fetchMarketData();
+            }, [fetchMarketData]);
+
+            const currentItem = marketItems[currentIndex];
+            const nextItem = () => setCurrentIndex((prev) => (prev + 1) % marketItems.length);
+            const prevItem = () => setCurrentIndex((prev) => (prev - 1 + marketItems.length) % marketItems.length);
 
             useEffect(() => {
                 if (canvasRef.current && typeof Chart !== 'undefined') {
@@ -449,6 +561,7 @@
                                 backgroundColor: bgColor,
                                 borderWidth: 2,
                                 pointRadius: 0,
+                                pointHoverRadius: 4,
                                 fill: true,
                                 tension: 0.4
                             }]
@@ -456,7 +569,28 @@
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
-                            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                            interaction: {
+                                mode: 'index',
+                                intersect: false,
+                            },
+                            plugins: { 
+                                legend: { display: false }, 
+                                tooltip: { 
+                                    enabled: true,
+                                    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)',
+                                    titleColor: darkMode ? '#000' : '#fff',
+                                    bodyColor: darkMode ? '#000' : '#fff',
+                                    displayColors: false,
+                                    callbacks: {
+                                        label: (context) => {
+                                            const val = context.parsed.y;
+                                            if (currentItem.name === 'USD/KRW') return `₩${val.toLocaleString()}`;
+                                            if (['Bitcoin', 'Gold'].includes(currentItem.name)) return `$${val.toLocaleString()}`;
+                                            return val.toLocaleString();
+                                        }
+                                    }
+                                } 
+                            },
                             scales: { 
                                 x: { display: true, ticks: { display: false }, grid: { display: false } }, // X축 선은 표시하되 눈금 숨김
                                 y: { display: false } 
@@ -467,15 +601,21 @@
                     });
                 }
                 return () => { if (chartInstance.current) chartInstance.current.destroy(); };
-            }, [currentIndex, darkMode]);
+            }, [currentIndex, darkMode, currentItem]);
 
             return (
                 <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 p-4">
                     <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            시장 지표 <span className="text-[10px] font-normal text-gray-400 ml-1">(예시 데이터)</span>
-                        </h3>
+                        <div className="flex items-center gap-2">
+                            <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">시장 지표</h3>
+                            {isLoading ? (
+                                <span className="text-[10px] text-blue-500 animate-pulse">업데이트 중...</span>
+                            ) : (
+                                <span className={`text-[10px] ${isLive ? 'text-green-500' : 'text-gray-400'}`}>{isLive ? '● 실시간' : '○ 데모'}</span>
+                            )}
+                        </div>
                         <div className="flex gap-1">
+                            <button onClick={fetchMarketData} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded" title="새로고침"><svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
                             <button onClick={prevItem} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg></button>
                             <button onClick={nextItem} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg></button>
                         </div>
@@ -2306,10 +2446,11 @@
 
             // [분리] 히스토리 차트 전용 useEffect
             useEffect(() => {
-                if (panelCollapseState['history'] || !historyChartRef.current || assetHistory.length === 0) return;
+                if (panelCollapseState['history'] || assetHistory.length === 0) return;
                 
                 const renderHistoryChart = () => {
-                    // [추가] 다크모드 대응 색상 정의
+                    if (!historyChartRef.current) return; // [수정] 렌더링 시점에 ref 확인 (비동기 처리)
+
                     const textColor = darkMode ? '#e5e7eb' : '#111827';
                     const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
 
@@ -3023,7 +3164,8 @@
                             </div>
                             {!hiddenSectors[sectorKey] && (
                             <div className="space-y-4" id={`sector-content-${sectorKey}`}> 
-                                <div className="hidden lg:flex items-center gap-3 px-4 mb-2 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                {assets[sectorKey]?.length > 0 && (
+                                <div className="hidden lg:flex items-center gap-3 px-4 mb-2 text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                     <div className="flex-1 grid grid-cols-7 gap-3">
                                         {sectorKey === 'loan' ? (
                                             <>
@@ -3047,6 +3189,7 @@
                                         <div className="text-right">관리</div>
                                     </div>
                                 </div>
+                                )}
                                 {assets[sectorKey]?.map((asset, index) => {
                                     const sectorTotal = assets[sectorKey]?.reduce((sum, a) => sum + Number(a.amount || 0), 0) || 1;
                                     const assetPercentage = (Number(asset.amount || 0) / sectorTotal) * 100;
@@ -3080,14 +3223,31 @@
                         <h3 className="text-lg font-semibold text-red-700 dark:text-red-100">월별 지출</h3>
                         <button onClick={addExpense} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 whitespace-nowrap">+ 지출 추가</button>
                     </div>
+                    
+                    {/* [추가] 헤더 행 */}
+                    {monthlyExpenses.length > 0 && (
+                    <div className="hidden sm:grid grid-cols-4 gap-3 px-4 mb-2 text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <div>지출명</div>
+                        <div>금액 (만원)</div>
+                        <div>연간 환산</div>
+                        <div className="text-right">관리</div>
+                    </div>
+                    )}
+
                     <div className="space-y-3">
                         {monthlyExpenses.map((expense, index) => (
                             <div key={index} className="bg-white dark:bg-gray-900 rounded-lg p-3 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-center">
+                                    <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">지출명</label>
                                     <input type="text" placeholder="지출명" className="border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-2 py-1" value={expense.name} onChange={(e) => updateExpense(index, 'name', e.target.value)} />
+                                    
+                                    <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">금액 (만원)</label>
                                     <input type="number" placeholder="금액(만원)" className="border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-2 py-1" value={expense.amount} onChange={(e) => updateExpense(index, 'amount', e.target.value)} />
+                                    
                                     <div className="text-sm text-gray-600 dark:text-gray-400">연간: {formatNumber(expense.amount * projectionMonths)}만원</div>
-                                    <button onClick={() => removeExpense(index)} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
+                                    <div className="text-right">
+                                        <button onClick={() => removeExpense(index)} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -3127,6 +3287,19 @@
                                 })()}</strong>
                             </div>
                         </div>
+                        
+                        {/* [추가] 헤더 행 */}
+                        {incomeEvents.length > 0 && (
+                        <div className="hidden lg:grid grid-cols-8 gap-4 px-4 mb-2 text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            <div className="col-span-2">이벤트명</div>
+                            <div className="col-span-1">금액</div>
+                            <div className="col-span-1">시작 월</div>
+                            <div className="col-span-1">종료 월</div>
+                            <div className="col-span-2">입금처 (섹터/계좌)</div>
+                            <div className="col-span-1 text-center">관리</div>
+                        </div>
+                        )}
+
                         <div className="space-y-4">
                             {incomeEvents && incomeEvents.length > 0 ? incomeEvents.map((event, index) => {
                                 if (!event || typeof event !== 'object') {
@@ -3136,25 +3309,25 @@
                                 
                                 return (
                                 <div key={index} className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm border dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                                    <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 items-end">
+                                    <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 items-center">
                                         <div className="md:col-span-2 lg:col-span-2">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">이벤트명</label>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 lg:hidden">이벤트명</label>
                                             <input type="text" placeholder="이벤트명" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2" value={event.name} onChange={(e) => updateIncomeEvent(index, 'name', e.target.value)} />
                                         </div>
                                         <div className="md:col-span-2 lg:col-span-1">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">금액</label>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 lg:hidden">금액</label>
                                             <input type="number" placeholder="금액" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2" value={event.amount} onChange={(e) => updateIncomeEvent(index, 'amount', e.target.value)} />
                                         </div>
                                         <div className="md:col-span-2 lg:col-span-1">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">시작 월</label>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 lg:hidden">시작 월</label>
                                             <input type="month" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2" value={event.startMonth} onChange={(e) => updateIncomeEvent(index, 'startMonth', e.target.value)} />
                                         </div>
                                         <div className="md:col-span-2 lg:col-span-1">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">종료 월</label>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 lg:hidden">종료 월</label>
                                             <input type="month" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2" value={event.endMonth} onChange={(e) => updateIncomeEvent(index, 'endMonth', e.target.value)} />
                                         </div>
                                         <div className="md:col-span-3 lg:col-span-2">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">입금처</label>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 lg:hidden">입금처</label>
                                             <div className="grid grid-cols-2 gap-2">
                                                 <select className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2" value={event.targetSector} onChange={(e) => updateIncomeEvent(index, 'targetSector', e.target.value)}>
                                                     {Object.keys(sectorInfo).map(key => (
@@ -3168,7 +3341,7 @@
                                                 </select>
                                             </div>
                                         </div>
-                                        <div className="md:col-span-1 lg:col-span-1 flex items-end justify-center h-full">
+                                        <div className="md:col-span-1 lg:col-span-1 flex items-center justify-center h-full">
                                             <button onClick={() => removeIncomeEvent(index)} className="text-red-500 hover:text-red-700 font-medium whitespace-nowrap">삭제</button>
                                         </div>
                                     </div>
@@ -3193,28 +3366,41 @@
                                 예: 2~5개월 입력 시, 기준월 기준 <strong>{(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d=new Date(y||new Date().getFullYear(),(m||1)-1,1); const fmt=(dt)=> `${String(dt.getFullYear()).slice(2)}년 ${String(dt.getMonth()+1).padStart(2,'0')}월`; const s=new Date(d); s.setMonth(s.getMonth()+2-1); const e=new Date(d); e.setMonth(e.getMonth()+5-1); return `${fmt(s)} ~ ${fmt(e)}`; } catch { return ''; } })()}</strong>
                             </div>
                         </div>
+
+                        {/* [추가] 헤더 행 */}
+                        {expenseEvents.length > 0 && (
+                        <div className="hidden lg:grid grid-cols-8 gap-4 px-4 mb-2 text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            <div className="col-span-2">이벤트명</div>
+                            <div className="col-span-1">금액</div>
+                            <div className="col-span-1">시작 월</div>
+                            <div className="col-span-1">종료 월</div>
+                            <div className="col-span-2">출금처 (섹터/계좌)</div>
+                            <div className="col-span-1 text-center">관리</div>
+                        </div>
+                        )}
+
                         <div className="space-y-4">
                             {expenseEvents.map((event, index) => (
                                 <div key={index} className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm border dark:border-gray-700">
-                                    <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 items-end">
+                                    <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4 items-center">
                                         <div className="md:col-span-2 lg:col-span-2">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">이벤트명</label>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 lg:hidden">이벤트명</label>
                                             <input type="text" placeholder="이벤트명" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2" value={event.name} onChange={(e) => updateExpenseEvent(index, 'name', e.target.value)} />
                                         </div>
                                         <div className="md:col-span-2 lg:col-span-1">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">금액</label>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 lg:hidden">금액</label>
                                             <input type="number" placeholder="금액" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2" value={event.amount} onChange={(e) => updateExpenseEvent(index, 'amount', e.target.value)} />
                                         </div>
                                         <div className="md:col-span-2 lg:col-span-1">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">시작 월</label>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 lg:hidden">시작 월</label>
                                             <input type="month" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2" value={event.startMonth} onChange={(e) => updateExpenseEvent(index, 'startMonth', e.target.value)} />
                                         </div>
                                         <div className="md:col-span-2 lg:col-span-1">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">종료 월</label>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 lg:hidden">종료 월</label>
                                             <input type="month" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2" value={event.endMonth} onChange={(e) => updateExpenseEvent(index, 'endMonth', e.target.value)} />
                                         </div>
                                         <div className="md:col-span-3 lg:col-span-2">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">출금처</label>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 lg:hidden">출금처</label>
                                             <div className="grid grid-cols-2 gap-2">
                                                 <select className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2" value={event.targetSector || 'deposit'} onChange={(e) => updateExpenseEvent(index, 'targetSector', e.target.value)}>
                                                     {Object.keys(sectorInfo).map(key => (
@@ -3228,7 +3414,7 @@
                                                 </select>
                                             </div>
                                         </div>
-                                        <div className="md:col-span-1 lg:col-span-1 flex items-end justify-center h-full">
+                                        <div className="md:col-span-1 lg:col-span-1 flex items-center justify-center h-full">
                                             <button onClick={() => removeExpenseEvent(index)} className="text-red-500 hover:text-red-700 font-medium whitespace-nowrap">삭제</button>
                                         </div>
                                     </div>
