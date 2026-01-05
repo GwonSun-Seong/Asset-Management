@@ -842,20 +842,17 @@
                     try {
                         const savedData = localStorage.getItem('assetDashboardDataV3');
                         const savedScenarios = localStorage.getItem('assetDashboardScenarios');
-                const savedHistory = localStorage.getItem('assetDashboardHistory');
+                        const savedHistory = localStorage.getItem('assetDashboardHistory');
 
-                if (savedScenarios) {
-                    setScenarios(JSON.parse(savedScenarios));
-                }
-                // [수정] 자산 히스토리 로딩 로직을 초기 데이터 로드에 통합하여 순서 보장
-                if (savedHistory) {
-                    setAssetHistory(JSON.parse(savedHistory));
-                }
+                        const initialScenarios = savedScenarios ? JSON.parse(savedScenarios) : [];
+                        const initialHistory = savedHistory ? JSON.parse(savedHistory) : [];
+                        
+                        if (savedScenarios) setScenarios(initialScenarios);
+                        if (savedHistory) setAssetHistory(initialHistory);
 
                 if (savedData) {
                             const parsedData = JSON.parse(savedData);
-                            // 새로운 필드들 추가
-                            mergedData = { // 병합 로직 개선
+                            mergedData = {
                                 ...baseData,
                                 ...parsedData,
                                 assets: { ...baseData.assets, ...parsedData.assets }, 
@@ -877,11 +874,11 @@
                             });
                             setAppData(mergedData); // [수정] parsedData 대신 mergedData 사용
                             setOriginalUserData(parsedData); // [추가]
-                            lastSavedDataRef.current = JSON.stringify(mergedData); // [추가] 초기 로드 시점 데이터 기록
+                            lastSavedDataRef.current = JSON.stringify({ appData: mergedData, scenarios: initialScenarios, assetHistory: initialHistory });
                         } else {
                             setAppData(baseData);
                             setOriginalUserData(baseData); // [추가]
-                            lastSavedDataRef.current = JSON.stringify(baseData);
+                            lastSavedDataRef.current = JSON.stringify({ appData: baseData, scenarios: initialScenarios, assetHistory: initialHistory });
                         }
                     } catch (error) {
                         console.error("로컬 데이터 로드 오류 (초기화 진행):", error);
@@ -1094,15 +1091,33 @@
                     const cloudTime = new Date(data.updated_at).getTime();
                     const localTime = new Date(localStorage.getItem('assetDashboardLastUpdate') || 0).getTime();
 
-                    if (isManual || !localTime || cloudTime > localTime) {
+                    let shouldUpdateFromCloud = isManual || !localTime || cloudTime >= localTime;
+
+                    if (!shouldUpdateFromCloud && isInitialLoad && localTime > cloudTime) {
+                        if (confirm("기기의 데이터가 더 최신입니다. 클라우드 데이터를 불러오시겠습니까?")) {
+                            shouldUpdateFromCloud = true;
+                        } else {
+                            const localData = localDataOverride || { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current };
+                            await saveToCloud(localData, true, email, pro);
+                        }
+                    }
+
+                    if (shouldUpdateFromCloud) {
                         const actualAppData = decryptedData.appData || decryptedData;
-                        lastSavedDataRef.current = JSON.stringify(decryptedData); // Sync snapshot immediately to prevent auto-save loop
+                        const fullCloudData = decryptedData.appData ? decryptedData : { appData: actualAppData, scenarios: [], assetHistory: [] };
+                        
+                        lastSavedDataRef.current = JSON.stringify(fullCloudData);
                         resetAppData(actualAppData);
-                        if (decryptedData.scenarios) setScenarios(decryptedData.scenarios);
-                        if (decryptedData.assetHistory) setAssetHistory(decryptedData.assetHistory);
+                        if (fullCloudData.scenarios) setScenarios(fullCloudData.scenarios);
+                        if (fullCloudData.assetHistory) setAssetHistory(fullCloudData.assetHistory);
+
+                        localStorage.setItem('assetDashboardDataV3', JSON.stringify(actualAppData));
+                        if (fullCloudData.scenarios) localStorage.setItem('assetDashboardScenarios', JSON.stringify(fullCloudData.scenarios));
+                        if (fullCloudData.assetHistory) localStorage.setItem('assetDashboardHistory', JSON.stringify(fullCloudData.assetHistory));
                         localStorage.setItem('assetDashboardLastUpdate', data.updated_at);
-                    } else if (isInitialLoad && localTime > cloudTime && !confirm("기기의 데이터가 더 최신입니다. 클라우드 데이터를 불러오시겠습니까?")) {
-                        saveToCloud({ appData: localDataOverride || appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current }, true, email, pro);
+                    } else {
+                        const currentLocal = localDataOverride || { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current };
+                        lastSavedDataRef.current = JSON.stringify(currentLocal);
                     }
                     setSyncStatus('synced');
                     setIsCloudLoaded(true);
@@ -1275,21 +1290,32 @@
         }, [canUndo, canRedo, undo, redo, saveToCloud, scenarios, assetHistory]);
 
 
-            // [수정] 시나리오 데이터 저장 (히스토리 저장 방식과 통일)
+            // [수정] 데이터 로컬 스토리지 자동 저장 및 타임스탬프 관리 통합
             useEffect(() => {
-                // 초기 로드 시 불필요한 저장을 막기 위해 isInitialized 확인
-                if (isInitialized) {
-                    localStorage.setItem('assetDashboardScenarios', JSON.stringify(scenarios));
-                }
-            }, [scenarios, isInitialized]);
+                if (!isInitialized) return;
 
-            // 히스토리 데이터 저장
-            React.useEffect(() => {
-                // 초기 로드 시 불필요한 저장을 막기 위해 isInitialized 확인
-                if (isInitialized && assetHistory.length > 0) {
-                    localStorage.setItem('assetDashboardHistory', JSON.stringify(assetHistory));
+                const fullState = { appData, scenarios, assetHistory };
+                const fullStateStr = JSON.stringify(fullState);
+
+                // 1. 각 항목별 로컬 스토리지 저장
+                if (appData) localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
+                localStorage.setItem('assetDashboardScenarios', JSON.stringify(scenarios));
+                localStorage.setItem('assetDashboardHistory', JSON.stringify(assetHistory));
+
+                // 2. 로컬 수정 여부 판단 (마지막 동기화 시점과 비교)
+                // lastSavedDataRef는 클라우드에서 불러오거나 클라우드에 저장 성공했을 때만 갱신됨
+                if (fullStateStr !== lastSavedDataRef.current) {
+                    // 데이터가 변경되었다면 로컬 타임스탬프를 현재 시간으로 갱신
+                    // 이렇게 해야 로그인 시 "기기의 데이터가 더 최신입니다" 팝업이 정상적으로 뜸
+                    const now = new Date().toISOString();
+                    localStorage.setItem('assetDashboardLastUpdate', now);
+                    
+                    // [디버깅용] console.log("로컬 데이터 변경 감지: 타임스탬프 갱신", now);
                 }
-            }, [assetHistory, isInitialized]);
+            }, [appData, scenarios, assetHistory, isInitialized]);
+
+            // [삭제] 기존의 개별 scenarios, assetHistory 저장 useEffect는 위 통합 로직으로 대체됨
+
 
             // 현재 자산 저장 함수
             const saveCurrentAsset = () => {
