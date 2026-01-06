@@ -245,8 +245,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
                 const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
 
-                let scheduledPayment = paymentInfo.payment;
-                let totalScheduledPayment = scheduledPayment + (loan.monthlyContrib || 0);
+                // [수정] 사용자 입력 상환액이 있으면 우선 사용, 없으면 자동 계산값 사용 (중복 합산 방지)
+                let totalScheduledPayment = (loan.monthlyContrib > 0) ? loan.monthlyContrib : paymentInfo.payment;
 
                 if (totalScheduledPayment > 0) {
                     const actualRepayment = Math.min(totalScheduledPayment, repaymentAccount.amount);
@@ -311,13 +311,16 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         }
 
         // Record current state
-        const currentTotal = _internalCalculateTotal(currentAssets);
-        const currentGross = Object.keys(currentAssets).filter(k=>k!=='loan').reduce((s,k)=> s + (currentAssets[k]||[]).reduce((sum,a)=>sum+(a.amount||0),0),0);
+        const netAssets = _internalCalculateTotal(currentAssets);
+        const grossAssets = Object.keys(currentAssets).filter(k=>k!=='loan').reduce((s,k)=> s + (currentAssets[k]||[]).reduce((sum,a)=>sum+(a.amount||0),0),0);
+        const loanSum = (currentAssets['loan']||[]).reduce((s,a)=> s+(a.amount||0), 0);
+        const totalAssets = grossAssets + loanSum;
+
         const sectorTotals = {};
         Object.keys(currentAssets).forEach(sector => {
             if (sector === 'loan') return;
             const sectorSum = (currentAssets[sector]||[]).reduce((sum, asset) => sum + (asset.amount || 0), 0);
-            sectorTotals[sector] = { amount: sectorSum, percentage: currentGross > 0 ? (sectorSum / currentGross * 100) : 0 };
+            sectorTotals[sector] = { amount: sectorSum, percentage: grossAssets > 0 ? (sectorSum / grossAssets * 100) : 0 };
         });
 
         const itemTotals = {};
@@ -332,12 +335,13 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
         monthlyProjections.push({
             month: month,
-            total: currentTotal,
-            gross: currentGross,
+            total: totalAssets,
+            gross: grossAssets,
+            net: netAssets,
             sectorTotals: sectorTotals,
             itemTotals: itemTotals,
             // 매달 전체 자산 객체를 복사하는 대신, 마지막 달만 복사하도록 최적화
-            assets: month === monthsToProject ? JSON.parse(JSON.stringify(currentAssets)) : null
+            assets: month === monthsToProject ? JSON.parse(JSON.stringify(currentAssets, (k, v) => k === '_repaymentAccountRef' ? undefined : v)) : null
         });
     }
     return { projections: monthlyProjections, warnings };
