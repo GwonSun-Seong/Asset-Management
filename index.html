@@ -40,6 +40,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         // [추가] 인앱 브라우저(카카오톡) 감지 및 외부 브라우저 전환 스크립트
@@ -964,10 +966,10 @@
                         const savedHistory = localStorage.getItem('assetDashboardHistory');
 
                         const initialScenarios = savedScenarios ? JSON.parse(savedScenarios) : [];
-                        const initialHistory = savedHistory ? JSON.parse(savedHistory) : [];
+                        const initialHistory = savedHistory ? JSON.parse(savedHistory) : (baseData.history || []);
                         
                         if (savedScenarios) setScenarios(initialScenarios);
-                        if (savedHistory) setAssetHistory(initialHistory);
+                        setAssetHistory(initialHistory);
 
                 if (savedData) {
                             const parsedData = JSON.parse(savedData);
@@ -2675,22 +2677,33 @@
                     const textColor = darkMode ? '#e5e7eb' : '#111827';
                     const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
 
-                    const historyLabels = assetHistory.map(item => {
-                    // [수정] 날짜 파싱 오류 수정 (UTC -> Local 변환 문제 방지)
-                    const [y, m, d] = item.date.split('-').map(Number);
-                    const date = new Date(y, m - 1, d);
-                    const timeStr = item.time ? ` ${item.time.split(':').slice(0, 2).join(':')}` : '';
-                    return `${date.getMonth() + 1}/${date.getDate()}${timeStr}`;
-                });
-                const historyData = assetHistory.map(item => item.netWorth); 
+                    // [수정] 히스토리 데이터를 월별로 그룹화하여 평균 계산 (줌인/줌아웃 및 시계열 정렬을 위해)
+                    const monthlyGroups = {};
+                    assetHistory.forEach(item => {
+                        const monthKey = item.date.substring(0, 7); // YYYY-MM
+                        if (!monthlyGroups[monthKey]) {
+                            monthlyGroups[monthKey] = { sum: 0, count: 0 };
+                        }
+                        monthlyGroups[monthKey].sum += Number(item.netWorth);
+                        monthlyGroups[monthKey].count += 1;
+                    });
+
+                    const sortedMonthKeys = Object.keys(monthlyGroups).sort();
+                    const groupedLabels = sortedMonthKeys.map(key => {
+                        const [y, m] = key.split('-');
+                        return `${y.slice(2)}년 ${m}월`;
+                    });
+                    const groupedData = sortedMonthKeys.map(key => monthlyGroups[key].sum / monthlyGroups[key].count);
                 
-                let finalLabels = [...historyLabels];
-                let finalHistoryData = [...historyData];
-                let projectionData = new Array(historyData.length).fill(null);
+                    let finalLabels = [...groupedLabels];
+                    let finalHistoryData = [...groupedData];
+                    let projectionData = new Array(groupedData.length).fill(null);
 
                 if (showProjectionInHistory && calculation.monthlyProjections && calculation.monthlyProjections.length > 0) {
                     // 마지막 히스토리 지점과 연결하여 연속성 확보
-                    projectionData[historyData.length - 1] = historyData[historyData.length - 1];
+                    if (groupedData.length > 0) {
+                        projectionData[groupedData.length - 1] = groupedData[groupedData.length - 1];
+                    }
                     
                     calculation.monthlyProjections.forEach((p, idx) => {
                         if (idx === 0) return;
@@ -2698,11 +2711,14 @@
                         // 미래 날짜 라벨 생성
                         const [y, m] = (baseMonth || new Date().toISOString().slice(0, 7)).split('-').map(Number);
                         const d = new Date(y, m - 1 + idx);
-                        const label = `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth() + 1).padStart(2, '0')}월 (예상)`;
+                        const label = `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth() + 1).padStart(2, '0')}월`;
                         
-                        finalLabels.push(label);
-                        projectionData.push(Math.floor(p.total)); // 만원 이하 절삭
-                        finalHistoryData.push(null);
+                        // 라벨 중복 체크 (히스토리와 겹치지 않게)
+                        if (!finalLabels.includes(label)) {
+                            finalLabels.push(label);
+                            projectionData.push(Math.floor(p.total)); // 만원 이하 절삭
+                            finalHistoryData.push(null);
+                        }
                     });
                 }
 
@@ -2767,7 +2783,19 @@
                         plugins: {
                             legend: { position: 'bottom', labels: { color: textColor } },
                             title: { display: false },
-                            tooltip: { mode: 'index', intersect: false }
+                            tooltip: { mode: 'index', intersect: false },
+                            // [추가] 줌 플러그인 설정
+                            zoom: {
+                                zoom: {
+                                    wheel: { enabled: true },
+                                    pinch: { enabled: true },
+                                    mode: 'x',
+                                },
+                                pan: {
+                                    enabled: true,
+                                    mode: 'x',
+                                }
+                            }
                         },
                         scales: { 
                             y: { 
@@ -3977,7 +4005,7 @@
             const renderAssumptionsPanel = () => (
                 <div className="text-sm text-gray-700 dark:text-gray-300">
                     <ul className="list-disc list-inside space-y-1">
-                        <li>수익률은 월복리로 계산됩니다.</li>
+                        <li>수익률 및 수수료/세금은 월단위로 나눈 값으로 계산됩니다.</li>
                         <li>수익률은 각 자산에 설정된 수수료/세금을 차감한 후 계산됩니다.</li>
                         <li>대출 상환은 지정된 상환계좌에서 자동으로 차감됩니다. 잔액 부족 시 경고가 표시됩니다.</li>
                         <li>월수입외 납입은 지정된 출금통장에서 차감됩니다.</li>
