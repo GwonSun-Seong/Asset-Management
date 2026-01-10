@@ -282,28 +282,37 @@
                 future: []
             });
             const { past, present, future } = history;
+            
+            // [추가] 상태 동기화를 위한 Ref (이벤트 핸들러 내 최신 상태 참조용)
+            const historyRef = useRef(history);
+            useEffect(() => { historyRef.current = history; }, [history]);
+            
             const lastHistoryTime = useRef(0);
 
-            // [Refactor] Update timestamp via effect to keep updater pure
-            useEffect(() => {
-                if (past.length > 0) {
-                    lastHistoryTime.current = Date.now();
-                }
-            }, [past]);
-
             const set = React.useCallback((newState) => {
-                setHistory(curr => {
-                    const computedState = typeof newState === 'function' ? newState(curr.present) : newState;
-                    if (JSON.stringify(curr.present) === JSON.stringify(computedState)) return curr;
+                const curr = historyRef.current;
+                const computedState = typeof newState === 'function' ? newState(curr.present) : newState;
+                
+                // 상태가 변경되지 않았으면 리턴
+                if (JSON.stringify(curr.present) === JSON.stringify(computedState)) return;
 
-                    const shouldSave = Date.now() - lastHistoryTime.current > 500;
+                const now = Date.now();
+                const shouldSave = now - lastHistoryTime.current > 500;
 
-                    return {
-                        past: shouldSave ? [...curr.past, curr.present].slice(-30) : curr.past,
+                if (shouldSave) {
+                    lastHistoryTime.current = now;
+                    setHistory(prev => ({
+                        past: [...prev.past, prev.present].slice(-30),
                         present: computedState,
                         future: []
-                    };
-                });
+                    }));
+                } else {
+                    setHistory(prev => ({
+                        ...prev,
+                        present: computedState,
+                        future: []
+                    }));
+                }
             }, []);
 
             const undo = React.useCallback(() => {
@@ -317,6 +326,7 @@
                         future: [curr.present, ...curr.future]
                     };
                 });
+                lastHistoryTime.current = Date.now();
             }, []);
 
             const redo = React.useCallback(() => {
@@ -330,6 +340,7 @@
                         future: newFuture
                     };
                 });
+                lastHistoryTime.current = Date.now();
             }, []);
 
             const reset = React.useCallback((newState) => {
@@ -1547,7 +1558,6 @@
                 expenseEvents = []
             } = appData || {};
 
-            const applyTax = false;
             // ===== Setter 함수들 =====
             // [최적화] 모든 Setter 함수에 useCallback 적용하여 자식 컴포넌트의 불필요한 리렌더링 방지
             const setProjectionMonths = React.useCallback((value) => setAppData(prev => ({ ...prev, projectionMonths: Math.max(0, value) })), [setAppData]);
@@ -2073,10 +2083,8 @@
                     ...appData,
                     incomeEvents: Array.isArray(appData.incomeEvents) ? appData.incomeEvents : [],
                     expenseEvents: Array.isArray(appData.expenseEvents) ? appData.expenseEvents : [],
-                    applyTax: applyTax
                 };
 
-                const taxRate = applyTax ? 0.154 : 0;
                 const localTotalMonthlyExpense = (appData.monthlyExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
                 
                 // 1. High-Precision Initial Metrics
@@ -2095,8 +2103,8 @@
                             currentTotal += amt;
                             sectorSums[sector] += amt;
                             totalInvestedPrincipal += amt;
-                            // Monthly_Net_Profit = (Amount * rate / 1200) * (1 - feeRate / 100) * (applyTax ? 0.846 : 1)
-                            const monthlyProfit = (amt * (Number(asset.rate || 0) / 1200)) * (1 - (Number(asset.feeRate || 0) / 100)) * (1 - taxRate);
+                            // Monthly_Net_Profit = (Amount * rate / 1200) * (1 - feeRate / 100)
+                            const monthlyProfit = (amt * (Number(asset.rate || 0) / 1200)) * (1 - (Number(asset.feeRate || 0) / 100));
                             totalNetProfitMonthlyInitial += monthlyProfit;
                         }
                     });
@@ -2214,7 +2222,7 @@
                             if (sector === 'loan') return;
                             simAssets[sector].forEach(asset => {
                                 if (asset.amount > 0) {
-                                    const profit = asset.amount * (Number(asset.rate || 0) / 1200) * (1 - (Number(asset.feeRate || 0) / 100)) * (1 - taxRate);
+                                    const profit = asset.amount * (Number(asset.rate || 0) / 1200) * (1 - (Number(asset.feeRate || 0) / 100));
                                     asset.amount += profit;
                                 }
                             });
@@ -2293,7 +2301,7 @@
                     });
                 });
 
-                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate, applyTax }, months);
+                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate }, months);
 
                 if (!monthlyProjections || monthlyProjections.length === 0) {
                     return { error: true, warnings: [] };
@@ -2334,11 +2342,11 @@
                     rebalanceInfo: {
                         recs: sectorRecs,
                         budgetLimited,
-                        targetMonths,
+                        targetMonths: targetMonths,
                         itemRecs
                     }
                 };
-            }, [appData, inflationRate, projectionMonths, baseMonth, applyTax]);
+            }, [appData, inflationRate, projectionMonths, baseMonth]);
 
 
             // [수정] 차트 렌더링 최적화를 위한 데이터 메모이제이션 (불필요한 리렌더링 방지)
@@ -2464,11 +2472,7 @@
                 if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
 
                 const renderCurrentPie = () => {
-                    if (chartInstancesRef.current['currentPie']) {
-                        chartInstancesRef.current['currentPie'].destroy();
-                        chartInstancesRef.current['currentPie'] = null;
-                    }
-
+                    if (!currentPieRef.current) return;
                     let labels, data, colors;
                     if (currentDrillDown) {
                         const sectorAssets = assets[currentDrillDown] || [];
@@ -2482,14 +2486,13 @@
                         data = filteredKeys.map(key => currentSectorTotals[key]?.amount || 0);
                     }
 
-                    if (currentPieRef.current) {
-                        const ctx = currentPieRef.current.getContext('2d');
-                        const bgColors = currentDrillDown ? colors : filteredKeys.map(key => {
+                    const ctx = currentPieRef.current.getContext('2d');
+                    const bgColors = currentDrillDown ? colors : filteredKeys.map(key => {
                         const c = tailwind?.config?.theme?.extend?.colors?.[key] || { start: '#3b82f6', end: '#1d4ed8' };
                         return createGradient(ctx, c);
                     });
 
-                    initChart('currentPie', currentPieRef, {
+                    const chartConfig = {
                             type: 'doughnut',
                             data: {
                                 labels: labels,
@@ -2517,17 +2520,19 @@
                                 }
                             },
                             plugins: [ChartDataLabels]
-                    });
-                }
-                };
-                const timerId = setTimeout(renderCurrentPie, 100);
-                return () => {
-                    clearTimeout(timerId);
+                    };
+
                     if (chartInstancesRef.current['currentPie']) {
-                        chartInstancesRef.current['currentPie'].destroy();
-                        chartInstancesRef.current['currentPie'] = null;
+                        const chart = chartInstancesRef.current['currentPie'];
+                        chart.data = chartConfig.data;
+                        chart.options = chartConfig.options;
+                        chart.update('none');
+                    } else {
+                        chartInstancesRef.current['currentPie'] = new Chart(ctx, chartConfig);
                     }
                 };
+                const timerId = setTimeout(renderCurrentPie, 100);
+                return () => clearTimeout(timerId);
             }, [currentDrillDown, currentSectorTotals, filteredKeys, assets, darkMode, isLoading, panelCollapseState['charts']]);
 
             // [수정] 2. 예상 포트폴리오 차트 (독립 렌더링)
@@ -2535,11 +2540,7 @@
                 if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
 
                 const renderProjectedPie = () => {
-                    if (chartInstancesRef.current['projectedPie']) {
-                        chartInstancesRef.current['projectedPie'].destroy();
-                        chartInstancesRef.current['projectedPie'] = null;
-                    }
-
+                    if (!projectedPieRef.current) return;
                     let labels, data, colors;
                     if (projectedDrillDown) {
                         const projAssets = calculation.projected[projectedDrillDown] || [];
@@ -2553,14 +2554,13 @@
                         data = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
                     }
 
-                    if (projectedPieRef.current) {
-                        const ctx = projectedPieRef.current.getContext('2d');
-                        const bgColors = projectedDrillDown ? colors : projectedKeys.map(key => {
+                    const ctx = projectedPieRef.current.getContext('2d');
+                    const bgColors = projectedDrillDown ? colors : projectedKeys.map(key => {
                         const c = tailwind?.config?.theme?.extend?.colors?.[key] || { start: '#10b981', end: '#059669' };
                         return createGradient(ctx, c);
                     });
 
-                    initChart('projectedPie', projectedPieRef, {
+                    const chartConfig = {
                             type: 'doughnut',
                             data: {
                                 labels: labels,
@@ -2593,17 +2593,19 @@
                                 }
                             },
                             plugins: [ChartDataLabels]
-                    });
-                }
-                };
-                const timerId = setTimeout(renderProjectedPie, 100);
-                return () => {
-                    clearTimeout(timerId);
+                    };
+
                     if (chartInstancesRef.current['projectedPie']) {
-                        chartInstancesRef.current['projectedPie'].destroy();
-                        chartInstancesRef.current['projectedPie'] = null;
+                        const chart = chartInstancesRef.current['projectedPie'];
+                        chart.data = chartConfig.data;
+                        chart.options = chartConfig.options;
+                        chart.update('none');
+                    } else {
+                        chartInstancesRef.current['projectedPie'] = new Chart(ctx, chartConfig);
                     }
                 };
+                const timerId = setTimeout(renderProjectedPie, 100);
+                return () => clearTimeout(timerId);
             }, [projectedDrillDown, projectedSectorTotals, projectedKeys, calculation.projected, darkMode, isLoading, panelCollapseState['charts']]);
 
             // [수정] 3. 비교 차트 (독립 렌더링 - 드릴다운 영향 없음)
@@ -2611,17 +2613,12 @@
                 if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
 
                 const renderComparisonBar = () => {
-                    if (chartInstancesRef.current['comparisonBar']) {
-                        chartInstancesRef.current['comparisonBar'].destroy();
-                        chartInstancesRef.current['comparisonBar'] = null;
-                    }
-
+                    if (!comparisonBarRef.current) return;
                     const comparisonLabels = projectedKeys.map(key => sectorInfo[key]?.name || key);
                     const comparisonCurrentData = projectedKeys.map(key => currentSectorTotals[key]?.amount || 0);
                     const comparisonProjectedData = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
 
-                    if (comparisonBarRef.current) {
-                    initChart('comparisonBar', comparisonBarRef, {
+                    const chartConfig = {
                             type: 'bar',
                             data: {
                                 labels: comparisonLabels,
@@ -2643,17 +2640,20 @@
                                     title: { display: true, text: '현재 vs 예상 자산 비교', color: darkMode ? '#e5e7eb' : '#111827', font: { size: 16, weight: 'bold' } }
                                 }
                             }
-                    });
-                }
-                };
-                const timerId = setTimeout(renderComparisonBar, 100);
-                return () => {
-                    clearTimeout(timerId);
+                    };
+
                     if (chartInstancesRef.current['comparisonBar']) {
-                        chartInstancesRef.current['comparisonBar'].destroy();
-                        chartInstancesRef.current['comparisonBar'] = null;
+                        const chart = chartInstancesRef.current['comparisonBar'];
+                        chart.data = chartConfig.data;
+                        chart.options = chartConfig.options;
+                        chart.update('none');
+                    } else {
+                        const ctx = comparisonBarRef.current.getContext('2d');
+                        chartInstancesRef.current['comparisonBar'] = new Chart(ctx, chartConfig);
                     }
                 };
+                const timerId = setTimeout(renderComparisonBar, 100);
+                return () => clearTimeout(timerId);
             }, [currentSectorTotals, projectedSectorTotals, projectedKeys, darkMode, isLoading, panelCollapseState['charts']]);
 
             // [추가] 컴포넌트 언마운트 시 모든 차트 정리
@@ -2783,23 +2783,18 @@
                     }
                 };
 
-                    if (historyChartRef.current) {
-                        if (chartInstancesRef.current['historyChart']) {
-                            chartInstancesRef.current['historyChart'].destroy();
-                        }
+                    if (chartInstancesRef.current['historyChart']) {
+                        const chart = chartInstancesRef.current['historyChart'];
+                        chart.data = chartConfig.data;
+                        chart.options = chartConfig.options;
+                        chart.update('none');
+                    } else {
                         chartInstancesRef.current['historyChart'] = new Chart(historyChartRef.current, chartConfig);
                     }
                 };
 
                 const timerId = setTimeout(renderHistoryChart, 100);
-
-                return () => {
-                    clearTimeout(timerId);
-                    if (chartInstancesRef.current['historyChart']) {
-                        chartInstancesRef.current['historyChart'].destroy();
-                        delete chartInstancesRef.current['historyChart'];
-                    }
-                };
+                return () => clearTimeout(timerId);
             }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode]);
 
             // ===== 자산 관리 함수들 =====
@@ -3983,7 +3978,7 @@
                 <div className="text-sm text-gray-700 dark:text-gray-300">
                     <ul className="list-disc list-inside space-y-1">
                         <li>수익률은 월복리로 계산됩니다.</li>
-                        <li>{applyTax ? '배당소득세(15.4%) 포함 세후 수익률 적용' : '배당소득세 제외 세전 수익률 적용'}</li>
+                        <li>수익률은 각 자산에 설정된 수수료/세금을 차감한 후 계산됩니다.</li>
                         <li>대출 상환은 지정된 상환계좌에서 자동으로 차감됩니다. 잔액 부족 시 경고가 표시됩니다.</li>
                         <li>월수입외 납입은 지정된 출금통장에서 차감됩니다.</li>
                         <li>리밸런싱: 경고(노란색), 위험(빨간색) 임계값에 따라 표시됩니다.</li>
