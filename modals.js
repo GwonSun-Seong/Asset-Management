@@ -487,3 +487,235 @@ window.ErrorBoundary = class ErrorBoundary extends React.Component {
         return this.props.children;
     }
 };
+
+window.IconPickerModal = ({ isOpen, onClose, onSelect, currentIcon }) => {
+    if (!isOpen) return null;
+
+    const categories = [
+        { title: "금융 자산", icons: ['🏦', '💰', '💳', '💵', '💴', '💶', '💷', '🪙'] },
+        { title: "투자 및 원자재", icons: ['📈', '📉', '📊', '💎', '🟡', '⚪', '🛢️', '⛏️', '🧱', '🪵', '🌾'] },
+        { title: "부동산", icons: ['🏠', '🏢', '🏗️', '🏘️'] },
+        { title: "소비 및 지출", icons: ['🚗', '🚌', '✈️', '🍔', '☕', '🛒', '🎁', '🎓', '🏥', '💊', '📱', '💻', '🐶', '🐱', '📦'] },
+        { title: "기타", icons: ['⭐', '❤️', '⚠️'] }
+    ];
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md m-4 max-h-[80vh] overflow-y-auto custom-scrollbar animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4 sticky top-0 bg-white dark:bg-gray-800 z-10 pb-2 border-b dark:border-gray-700">
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">아이콘 선택</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                
+                <div className="space-y-6">
+                    <button onClick={() => onSelect(null)} className="w-full flex items-center justify-center gap-2 p-3 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                        <span className="text-sm font-medium">기본 아이콘으로 초기화</span>
+                    </button>
+
+                    {categories.map((cat, idx) => (
+                        <div key={idx}>
+                            <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">{cat.title}</h4>
+                            <div className="grid grid-cols-6 gap-2">
+                                {cat.icons.map(icon => (
+                                    <button 
+                                        key={icon} 
+                                        onClick={() => onSelect(icon)} 
+                                        className={`aspect-square flex items-center justify-center text-2xl rounded-lg transition-colors ${currentIcon === icon ? 'bg-blue-100 dark:bg-blue-900/50 ring-2 ring-blue-500' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                    >
+                                        {icon}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// [이동] AI 자산 분석 모달 (Gemini API 활용) - 커스텀 입력 제거됨
+window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
+    if (!isOpen) return null;
+    const { useState } = React;
+
+    const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
+    const [model, setModel] = useState('gemini-3-flash-preview'); // 고정 모델
+    const [persona, setPersona] = useState('냉철한 전문 자산 관리사');
+    const [additionalRequest, setAdditionalRequest] = useState('');
+    const [showSettings, setShowSettings] = useState(true);
+    const [analysis, setAnalysis] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleAnalyze = async () => {
+        const trimmedKey = apiKey.trim();
+        if (!trimmedKey) { setError('API 키를 입력해주세요.'); return; }
+        localStorage.setItem('asset_gemini_api_key', trimmedKey);
+        setLoading(true);
+        setError('');
+        setAnalysis('');
+        
+        try {
+            const sectorTotals = window.getSectorTotals(appData.assets, calculation.currentTotal);
+            const summary = {
+                totalAsset: Math.round(calculation.currentTotal) + '만원',
+                netWorth: Math.round(calculation.currentNet) + '만원',
+                monthlyIncome: appData.monthlySalary + '만원',
+                monthlyExpense: Math.round(calculation.totalMonthlyExpense) + '만원',
+                targetAsset: appData.targetAmount + '만원',
+                portfolio: Object.keys(appData.assets).map(k => {
+                    if (!sectorTotals[k] || sectorTotals[k].percentage < 1) return null;
+                    return `${window.sectorInfo[k].name}: ${Math.round(sectorTotals[k].percentage)}%`;
+                }).filter(Boolean).join(', ')
+            };
+
+            const prompt = `
+                당신은 ${persona}입니다. 아래 재무 데이터를 분석해주세요.
+                데이터: ${JSON.stringify(summary)}
+                
+                다음 형식으로 마크다운을 사용하여 답변해주세요:
+                1. 🧐 **포트폴리오 진단**: 현재 자산 배분의 장단점 (위험도, 수익성 등)
+                2. ⚖️ **리밸런싱 제안**: 목표 달성을 위해 비중을 조절해야 할 섹터
+                3. 💡 **액션 플랜**: 구체적으로 실행해야 할 3가지 조언
+                ${additionalRequest ? `4. 🗣️ **추가 답변**: 사용자의 요청("${additionalRequest}")에 대한 답변` : ''}
+                
+                너무 길지 않게 핵심만 요약해서 답변해주세요.
+            `;
+
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${trimmedKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                const errMsg = errData.error?.message || response.statusText;
+                if (response.status === 400) throw new Error(`잘못된 요청입니다 (400). API 키가 올바른지 확인해주세요.\n(상세: ${errMsg})`);
+                if (response.status === 403) throw new Error(`권한 오류 (403). API 키가 활성화되었는지 확인해주세요.\n(상세: ${errMsg})`);
+                if (response.status === 429) throw new Error(`요청 한도 초과 (429). 잠시 후 다시 시도해주세요.\n(상세: ${errMsg})`);
+                throw new Error(`API 호출 실패 (${response.status}): ${errMsg}`);
+            }
+
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '분석 결과를 가져오지 못했습니다.';
+            setAnalysis(text);
+            setShowSettings(false);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-2xl m-4 max-h-[80vh] flex flex-col animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4 border-b dark:border-gray-700 pb-3">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">🤖 AI 자산 분석 <span className="text-xs font-normal text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">Powered by Gemini</span></h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-2">
+                    {showSettings && (
+                        <>
+                        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-sm text-blue-800 dark:text-blue-200 mb-4">
+                            <p className="font-bold mb-1">💡 API 키 발급 안내</p>
+                            Google AI Studio에서 API 키를 발급받아 입력해주세요. (개인용 무료 티어 이용 가능)<br/>
+                            <span className="text-xs opacity-80">* Gemini 웹사이트 유료 구독(Advanced)과는 별개의 서비스입니다.</span>
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="underline font-bold ml-1 hover:text-blue-600 block mt-2">키 발급받으러 가기 ↗</a>
+                        </div>
+                    
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex flex-col gap-1 w-full sm:w-auto">
+                            <select 
+                                value={model} 
+                                onChange={(e) => setModel(e.target.value)}
+                                className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 text-sm"
+                            >
+                                <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
+                                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                            </select>
+                        </div>
+                        <div className="flex-1 flex gap-2">
+                            <input 
+                                type="password" 
+                                placeholder="Gemini API Key 입력" 
+                                className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                                value={apiKey}
+                                onChange={(e) => setApiKey(e.target.value)}
+                            />
+                            <button 
+                                onClick={handleAnalyze} 
+                                disabled={loading || !apiKey}
+                                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center gap-2 whitespace-nowrap"
+                            >
+                                {loading ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> 분석 중...</> : '분석 시작'}
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-3 pt-2 border-t dark:border-gray-700">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">AI 페르소나 (자산 관리사 성격)</label>
+                            <input 
+                                type="text" 
+                                className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                                value={persona}
+                                onChange={(e) => setPersona(e.target.value)}
+                                placeholder="예: 100년 경력의 워렌 버핏, 냉철한 분석가, 친절한 이웃집 은행원"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">추가 요청사항 (선택)</label>
+                            <textarea 
+                                className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 resize-none h-20"
+                                value={additionalRequest}
+                                onChange={(e) => setAdditionalRequest(e.target.value)}
+                                placeholder="예: 은퇴 자금 마련을 위해 공격적인 투자가 필요할까요? 아니면 안전 자산을 늘려야 할까요?"
+                            />
+                        </div>
+                    </div>
+                    </>
+                    )}
+
+                    {error && <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
+
+                    {analysis && (
+                        <>
+                        {!showSettings && (
+                            <div className="flex justify-end mb-2">
+                                <button onClick={() => setShowSettings(true)} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                                    ⚙️ 설정 및 질문 변경
+                                </button>
+                            </div>
+                        )}
+                        <div className="prose dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900/50 p-6 rounded-xl border dark:border-gray-700 mt-4">
+                            <div className="whitespace-pre-wrap leading-relaxed text-gray-800 dark:text-gray-200">
+                                {analysis.split('\n').map((line, i) => {
+                                    if (line.startsWith('#')) return <h4 key={i} className="text-lg font-bold mt-4 mb-2 text-indigo-600 dark:text-indigo-400">{line.replace(/^#+\s/, '')}</h4>;
+                                    
+                                    const parts = line.split(/(\*\*.*?\*\*)/g);
+                                    return (
+                                        <p key={i} className="mb-1">
+                                            {parts.map((part, j) => (
+                                                part.startsWith('**') && part.endsWith('**') 
+                                                    ? <strong key={j}>{part.slice(2, -2)}</strong> 
+                                                    : part
+                                            ))}
+                                        </p>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        </>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
