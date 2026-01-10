@@ -371,7 +371,7 @@ window.SettingsModal = ({
                     <section>
                         <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">🎨 화면 테마</h4>
                         <button onClick={onThemeToggle} className="w-full p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                            <span className="text-sm font-medium dark:text-white">{darkMode ? '🌙 다크 모드 사용 중' : '☀️ 라이트 모드 사용 중'}</span>
+                            <span className="text-sm font-medium dark:text-white">{darkMode ? '🌙 다크 모드 사용 중 (데모)' : '☀️ 라이트 모드 사용 중'}</span>
                             <span className="text-xs text-indigo-600 font-bold">변경하기</span>
                         </button>
                     </section>

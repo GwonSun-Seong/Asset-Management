@@ -2677,32 +2677,46 @@
                     const textColor = darkMode ? '#e5e7eb' : '#111827';
                     const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
 
-                    // [수정] 히스토리 데이터를 월별로 그룹화하여 평균 계산 (줌인/줌아웃 및 시계열 정렬을 위해)
-                    const monthlyGroups = {};
-                    assetHistory.forEach(item => {
-                        const monthKey = item.date.substring(0, 7); // YYYY-MM
-                        if (!monthlyGroups[monthKey]) {
-                            monthlyGroups[monthKey] = { sum: 0, count: 0 };
-                        }
-                        monthlyGroups[monthKey].sum += Number(item.netWorth);
-                        monthlyGroups[monthKey].count += 1;
-                    });
+                    // [수정] 데이터 개수에 따른 조건부 그룹화 (24개 초과 시 월별 평균, 이하 시 원본 유지)
+                    const MAX_HISTORY_POINTS = 24;
+                    const useMonthlyAverage = assetHistory.length > MAX_HISTORY_POINTS;
 
-                    const sortedMonthKeys = Object.keys(monthlyGroups).sort();
-                    const groupedLabels = sortedMonthKeys.map(key => {
-                        const [y, m] = key.split('-');
-                        return `${y.slice(2)}년 ${m}월`;
-                    });
-                    const groupedData = sortedMonthKeys.map(key => monthlyGroups[key].sum / monthlyGroups[key].count);
+                    let finalLabels = [];
+                    let finalHistoryData = [];
+
+                    if (useMonthlyAverage) {
+                        // 데이터가 많으면 월별 평균으로 그룹화
+                        const monthlyGroups = {};
+                        assetHistory.forEach(item => {
+                            const monthKey = item.date.substring(0, 7); // YYYY-MM
+                            if (!monthlyGroups[monthKey]) {
+                                monthlyGroups[monthKey] = { sum: 0, count: 0 };
+                            }
+                            monthlyGroups[monthKey].sum += Number(item.netWorth);
+                            monthlyGroups[monthKey].count += 1;
+                        });
+
+                        const sortedMonthKeys = Object.keys(monthlyGroups).sort();
+                        finalLabels = sortedMonthKeys.map(key => {
+                            const [y, m] = key.split('-');
+                            return `${y.slice(2)}년 ${m}월`;
+                        });
+                        finalHistoryData = sortedMonthKeys.map(key => monthlyGroups[key].sum / monthlyGroups[key].count);
+                    } else {
+                        // 데이터가 적으면 원본 날짜 그대로 사용
+                        finalLabels = assetHistory.map(item => {
+                            const [y, m, d] = item.date.split('-');
+                            return `${Number(m)}/${Number(d)}`;
+                        });
+                        finalHistoryData = assetHistory.map(item => Number(item.netWorth));
+                    }
                 
-                    let finalLabels = [...groupedLabels];
-                    let finalHistoryData = [...groupedData];
-                    let projectionData = new Array(groupedData.length).fill(null);
+                    let projectionData = new Array(finalHistoryData.length).fill(null);
 
                 if (showProjectionInHistory && calculation.monthlyProjections && calculation.monthlyProjections.length > 0) {
                     // 마지막 히스토리 지점과 연결하여 연속성 확보
-                    if (groupedData.length > 0) {
-                        projectionData[groupedData.length - 1] = groupedData[groupedData.length - 1];
+                    if (finalHistoryData.length > 0) {
+                        projectionData[finalHistoryData.length - 1] = finalHistoryData[finalHistoryData.length - 1];
                     }
                     
                     calculation.monthlyProjections.forEach((p, idx) => {
@@ -2711,7 +2725,7 @@
                         // 미래 날짜 라벨 생성
                         const [y, m] = (baseMonth || new Date().toISOString().slice(0, 7)).split('-').map(Number);
                         const d = new Date(y, m - 1 + idx);
-                        const label = `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth() + 1).padStart(2, '0')}월`;
+                        const label = `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth() + 1).padStart(2, '0')}월`; // 미래는 항상 월 단위
                         
                         // 라벨 중복 체크 (히스토리와 겹치지 않게)
                         if (!finalLabels.includes(label)) {
@@ -4002,17 +4016,57 @@
                 </>
             );
 
-            const renderAssumptionsPanel = () => (
-                <div className="text-sm text-gray-700 dark:text-gray-300">
-                    <ul className="list-disc list-inside space-y-1">
-                        <li>수익률 및 수수료/세금은 월단위로 나눈 값으로 계산됩니다.</li>
-                        <li>수익률은 각 자산에 설정된 수수료/세금을 차감한 후 계산됩니다.</li>
-                        <li>대출 상환은 지정된 상환계좌에서 자동으로 차감됩니다. 잔액 부족 시 경고가 표시됩니다.</li>
-                        <li>월수입외 납입은 지정된 출금통장에서 차감됩니다.</li>
-                        <li>리밸런싱: 경고(노란색), 위험(빨간색) 임계값에 따라 표시됩니다.</li>
-                    </ul>
-                </div>
-            );
+            const renderAssumptionsPanel = () => {
+                const assumptions = [
+                    {
+                        icon: '📈',
+                        title: '수익률 및 인플레이션',
+                        content: [
+                            `연간 인플레이션율: ${inflationRate}% 적용 (매년 복리)`,
+                            '모든 자산의 수익률은 월 복리로 계산됩니다.',
+                            '수수료 및 세금은 매월 수익 발생 시 즉시 차감하여 재투자되는 것으로 가정합니다.'
+                        ]
+                    },
+                    {
+                        icon: '💳',
+                        title: '대출 및 상환',
+                        content: [
+                            '대출 이자는 매월 원금에 가산된 후 상환액이 차감됩니다.',
+                            '원리금균등: 매월 동일한 금액 상환 (초기 이자 비중 높음)',
+                            '원금균등: 매월 원금 일정액 + 이자 상환 (초기 상환액 높음)',
+                            '만기일시: 매월 이자만 납부하다 만기에 원금 일시 상환'
+                        ]
+                    }
+                ];
+
+                return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {assumptions.map((item, idx) => (
+                            <div key={idx} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+                                <div className="flex items-center gap-2 mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
+                                    <span className="text-xl">{item.icon}</span>
+                                    <h4 className="font-bold text-gray-800 dark:text-white">{item.title}</h4>
+                                </div>
+                                <ul className="space-y-2">
+                                    {item.content.map((text, i) => (
+                                        <li key={i} className="text-xs text-gray-600 dark:text-gray-300 flex items-start gap-1.5 leading-relaxed">
+                                            <span className="text-blue-500 mt-0.5">•</span>
+                                            <span>{text}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ))}
+                        <div className="md:col-span-2 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800">
+                            <h4 className="font-bold text-blue-800 dark:text-blue-300 text-sm mb-2">💡 참고사항</h4>
+                            <p className="text-xs text-blue-700 dark:text-blue-200 leading-relaxed">
+                                본 시뮬레이션 결과는 사용자가 입력한 가정(수익률, 물가상승률 등)에 기반한 단순 예측치이며, 
+                                실제 미래의 자산 가치를 보장하지 않습니다. 세금, 수수료, 시장 변동성 등 다양한 변수에 따라 실제 결과는 달라질 수 있습니다.
+                            </p>
+                        </div>
+                    </div>
+                );
+            };
 
             // [수정] 모든 Hook 선언이 끝난 후, 실제 렌더링 직전에 로딩 상태를 체크하여 Hook 규칙 위반 해결
             if (isLoading) {
