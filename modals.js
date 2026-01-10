@@ -570,7 +570,15 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                 portfolio: Object.keys(appData.assets).map(k => {
                     if (!sectorTotals[k] || sectorTotals[k].percentage < 1) return null;
                     return `${window.sectorInfo[k].name}: ${Math.round(sectorTotals[k].percentage)}%`;
-                }).filter(Boolean).join(', ')
+                }).filter(Boolean).join(', '),
+                // [추가] AI가 구체적인 조언을 할 수 있도록 개별 자산 항목 정보 추가
+                details: Object.keys(appData.assets).reduce((acc, k) => {
+                    const assets = appData.assets[k] || [];
+                    if (assets.length > 0 && window.sectorInfo[k]) {
+                        acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(${Math.round(a.amount)}만원)`).join(', ');
+                    }
+                    return acc;
+                }, {})
             };
 
             const prompt = `
