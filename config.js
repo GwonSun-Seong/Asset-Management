@@ -24,14 +24,14 @@ tailwind.config = {
 
 // PRO 모드 다크 색상 정보 (다크모드 클래스 포함)
 const sectorInfo = {
-    deposit: { name: '입출금통장', color: 'deposit', icon: '🏦', bgClass: 'bg-blue-50 dark:bg-blue-900/20', textClass: 'text-blue-700 dark:text-blue-100' },
-    savings: { name: '저축', color: 'savings', icon: '💰', bgClass: 'bg-green-50 dark:bg-green-900/20', textClass: 'text-green-700 dark:text-green-100' },
-    investment: { name: '투자', color: 'investment', icon: '📈', bgClass: 'bg-orange-50 dark:bg-orange-900/20', textClass: 'text-orange-700 dark:text-orange-100' },
-    pension: { name: '연금', color: 'pension', icon: '🏛️', bgClass: 'bg-purple-50 dark:bg-purple-900/20', textClass: 'text-purple-700 dark:text-purple-100' },
-    realestate: { name: '부동산', color: 'realestate', icon: '🏠', bgClass: 'bg-amber-50 dark:bg-amber-900/20', textClass: 'text-amber-700 dark:text-amber-100' },
-    car: { name: '자동차', color: 'car', icon: '🚗', bgClass: 'bg-cyan-50 dark:bg-cyan-900/20', textClass: 'text-cyan-700 dark:text-cyan-100' },
-    loan: { name: '대출', color: 'loan', icon: '💳', bgClass: 'bg-gray-100 dark:bg-gray-800', textClass: 'text-gray-700 dark:text-gray-300' },
-    misc: { name: '기타', color: 'misc', icon: '📦', bgClass: 'bg-gray-50 dark:bg-gray-800/50', textClass: 'text-gray-600 dark:text-gray-400' }
+    deposit: { name: '입출금통장', color: 'deposit', icon: '🏦', bgClass: 'bg-blue-50 dark:bg-gradient-to-r dark:from-blue-900/50 dark:to-blue-900/20', textClass: 'text-blue-700 dark:text-blue-100' },
+    savings: { name: '저축', color: 'savings', icon: '💰', bgClass: 'bg-green-50 dark:bg-gradient-to-r dark:from-green-900/50 dark:to-green-900/20', textClass: 'text-green-700 dark:text-green-100' },
+    investment: { name: '투자', color: 'investment', icon: '📈', bgClass: 'bg-orange-50 dark:bg-gradient-to-r dark:from-orange-900/50 dark:to-orange-900/20', textClass: 'text-orange-700 dark:text-orange-100' },
+    pension: { name: '연금', color: 'pension', icon: '🏛️', bgClass: 'bg-purple-50 dark:bg-gradient-to-r dark:from-purple-900/50 dark:to-purple-900/20', textClass: 'text-purple-700 dark:text-purple-100' },
+    realestate: { name: '부동산', color: 'realestate', icon: '🏠', bgClass: 'bg-amber-50 dark:bg-gradient-to-r dark:from-amber-900/50 dark:to-amber-900/20', textClass: 'text-amber-700 dark:text-amber-100' },
+    car: { name: '자동차', color: 'car', icon: '🚗', bgClass: 'bg-cyan-50 dark:bg-gradient-to-r dark:from-cyan-900/50 dark:to-cyan-900/20', textClass: 'text-cyan-700 dark:text-cyan-100' },
+    loan: { name: '대출', color: 'loan', icon: '💳', bgClass: 'bg-gray-100 dark:bg-gradient-to-r dark:from-gray-800 dark:to-gray-900', textClass: 'text-gray-700 dark:text-gray-300' },
+    misc: { name: '기타', color: 'misc', icon: '📦', bgClass: 'bg-gray-50 dark:bg-gradient-to-r dark:from-gray-800/50 dark:to-gray-800/20', textClass: 'text-gray-600 dark:text-gray-400' }
 };
 
 // [설정] 서버 설정 사용 여부
