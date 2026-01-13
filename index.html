@@ -221,6 +221,22 @@
             inflationRate, setInflationRate
         }) => {
             const TEXTS = window.TEXTS || {};
+            const [isPlaying, setIsPlaying] = useState(false);
+
+            useEffect(() => {
+                let interval;
+                if (isPlaying) {
+                    setProjectionMonths(prev => prev >= 120 ? 0 : prev);
+                    interval = setInterval(() => {
+                        setProjectionMonths(prev => {
+                            if (prev >= 120) { setIsPlaying(false); return 120; }
+                            return prev + 1;
+                        });
+                    }, 100);
+                }
+                return () => clearInterval(interval);
+            }, [isPlaying, setProjectionMonths]);
+
             return (
                 <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6"> 
                     <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">{TEXTS.settings?.goalSettings || "목표 설정"}</h2>
@@ -237,8 +253,33 @@
                     <div className="space-y-4"> 
                         {goalMode === 'period' ? (
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">{TEXTS.settings?.expectedPeriod || "예상 기간 (개월)"}</label>
-                                <input type="number" min="0" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={projectionMonths} onChange={(e) => setProjectionMonths(Number(e.target.value))} />
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-sm font-medium text-gray-700 dark:text-white">{TEXTS.settings?.expectedPeriod || "예상 기간"}</label>
+                                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{projectionMonths}개월 후</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <button 
+                                        onClick={() => setIsPlaying(!isPlaying)}
+                                        className={`p-2 rounded-full transition-colors flex-shrink-0 ${isPlaying ? 'bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400' : 'bg-blue-100 text-blue-600 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400'}`}
+                                        title={isPlaying ? "정지" : "타임랩스 재생"}
+                                    >
+                                        {isPlaying ? <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
+                                    </button>
+                                    <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="120" 
+                                        step="1" 
+                                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600"
+                                        value={projectionMonths} 
+                                        onChange={(e) => { setProjectionMonths(Number(e.target.value)); setIsPlaying(false); }} 
+                                    />
+                                </div>
+                                <div className="flex justify-between text-xs text-gray-400 mt-1 px-1">
+                                    <span>현재</span>
+                                    <span>5년</span>
+                                    <span>10년</span>
+                                </div>
                             </div>
                         ) : (
                             <div className="space-y-2">
@@ -1562,7 +1603,7 @@
 
             // ===== Setter 함수들 =====
             // [최적화] 모든 Setter 함수에 useCallback 적용하여 자식 컴포넌트의 불필요한 리렌더링 방지
-            const setProjectionMonths = React.useCallback((value) => setAppData(prev => ({ ...prev, projectionMonths: Math.max(0, value) })), [setAppData]);
+            const setProjectionMonths = React.useCallback((value) => setAppData(prev => ({ ...prev, projectionMonths: Math.max(0, typeof value === 'function' ? value(prev.projectionMonths) : value) })), [setAppData]);
             const setMonthlySalary = React.useCallback((value) => setAppData(prev => ({ ...prev, monthlySalary: value })), [setAppData]);
             const setAssets = React.useCallback((value) => setAppData(prev => ({ ...prev, assets: typeof value === 'function' ? value(prev.assets) : value })), [setAppData]);
             const setMonthlyExpenses = React.useCallback((value) => setAppData(prev => ({ 
@@ -2533,7 +2574,7 @@
                         chartInstancesRef.current['currentPie'] = new Chart(ctx, chartConfig);
                     }
                 };
-                const timerId = setTimeout(renderCurrentPie, 100);
+                const timerId = setTimeout(renderCurrentPie, 50);
                 return () => clearTimeout(timerId);
             }, [currentDrillDown, currentSectorTotals, filteredKeys, assets, darkMode, isLoading, panelCollapseState['charts']]);
 
@@ -2606,7 +2647,7 @@
                         chartInstancesRef.current['projectedPie'] = new Chart(ctx, chartConfig);
                     }
                 };
-                const timerId = setTimeout(renderProjectedPie, 100);
+                const timerId = setTimeout(renderProjectedPie, 50);
                 return () => clearTimeout(timerId);
             }, [projectedDrillDown, projectedSectorTotals, projectedKeys, calculation.projected, darkMode, isLoading, panelCollapseState['charts']]);
 
@@ -2654,7 +2695,7 @@
                         chartInstancesRef.current['comparisonBar'] = new Chart(ctx, chartConfig);
                     }
                 };
-                const timerId = setTimeout(renderComparisonBar, 100);
+                const timerId = setTimeout(renderComparisonBar, 50);
                 return () => clearTimeout(timerId);
             }, [currentSectorTotals, projectedSectorTotals, projectedKeys, darkMode, isLoading, panelCollapseState['charts']]);
 
@@ -2835,7 +2876,7 @@
                     }
                 };
 
-                const timerId = setTimeout(renderHistoryChart, 100);
+                const timerId = setTimeout(renderHistoryChart, 50);
                 return () => clearTimeout(timerId);
             }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode]);
 
@@ -3103,7 +3144,7 @@
                     </div>
                 </div>
             );
- 
+
             const renderHistoryPanel = () => (
                 <>
                     <div className="flex justify-between items-center mb-4 px-4 pt-2">

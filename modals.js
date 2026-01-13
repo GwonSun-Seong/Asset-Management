@@ -575,10 +575,17 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                 details: Object.keys(appData.assets).reduce((acc, k) => {
                     const assets = appData.assets[k] || [];
                     if (assets.length > 0 && window.sectorInfo[k]) {
-                        acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(${Math.round(a.amount)}만원)`).join(', ');
+                        const isLoan = k === 'loan';
+                        const rateLabel = isLoan ? '이자율' : '수익률';
+                        acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(${Math.round(a.amount)}만원, ${rateLabel} ${a.rate || 0}%)`).join(', ');
                     }
                     return acc;
-                }, {})
+                }, {}),
+                fixedExpenses: (appData.monthlyExpenses || []).map(e => `${e.name}(${e.amount}만원)`).join(', '),
+                futureEvents: {
+                    income: (appData.incomeEvents || []).map(e => `${e.name}(${e.amount}만원, ${e.startMonth}~${e.endMonth})`).join(', '),
+                    expense: (appData.expenseEvents || []).map(e => `${e.name}(${e.amount}만원, ${e.startMonth}~${e.endMonth})`).join(', ')
+                }
             };
 
             const prompt = `
@@ -636,6 +643,11 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                             Google AI Studio에서 API 키를 발급받아 입력해주세요. (개인용 무료 티어 이용 가능)<br/>
                             <span className="text-xs opacity-80">* Gemini 웹사이트 유료 구독(Advanced)과는 별개의 서비스입니다.</span>
                             <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="underline font-bold ml-1 hover:text-blue-600 block mt-2">키 발급받으러 가기 ↗</a>
+                        </div>
+                        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg text-sm text-yellow-800 dark:text-yellow-200 mb-4 border border-yellow-200 dark:border-yellow-800">
+                            <p className="font-bold mb-1">⚠️ 데이터 보안 주의</p>
+                            분석을 위해 자산 요약 정보(금액, 포트폴리오 등)가 암호화되지 않은 JSON 형태로 Google 서버로 전송됩니다.
+                            개인 식별 정보는 포함되지 않으나, 실제 금융 데이터가 전송되므로 주의가 필요합니다.
                         </div>
                     
                     <div className="flex flex-col sm:flex-row gap-2">
