@@ -9,14 +9,14 @@ tailwind.config = {
                 sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'Roboto', 'sans-serif']
             },
             colors: {
-                deposit: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', start: '#60a5fa', end: '#3b82f6' },
-                savings: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a', start: '#34d399', end: '#10b981' },
-                investment: { 50: '#fff7ed', 500: '#f97316', 600: '#ea580c', start: '#fb923c', end: '#f97316' },
-                pension: { 50: '#faf5ff', 500: '#a855f7', 600: '#9333ea', start: '#c084fc', end: '#a855f7' },
-                realestate: { 50: '#fef7f0', 500: '#f59e0b', 600: '#d97706', start: '#fbbf24', end: '#f59e0b' },
-                car: { 50: '#ecfeff', 500: '#06b6d4', 600: '#0891b2', start: '#22d3ee', end: '#0891b2' },
-                loan: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280' },
-                misc: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280' }
+                deposit: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', start: '#60a5fa', end: '#3b82f6', darkStart: '#1e3a8a', darkEnd: '#172554' },
+                savings: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a', start: '#34d399', end: '#10b981', darkStart: '#14532d', darkEnd: '#052e16' },
+                investment: { 50: '#fff7ed', 500: '#f97316', 600: '#ea580c', start: '#fb923c', end: '#f97316', darkStart: '#7c2d12', darkEnd: '#431407' },
+                pension: { 50: '#faf5ff', 500: '#a855f7', 600: '#9333ea', start: '#c084fc', end: '#a855f7', darkStart: '#581c87', darkEnd: '#3b0764' },
+                realestate: { 50: '#fef7f0', 500: '#f59e0b', 600: '#d97706', start: '#fbbf24', end: '#f59e0b', darkStart: '#78350f', darkEnd: '#451a03' },
+                car: { 50: '#ecfeff', 500: '#06b6d4', 600: '#0891b2', start: '#22d3ee', end: '#0891b2', darkStart: '#164e63', darkEnd: '#083344' },
+                loan: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280', darkStart: '#374151', darkEnd: '#111827' },
+                misc: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280', darkStart: '#374151', darkEnd: '#111827' }
             }
         }
     }

@@ -801,6 +801,126 @@
             );
         };
 
+        // [수정] EventSection을 외부로 분리하여 입력 포커스 끊김 방지
+        const EventSection = React.memo(({ title, total, events, type, addFn, updateFn, removeFn, sectorInfo, assets, formatNumber }) => {
+            const isIncome = type === 'income';
+            const gradientClass = isIncome ? 'from-emerald-500 to-teal-600' : 'from-orange-500 to-amber-600';
+            const icon = isIncome ? '💰' : '🛒';
+            const colorName = isIncome ? 'emerald' : 'orange';
+
+            return (
+                <div className="space-y-6">
+                    {/* Summary Card */}
+                    <div className={`bg-gradient-to-r ${gradientClass} rounded-2xl shadow-lg p-6 text-white flex flex-col sm:flex-row justify-between items-center gap-4`}>
+                        <div>
+                            <h3 className="text-lg font-bold flex items-center gap-2">
+                                <span className="text-2xl">{icon}</span> {title}
+                            </h3>
+                            <p className="text-white/80 text-sm mt-1">비정기적인 {isIncome ? '수입' : '지출'} 이벤트를 관리하세요.</p>
+                        </div>
+                        <div className="text-right">
+                            <div className="text-3xl font-bold">{formatNumber(total)}만원</div>
+                            <div className="text-white/80 text-sm">총 {events.length}건 예정</div>
+                        </div>
+                    </div>
+
+                    {/* List */}
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+                            <span className="text-sm font-bold text-gray-500 dark:text-gray-400">목록</span>
+                            <button onClick={addFn} className={`text-sm font-bold text-${colorName}-500 hover:text-${colorName}-600 flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-${colorName}-50 dark:hover:bg-${colorName}-900/20 transition-colors`}>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
+                                추가
+                            </button>
+                        </div>
+                        
+                        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                            {events.map((event, index) => (
+                                <div key={index} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                                    <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+                                        {/* Name */}
+                                        <div className="flex-1 w-full lg:w-auto">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">이벤트명</label>
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-full bg-${colorName}-50 dark:bg-${colorName}-900/30 flex items-center justify-center text-${colorName}-500 dark:text-${colorName}-400 flex-shrink-0`}>
+                                                    {isIncome ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>}
+                                                </div>
+                                                <input 
+                                                    type="text" 
+                                                    value={event.name} 
+                                                    onChange={(e) => updateFn(index, 'name', e.target.value)}
+                                                    className="w-full bg-transparent border-b border-transparent focus:border-current text-gray-900 dark:text-white font-bold focus:outline-none py-1 transition-colors placeholder-gray-400"
+                                                    placeholder="이벤트 이름"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Amount */}
+                                        <div className="w-full lg:w-32">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">금액 (만원)</label>
+                                            <div className="relative">
+                                                <input 
+                                                    type="number" 
+                                                    value={event.amount} 
+                                                    onChange={(e) => updateFn(index, 'amount', e.target.value)}
+                                                    className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-right font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-opacity-50 focus:outline-none"
+                                                    style={{ borderColor: isIncome ? '#10b981' : '#f97316' }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Date Range */}
+                                        <div className="w-full lg:w-auto flex gap-2">
+                                            <div>
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">시작 월</label>
+                                                <input type="month" value={event.startMonth} onChange={(e) => updateFn(index, 'startMonth', e.target.value)} className="w-32 text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600" />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">종료 월</label>
+                                                <input type="month" value={event.endMonth} onChange={(e) => updateFn(index, 'endMonth', e.target.value)} className="w-32 text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600" />
+                                            </div>
+                                        </div>
+
+                                        {/* Target */}
+                                        <div className="w-full lg:w-auto">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">{isIncome ? '입금 계좌' : '출금 계좌'}</label>
+                                            <div className="flex gap-1">
+                                                <select 
+                                                    value={event.targetSector} 
+                                                    onChange={(e) => updateFn(index, 'targetSector', e.target.value)}
+                                                    className="w-24 text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                                                >
+                                                    {Object.keys(sectorInfo).map(key => <option key={key} value={key}>{sectorInfo[key].name}</option>)}
+                                                </select>
+                                                <select 
+                                                    value={event.targetAsset} 
+                                                    onChange={(e) => updateFn(index, 'targetAsset', e.target.value)}
+                                                    className="w-24 text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                                                >
+                                                    {assets[event.targetSector]?.map((asset, i) => <option key={i} value={i}>{asset.name}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        {/* Delete */}
+                                        <div className="flex items-end h-full pb-1">
+                                            <button onClick={() => removeFn(index)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="삭제">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                            {events.length === 0 && (
+                                <div className="p-8 text-center text-gray-400">
+                                    등록된 이벤트가 없습니다.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        });
 
         // [최적화] 정적 데이터 외부로 이동 및 스타일 클래스 하드코딩 (다크모드 해결)
         const AssetDashboard = () => {
@@ -3500,9 +3620,16 @@
                         const sectorColor = sectorInfo[sectorKey].color;
                         const themeColors = window.tailwind?.config?.theme?.extend?.colors || {};
                         const colorObj = themeColors[sectorColor] || {};
-                        // config.js에 정의된 start/end 색상 사용 (없을 경우 기본값)
-                        const startColor = colorObj.start || '#6366f1'; 
-                        const endColor = colorObj.end || '#a855f7';
+                        
+                        // [수정] config.js에 정의된 색상값 사용 (다크모드 지원)
+                        let startColor = colorObj.start || '#6366f1'; 
+                        let endColor = colorObj.end || '#a855f7';
+
+                        if (darkMode && colorObj.darkStart && colorObj.darkEnd) {
+                            startColor = colorObj.darkStart;
+                            endColor = colorObj.darkEnd;
+                        }
+
                         const gradientStyle = { background: `linear-gradient(to right, ${startColor}, ${endColor})` };
 
                             return (
@@ -3612,7 +3739,6 @@
                                                             </>
                                                         ) : (
                                                             <>
-                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">연 수익률</label><div className="relative"><input type="number" step="0.1" value={asset.rate} onChange={(e) => updateAsset(sectorKey, idx, 'rate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
                                                                 <div>
                                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">월 납입액</label>
                                                                     <div className="relative">
@@ -3620,6 +3746,8 @@
                                                                         {itemRec > 0 && <span className="absolute -top-5 right-0 text-[9px] text-blue-500 font-bold bg-blue-50 px-1 rounded">권장: {Math.round(itemRec).toLocaleString()}</span>}
                                                                     </div>
                                                                 </div>
+                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">연 수익률</label><div className="relative"><input type="number" step="0.1" value={asset.rate} onChange={(e) => updateAsset(sectorKey, idx, 'rate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
+                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">수수료/세금</label><div className="relative"><input type="number" step="0.01" value={asset.feeRate ?? 0} onChange={(e) => updateAsset(sectorKey, idx, 'feeRate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
                                                                 <div>
                                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">추가 납입</label>
                                                                     <div className="flex gap-1">
@@ -3631,7 +3759,6 @@
                                                                         )}
                                                                     </div>
                                                                 </div>
-                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">수수료/세금</label><div className="relative"><input type="number" step="0.01" value={asset.feeRate ?? 0} onChange={(e) => updateAsset(sectorKey, idx, 'feeRate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
                                                             </>
                                                         )}
                                                         <div className="flex justify-end col-span-2 sm:col-span-4 lg:col-span-1">
@@ -3650,7 +3777,7 @@
                                                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                                                     </div>
                                                     <p className="font-medium text-gray-500 dark:text-gray-400">등록된 계좌가 없습니다</p>
-                                                    <p className="text-sm text-indigo-500 mt-1">첫 번째 계좌를 추가해보세요</p>
+                                                    <p className="text-sm text-indigo-500 mt-1">첫 번째 항목을 추가해보세요</p>
                                                 </div>
                                             )}
                                         </div>
@@ -3737,127 +3864,6 @@
                     </div>
                 );
             };
-
-            // [수정] EventSection을 외부로 분리하여 입력 포커스 끊김 방지
-            const EventSection = React.memo(({ title, total, events, type, addFn, updateFn, removeFn, sectorInfo, assets, formatNumber }) => {
-                const isIncome = type === 'income';
-                const gradientClass = isIncome ? 'from-emerald-500 to-teal-600' : 'from-orange-500 to-amber-600';
-                const icon = isIncome ? '💰' : '🛒';
-                const colorName = isIncome ? 'emerald' : 'orange';
-
-                return (
-                    <div className="space-y-6">
-                        {/* Summary Card */}
-                        <div className={`bg-gradient-to-r ${gradientClass} rounded-2xl shadow-lg p-6 text-white flex flex-col sm:flex-row justify-between items-center gap-4`}>
-                            <div>
-                                <h3 className="text-lg font-bold flex items-center gap-2">
-                                    <span className="text-2xl">{icon}</span> {title}
-                                </h3>
-                                <p className="text-white/80 text-sm mt-1">비정기적인 {isIncome ? '수입' : '지출'} 이벤트를 관리하세요.</p>
-                            </div>
-                            <div className="text-right">
-                                <div className="text-3xl font-bold">{formatNumber(total)}만원</div>
-                                <div className="text-white/80 text-sm">총 {events.length}건 예정</div>
-                            </div>
-                        </div>
-
-                        {/* List */}
-                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
-                                <span className="text-sm font-bold text-gray-500 dark:text-gray-400">목록</span>
-                                <button onClick={addFn} className={`text-sm font-bold text-${colorName}-500 hover:text-${colorName}-600 flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-${colorName}-50 dark:hover:bg-${colorName}-900/20 transition-colors`}>
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
-                                    추가
-                                </button>
-                            </div>
-                            
-                            <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                                {events.map((event, index) => (
-                                    <div key={index} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                                        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-                                            {/* Name */}
-                                            <div className="flex-1 w-full lg:w-auto">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">이벤트명</label>
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`w-8 h-8 rounded-full bg-${colorName}-50 dark:bg-${colorName}-900/30 flex items-center justify-center text-${colorName}-500 dark:text-${colorName}-400 flex-shrink-0`}>
-                                                        {isIncome ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>}
-                                                    </div>
-                                                    <input 
-                                                        type="text" 
-                                                        value={event.name} 
-                                                        onChange={(e) => updateFn(index, 'name', e.target.value)}
-                                                        className="w-full bg-transparent border-b border-transparent focus:border-current text-gray-900 dark:text-white font-bold focus:outline-none py-1 transition-colors placeholder-gray-400"
-                                                        placeholder="이벤트 이름"
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            {/* Amount */}
-                                            <div className="w-full lg:w-32">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">금액 (만원)</label>
-                                                <div className="relative">
-                                                    <input 
-                                                        type="number" 
-                                                        value={event.amount} 
-                                                        onChange={(e) => updateFn(index, 'amount', e.target.value)}
-                                                        className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-right font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-opacity-50 focus:outline-none"
-                                                        style={{ borderColor: isIncome ? '#10b981' : '#f97316' }}
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            {/* Date Range */}
-                                            <div className="w-full lg:w-auto flex gap-2">
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">시작 월</label>
-                                                    <input type="month" value={event.startMonth} onChange={(e) => updateFn(index, 'startMonth', e.target.value)} className="w-32 text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">종료 월</label>
-                                                    <input type="month" value={event.endMonth} onChange={(e) => updateFn(index, 'endMonth', e.target.value)} className="w-32 text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600" />
-                                                </div>
-                                            </div>
-
-                                            {/* Target */}
-                                            <div className="w-full lg:w-auto">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">{isIncome ? '입금 계좌' : '출금 계좌'}</label>
-                                                <div className="flex gap-1">
-                                                    <select 
-                                                        value={event.targetSector} 
-                                                        onChange={(e) => updateFn(index, 'targetSector', e.target.value)}
-                                                        className="w-24 text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600"
-                                                    >
-                                                        {Object.keys(sectorInfo).map(key => <option key={key} value={key}>{sectorInfo[key].name}</option>)}
-                                                    </select>
-                                                    <select 
-                                                        value={event.targetAsset} 
-                                                        onChange={(e) => updateFn(index, 'targetAsset', e.target.value)}
-                                                        className="w-24 text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600"
-                                                    >
-                                                        {assets[event.targetSector]?.map((asset, i) => <option key={i} value={i}>{asset.name}</option>)}
-                                                    </select>
-                                                </div>
-                                            </div>
-
-                                            {/* Delete */}
-                                            <div className="flex items-end h-full pb-1">
-                                                <button onClick={() => removeFn(index)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="삭제">
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                                {events.length === 0 && (
-                                    <div className="p-8 text-center text-gray-400">
-                                        등록된 이벤트가 없습니다.
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                );
-            });
 
             const renderEventsPanel = () => {
                 const totalIncome = incomeEvents.reduce((sum, e) => sum + Number(e.amount||0), 0);
@@ -4935,14 +4941,6 @@
                                 <CalculatorInput aria-label="현재금액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
                             </div>
                             <div>
-                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">수익률(%)</label>
-                                <input type="number" step="0.1" aria-label="수익률" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">수수료/세금(%)</label>
-                                <input type="number" step="0.001" aria-label="수수료 및 세금" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.feeRate ?? 0} onChange={(e) => updateAsset(sectorKey, index, 'feeRate', e.target.value)} />
-                            </div>
-                            <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월납입</label>
                                 <div className="relative">
                                     <CalculatorInput aria-label="월납입액" className="w-full border rounded px-2 py-1 pr-16 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
@@ -4952,6 +4950,14 @@
                                         </span>
                                     )}
                                 </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">수익률(%)</label>
+                                <input type="number" step="0.1" aria-label="수익률" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">수수료/세금(%)</label>
+                                <input type="number" step="0.001" aria-label="수수료 및 세금" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.feeRate ?? 0} onChange={(e) => updateAsset(sectorKey, index, 'feeRate', e.target.value)} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월수입외 납입</label>
