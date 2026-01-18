@@ -567,6 +567,93 @@ const decompressData = (base64String) => {
     return JSON.parse(jsonString);
 };
 
+// [추가] 야후 파이낸스 데이터 가져오기 (CORS 프록시 사용)
+const fetchYahooData = async (symbol) => {
+    try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1mo&interval=1d`;
+        const response = await fetch(`https://corsproxy.io/?` + encodeURIComponent(url));
+        const json = await response.json();
+        const result = json.chart.result[0];
+        const quotes = result.indicators.quote[0];
+        const prices = quotes.close.filter(p => p !== null);
+        const currentPrice = prices[prices.length - 1];
+        const prevPrice = prices[prices.length - 2] || currentPrice;
+        const changePct = ((currentPrice - prevPrice) / prevPrice * 100);
+        return { price: currentPrice, change: changePct, data: prices };
+    } catch (e) {
+        console.warn(`Failed to fetch ${symbol}`, e);
+        return null;
+    }
+};
+
+// [추가] 비트코인 데이터 가져오기 (CoinGecko API)
+const fetchBitcoinData = async () => {
+    try {
+        const response = await fetch(`https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=30&interval=daily`);
+        if (!response.ok) return null;
+        const json = await response.json();
+        if (json && json.prices) {
+            const prices = json.prices.map(p => p[1]);
+            const current = prices[prices.length - 1];
+            const prev = prices[prices.length - 2] || current;
+            return { price: current, change: ((current - prev) / prev * 100), data: prices };
+        }
+        return null;
+    } catch (e) {
+        console.warn("Failed to fetch Bitcoin data", e);
+        return null;
+    }
+};
+
+// [추가] 목표 달성 기간 계산 (Goal Seek)
+const calculateGoalReachMonth = (appData, targetAmount) => {
+    const MAX_MONTHS = 600;
+    const result = calculateMonthlyProjection(appData, MAX_MONTHS);
+    
+    if (result.error) return { error: true, message: '계산 중 오류 발생' };
+
+    const projections = result.projections;
+    let lastNetWorth = -Infinity;
+    let stagnationCount = 0;
+
+    for (let i = 1; i < projections.length; i++) {
+        const p = projections[i];
+        if (p.total <= lastNetWorth) stagnationCount++;
+        else stagnationCount = 0;
+        lastNetWorth = p.total;
+
+        if (stagnationCount >= 3) return { error: true, message: '자산 정체/감소로 인해 목표 달성이 불가능합니다.' };
+        if (p.total >= targetAmount) return { success: true, month: p.month };
+    }
+    return { error: true, message: '현재 조건으로는 50년 내 목표 달성이 어렵습니다.' };
+};
+
+// [추가] 리밸런싱 타겟 정규화 (100% 맞춤)
+const normalizeTargets = (targets, validSectors) => {
+    const defaultPct = Math.round(100 / validSectors.length);
+    const totalTarget = validSectors.reduce((sum, key) => {
+        const value = targets[key];
+        return sum + ((value === undefined || value === null) ? defaultPct : Number(value));
+    }, 0);
+
+    if (totalTarget === 0) return targets;
+
+    const newTargets = {};
+    validSectors.forEach(key => {
+        const value = targets[key];
+        const currentVal = (value === undefined || value === null) ? defaultPct : Number(value);
+        newTargets[key] = Math.round((currentVal / totalTarget) * 100);
+    });
+
+    const finalTotal = Object.values(newTargets).reduce((s, v) => s + v, 0);
+    const diff = 100 - finalTotal;
+    if (diff !== 0) {
+        const maxKey = Object.keys(newTargets).reduce((a, b) => newTargets[a] > newTargets[b] ? a : b);
+        newTargets[maxKey] += diff;
+    }
+    return newTargets;
+};
+
 // 전역 객체에 노출
 window.formatNumber = formatNumber;
 window.formatPercent = formatPercent;
@@ -586,3 +673,7 @@ window.generateCSV = generateCSV;
 window.parseCSV = parseCSV;
 window.compressData = compressData;
 window.decompressData = decompressData;
+window.fetchYahooData = fetchYahooData;
+window.fetchBitcoinData = fetchBitcoinData;
+window.calculateGoalReachMonth = calculateGoalReachMonth;
+window.normalizeTargets = normalizeTargets;
