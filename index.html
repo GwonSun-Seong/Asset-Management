@@ -29,6 +29,24 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.5); border-radius: 3px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(107, 114, 128, 0.8); }
+        
+        /* [추가] 인쇄(PDF 저장) 최적화 스타일: Ctrl+P 사용 시 적용 */
+        @media print {
+            @page { margin: 10mm; size: auto; }
+            body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            /* UI 숨김: 헤더, 사이드바, 고정 버튼, 모바일 메뉴, 기타 장식 */
+            aside, .sticky.top-0, .fixed, details, #mobile-menu-trigger { display: none !important; }
+            /* 레이아웃 강제 확장 및 스크롤 제거 */
+            #root, body, html { width: 100% !important; height: auto !important; overflow: visible !important; }
+            #dashboard-content { display: block !important; width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }
+            #main-dashboard-panel { width: 100% !important; max-width: none !important; }
+            /* 패널 스타일 단순화 (그림자 제거, 테두리 추가) 및 페이지 넘김 방지 */
+            .rounded-xl, .rounded-lg, .rounded-2xl, .shadow-lg, .shadow-sm, .shadow {
+                box-shadow: none !important; border: 1px solid #e5e7eb !important; break-inside: avoid; page-break-inside: avoid;
+            }
+            /* 스크롤 영역 전체 표시 (테이블 등 잘림 방지) */
+            .overflow-x-auto, .overflow-y-auto { overflow: visible !important; height: auto !important; max-height: none !important; }
+        }
     </style>
     <script src="defaultData.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -37,8 +55,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script src="utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-gradient@0.6.1/dist/chartjs-plugin-gradient.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
@@ -1900,175 +1916,22 @@
                 : appData?.displayMode === 'percent' 
                     ? <span className="text-sm text-blue-500">(프라이빗 모드)</span> : null;
 
-            // ===== 개선된 PDF 저장 함수 =====
+            // ===== 개선된 PDF 저장 함수 (브라우저 기본 인쇄 활용) =====
             const saveToPDF = async () => {
-                // [추가] 캡처 전 선택 영역(드래그) 해제하여 파란색/회색 잔상 방지
-                if (window.getSelection) {
-                    window.getSelection().removeAllRanges();
-                }
-                // [추가] 버튼 포커스 링(파란 테두리) 제거
-                if (document.activeElement) {
-                    document.activeElement.blur();
-                }
+                // [Fix] html2canvas의 렌더링 문제(잘림, 흐림)를 해결하기 위해 브라우저 네이티브 인쇄 기능 사용
+                // CSS @media print를 통해 불필요한 UI(사이드바, 버튼 등)는 자동으로 숨겨집니다.
+                
+                // [추가] 인쇄 시 파일명이 페이지 제목으로 설정되는 점을 이용해 파일명 지정
+                const originalTitle = document.title;
+                const fileName = `자산분석보고서_${new Date().toISOString().split('T')[0]}`;
+                document.title = fileName;
 
-                const loadingAlert = document.createElement('div');
+                window.print();
 
-                try {
-                    // 로딩 알림 표시
-                    loadingAlert.className = 'fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded shadow-lg z-50';
-                    loadingAlert.textContent = 'PDF 생성 중...';
-                    document.body.appendChild(loadingAlert);
-
-                    // 요소 확인
-                    // [수정] 사이드바를 제외하고 메인 패널만 캡처하도록 대상 변경
-                    const element = document.getElementById('main-dashboard-panel');
-                    if (!element) {
-                        throw new Error('대시보드 콘텐츠를 찾을 수 없습니다.');
-                    }
-
-                    // [수정] 현재 화면 설정 그대로 캡처 (다크모드 강제 해제 로직 제거)
-                    const isDarkMode = document.documentElement.classList.contains('dark');
-                    // [수정] 전체 스크롤 영역 크기 계산 (잘림 방지)
-                    // [수정] 여유 공간을 충분히 주어 우측/하단 잘림 및 배경색 누락 방지
-                    const fullWidth = Math.max(element.scrollWidth, element.offsetWidth) + 50;
-                    const fullHeight = Math.max(element.scrollHeight, element.offsetHeight) + 50;
-                    const canvas = await html2canvas(element, {
-                        scale: 1, // [수정] 메모리 부족으로 인한 빈 화면/새로고침 방지
-                        useCORS: true,
-                        allowTaint: true, // [수정] 차트 캡처 허용
-                        // 현재 바디 배경색을 사용하여 캡처 (다크모드 시 어두운 배경 유지)
-                        backgroundColor: isDarkMode ? '#111827' : '#f9fafb',
-                        backgroundColor: isDarkMode ? '#111827' : '#ffffff',
-                        logging: false,
-
-                        // [수정] 뷰포트 너비 명시적 지정 (우측 회색 영역 방지)
-                        width: fullWidth,
-                        height: fullHeight,
-                        windowWidth: fullWidth,
-                        windowHeight: fullHeight,
-                        scrollX: 0,
-                        scrollY: 0,
-                        onclone: (clonedDoc) => {
-                            // [추가] PDF용 레이아웃 최적화: 캡처 대상의 너비를 강제로 늘려 여백 제거 및 꽉 채우기
-                            const clonedElement = clonedDoc.getElementById('main-dashboard-panel');
-                            
-                            // [중요] 복제된 문서의 body와 html 크기를 콘텐츠 크기에 맞춰 강제 확장 (배경색 잘림 방지)
-                            // 이 부분이 없으면 뷰포트 바깥 영역(우측 스크롤 영역)이 회색/투명으로 나옴.
-                            clonedDoc.documentElement.style.width = fullWidth + 'px';
-                            clonedDoc.documentElement.style.height = fullHeight + 'px';
-                            clonedDoc.documentElement.style.overflow = 'visible'; // [추가] 스크롤 영역 강제 표시
-                            // [수정] minWidth를 추가하여 배경색이 잘리는 현상 완벽 방지
-                            clonedDoc.documentElement.style.minWidth = fullWidth + 'px';
-                            clonedDoc.body.style.width = fullWidth + 'px';
-                            clonedDoc.body.style.height = fullHeight + 'px';
-                            clonedDoc.body.style.overflow = 'visible'; // [추가] 스크롤 영역 강제 표시
-                            clonedDoc.body.style.minWidth = fullWidth + 'px';
-                            
-                            if (clonedElement) {
-                                clonedElement.style.width = '100%';
-                                // [수정] 고정 픽셀로 너비 강제하여 꽉 채우기
-                                clonedElement.style.width = fullWidth + 'px';
-                                clonedElement.style.minWidth = fullWidth + 'px'; // [추가] 최소 너비 강제
-                                clonedElement.style.height = fullHeight + 'px';
-                                clonedElement.style.maxWidth = 'none';
-                                clonedElement.style.margin = '0';
-                                clonedElement.style.padding = '20px'; // 적절한 여백 부여
-                                clonedElement.style.flex = 'none';
-                                // [추가] 요소 자체에 배경색 강제 적용 (회색/투명 방지)
-                                clonedElement.style.backgroundColor = isDarkMode ? '#111827' : '#f9fafb';
-                                clonedElement.style.backgroundColor = isDarkMode ? '#111827' : '#ffffff';
-                                // [추가] 변환(Transform) 제거로 렌더링 위치 오차 방지
-                                clonedElement.style.transform = 'none';
-                            }// 1. 다크모드 클래스 복사
-                            if (isDarkMode) {
-                                clonedDoc.documentElement.classList.add('dark');
-                                clonedDoc.body.classList.add('dark');
-                                clonedDoc.body.style.backgroundColor = isDarkMode ? '#111827' : '#f9fafb';
-                                clonedDoc.body.style.backgroundColor = isDarkMode ? '#111827' : '#ffffff';
-                            }
-
-                            // 2. 차트(Canvas) 렌더링 소실 방지: 원본 캔버스를 클론 캔버스에 강제 복사
-                            const originalCanvases = element.querySelectorAll('canvas');
-                            const clonedCanvases = clonedDoc.querySelectorAll('canvas');
-
-                            originalCanvases.forEach((orig, i) => {
-                                const clone = clonedCanvases[i];
-                                if (clone) {
-                                    try {
-                                        const ctx = clone.getContext('2d');
-                                        if (ctx) {
-                                            // 해상도와 크기 동기화 후 원본 그림 복사
-                                            clone.width = orig.width;
-                                            clone.height = orig.height;
-                                            clone.style.width = orig.style.width;
-                                            clone.style.height = orig.style.height;
-                                            ctx.drawImage(orig, 0, 0);
-                                        }
-                                    } catch (e) {
-                                        console.warn('Canvas copy failed:', e);
-                                    }
-                                }
-                            });
-                        }
-                    });
-                    
-                    const imgData = canvas.toDataURL('image/png', 0.8);
-                    
-                    // jsPDF 인스턴스 생성 확인 (UMD 네임스페이스 호환)
-                    const JSPDF_NS = window.jspdf || window.jsPDF || window.jsPDFModule;
-                    if (!JSPDF_NS || !JSPDF_NS.jsPDF) {
-                        throw new Error('PDF 라이브러리를 로드할 수 없습니다.');
-                    }
-                    const pdf = new JSPDF_NS.jsPDF('p', 'mm', 'a4');
-                    const imgWidth = 210;
-                    const pageHeight = 295;
-                    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                    let heightLeft = imgHeight;
-                    let position = 0;
-
-                    // 첫 페이지
-                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-                    heightLeft -= pageHeight;
-
-                    // 추가 페이지
-                    while (heightLeft >= 0) {
-                        position = heightLeft - imgHeight;
-                        pdf.addPage();
-                        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-                        heightLeft -= pageHeight;
-                    }
-
-                    // 파일명 생성
-                    const fileName = `자산분석보고서_${new Date().toISOString().split('T')[0]}.pdf`;
-                    pdf.save(fileName);
-                    
-                    // 성공 알림
-                    loadingAlert.textContent = 'PDF 저장 완료!';
-                    loadingAlert.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
-
-                } catch (error) {
-                    console.error('PDF 저장 오류:', error);
-                    
-                    // 오류 알림
-                    const errorAlert = document.createElement('div');
-                    errorAlert.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg z-50';
-                    errorAlert.textContent = `PDF 저장 실패: ${error.message}`;
-                    document.body.appendChild(errorAlert);
-                    
-                    setTimeout(() => {
-                        if (document.body.contains(errorAlert)) {
-                            document.body.removeChild(errorAlert);
-                        }
-                    }, 5000);
-                    } finally {
-                    // [추가] 로딩 알림 제거 (성공/실패 관계없이 2초 후 제거)
-                    setTimeout(() => {
-                        if (document.body.contains(loadingAlert)) {
-                            document.body.removeChild(loadingAlert);
-                        }
-                    
-                    }, 2000);
-                }
+                // 인쇄 대화상자가 뜬 후 제목 복구 (즉시 복구 시 파일명 반영 안 될 수 있음)
+                setTimeout(() => {
+                    document.title = originalTitle;
+                }, 1000);
             };
 
             // ===== 시나리오 관리 함수들 =====
