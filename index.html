@@ -526,15 +526,15 @@
                             window.fetchBitcoinData()         // 비트코인
                         ]);
 
-                        let successCount = 0;
+                        // [수정] 모든 데이터가 성공적으로 로드되었는지 확인
+                        const allSuccess = [usdData, sp500Data, nasdaqData, goldData, btcRes].every(d => d && d.price > 0);
+
                         // 비트코인 데이터 처리
                         let btcData = btcRes;
-                        if (btcData) successCount++;
 
                         // 상태 업데이트 헬퍼
                         const updateItem = (item, data, isCurrency = false) => {
                             if (!data) return item;
-                            successCount++;
                             const sign = data.change >= 0 ? '+' : '';
                             const color = data.change >= 0 ? 'red' : 'blue'; // 한국식: 상승=빨강
                             const formattedValue = isCurrency 
@@ -559,7 +559,7 @@
                             return item;
                         }));
                         
-                        setIsLive(successCount > 0);
+                        setIsLive(allSuccess);
                     } catch (e) {
                         console.warn("Market data fetch failed, using fallback data", e);
                         setIsLive(false);
