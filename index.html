@@ -559,9 +559,10 @@
                             return item;
                         }));
                         
-                        if (successCount > 0) setIsLive(true);
+                        setIsLive(successCount > 0);
                     } catch (e) {
                         console.warn("Market data fetch failed, using fallback data", e);
+                        setIsLive(false);
                     } finally {
                         setIsLoading(false);
                     }
