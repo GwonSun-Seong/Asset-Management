@@ -569,21 +569,40 @@ const decompressData = (base64String) => {
 
 // [추가] 야후 파이낸스 데이터 가져오기 (CORS 프록시 사용)
 const fetchYahooData = async (symbol) => {
-    try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1mo&interval=1d`;
-        const response = await fetch(`https://corsproxy.io/?` + encodeURIComponent(url));
-        const json = await response.json();
-        const result = json.chart.result[0];
-        const quotes = result.indicators.quote[0];
-        const prices = quotes.close.filter(p => p !== null);
-        const currentPrice = prices[prices.length - 1];
-        const prevPrice = prices[prices.length - 2] || currentPrice;
-        const changePct = ((currentPrice - prevPrice) / prevPrice * 100);
-        return { price: currentPrice, change: changePct, data: prices };
-    } catch (e) {
-        console.warn(`Failed to fetch ${symbol}`, e);
-        return null;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1mo&interval=1d`;
+    
+    // [수정] 프록시 서버 다중화 (안정성 강화: corsproxy.io 실패 시 allorigins 시도)
+    const proxies = [
+        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
+    ];
+
+    for (const proxy of proxies) {
+        try {
+            const response = await fetch(proxy(url));
+            if (!response.ok) continue;
+            
+            const json = await response.json();
+            const result = json?.chart?.result?.[0];
+            if (!result) continue;
+
+            const quotes = result.indicators.quote[0];
+            const prices = quotes.close.filter(p => typeof p === 'number'); // null 필터링 강화
+            
+            if (prices.length === 0) continue;
+
+            const currentPrice = prices[prices.length - 1];
+            const prevPrice = prices[prices.length - 2] || currentPrice;
+            const changePct = prevPrice !== 0 ? ((currentPrice - prevPrice) / prevPrice * 100) : 0;
+            
+            return { price: currentPrice, change: changePct, data: prices };
+        } catch (e) {
+            console.warn(`Proxy failed for ${symbol}`, e);
+            continue;
+        }
     }
+    console.warn(`All proxies failed for ${symbol}`);
+    return null;
 };
 
 // [추가] 비트코인 데이터 가져오기 (CoinGecko API)
