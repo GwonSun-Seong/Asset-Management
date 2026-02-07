@@ -7,9 +7,16 @@ const toD = (val) => {
 };
 
 // 숫자 포맷팅 함수
-const formatNumber = (num, displayMode) => {
+const formatNumber = (num, displayMode, decimals) => {
     if (displayMode === 'percent') return '***'; // [추가] 금액 숨김 모드
-    return Math.round(num).toLocaleString();
+    const n = Number(num || 0); // [안전장치] null/undefined 방지
+    
+    // [수정] 소수점 자릿수 옵션 지원 (decimals가 숫자로 들어오면 해당 자릿수까지 표시)
+    if (typeof decimals === 'number') {
+        return n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    return Math.round(n).toLocaleString();
 };
 
 // 퍼센트 포맷팅 함수
@@ -92,7 +99,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     const {
         monthlySalary = 0, assets = {}, monthlyExpenses = [],
         targetAmount = 10000,
-        mainCashFlowAccount, baseMonth
+        mainCashFlowAccount, baseDate, // [변경] baseMonth -> baseDate
+        salaryDay = 25, // [기본값 변경]
     } = data;
 
     // [개선] 시뮬레이션 엔진 내부에서도 배열 무결성 보장
@@ -101,8 +109,10 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     const safeExpenseEvents = Array.isArray(data.expenseEvents) ? data.expenseEvents : [];
 
     // 월 가용 현금 계산 (월급 - 고정 지출)
-    const totalMonthlyExpense = safeMonthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-    const monthlyAvailableCash = monthlySalary - totalMonthlyExpense;
+    // [수정] 월별 지출은 시뮬레이션 루프 내에서 일자별로 판단하므로 여기서는 단순 합계만 계산하지 않음
+    // const totalMonthlyExpense = safeMonthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+    // const monthlyAvailableCash = monthlySalary - totalMonthlyExpense;
+    // -> 루프 내부에서 계산
 
     let currentAssets = {};
     Object.keys(assets).forEach(sector => {
@@ -117,10 +127,19 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     const allAccountsFlat = Object.values(currentAssets).flat();
     const cashFlowAccount = allAccountsFlat.find(d => d.name === mainCashFlowAccount);
     
+    // [수정] 날짜 기반 인덱스 계산
+    // baseDate가 없으면 오늘 날짜 기준
+    const baseObj = baseDate ? new Date(baseDate) : new Date();
+    const baseYear = baseObj.getFullYear();
+    const baseMonthIdx = baseObj.getMonth(); // 0-based
+    const baseDay = baseObj.getDate();
+
     const precalculateEventIndices = (events) => events.map(event => ({
         ...event,
-        startIdx: typeof event.startMonth === 'string' ? getMonthDiff(baseMonth, event.startMonth) + 1 : event.startMonth,
-        endIdx: typeof event.endMonth === 'string' ? getMonthDiff(baseMonth, event.endMonth) + 1 : event.endMonth
+        // startMonth, endMonth는 YYYY-MM 형식을 유지한다고 가정 (UI 호환성)
+        startIdx: typeof event.startMonth === 'string' ? getMonthDiff(`${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`, event.startMonth) + 1 : event.startMonth,
+        endIdx: typeof event.endMonth === 'string' ? getMonthDiff(`${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`, event.endMonth) + 1 : event.endMonth,
+        day: event.day || 30 // [수정] 날짜 미지정 시 월말(30일)로 가정하여 첫 달 시뮬레이션 누락 방지
     }));
 
     const incomeEventsWithIndices = precalculateEventIndices(safeIncomeEvents);
@@ -144,6 +163,20 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     };
 
     for (let month = 0; month <= monthsToProject; month++) {
+        // 현재 시뮬레이션 달의 정보 계산
+        // month 0: 초기 상태 (baseDate 시점)
+        // month 1: baseDate가 속한 달의 말일 (첫 달의 잔여 기간 시뮬레이션)
+        // month 2~: 이후 매달 말일
+
+        // 실제 달력상의 연/월 계산
+        const simDate = new Date(baseYear, baseMonthIdx + (month === 0 ? 0 : month - 1), 1);
+        const simYear = simDate.getFullYear();
+        const simMonth = simDate.getMonth(); // 0-based
+        const daysInSimMonth = new Date(simYear, simMonth + 1, 0).getDate(); // 해당 월의 총 일수
+
+        // 이번 달 시뮬레이션 시작일 (첫 달은 baseDay, 이후는 1일)
+        const startDayOfLoop = (month === 1) ? baseDay : 1;
+
         if (month > 0) { // Skip initial state for calculations, only record it
             // 1. 이자/수익률 적용
             Object.keys(currentAssets).forEach(sector => {
@@ -152,8 +185,12 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     if (asset.amount > 0) {
                         const feeRate = (asset.feeRate || 0) / 100;
                         const effectiveRate = (asset.rate / 100) * (1 - feeRate);
-                        // [수정] Decimal을 사용한 정밀 계산 및 원 단위 보정
-                        const nextAmount = toD(asset.amount).mul(toD(1).add(toD(effectiveRate).div(12)));
+                        
+                        // [수정] 일할 계산 적용 (첫 달은 남은 일수만큼, 이후는 한 달 치)
+                        const daysToApply = (month === 1) ? (daysInSimMonth - startDayOfLoop + 1) : 30; // 편의상 이후는 30일 기준(월리) 적용
+                        const monthlyFactor = daysToApply / 30; // 30일 기준 비율
+                        
+                        const nextAmount = toD(asset.amount).mul(toD(1).add(toD(effectiveRate).div(12).mul(monthlyFactor)));
                         asset.amount = Number(nextAmount.toNumber().toFixed(4));
                     }
                 });
@@ -161,7 +198,11 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
             // 2. 이벤트 적용
             incomeEventsWithIndices.forEach(event => {
-                if (month >= event.startIdx && month <= event.endIdx) {
+                // 해당 월 범위 내에 있고, 이벤트 날짜가 시뮬레이션 기간(startDayOfLoop 이후)에 포함되는지 확인
+                // [수정] 월 말일 보정 (예: 2월 31일 -> 2월 28일)
+                const effectiveDay = Math.min(event.day, daysInSimMonth);
+                const isDateValid = effectiveDay >= startDayOfLoop;
+                if (month >= event.startIdx && month <= event.endIdx && isDateValid) {
                     if (currentAssets[event.targetSector] && currentAssets[event.targetSector][event.targetAsset]) {
                         currentAssets[event.targetSector][event.targetAsset].amount += event.amount;
                     }
@@ -169,7 +210,9 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             });
 
             expenseEventsWithIndices.forEach(event => {
-                if (month >= event.startIdx && month <= event.endIdx) {
+                const effectiveDay = Math.min(event.day, daysInSimMonth);
+                const isDateValid = effectiveDay >= startDayOfLoop;
+                if (month >= event.startIdx && month <= event.endIdx && isDateValid) {
                     const arr = currentAssets[event.targetSector];
                     if (arr && arr[event.targetAsset]) {
                         arr[event.targetAsset].amount = Math.max(0, arr[event.targetAsset].amount - event.amount);
@@ -178,7 +221,26 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             });
 
             // 3. 현금 흐름 및 납입 처리
-            let cashInHand = monthlyAvailableCash;
+            // [수정] 월급 및 지출의 일자별 적용
+            let currentMonthSalary = 0;
+            const effectiveSalaryDay = Math.min(salaryDay, daysInSimMonth); // [추가] 월급일 말일 보정
+            if (effectiveSalaryDay >= startDayOfLoop) {
+                currentMonthSalary = monthlySalary;
+            }
+
+            let currentMonthExpenseTotal = 0;
+            safeMonthlyExpenses.forEach(exp => {
+                const expDay = exp.day || 30; // 기본값 말일
+                const effectiveExpDay = Math.min(expDay, daysInSimMonth); // [추가] 지출일 말일 보정
+                if (effectiveExpDay >= startDayOfLoop) {
+                    currentMonthExpenseTotal += (exp.amount || 0);
+                }
+            });
+
+            let cashInHand = currentMonthSalary - currentMonthExpenseTotal;
+
+            // [참고] 이자 보정 로직은 위에서 '일할 계산'으로 대체되었으므로 제거하거나,
+            // 현금 흐름 발생일 이후의 잔여 일수에 대한 이자를 추가하는 방식으로 정교화 가능하나 복잡도상 생략 (월말 일괄 처리 가정하되 포함 여부만 판단)
 
             // 3a. 월급 기반 월납입 (자산 증식)
             Object.keys(currentAssets).forEach(sector => {
@@ -224,10 +286,15 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
             // 3b. 대출 상환 (계좌이체 기반) (Fix #1, #3)
             (currentAssets.loan || []).forEach((loan) => {
-                const simStartToLoanStart = getMonthDiff(baseMonth, loan.loanStartDate || baseMonth);
+                const simStartToLoanStart = getMonthDiff(`${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`, loan.loanStartDate || `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`);
                 const loanMonthAtSimMonth = month + simStartToLoanStart;
 
                 if (loanMonthAtSimMonth < 1 || loan.amount <= 0 || (loan.maturityMonth !== undefined && loanMonthAtSimMonth > loan.maturityMonth)) return;
+
+                // [추가] 대출 상환일 체크 (첫 달 시뮬레이션 시 이미 상환일이 지났으면 스킵)
+                const repaymentDay = loan.repaymentDay || salaryDay || 25;
+                const effectiveRepaymentDay = Math.min(repaymentDay, daysInSimMonth);
+                if (effectiveRepaymentDay < startDayOfLoop) return;
 
                 const repaymentAccount = loan._repaymentAccountRef;
                 if (!repaymentAccount) {
@@ -595,7 +662,7 @@ const fetchYahooData = async (symbol) => {
             const prevPrice = prices[prices.length - 2] || currentPrice;
             const changePct = prevPrice !== 0 ? ((currentPrice - prevPrice) / prevPrice * 100) : 0;
             
-            return { price: currentPrice, change: changePct, data: prices };
+            return { price: currentPrice, change: changePct, data: prices, isLive: true };
         } catch (e) {
             console.warn(`Proxy failed for ${symbol}`, e);
             continue;
@@ -615,7 +682,7 @@ const fetchBitcoinData = async () => {
             const prices = json.prices.map(p => p[1]);
             const current = prices[prices.length - 1];
             const prev = prices[prices.length - 2] || current;
-            return { price: current, change: ((current - prev) / prev * 100), data: prices };
+            return { price: current, change: ((current - prev) / prev * 100), data: prices, isLive: true };
         }
         return null;
     } catch (e) {

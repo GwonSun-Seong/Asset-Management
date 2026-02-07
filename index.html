@@ -179,22 +179,38 @@
         };
 
         const CoreSettingsCard = ({
-            monthlySalary, setMonthlySalary, baseMonth, setBaseMonth,
+            monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
             setIsExportModalOpen, setIsImportModalOpen,
+            salaryDay, setSalaryDay,
             exportToCSV, importFromCSV, saveToPDF, saveCurrentAsset, saveScenario
         }) => {
             const TEXTS = window.TEXTS || {};
+
             return (
                 <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6"> 
                     <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">{TEXTS.settings?.coreSettings || "핵심 설정"}</h2>
                     <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">{TEXTS.settings?.monthlySalary || "월 고정 수입 (만원)"}</label>
-                            <input type="number" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={monthlySalary} onChange={(e) => setMonthlySalary(Number(e.target.value))} />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">{TEXTS.settings?.monthlySalary || "월 고정 수입 (만원)"}</label>
+                                <input type="number" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={monthlySalary} onChange={(e) => setMonthlySalary(Number(e.target.value))} />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">고정 수입일</label>
+                                <select 
+                                    className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    value={salaryDay || 25}
+                                    onChange={(e) => setSalaryDay(Number(e.target.value))}
+                                >
+                                    {Array.from({length: 31}, (_, i) => i + 1).map(day => (
+                                        <option key={day} value={day}>{day}일</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">{TEXTS.settings?.baseMonth || "기준월 (계산 시작)"}</label>
-                            <input type="month" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={baseMonth} onChange={(e) => setBaseMonth(e.target.value)} />
+                            <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">계산 시작일 (기준일)</label>
+                            <input type="date" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={baseDate} onChange={(e) => setBaseDate(e.target.value)} />
                         </div>
                         <div className="pt-4 border-t dark:border-gray-700">
                             <h3 className="text-sm font-bold text-gray-700 dark:text-white mb-2">{TEXTS.settings?.dataManagement || "데이터 관리"}</h3>
@@ -844,6 +860,20 @@
                                             </div>
                                         </div>
 
+                                        {/* Day */}
+                                        <div className="w-full lg:w-20">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">발생일</label>
+                                            <select 
+                                                value={event.day || 30} 
+                                                onChange={(e) => updateFn(index, 'day', Number(e.target.value))}
+                                                className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-center font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-opacity-50 focus:outline-none"
+                                            >
+                                                {Array.from({length: 31}, (_, i) => i + 1).map(day => (
+                                                    <option key={day} value={day}>{day}일</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
                                         {/* Date Range */}
                                         <div className="w-full lg:w-auto flex gap-2">
                                             <div>
@@ -932,6 +962,7 @@
             const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
             const [lastSyncTime, setLastSyncTime] = useState(null); // [추가] 마지막 동기화 시간
+            const [analysisMode, setAnalysisMode] = useState('growth'); // [추가] 상세 분석 모드 ('growth' | 'income')
             
             // [추가] 하단에 있던 상태들을 초기화 순서 보장을 위해 위로 이동
             const [assetHistory, setAssetHistory] = useState([]);
@@ -1693,7 +1724,9 @@
                 itemTargets = {}, // [추가] 항목별 목표 비중
                 // [Refactor] Safe defaults during destructuring
                 incomeEvents = [],
-                expenseEvents = []
+                expenseEvents = [],
+                salaryDay = 25,
+                baseDate = new Date().toISOString().slice(0,10) // [변경] 기본값
             } = appData || {};
 
             // ===== Setter 함수들 =====
@@ -1727,6 +1760,8 @@
             const setItemTargets = React.useCallback((value) => setAppData(prev => ({ ...prev, itemTargets: typeof value === 'function' ? value(prev.itemTargets) : value })), [setAppData]);
             const setRebalancingGlobal = React.useCallback((value) => setAppData(prev => ({ ...prev, rebalancingGlobal: typeof value === 'function' ? value(prev.rebalancingGlobal) : value })), [setAppData]);
             const setMemo = React.useCallback((value) => setAppData(prev => ({ ...prev, memo: value })), [setAppData]);
+            const setSalaryDay = React.useCallback((value) => setAppData(prev => ({ ...prev, salaryDay: Math.min(31, Math.max(1, Number(value))) })), [setAppData]);
+            const setBaseDate = React.useCallback((value) => setAppData(prev => ({ ...prev, baseDate: value })), [setAppData]); // [변경] setBaseMonth -> setBaseDate
 
             // [추가] 다크모드 토글 핸들러 (PRO 제한 로직)
             const handleDarkModeToggle = () => {
@@ -2190,7 +2225,7 @@
                         let eventFlow = 0;
                         const checkEvent = (e) => {
                             if (!e.startMonth || typeof e.startMonth !== 'string' || !e.endMonth || typeof e.endMonth !== 'string') return false;
-                            const [bY, bM] = baseMonth.split('-').map(Number);
+                            const [bY, bM] = baseDate.split('-').map(Number); // [수정] baseDate 사용
                             const [sY, sM] = e.startMonth.split('-').map(Number);
                             const [eY, eM] = e.endMonth.split('-').map(Number);
                             const cur = bY * 12 + bM + m - 1;
@@ -2320,7 +2355,7 @@
                     });
                 });
 
-                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate }, months);
+                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate, baseDate }, months);
 
                 if (!monthlyProjections || monthlyProjections.length === 0) {
                     return { error: true, warnings: [] };
@@ -3053,7 +3088,7 @@
                 // prev가 배열이 아닐 경우를 대비하여 안전하게 처리
                 const currentEvents = Array.isArray(prev) ? prev : [];
                 return [...currentEvents, { 
-                    name: '새 지출 이벤트', amount: 0, startMonth: baseMonth, endMonth: baseMonth, targetSector: 'deposit', targetAsset: 0 
+                    name: '새 지출 이벤트', amount: 0, startMonth: baseDate.slice(0,7), endMonth: baseDate.slice(0,7), targetSector: 'deposit', targetAsset: 0 
                 }];
             });
             const updateExpenseEvent = (index, field, value) => {
@@ -3681,6 +3716,17 @@
                                             </div>
                                     
                                             <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
+                                                <div className="w-20">
+                                                    <select 
+                                                        className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg px-1 py-2 text-xs font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-rose-500"
+                                                        value={expense.day || 30}
+                                                        onChange={(e) => updateExpense(index, 'day', Number(e.target.value))}
+                                                    >
+                                                        {Array.from({length: 31}, (_, i) => i + 1).map(day => (
+                                                            <option key={day} value={day}>{day}일</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
                                                 <div className="relative w-32">
                                                     <input 
                                                         type="number" 
@@ -3744,8 +3790,107 @@
                 );
             };
 
-            const renderDetailAnalysisPanel = () => (
-                <>
+            const renderDetailAnalysisPanel = () => {
+                // [추가] 자본 소득 데이터 계산
+                let totalCapitalNetIncome = 0;
+                let totalCapitalGrossIncome = 0;
+                let totalCapitalTax = 0;
+                
+                const capitalIncomeData = {};
+                
+                Object.keys(sectorInfo).forEach(sectorKey => {
+                    const items = assets[sectorKey] || [];
+                    const sectorItems = items.map(asset => {
+                        const isLoan = sectorKey === 'loan';
+                        const amount = Number(asset.amount || 0);
+                        const rate = Number(asset.rate || 0);
+                        const feeRate = Number(asset.feeRate || 0);
+                        
+                        // 월 이자율/수익률
+                        const monthlyRate = rate / 100 / 12;
+                        
+                        // 세전 수익 (대출은 이자 비용으로 처리)
+                        let monthlyGross = amount * monthlyRate;
+                        let monthlyFee = 0;
+                        let monthlyNet = 0;
+                        
+                        if (isLoan) {
+                            monthlyGross = -Math.abs(monthlyGross); // 비용은 음수
+                            monthlyNet = monthlyGross; // 대출은 수수료 로직 제외 (utils.js 로직 따름)
+                        } else {
+                            monthlyFee = monthlyGross * (feeRate / 100);
+                            monthlyNet = monthlyGross - monthlyFee;
+                        }
+                        
+                        totalCapitalGrossIncome += monthlyGross;
+                        totalCapitalTax += monthlyFee;
+                        totalCapitalNetIncome += monthlyNet;
+                        
+                        return { ...asset, monthlyGross, monthlyFee, monthlyNet };
+                    });
+                    capitalIncomeData[sectorKey] = sectorItems;
+                });
+
+                // [추가] 재미있는 통계 계산
+                const monthlyIncomeWon = totalCapitalNetIncome * 10000;
+                const isPositive = monthlyIncomeWon >= 0;
+                const absMonthlyIncome = Math.abs(monthlyIncomeWon);
+                const perSecondIncome = absMonthlyIncome / (30 * 24 * 3600);
+                const sleepIncome = (monthlyIncomeWon / 30 / 24) * 7; // 7시간 수면 기준
+                const hourlyIncome = monthlyIncomeWon / 30 / 24;
+                
+                // [수정] 자산 규모에 따른 동적 비교 아이템 선정 (재미 요소 강화)
+                const getFunItems = (income) => {
+                    if (income < 100000) return [ // 월 10만원 미만
+                        { name: '츄파춥스', price: 500, icon: '🍭', color: 'pink' },
+                        { name: '뜨끈한 국밥', price: 10000, icon: '🍲', color: 'orange' }
+                    ];
+                    if (income < 1000000) return [ // 월 100만원 미만
+                        { name: '아메리카노', price: 4000, icon: '☕', color: 'amber' },
+                        { name: '치킨 세트', price: 25000, icon: '🍗', color: 'orange' }
+                    ];
+                    if (income < 5000000) return [ // 월 500만원 미만
+                        { name: '치킨 세트', price: 25000, icon: '🍗', color: 'orange' },
+                        { name: '오마카세', price: 150000, icon: '🍣', color: 'rose' }
+                    ];
+                    if (income < 20000000) return [ // 월 2,000만원 미만
+                        { name: '최신 아이폰', price: 1600000, icon: '📱', color: 'zinc' },
+                        { name: '명품 가방', price: 5000000, icon: '👜', color: 'purple' }
+                    ];
+                    if (income < 100000000) return [ // 월 1억원 미만
+                        { name: '유럽 여행', price: 8000000, icon: '✈️', color: 'sky' },
+                        { name: '자동차', price: 40000000, icon: '🚗', color: 'indigo' }
+                    ];
+                    return [ // 월 1억원 이상 (초고소득)
+                        { name: '스포츠카', price: 200000000, icon: '🏎️', color: 'red' },
+                        { name: '강남 아파트', price: 3000000000, icon: '🏢', color: 'emerald' }
+                    ];
+                };
+                const funItems = getFunItems(absMonthlyIncome);
+
+                const formatDuration = (seconds) => {
+                    if (!isFinite(seconds) || seconds <= 0) return "달성 불가";
+                    if (seconds < 1) return `1초에 ${(1/seconds).toFixed(1)}개`; // [추가] 초고속 달성 시
+                    const d = Math.floor(seconds / (3600 * 24));
+                    const h = Math.floor((seconds % (3600 * 24)) / 3600);
+                    const m = Math.floor((seconds % 3600) / 60);
+                    const s = Math.floor(seconds % 60);
+                    if (d > 365) return "1년 이상";
+                    if (d > 0) return `${d}일 ${h}시간`;
+                    if (h > 0) return `${h}시간 ${m}분`;
+                    if (m > 0) return `${m}분 ${s}초`;
+                    return `${s}초`;
+                };
+
+                return (
+                <div className="space-y-4">
+                    <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg w-fit mb-4">
+                        <button onClick={() => setAnalysisMode('growth')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${analysisMode === 'growth' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>📊 자산 증감 분석</button>
+                        <button onClick={() => setAnalysisMode('income')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${analysisMode === 'income' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>💰 자본 소득 분석</button>
+                    </div>
+
+                    {analysisMode === 'growth' ? (
+                    <>
                     {/* [추가] 모바일 카드 뷰 (반응형 UX 개선) */}
                     <div className="sm:hidden space-y-4">
                         {Object.keys(sectorInfo).map(sectorKey => {
@@ -3905,8 +4050,145 @@
                         </tbody>
                     </table>
                 </div>
-                </>
-            );
+                    </>
+                    ) : (
+                    <>
+                        {/* 자본 소득 요약 카드 */}
+                        <div className="mb-6">
+                            <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 flex flex-col md:flex-row justify-between items-center gap-6">
+                                <div className="flex-1">
+                                    <h4 className="text-sm font-bold text-emerald-800 dark:text-emerald-300 uppercase mb-2">💰 예상 월 자본 소득 (세후)</h4>
+                                    <div className="flex items-baseline gap-2">
+                                        <p className={`text-4xl font-bold ${totalCapitalNetIncome >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                            {totalCapitalNetIncome > 0 ? '+' : ''}{formatNumber(totalCapitalNetIncome, displayMode, 2)}만원
+                                        </p>
+                                    </div>
+                                    <p className="text-sm text-emerald-700 dark:text-emerald-500 mt-2">
+                                        수익 {formatNumber(totalCapitalGrossIncome, displayMode, 2)}만원 - 비용 {formatNumber(totalCapitalTax, displayMode, 2)}만원
+                                    </p>
+                                </div>
+                                
+                                {/* [수정] 자본 소득 재미 요소: 절대값 처리 및 소수점 정밀도 향상 */}
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-emerald-100 dark:border-emerald-900/50 min-w-[280px]">
+                                    <h5 className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-3 border-b dark:border-gray-700 pb-2">{totalCapitalNetIncome >= 0 ? '⏱️ 숨만 쉬어도 들어오는 돈' : '💸 숨만 쉬어도 나가는 돈'}</h5>
+                                    <div className="space-y-2">
+                                        {(() => {
+                                            const absMonthlyWon = Math.abs(totalCapitalNetIncome * 10000);
+                                            return (
+                                                <>
+                                                    <div className="flex justify-between items-center"><span className="text-xs text-gray-600 dark:text-gray-300">하루</span><span className="font-bold text-gray-800 dark:text-gray-100">{(absMonthlyWon / 30).toLocaleString(undefined, {maximumFractionDigits: 0})}원</span></div>
+                                                    <div className="flex justify-between items-center"><span className="text-xs text-gray-600 dark:text-gray-300">시간당</span><span className="font-bold text-gray-800 dark:text-gray-100">{(absMonthlyWon / 30 / 24).toLocaleString(undefined, {maximumFractionDigits: 1})}원</span></div>
+                                                    <div className="flex justify-between items-center"><span className="text-xs text-gray-600 dark:text-gray-300">분당</span><span className="font-bold text-gray-800 dark:text-gray-100">{(absMonthlyWon / 30 / 24 / 60).toLocaleString(undefined, {maximumFractionDigits: 1})}원</span></div>
+                                                    <div className="flex justify-between items-center"><span className="text-xs text-gray-600 dark:text-gray-300">초당</span><span className={`font-bold ${totalCapitalNetIncome >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{(absMonthlyWon / 30 / 24 / 3600).toFixed(2)}원</span></div>
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* [추가] 재미있는 자산 통계 패널 */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 shadow-sm">
+                                    <h5 className="text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase mb-1 flex items-center gap-1">😴 자고 일어나면 (7시간)</h5>
+                                    <p className={`text-lg font-bold ${sleepIncome >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-red-600 dark:text-red-400'}`}>
+                                        {sleepIncome > 0 ? '+' : ''}{Math.round(sleepIncome).toLocaleString()}원
+                                    </p>
+                                </div>
+                                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800 shadow-sm">
+                                    <h5 className="text-xs font-bold text-blue-800 dark:text-blue-300 uppercase mb-1 flex items-center gap-1">💼 내 자산의 시급</h5>
+                                    <p className={`text-lg font-bold ${hourlyIncome >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'}`}>
+                                        {Math.round(hourlyIncome).toLocaleString()}원
+                                    </p>
+                                    <p className="text-[10px] text-blue-700/70 dark:text-blue-500/70">24시간 무휴 근무 중</p>
+                                </div>
+                                {funItems.map((item, idx) => (
+                                    <div key={idx} className={`bg-${item.color}-50 dark:bg-${item.color}-900/20 p-4 rounded-xl border border-${item.color}-100 dark:border-${item.color}-800 shadow-sm`}>
+                                        <h5 className={`text-xs font-bold text-${item.color}-800 dark:text-${item.color}-300 uppercase mb-1 flex items-center gap-1`}>
+                                            {item.icon} {item.name} ({item.price.toLocaleString()}원)
+                                        </h5>
+                                        <p className={`text-lg font-bold text-${item.color}-600 dark:text-${item.color}-400`}>
+                                            {perSecondIncome > 0 ? formatDuration(item.price / perSecondIncome) : '-'}
+                                        </p>
+                                        {perSecondIncome > 0 && (
+                                            <p className={`text-[10px] text-${item.color}-700/70 dark:text-${item.color}-500/70`}>
+                                                {isPositive ? '마다 하나씩 획득! 🎁' : '마다 하나씩 증발... 💸'}
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 자본 소득 상세 테이블 */}
+                        <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
+                            <table className="w-full text-sm dark:text-gray-300 min-w-[800px]">
+                                <thead className="bg-gray-100 dark:bg-gray-700">
+                                    <tr>
+                                        <th className="p-3 text-left">섹터/항목</th>
+                                        <th className="p-3 text-right">현재 잔액</th>
+                                        <th className="p-3 text-right">연 수익률</th>
+                                        <th className="p-3 text-right">예상 월 수익(세전)</th>
+                                        <th className="p-3 text-right">예상 월 비용(세금/수수료)</th>
+                                        <th className="p-3 text-right">예상 월 순수익(세후)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {Object.keys(sectorInfo).map(sectorKey => {
+                                        const items = capitalIncomeData[sectorKey];
+                                        if (items.length === 0) return null;
+                                        
+                                        const sectorGross = items.reduce((s, i) => s + i.monthlyGross, 0);
+                                        const sectorFee = items.reduce((s, i) => s + i.monthlyFee, 0);
+                                        const sectorNet = items.reduce((s, i) => s + i.monthlyNet, 0);
+                                        const isLoan = sectorKey === 'loan';
+
+                                        return (
+                                            <React.Fragment key={sectorKey}>
+                                                <tr className={`border-t dark:border-gray-700 ${sectorInfo[sectorKey].bgClass} font-semibold`}>
+                                                    <td className="p-3">{sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name} 합계</td>
+                                                    <td className="p-3 text-right">-</td>
+                                                    <td className="p-3 text-right">-</td>
+                                                    <td className={`p-3 text-right ${sectorGross >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{formatNumber(sectorGross, displayMode, 2)}</td>
+                                                    <td className="p-3 text-right text-red-500">-{formatNumber(sectorFee, displayMode, 2)}</td>
+                                                    <td className={`p-3 text-right ${sectorNet >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatNumber(sectorNet, displayMode, 2)}</td>
+                                                </tr>
+                                                {items.map((asset, idx) => (
+                                                    <tr key={`${sectorKey}-${idx}`} className="border-t dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                                        <td className="p-3 pl-8 text-sm text-gray-600 dark:text-gray-400">└ {asset.name}</td>
+                                                        <td className="p-3 text-right tabular-nums">{formatNumber(asset.amount)}</td>
+                                                        <td className="p-3 text-right tabular-nums">{asset.rate}%</td>
+                                                        <td className={`p-3 text-right tabular-nums ${asset.monthlyGross >= 0 ? 'text-gray-900 dark:text-gray-200' : 'text-red-500'}`}>
+                                                            {formatNumber(asset.monthlyGross, displayMode, 2)}
+                                                        </td>
+                                                        <td className="p-3 text-right tabular-nums text-red-400">
+                                                            {asset.monthlyFee > 0 ? `-${formatNumber(asset.monthlyFee, displayMode, 2)} (${asset.feeRate}%)` : '-'}
+                                                        </td>
+                                                        <td className={`p-3 text-right tabular-nums font-medium ${asset.monthlyNet >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                            {asset.monthlyNet > 0 ? '+' : ''}{formatNumber(asset.monthlyNet, displayMode, 2)}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                    <tr className="border-t-2 border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 font-bold">
+                                        <td className="p-3">총계</td>
+                                        <td className="p-3 text-right">-</td>
+                                        <td className="p-3 text-right">-</td>
+                                        <td className={`p-3 text-right ${totalCapitalGrossIncome >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600'}`}>{formatNumber(totalCapitalGrossIncome, displayMode, 2)}</td>
+                                        <td className="p-3 text-right text-red-600 dark:text-red-400">-{formatNumber(totalCapitalTax, displayMode, 2)}</td>
+                                        <td className={`p-3 text-right ${totalCapitalNetIncome >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                            {totalCapitalNetIncome > 0 ? '+' : ''}{formatNumber(totalCapitalNetIncome, displayMode, 2)}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                    )}
+                </div>
+            )};
 
             const renderAssumptionsPanel = () => {
                 const assumptions = window.getAssumptionsContent ? window.getAssumptionsContent(inflationRate) : [];
@@ -4209,7 +4491,8 @@
         displayMode={displayMode}
         monthlySalary={monthlySalary}
         setMonthlySalary={setMonthlySalary}
-        setBaseMonth={setBaseMonth}
+        baseDate={baseDate} setBaseDate={setBaseDate}
+        salaryDay={salaryDay} setSalaryDay={setSalaryDay}
         setIsExportModalOpen={setIsExportModalOpen}
         setIsImportModalOpen={setIsImportModalOpen}
         exportToCSV={exportToCSV}

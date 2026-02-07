@@ -4,6 +4,7 @@
 const publicDefaultData = {
     projectionMonths: 12,
     monthlySalary: 250,
+    salaryDay: 25,
     targetAmount: 10000, // 목표 자산 금액 (만원)
     goalMode: 'period', // 'period' 또는 'target'
     displayMode: 'amount', // [추가] displayMode 기본값
@@ -51,7 +52,8 @@ const publicDefaultData = {
         ]
     },
     monthlyExpenses: [
-        { name: '생활비', amount: 120 }
+        { name: '생활비', amount: 120, day: 15 }, // [수정] 지출일 추가
+        { name: '월세', amount: 50, day: 25 }
     ],
     expenseEvents: [
         {
@@ -59,6 +61,7 @@ const publicDefaultData = {
             amount: 5,
             startMonth: new Date().toISOString().slice(0,7),
             endMonth: (() => { const d = new Date(); d.setMonth(d.getMonth() + 23); return d.toISOString().slice(0,7); })(),
+            day: 20, // [추가] 이벤트 발생일
             targetSector: 'deposit',
             targetAsset: 1
         }
@@ -73,6 +76,7 @@ const publicDefaultData = {
     },
     simpleThresholds: { warning: 5, danger: 10 },
     rebalancingTargets: { deposit: 10, savings: 15, investment: 55, pension: 20, realestate: 0, car: 0, misc: 0 },
+    baseDate: new Date().toISOString().slice(0,10), // [변경] baseMonth -> baseDate (YYYY-MM-DD)
     mainCashFlowAccount: '생활비통장',
     memo: '' // [추가] 메모 기능
 };
