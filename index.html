@@ -4619,23 +4619,21 @@
                             <img src="https://blogpfthumb-phinf.pstatic.net/MjAyMzExMDlfMTY2/MDAxNjk5NTM1OTEzNTY2.eBsibH7tHEJ5FeB3gSWJ3hGqz6mbgqM2TsSKS7c2QRog.CNgc4PQL7zumVLSD72sVI_EB6tsPO_Cwd_LKNj0MiyAg.JPEG.whrekrdl/161.jpg/161.jpg?type=w161" alt="네이버 블로그" className="w-10 h-10"/>
                         </a>
                     )}
-                    {window.DataTransferModal && (
-                        <>
-                            <window.DataTransferModal 
-                                isOpen={isExportModalOpen} 
-                                onClose={() => setIsExportModalOpen(false)} 
-                                onConfirm={handleExport} 
-                                type="export"
-                                initialSelection={exportSelection}
-                            />
-                            <window.DataTransferModal 
-                                isOpen={isImportModalOpen} 
-                                onClose={() => setIsImportModalOpen(false)} 
-                                onConfirm={(selection) => handleImport(selection)} 
-                                type="import"
-                                initialSelection={importSelection}
-                            />
-                        </>
+                    {window.DataExportImportModal && (
+                        <window.DataExportImportModal 
+                            isOpen={isExportModalOpen || isImportModalOpen} 
+                            onClose={() => { setIsExportModalOpen(false); setIsImportModalOpen(false); }} 
+                            initialMode={isImportModalOpen ? 'import' : 'export'}
+                            currentData={{ appData, scenarios, assetHistory }}
+                            onImport={(data) => {
+                                if (confirm('현재 데이터를 모두 덮어쓰고 불러오시겠습니까?')) {
+                                    if (data.appData) setAppData(data.appData);
+                                    if (data.scenarios) setScenarios(data.scenarios);
+                                    if (data.assetHistory) setAssetHistory(data.assetHistory);
+                                    addToast('자산 데이터가 성공적으로 불러와졌습니다!', 'success');
+                                }
+                            }}
+                        />
                     )}
                     {window.PrivacyPolicyModal && <window.PrivacyPolicyModal isOpen={isPrivacyModalOpen} onClose={() => setIsPrivacyModalOpen(false)} />}
                     {window.SuggestionModal && <window.SuggestionModal isOpen={isSuggestionModalOpen} onClose={() => setIsSuggestionModalOpen(false)} onSubmit={handleSuggestionSubmit} />}

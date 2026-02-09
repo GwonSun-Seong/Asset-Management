@@ -497,44 +497,71 @@ window.IconPickerModal = ({ isOpen, onClose, onSelect, currentIcon }) => {
     );
 };
 
-// [추가] 데이터 내보내기/불러오기 모달
-window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData }) => {
+// [수정] 데이터 내보내기/불러오기 모달 (기존 로직 복구 및 버튼 액션 수정)
+window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initialMode = 'export' }) => {
     if (!isOpen) return null;
-    const [mode, setMode] = useState('export');
+    const [mode, setMode] = useState(initialMode);
     const [inputValue, setInputValue] = useState('');
     const [exportString, setExportString] = useState('');
     const [copyStatus, setCopyStatus] = useState('idle');
 
     useEffect(() => {
-        if (isOpen && mode === 'export') {
+        if (isOpen) {
+            setMode(initialMode);
+            setInputValue('');
+            setCopyStatus('idle');
             try {
-                const data = window.compressData ? window.compressData(currentData) : JSON.stringify(currentData);
-                setExportString(data);
+                // [복구] 무조건 압축(인코딩)된 데이터 생성
+                if (window.compressData) {
+                    const data = window.compressData(currentData);
+                    setExportString(data);
+                } else {
+                    setExportString('오류: 압축 라이브러리가 로드되지 않았습니다.');
+                }
             } catch (e) {
                 console.error(e);
                 setExportString('데이터 생성 실패');
             }
         }
-    }, [isOpen, mode, currentData]);
+    }, [isOpen, currentData, initialMode]);
 
     const handleCopy = async () => {
         try {
-            await navigator.clipboard.writeText(exportString);
+            // [수정] 클립보드 API 실패 시 폴백(Fallback) 처리 추가 (버튼 먹통 해결)
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(exportString);
+            } else {
+                const textArea = document.createElement("textarea");
+                textArea.value = exportString;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-9999px";
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
             setCopyStatus('copied');
             setTimeout(() => setCopyStatus('idle'), 2000);
         } catch (err) {
+            console.error(err);
             setCopyStatus('error');
         }
     };
 
     const handleImport = () => {
-        if (!inputValue.trim()) return alert('데이터를 입력해주세요.');
+        if (!inputValue.trim()) return alert('데이터 코드를 입력해주세요.');
         try {
-            const data = window.decompressData ? window.decompressData(inputValue.trim()) : JSON.parse(inputValue.trim());
-            onImport(data);
-            onClose();
+            // [복구] 무조건 압축 해제 시도
+            if (window.decompressData) {
+                const data = window.decompressData(inputValue.trim());
+                onImport(data);
+                onClose();
+            } else {
+                alert('오류: 압축 해제 라이브러리가 로드되지 않았습니다.');
+            }
         } catch (e) {
-            alert('데이터 형식이 올바르지 않습니다.');
+            console.error(e);
+            alert('데이터 형식이 올바르지 않습니다. 코드를 확인해주세요.');
         }
     };
 
@@ -622,10 +649,11 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                     if (assets.length > 0 && window.sectorInfo[k]) {
                         const isLoan = k === 'loan';
                         const rateLabel = isLoan ? '이자율' : '수익률';
-                        acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(${Math.round(a.amount)}만원, ${rateLabel} ${a.rate || 0}%)`).join(', ');
+                        acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(현재 ${Math.round(a.amount)}만원, ${rateLabel} ${a.rate || 0}%, 월납입 ${a.monthlyContrib || 0}만원)`).join(', ');
                     }
                     return acc;
                 }, {}),
+                memo: appData.memo || '내용 없음',
                 fixedExpenses: (appData.monthlyExpenses || []).map(e => `${e.name}(${e.amount}만원)`).join(', '),
                 futureEvents: {
                     income: (appData.incomeEvents || []).map(e => `${e.name}(${e.amount}만원, ${e.startMonth}~${e.endMonth})`).join(', '),
