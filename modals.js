@@ -497,6 +497,83 @@ window.IconPickerModal = ({ isOpen, onClose, onSelect, currentIcon }) => {
     );
 };
 
+// [추가] 데이터 내보내기/불러오기 모달
+window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData }) => {
+    if (!isOpen) return null;
+    const [mode, setMode] = useState('export');
+    const [inputValue, setInputValue] = useState('');
+    const [exportString, setExportString] = useState('');
+    const [copyStatus, setCopyStatus] = useState('idle');
+
+    useEffect(() => {
+        if (isOpen && mode === 'export') {
+            try {
+                const data = window.compressData ? window.compressData(currentData) : JSON.stringify(currentData);
+                setExportString(data);
+            } catch (e) {
+                console.error(e);
+                setExportString('데이터 생성 실패');
+            }
+        }
+    }, [isOpen, mode, currentData]);
+
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(exportString);
+            setCopyStatus('copied');
+            setTimeout(() => setCopyStatus('idle'), 2000);
+        } catch (err) {
+            setCopyStatus('error');
+        }
+    };
+
+    const handleImport = () => {
+        if (!inputValue.trim()) return alert('데이터를 입력해주세요.');
+        try {
+            const data = window.decompressData ? window.decompressData(inputValue.trim()) : JSON.parse(inputValue.trim());
+            onImport(data);
+            onClose();
+        } catch (e) {
+            alert('데이터 형식이 올바르지 않습니다.');
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
+                <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">💾 데이터 백업 및 복구</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
+                </div>
+                <div className="p-6">
+                    <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl mb-6">
+                        <button onClick={() => setMode('export')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === 'export' ? 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>내보내기</button>
+                        <button onClick={() => setMode('import')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === 'import' ? 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>불러오기</button>
+                    </div>
+
+                    {mode === 'export' ? (
+                        <div className="space-y-4">
+                            <p className="text-sm text-gray-600 dark:text-gray-300">현재 데이터를 압축된 문자열로 변환했습니다.<br/>아래 코드를 복사하여 안전한 곳에 보관하세요.</p>
+                            <div className="relative">
+                                <textarea readOnly value={exportString} className="w-full h-32 p-4 text-xs font-mono bg-gray-50 dark:bg-gray-900 border dark:border-gray-600 rounded-xl resize-none focus:outline-none dark:text-gray-300" />
+                            </div>
+                            <button onClick={handleCopy} className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${copyStatus === 'copied' ? 'bg-green-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                                {copyStatus === 'copied' ? '✅ 복사되었습니다' : '📋 클립보드에 복사'}
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <p className="text-sm text-gray-600 dark:text-gray-300">보관해둔 데이터 코드를 아래에 붙여넣으세요.<br/><span className="text-red-500 text-xs">* 현재 데이터가 덮어씌워집니다.</span></p>
+                            <textarea value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="w-full h-32 p-4 text-xs font-mono bg-white dark:bg-gray-900 border dark:border-gray-600 rounded-xl resize-none focus:ring-2 focus:ring-blue-500 outline-none dark:text-white" placeholder="여기에 데이터 코드 붙여넣기..." />
+                            <button onClick={handleImport} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">📥 데이터 불러오기</button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // [이동] AI 자산 분석 모달 (Gemini API 활용) - 커스텀 입력 제거됨
 window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
     if (!isOpen) return null;
@@ -642,7 +719,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl m-4 h-[80vh] flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-4 border-b dark:border-gray-700 pb-3">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"> 🤖 AI 자산 분석 <span className="text-xs font-normal text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">Powered by Gemini</span></h3>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">🤖 AI 자산 분석 <span className="text-xs font-normal text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">Powered by Gemini</span></h3>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
                 </div>
                 
