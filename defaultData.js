@@ -72,6 +72,7 @@ const publicDefaultData = {
         investment: { warning: 5, danger: 10 },
         pension: { warning: 5, danger: 10 },
         realestate: { warning: 5, danger: 10 },
+        car: { warning: 5, danger: 10 },
         misc: { warning: 5, danger: 10 }
     },
     simpleThresholds: { warning: 5, danger: 10 },
@@ -83,7 +84,7 @@ const publicDefaultData = {
 
 // 서버 설정 로드 함수 (주석 처리/해제로 전환)
 async function loadServerConfig() {
-    if (!USE_SERVER_CONFIG) return publicDefaultData;
+    if (!window.USE_SERVER_CONFIG) return publicDefaultData;
 
     try {
         // const response = await fetch('/api/defaultconfig');

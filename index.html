@@ -526,7 +526,6 @@
             const canvasRef = useRef(null);
             const chartInstance = useRef(null);
             const [isLoading, setIsLoading] = useState(false);
-            const [isLive, setIsLive] = useState(false);
             const [marketItems, setMarketItems] = useState(window.INITIAL_MARKET_ITEMS || []);
 
             // [추가] 실제 API 데이터 페칭 함수 (수동 새로고침 지원)
@@ -541,9 +540,6 @@
                             window.fetchYahooData('GC=F'),    // 금 선물
                             window.fetchBitcoinData()         // 비트코인
                         ]);
-
-                        // [수정] 모든 데이터가 성공적으로 로드되었는지 확인
-                        const allSuccess = [usdData, sp500Data, nasdaqData, goldData, btcRes].every(d => d && d.price > 0);
 
                         // 비트코인 데이터 처리
                         let btcData = btcRes;
@@ -562,7 +558,8 @@
                                 value: formattedValue,
                                 change: `${sign}${data.change.toFixed(2)}%`,
                                 color: color,
-                                data: data.data
+                        data: data.data,
+                        isLive: true // [수정] 데이터 로드 성공 시 실시간 상태 반영
                             };
                         };
                         
@@ -575,10 +572,8 @@
                             return item;
                         }));
                         
-                        setIsLive(allSuccess);
                     } catch (e) {
                         console.warn("Market data fetch failed, using fallback data", e);
-                        setIsLive(false);
                     } finally {
                         setIsLoading(false);
                     }
@@ -672,7 +667,7 @@
                             {isLoading ? (
                                 <span className="text-[10px] text-blue-500 animate-pulse">업데이트 중...</span>
                             ) : (
-                                <span className={`text-[10px] ${isLive ? 'text-green-500' : 'text-gray-400'}`}>{isLive ? '● 실시간' : '○ 데모'}</span>
+                                <span className={`text-[10px] ${currentItem.isLive ? 'text-green-500' : 'text-gray-400'}`}>{currentItem.isLive ? '● 실시간' : '○ 데모'}</span>
                             )}
                         </div>
                         <div className="flex gap-1">
@@ -1384,11 +1379,14 @@
                     let shouldUpdateFromCloud = isManual || !localTime || cloudTime >= localTime;
 
                     if (!shouldUpdateFromCloud && isInitialLoad && localTime > cloudTime) {
-                        if (confirm("기기의 데이터가 더 최신입니다. 클라우드 데이터를 불러오시겠습니까?")) {
+                        if (confirm("기기의 데이터가 더 최신입니다. 클라우드 데이터를 불러오시겠습니까?\n(취소 시 로컬 데이터가 유지되며, 데이터 보호를 위해 자동 저장이 중단됩니다.)")) {
                             shouldUpdateFromCloud = true;
                         } else {
-                            const localData = localDataOverride || { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current };
-                            await saveToCloud(localData, true, email, pro);
+                            // [수정] 취소 시 클라우드 덮어쓰기 방지 및 자동 저장 비활성화 (Safe Mode)
+                            // setIsCloudLoaded(true)를 호출하지 않음으로써 useEffect 자동 저장을 원천 차단함
+                            addToast("로컬 데이터를 유지합니다. 클라우드 보호를 위해 자동 저장이 비활성화되었습니다.", "warning");
+                            setSyncStatus('idle');
+                            return;
                         }
                     }
 

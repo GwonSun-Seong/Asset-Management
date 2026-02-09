@@ -129,10 +129,18 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     
     // [수정] 날짜 기반 인덱스 계산
     // baseDate가 없으면 오늘 날짜 기준
-    const baseObj = baseDate ? new Date(baseDate) : new Date();
-    const baseYear = baseObj.getFullYear();
-    const baseMonthIdx = baseObj.getMonth(); // 0-based
-    const baseDay = baseObj.getDate();
+    let baseYear, baseMonthIdx, baseDay;
+    if (baseDate && /^\d{4}-\d{2}-\d{2}$/.test(baseDate)) {
+        const parts = baseDate.split('-').map(Number);
+        baseYear = parts[0];
+        baseMonthIdx = parts[1] - 1; // 0-based
+        baseDay = parts[2];
+    } else {
+        const now = new Date();
+        baseYear = now.getFullYear();
+        baseMonthIdx = now.getMonth();
+        baseDay = now.getDate();
+    }
 
     const precalculateEventIndices = (events) => events.map(event => ({
         ...event,
@@ -286,7 +294,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
             // 3b. 대출 상환 (계좌이체 기반) (Fix #1, #3)
             (currentAssets.loan || []).forEach((loan) => {
-                const simStartToLoanStart = getMonthDiff(`${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`, loan.loanStartDate || `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`);
+                const simStartToLoanStart = getMonthDiff(loan.loanStartDate || `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`, `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`);
                 const loanMonthAtSimMonth = month + simStartToLoanStart;
 
                 if (loanMonthAtSimMonth < 1 || loan.amount <= 0 || (loan.maturityMonth !== undefined && loanMonthAtSimMonth > loan.maturityMonth)) return;
@@ -740,6 +748,48 @@ const normalizeTargets = (targets, validSectors) => {
     return newTargets;
 };
 
+// [추가] 자본소득 흐름 계산 함수 (modals.js 의존성)
+const calculateCapitalIncomeFlow = (projections, currentAssets, monthlyExpense) => {
+    if (!projections || projections.length === 0) return { flows: [], goldenCross: null };
+
+    // 자산 ID별 이자율 맵 생성
+    const rateMap = {};
+    Object.keys(currentAssets).forEach(sector => {
+        if (sector === 'loan') return;
+        (currentAssets[sector] || []).forEach(asset => {
+            if (asset.id) rateMap[asset.id] = asset.rate || 0;
+        });
+    });
+
+    const flows = projections.map(p => {
+        let monthlyCapitalIncome = 0;
+        // projections의 itemTotals를 순회하며 계산
+        Object.keys(p.itemTotals).forEach(sector => {
+            if (sector === 'loan') return;
+            (p.itemTotals[sector] || []).forEach(item => {
+                const rate = rateMap[item.id] || 0;
+                // 월 이자 수익 = 자산 * (연이율/100/12)
+                monthlyCapitalIncome += item.amount * (rate / 100 / 12);
+            });
+        });
+
+        const d = new Date();
+        d.setMonth(d.getMonth() + p.month);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+
+        return {
+            month: p.month,
+            yearMonth: `${year}-${month}`,
+            totalAsset: p.net,
+            capitalIncome: monthlyCapitalIncome
+        };
+    });
+
+    const goldenCross = flows.find(f => f.capitalIncome >= monthlyExpense);
+    return { flows, goldenCross };
+};
+
 // 전역 객체에 노출
 window.formatNumber = formatNumber;
 window.formatPercent = formatPercent;
@@ -763,3 +813,4 @@ window.fetchYahooData = fetchYahooData;
 window.fetchBitcoinData = fetchBitcoinData;
 window.calculateGoalReachMonth = calculateGoalReachMonth;
 window.normalizeTargets = normalizeTargets;
+window.calculateCapitalIncomeFlow = calculateCapitalIncomeFlow;

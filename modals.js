@@ -23,46 +23,6 @@ window.Toast = ({ message, type, onClose }) => {
     );
 };
 
-window.DataTransferModal = ({ isOpen, onClose, onConfirm, type, initialSelection }) => {
-    const [selectedItems, setSelectedItems] = useState(initialSelection || { appData: true, scenarios: true, assetHistory: true });
-    const handleCheckboxChange = (e) => {
-        setSelectedItems(prev => ({ ...prev, [e.target.name]: e.target.checked }));
-    };
-    const handleConfirm = () => {
-        onConfirm(selectedItems);
-        onClose();
-    };
-    if (!isOpen) return null;
-    return (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-96">
-                <h3 className="text-lg font-semibold mb-4">{type === 'export' ? '데이터 내보내기' : '데이터 불러오기'}</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                    {type === 'export' ? '내보낼 데이터 항목을 선택하세요.' : '불러올 데이터 항목을 선택하세요. (기존 데이터는 덮어쓰여집니다.)'}
-                </p>
-                <div className="space-y-2 mb-6">
-                    <label className="flex items-center">
-                        <input type="checkbox" name="appData" checked={selectedItems.appData} onChange={handleCheckboxChange} className="mr-2" /> 
-                        <span className="text-gray-800">기본 자산 데이터 (계좌, 지출, 이벤트, 메모 등)</span>
-                    </label>
-                    <label className="flex items-center">
-                        <input type="checkbox" name="scenarios" checked={selectedItems.scenarios} onChange={handleCheckboxChange} className="mr-2" />
-                        <span className="text-gray-800">저장된 시나리오</span>
-                    </label>
-                    <label className="flex items-center">
-                        <input type="checkbox" name="assetHistory" checked={selectedItems.assetHistory} onChange={handleCheckboxChange} className="mr-2" />
-                        <span className="text-gray-800">자산 히스토리</span>
-                    </label>
-                </div>
-                <div className="flex justify-end space-x-3">
-                    <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">취소</button>
-                    <button onClick={handleConfirm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">확인</button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 window.PrivacyPolicyModal = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
     return (
@@ -540,16 +500,24 @@ window.IconPickerModal = ({ isOpen, onClose, onSelect, currentIcon }) => {
 // [이동] AI 자산 분석 모달 (Gemini API 활용) - 커스텀 입력 제거됨
 window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
     if (!isOpen) return null;
-    const { useState } = React;
+    const { useState, useRef, useEffect } = React;
 
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
-    const [model, setModel] = useState('gemini-3-flash-preview'); // 고정 모델
+    const [model, setModel] = useState('gemini-3-flash-preview'); // [수정] 안정적인 모델명으로 기본값 변경
     const [persona, setPersona] = useState('냉철한 전문 자산 관리사');
     const [additionalRequest, setAdditionalRequest] = useState('');
     const [showSettings, setShowSettings] = useState(true);
-    const [analysis, setAnalysis] = useState('');
+    
+    // [수정] 멀티턴 대화를 위한 상태 관리
+    const [messages, setMessages] = useState([]); // { role: 'user' | 'model', text: string }
+    const [chatInput, setChatInput] = useState('');
+    const [contextPrompt, setContextPrompt] = useState(''); // 초기 컨텍스트 저장용
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const messagesEndRef = useRef(null);
+
+    const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    useEffect(() => { scrollToBottom(); }, [messages, showSettings]);
 
     const handleAnalyze = async () => {
         const trimmedKey = apiKey.trim();
@@ -557,7 +525,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
         localStorage.setItem('asset_gemini_api_key', trimmedKey);
         setLoading(true);
         setError('');
-        setAnalysis('');
+        setMessages([]);
         
         try {
             const sectorTotals = window.getSectorTotals(appData.assets, calculation.currentTotal);
@@ -588,6 +556,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                 }
             };
 
+            // [수정] 시스템 프롬프트 구성 (초기 컨텍스트)
             const prompt = `
                 당신은 ${persona}입니다. 아래 재무 데이터를 분석해주세요.
                 데이터: ${JSON.stringify(summary)}
@@ -599,7 +568,10 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                 ${additionalRequest ? `4. 🗣️ **추가 답변**: 사용자의 요청("${additionalRequest}")에 대한 답변` : ''}
                 
                 너무 길지 않게 핵심만 요약해서 답변해주세요.
+                이후 사용자의 질문에 대해서도 위 데이터를 바탕으로 답변해주세요.
             `;
+
+            setContextPrompt(prompt); // 컨텍스트 저장
 
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${trimmedKey}`, {
                 method: 'POST',
@@ -618,7 +590,9 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
 
             const data = await response.json();
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '분석 결과를 가져오지 못했습니다.';
-            setAnalysis(text);
+            
+            // [수정] 첫 번째 응답을 메시지 목록에 추가
+            setMessages([{ role: 'model', text: text }]);
             setShowSettings(false);
         } catch (err) {
             setError(err.message);
@@ -627,15 +601,52 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
         }
     };
 
+    // [추가] 추가 질문 전송 핸들러 (멀티턴)
+    const handleSendMessage = async () => {
+        if (!chatInput.trim() || loading) return;
+        const userMsg = { role: 'user', text: chatInput };
+        const newMessages = [...messages, userMsg];
+        setMessages(newMessages);
+        setChatInput('');
+        setLoading(true);
+
+        try {
+            // 대화 히스토리 구성: [Context(User), Analysis(Model), ...History, Current(User)]
+            const contents = [
+                { role: 'user', parts: [{ text: contextPrompt }] },
+                ...messages.map(m => ({ role: m.role, parts: [{ text: m.text }] })),
+                { role: 'user', parts: [{ text: userMsg.text }] }
+            ];
+
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents })
+            });
+
+            if (!response.ok) throw new Error('API 호출 실패');
+
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '답변을 가져오지 못했습니다.';
+            
+            setMessages(prev => [...prev, { role: 'model', text: text }]);
+        } catch (err) {
+            setError('대화 중 오류가 발생했습니다: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-2xl m-4 max-h-[80vh] flex flex-col animate-in fade-in zoom-in duration-200">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl m-4 h-[80vh] flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden">
+                {/* Header */}
                 <div className="flex justify-between items-center mb-4 border-b dark:border-gray-700 pb-3">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">🤖 AI 자산 분석 <span className="text-xs font-normal text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">Powered by Gemini</span></h3>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"> 🤖 AI 자산 분석 <span className="text-xs font-normal text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">Powered by Gemini</span></h3>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-2">
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pt-0 space-y-4">
                     {showSettings && (
                         <>
                         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-sm text-blue-800 dark:text-blue-200 mb-4">
@@ -705,35 +716,188 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
 
                     {error && <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
 
-                    {analysis && (
+                    {/* [수정] 채팅 인터페이스 구현 */}
+                    {!showSettings && (
                         <>
-                        {!showSettings && (
-                            <div className="flex justify-end mb-2">
-                                <button onClick={() => setShowSettings(true)} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
-                                    ⚙️ 설정 및 질문 변경
-                                </button>
-                            </div>
-                        )}
-                        <div className="prose dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900/50 p-6 rounded-xl border dark:border-gray-700 mt-4">
-                            <div className="whitespace-pre-wrap leading-relaxed text-gray-800 dark:text-gray-200">
-                                {analysis.split('\n').map((line, i) => {
-                                    if (line.startsWith('#')) return <h4 key={i} className="text-lg font-bold mt-4 mb-2 text-indigo-600 dark:text-indigo-400">{line.replace(/^#+\s/, '')}</h4>;
-                                    
-                                    const parts = line.split(/(\*\*.*?\*\*)/g);
-                                    return (
-                                        <p key={i} className="mb-1">
-                                            {parts.map((part, j) => (
-                                                part.startsWith('**') && part.endsWith('**') 
-                                                    ? <strong key={j}>{part.slice(2, -2)}</strong> 
-                                                    : part
-                                            ))}
-                                        </p>
-                                    );
-                                })}
-                            </div>
+                        <div className="flex justify-end mb-2">
+                            <button onClick={() => { setShowSettings(true); setMessages([]); }} className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 flex items-center gap-1">
+                                🔄 처음부터 다시 시작
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-4 pb-4">
+                            {messages.map((msg, idx) => (
+                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[90%] rounded-2xl p-4 ${
+                                        msg.role === 'user' 
+                                            ? 'bg-blue-600 text-white rounded-tr-none' 
+                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-tl-none border dark:border-gray-600'
+                                    }`}>
+                                        {msg.role === 'user' ? (
+                                            <div className="whitespace-pre-wrap">{msg.text}</div>
+                                        ) : (
+                                            <div className="prose dark:prose-invert prose-sm max-w-none">
+                                                <div className="whitespace-pre-wrap leading-relaxed">
+                                                    {msg.text.split('\n').map((line, i) => {
+                                                        if (line.startsWith('#')) return <h4 key={i} className="text-base font-bold mt-2 mb-1 text-indigo-600 dark:text-indigo-400">{line.replace(/^#+\s/, '')}</h4>;
+                                                        const parts = line.split(/(\*\*.*?\*\*)/g);
+                                                        return (
+                                                            <p key={i} className="mb-1">
+                                                                {parts.map((part, j) => (
+                                                                    part.startsWith('**') && part.endsWith('**') 
+                                                                        ? <strong key={j}>{part.slice(2, -2)}</strong> 
+                                                                        : part
+                                                                ))}
+                                                            </p>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            {loading && (
+                                <div className="flex justify-start">
+                                    <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none p-4 flex items-center gap-2">
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-75"></div>
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-150"></div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={messagesEndRef} />
                         </div>
                         </>
                     )}
+                </div>
+
+                {/* [추가] 채팅 입력창 */}
+                {!showSettings && (
+                    <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800">
+                        <div className="flex gap-2">
+                            <input 
+                                type="text" 
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
+                                placeholder="추가로 궁금한 점을 물어보세요..."
+                                className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none"
+                                disabled={loading}
+                            />
+                            <button 
+                                onClick={handleSendMessage}
+                                disabled={loading || !chatInput.trim()}
+                                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// [추가] 자본소득(Cash Flow) 분석 모달
+window.CapitalIncomeAnalysisModal = ({ isOpen, onClose, appData, projections }) => {
+    if (!isOpen) return null;
+    const { useMemo } = React;
+
+    const monthlyExpenseTotal = useMemo(() => 
+        (appData.monthlyExpenses || []).reduce((sum, e) => sum + (e.amount || 0), 0), 
+    [appData.monthlyExpenses]);
+
+    const { flows, goldenCross } = useMemo(() => 
+        window.calculateCapitalIncomeFlow(projections, appData.assets, monthlyExpenseTotal),
+    [projections, appData.assets, monthlyExpenseTotal]);
+
+    // 차트 렌더링 계산
+    const maxVal = Math.max(...flows.map(f => f.capitalIncome), monthlyExpenseTotal * 1.5);
+    const height = 200;
+    
+    const getPath = () => {
+        if (flows.length < 2) return '';
+        const stepX = 100 / (flows.length - 1);
+        let path = `M 0 ${height}`; 
+        flows.forEach((f, i) => {
+            const x = i * stepX;
+            const y = height - (f.capitalIncome / maxVal * height);
+            path += ` L ${x} ${y}`;
+        });
+        path += ` L 100 ${height} Z`;
+        return path;
+    };
+
+    const getLinePath = (val) => {
+        const y = height - (val / maxVal * height);
+        return `M 0 ${y} L 100 ${y}`;
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto animate-in zoom-in duration-300">
+                <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center sticky top-0 bg-white dark:bg-gray-800 z-10">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        💸 자본소득(Cash Flow) 흐름
+                        <span className="text-xs font-normal bg-green-100 text-green-800 px-2 py-0.5 rounded-full">J-Curve</span>
+                    </h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
+                </div>
+                
+                <div className="p-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                        <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-xl border border-blue-100 dark:border-blue-800">
+                            <div className="text-sm text-blue-600 dark:text-blue-400 font-bold mb-1">현재 월 자본소득</div>
+                            <div className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(flows[0]?.capitalIncome || 0).toLocaleString()} <span className="text-sm font-normal">만원</span></div>
+                        </div>
+                        <div className="bg-purple-50 dark:bg-purple-900/20 p-5 rounded-xl border border-purple-100 dark:border-purple-800">
+                            <div className="text-sm text-purple-600 dark:text-purple-400 font-bold mb-1">예상 월 자본소득 (최종)</div>
+                            <div className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(flows[flows.length-1]?.capitalIncome || 0).toLocaleString()} <span className="text-sm font-normal">만원</span></div>
+                            <div className="text-xs text-gray-500 mt-1">{flows.length}개월 후 예상</div>
+                        </div>
+                        <div className={`p-5 rounded-xl border ${goldenCross ? 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                            <div className={`text-sm font-bold mb-1 ${goldenCross ? 'text-green-600 dark:text-green-400' : 'text-gray-500'}`}>경제적 자유 (Golden Cross)</div>
+                            {goldenCross ? (
+                                <><div className="text-2xl font-bold text-gray-900 dark:text-white">{goldenCross.yearMonth} <span className="text-sm font-normal">달성!</span></div><div className="text-xs text-gray-500 mt-1">자본소득 &gt; 월 지출({monthlyExpenseTotal}만원)</div></>
+                            ) : (
+                                <div className="text-sm text-gray-500 mt-2">시뮬레이션 기간 내 달성 실패</div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="mb-8">
+                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">📈 월 자본소득 성장 추이</h4>
+                        <div className="relative h-64 w-full bg-gray-50 dark:bg-gray-900/50 rounded-xl border dark:border-gray-700 overflow-hidden">
+                            <svg className="w-full h-full" preserveAspectRatio="none" viewBox={`0 0 100 ${height}`}>
+                                <defs><linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity="0.5" /><stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" /></linearGradient></defs>
+                                <path d={getLinePath(monthlyExpenseTotal)} stroke="#ef4444" strokeWidth="1" strokeDasharray="4" vectorEffect="non-scaling-stroke" />
+                                <path d={getPath()} fill="url(#incomeGradient)" stroke="#2563eb" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                            </svg>
+                            <div className="absolute top-2 right-2 text-xs font-bold text-blue-600 bg-white/80 px-2 py-1 rounded">Max: {Math.round(maxVal).toLocaleString()}만원</div>
+                            <div className="absolute left-2 text-xs font-bold text-red-500 bg-white/80 px-2 py-1 rounded" style={{ bottom: `${Math.min(90, Math.max(10, monthlyExpenseTotal / maxVal * 100))}%` }}>지출: {monthlyExpenseTotal}만원</div>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500 mt-2 px-1"><span>{flows[0]?.yearMonth}</span><span>{flows[Math.floor(flows.length/2)]?.yearMonth}</span><span>{flows[flows.length-1]?.yearMonth}</span></div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                            <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                                <tr><th className="px-4 py-3">시기</th><th className="px-4 py-3 text-right">총 자산</th><th className="px-4 py-3 text-right text-blue-600 dark:text-blue-400">월 자본소득</th><th className="px-4 py-3 text-right">소득 대체율</th></tr>
+                            </thead>
+                            <tbody className="divide-y dark:divide-gray-700">
+                                {flows.filter((_, i) => i % Math.max(1, Math.floor(flows.length / 10)) === 0 || i === flows.length - 1).map((f, i) => (
+                                    <tr key={i} className="bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700">
+                                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{f.yearMonth} ({f.month}개월 후)</td>
+                                        <td className="px-4 py-3 text-right">{Math.round(f.totalAsset || 0).toLocaleString()}만원</td>
+                                        <td className="px-4 py-3 text-right font-bold text-blue-600 dark:text-blue-400">+{Math.round(f.capitalIncome).toLocaleString()}만원</td>
+                                        <td className="px-4 py-3 text-right">{monthlyExpenseTotal > 0 ? ((f.capitalIncome / monthlyExpenseTotal) * 100).toFixed(1) : 0}%</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

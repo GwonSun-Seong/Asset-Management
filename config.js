@@ -76,6 +76,7 @@ window.navLabels = {
     expenses: { title: "지출 관리", icon: "💸" },
     events: { title: "이벤트 관리", icon: "🎉" },
     'detail-analysis': { title: "상세 분석", icon: "🔍" },
+    'capital-income': { title: "자본소득 분석", icon: "💹" },
     assumptions: { title: "가정 사항", icon: "💡" }
 };
 
@@ -93,6 +94,7 @@ window.TEXTS = {
         expenses: "월별 지출 관리",
         events: "이벤트 관리",
         detailAnalysis: "상세 분석",
+        capitalIncome: "자본소득 흐름 분석",
         assumptions: "계산 가정사항"
     },
     summary: {
