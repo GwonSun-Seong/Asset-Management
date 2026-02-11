@@ -608,7 +608,13 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
 
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
     const [model, setModel] = useState('gemini-3-flash-preview'); // [수정] 안정적인 모델명으로 기본값 변경
-    const [persona, setPersona] = useState('냉철한 전문 자산 관리사');
+    const [persona, setPersona] = useState(() => localStorage.getItem('asset_ai_persona') || '냉철한 전문 자산 관리사');
+
+    // [추가] 페르소나 변경 시 로컬 스토리지 자동 저장
+    useEffect(() => {
+        localStorage.setItem('asset_ai_persona', persona);
+    }, [persona]);
+
     const [additionalRequest, setAdditionalRequest] = useState('');
     const [showSettings, setShowSettings] = useState(true);
     
