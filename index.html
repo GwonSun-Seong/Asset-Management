@@ -533,16 +533,21 @@
                 setIsLoading(true);
                     try {
                         // 병렬로 데이터 요청
-                        const [usdData, sp500Data, nasdaqData, goldData, btcRes] = await Promise.all([
-                            window.fetchYahooData('KRW=X'),   // 환율
-                            window.fetchYahooData('^GSPC'),   // S&P 500
-                            window.fetchYahooData('^IXIC'),   // NASDAQ
-                            window.fetchYahooData('GC=F'),    // 금 선물
-                            window.fetchBitcoinData()         // 비트코인
+                        // [수정] allSettled를 사용하여 일부 요청이 실패해도 나머지는 업데이트되도록 개선
+                        const results = await Promise.allSettled([
+                            window.fetchYahooData('KRW=X'),   // 0: 환율
+                            window.fetchYahooData('^GSPC'),   // 1: S&P 500
+                            window.fetchYahooData('^IXIC'),   // 2: NASDAQ
+                            window.fetchYahooData('GC=F'),    // 3: 금 선물
+                            window.fetchBitcoinData()         // 4: 비트코인
                         ]);
 
-                        // 비트코인 데이터 처리
-                        let btcData = btcRes;
+                        const getData = (idx) => results[idx].status === 'fulfilled' ? results[idx].value : null;
+                        const usdData = getData(0);
+                        const sp500Data = getData(1);
+                        const nasdaqData = getData(2);
+                        const goldData = getData(3);
+                        const btcData = getData(4);
 
                         // 상태 업데이트 헬퍼
                         const updateItem = (item, data, isCurrency = false) => {
@@ -2576,9 +2581,14 @@
 
                     if (chartInstancesRef.current['currentPie']) {
                         const chart = chartInstancesRef.current['currentPie'];
-                        chart.data = chartConfig.data;
-                        chart.options = chartConfig.options;
-                        chart.update('none');
+                        if (chart.canvas !== currentPieRef.current) {
+                            chart.destroy();
+                            chartInstancesRef.current['currentPie'] = new Chart(ctx, chartConfig);
+                        } else {
+                            chart.data = chartConfig.data;
+                            chart.options = chartConfig.options;
+                            chart.update('none');
+                        }
                     } else {
                         chartInstancesRef.current['currentPie'] = new Chart(ctx, chartConfig);
                     }
@@ -2649,9 +2659,14 @@
 
                     if (chartInstancesRef.current['projectedPie']) {
                         const chart = chartInstancesRef.current['projectedPie'];
-                        chart.data = chartConfig.data;
-                        chart.options = chartConfig.options;
-                        chart.update('none');
+                        if (chart.canvas !== projectedPieRef.current) {
+                            chart.destroy();
+                            chartInstancesRef.current['projectedPie'] = new Chart(ctx, chartConfig);
+                        } else {
+                            chart.data = chartConfig.data;
+                            chart.options = chartConfig.options;
+                            chart.update('none');
+                        }
                     } else {
                         chartInstancesRef.current['projectedPie'] = new Chart(ctx, chartConfig);
                     }
@@ -2694,13 +2709,18 @@
                             }
                     };
 
+                    const ctx = comparisonBarRef.current.getContext('2d');
                     if (chartInstancesRef.current['comparisonBar']) {
                         const chart = chartInstancesRef.current['comparisonBar'];
-                        chart.data = chartConfig.data;
-                        chart.options = chartConfig.options;
-                        chart.update('none');
+                        if (chart.canvas !== comparisonBarRef.current) {
+                            chart.destroy();
+                            chartInstancesRef.current['comparisonBar'] = new Chart(ctx, chartConfig);
+                        } else {
+                            chart.data = chartConfig.data;
+                            chart.options = chartConfig.options;
+                            chart.update('none');
+                        }
                     } else {
-                        const ctx = comparisonBarRef.current.getContext('2d');
                         chartInstancesRef.current['comparisonBar'] = new Chart(ctx, chartConfig);
                     }
                 };
@@ -2877,9 +2897,14 @@
 
                     if (chartInstancesRef.current['historyChart']) {
                         const chart = chartInstancesRef.current['historyChart'];
-                        chart.data = chartConfig.data;
-                        chart.options = chartConfig.options;
-                        chart.update('none');
+                        if (chart.canvas !== historyChartRef.current) {
+                            chart.destroy();
+                            chartInstancesRef.current['historyChart'] = new Chart(historyChartRef.current, chartConfig);
+                        } else {
+                            chart.data = chartConfig.data;
+                            chart.options = chartConfig.options;
+                            chart.update('none');
+                        }
                     } else {
                         chartInstancesRef.current['historyChart'] = new Chart(historyChartRef.current, chartConfig);
                     }
