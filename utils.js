@@ -646,10 +646,16 @@ const decompressData = (base64String) => {
 const fetchYahooData = async (symbol) => {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1mo&interval=1d`;
     
-    // [수정] 프록시 서버 다중화 (안정성 강화: corsproxy.io 실패 시 allorigins 시도)
+    // [수정] 프록시 서버 확장 (배포 환경 호환성 강화)
     const proxies = [
+        // 1. AllOrigins: 배포 환경에서 비교적 차단이 적음
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+        // 2. CodeTabs: 별도 헤더 없이 잘 동작함
+        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+        // 3. CorsProxy.io: 빠르지만 도메인에 따라 차단될 수 있음
         u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
+        // 4. ThingProxy: 예비용
+        u => `https://thingproxy.freeboard.io/fetch/${u}`
     ];
 
     for (const proxy of proxies) {
