@@ -1303,8 +1303,9 @@
                     supabase.from('user_assets').upsert({ 
                         email: targetEmail, data: payloadData,
                         encryption_type: targetPro ? targetMode : null,
-                        updated_at: new Date().toISOString()
-                    }, { onConflict: 'email' }).select('updated_at').single()
+                        updated_at: new Date().toISOString(),
+                        record_date: new Date().toISOString().split('T')[0]
+                    }, { onConflict: 'email,record_date' }).select('updated_at').single()
                 );
                 if (error) throw error;
                 if (data) {
@@ -1329,7 +1330,13 @@
             setIsLoadingCloud(true);
             try {
                 const { data, error } = await withRetry(() => 
-                    supabase.from('user_assets').select('data, updated_at, encryption_type').eq('email', email).maybeSingle()
+                    supabase.from('user_assets')
+                        .select('data, updated_at, encryption_type')
+                        .eq('email', email)
+                        .order('record_date', { ascending: false })
+                        .order('updated_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle()
                 );
                 if (error) throw error;
 
@@ -1485,6 +1492,66 @@
                 setTimeout(() => { isProcessing.current = false; }, 100);
             }
         }, [supabase, logoutBehavior, resetAppData]);
+
+        // [추가] 히스토리 스냅샷 불러오기 (타임머신 기능)
+        const loadHistorySnapshot = React.useCallback(async (targetDate) => {
+            if (!supabase || !verifiedEmail) return addToast('로그인이 필요한 기능입니다.', 'error');
+            if (!isPro) return setIsProModalOpen(true);
+
+            if (!confirm(`${targetDate} 시점의 데이터를 서버에서 불러오시겠습니까?\n⚠️ 현재 작업 중인 데이터는 덮어씌워집니다.`)) return;
+
+            setIsLoadingCloud(true);
+            try {
+                let query = supabase.from('user_assets')
+                    .select('data, updated_at, encryption_type')
+                    .eq('email', verifiedEmail);
+
+                // 날짜 검색 조건 (월별 or 일별)
+                if (targetDate.length === 7) { // YYYY-MM 형식인 경우 (월별 그룹화된 점 클릭 시)
+                    const start = `${targetDate}-01`;
+                    const end = `${targetDate}-31`; 
+                    // 해당 월의 가장 마지막(최신) 데이터를 가져옴
+                    query = query.gte('record_date', start).lte('record_date', end).order('record_date', { ascending: false });
+                } else {
+                    // YYYY-MM-DD 형식인 경우 (정확한 날짜 클릭 시)
+                    query = query.eq('record_date', targetDate);
+                }
+                
+                const { data, error } = await query.limit(1).maybeSingle();
+
+                if (error) throw error;
+                if (!data) {
+                    addToast('해당 날짜의 백업 데이터가 서버에 없습니다.', 'error');
+                    return;
+                }
+
+                // 데이터 복호화 및 적용 (fetchFromCloud 로직 재사용)
+                let decryptedData = data.data;
+                const encType = data.encryption_type;
+                if (encType && encType !== 'none') {
+                    const secret = (encType === 'secure') ? (userSecretKey || sessionStorage.getItem('assetDashboardSecretKey')) : null;
+                    const key = window.getEncryptionKey(encType, secret, verifiedEmail, SECURITY_KEY);
+                    if (!key) throw new Error('암호화 키를 생성할 수 없습니다. (비밀번호 확인 필요)');
+                    decryptedData = window.decryptData(data.data, key);
+                }
+
+                const actualAppData = decryptedData.appData || decryptedData;
+                const fullCloudData = decryptedData.appData ? decryptedData : { appData: actualAppData, scenarios: [], assetHistory: [] };
+
+                resetAppData(actualAppData);
+                if (fullCloudData.scenarios) setScenarios(fullCloudData.scenarios);
+                if (fullCloudData.assetHistory) setAssetHistory(fullCloudData.assetHistory);
+                
+                // 로컬 스토리지 업데이트 및 기준점 갱신
+                lastSavedDataRef.current = JSON.stringify(fullCloudData);
+                addToast(`${targetDate} 데이터를 성공적으로 불러왔습니다.`, 'success');
+            } catch (err) {
+                console.error(err);
+                addToast(`불러오기 실패: ${err.message}`, 'error');
+            } finally {
+                setIsLoadingCloud(false);
+            }
+        }, [supabase, verifiedEmail, isPro, userSecretKey, SECURITY_KEY, resetAppData, setScenarios, setAssetHistory, addToast]);
 
             // 구독 상태 확인 및 데이터 로드 함수
             const checkSubscription = React.useCallback(async (session, isManualCheck = false, localDataOverride = null) => {
@@ -2782,6 +2849,7 @@
 
                     let finalLabels = [];
                     let finalHistoryData = [];
+                    let sortedMonthKeys = []; // [추가] 클릭 이벤트 핸들링을 위해 키 저장
 
                     if (useMonthlyAverage) {
                         // 데이터가 많으면 월별 평균으로 그룹화
@@ -2795,7 +2863,7 @@
                             monthlyGroups[monthKey].count += 1;
                         });
 
-                        const sortedMonthKeys = Object.keys(monthlyGroups).sort();
+                        sortedMonthKeys = Object.keys(monthlyGroups).sort();
                         finalLabels = sortedMonthKeys.map(key => {
                             const [y, m] = key.split('-');
                             return `${y.slice(2)}년 ${m}월`;
@@ -2883,6 +2951,25 @@
                     });
                 }
 
+                // [추가] 차트 클릭 핸들러
+                const handleChartClick = (evt, elements) => {
+                    if (!elements || elements.length === 0) return;
+                    const index = elements[0].index;
+                    
+                    let targetDate = null;
+                    if (useMonthlyAverage) {
+                        // 월별 그룹화된 경우: YYYY-MM 키 사용
+                        if (index < sortedMonthKeys.length) targetDate = sortedMonthKeys[index];
+                    } else {
+                        // 개별 데이터인 경우: YYYY-MM-DD 날짜 사용
+                        if (index < assetHistory.length) targetDate = assetHistory[index].date;
+                    }
+
+                    if (targetDate) {
+                        loadHistorySnapshot(targetDate);
+                    }
+                };
+
                 // [최적화] 히스토리 차트도 updateOrCreateChart 패턴 적용 (직접 구현)
                 const chartConfig = {
                     type: 'line',
@@ -2893,6 +2980,8 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        onClick: handleChartClick, // [추가] 클릭 이벤트 연결
+                        onHover: (event, chartElement) => { event.native.target.style.cursor = chartElement[0] ? 'pointer' : 'default'; }, // [추가] 커서 변경
                         plugins: {
                             legend: { position: 'bottom', labels: { color: textColor } },
                             title: { display: false },
@@ -2941,7 +3030,7 @@
 
                 const timerId = setTimeout(renderHistoryChart, 50);
                 return () => clearTimeout(timerId);
-            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode]);
+            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode, loadHistorySnapshot]);
 
             // ===== 자산 관리 함수들 =====
             const addAsset = (sector) => setAssets(prev => ({
