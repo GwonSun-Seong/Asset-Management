@@ -1059,6 +1059,8 @@
             const [editingRebalanceSector, setEditingRebalanceSector] = useState(null); // [추가] 리밸런싱 상세 편집 섹터
             const [iconPickerState, setIconPickerState] = useState(null); // [추가] 아이콘 선택기 상태 { sector, index }
             const [isAIModalOpen, setIsAIModalOpen] = useState(false); // [추가] AI 분석 모달 상태
+            const [isHistoryActionModalOpen, setIsHistoryActionModalOpen] = useState(false); // [추가] 히스토리 액션 모달
+            const [pendingHistoryData, setPendingHistoryData] = useState(null); // [추가] 로드 대기 중인 히스토리 데이터
             
             // [추가] 메모 관련 상태
             const [currentMemoIndex, setCurrentMemoIndex] = useState(0);
@@ -1498,8 +1500,6 @@
             if (!supabase || !verifiedEmail) return addToast('로그인이 필요한 기능입니다.', 'error');
             if (!isPro) return setIsProModalOpen(true);
 
-            if (!confirm(`${targetDate} 시점의 데이터를 서버에서 불러오시겠습니까?\n⚠️ 현재 작업 중인 데이터는 덮어씌워집니다.`)) return;
-
             setIsLoadingCloud(true);
             try {
                 let query = supabase.from('user_assets')
@@ -1538,20 +1538,85 @@
                 const actualAppData = decryptedData.appData || decryptedData;
                 const fullCloudData = decryptedData.appData ? decryptedData : { appData: actualAppData, scenarios: [], assetHistory: [] };
 
-                resetAppData(actualAppData);
-                if (fullCloudData.scenarios) setScenarios(fullCloudData.scenarios);
-                if (fullCloudData.assetHistory) setAssetHistory(fullCloudData.assetHistory);
-                
-                // 로컬 스토리지 업데이트 및 기준점 갱신
-                lastSavedDataRef.current = JSON.stringify(fullCloudData);
-                addToast(`${targetDate} 데이터를 성공적으로 불러왔습니다.`, 'success');
+                // [수정] 즉시 적용하지 않고 모달을 통해 사용자 확인 (데이터 임시 저장)
+                setPendingHistoryData({
+                    date: targetDate,
+                    appData: actualAppData,
+                    // scenarios와 assetHistory는 덮어쓰지 않으므로 저장하지 않거나 참조만 함
+                });
+                setIsHistoryActionModalOpen(true);
+
             } catch (err) {
                 console.error(err);
                 addToast(`불러오기 실패: ${err.message}`, 'error');
             } finally {
                 setIsLoadingCloud(false);
             }
-        }, [supabase, verifiedEmail, isPro, userSecretKey, SECURITY_KEY, resetAppData, setScenarios, setAssetHistory, addToast]);
+        }, [supabase, verifiedEmail, isPro, userSecretKey, SECURITY_KEY, addToast]);
+
+        // [추가] 히스토리 액션 처리 (조회 vs 복구)
+        const confirmHistoryAction = (action) => {
+            if (!pendingHistoryData) return;
+            const { appData: pastAppData, date } = pendingHistoryData;
+
+            // 1. 과거 데이터로 앱 상태 변경 (히스토리/시나리오는 유지)
+            resetAppData(pastAppData);
+            
+            if (action === 'view') {
+                // 조회 모드: 클라우드 동기화 차단
+                setIsCloudLoaded(false); 
+                setSyncStatus('idle'); // 시각적 피드백
+                addToast("현재 조회 모드입니다. 수정을 해도 서버에 저장되지 않습니다. 최신으로 돌아가려면 새로고침하세요.", 'warning');
+            } else if (action === 'restore') {
+                // 복구 모드: 현재 상태를 오늘 날짜로 즉시 저장
+                setIsCloudLoaded(true);
+                // 현재 로컬의 히스토리와 시나리오를 유지한 채로 저장
+                const unifiedData = { 
+                    appData: pastAppData, 
+                    scenarios: scenariosRef.current, 
+                    assetHistory: assetHistoryRef.current 
+                };
+                saveToCloud(unifiedData, true); // Force save
+                addToast(`${date} 데이터를 오늘 시점으로 복구했습니다.`, 'success');
+            }
+            setIsHistoryActionModalOpen(false);
+            setPendingHistoryData(null);
+        };
+
+        // [추가] 히스토리 포인트 삭제 함수
+        const deleteHistoryPoint = (targetDate) => {
+            if (!confirm(`${targetDate} 기록을 삭제하시겠습니까?\n(서버 데이터는 유지되며, 로컬 히스토리 목록에서만 제외됩니다)`)) return;
+            
+            setAssetHistory(prev => {
+                const newHistory = prev.filter(item => item.date !== targetDate);
+                // 변경 사항 즉시 저장 (자동 저장 트리거)
+                return newHistory;
+            });
+            addToast(`${targetDate} 기록이 삭제되었습니다.`, 'info');
+        };
+
+        // [추가] 히스토리 차트 우클릭 핸들러 (컴포넌트 스코프로 이동)
+        const handleHistoryContextMenu = React.useCallback((e) => {
+            e.preventDefault(); // 기본 브라우저 메뉴 차단
+            const chart = chartInstancesRef.current['historyChart'];
+            if (!chart) return;
+
+            // React 합성 이벤트의 nativeEvent를 사용해야 Chart.js가 좌표를 정확히 인식함
+            const points = chart.getElementsAtEventForMode(e.nativeEvent, 'nearest', { intersect: true }, true);
+            
+            if (points.length > 0) {
+                const index = points[0].index;
+                // 데이터 그룹화 여부 판단 (MAX_HISTORY_POINTS = 24 기준)
+                const useMonthlyAverage = assetHistory.length > 24;
+                
+                if (!useMonthlyAverage && index < assetHistory.length) {
+                    const targetDate = assetHistory[index].date;
+                    deleteHistoryPoint(targetDate);
+                } else if (useMonthlyAverage) {
+                    addToast('월별 평균 보기 모드에서는 개별 삭제가 불가능합니다.', 'warning');
+                }
+            }
+        }, [assetHistory, deleteHistoryPoint]);
 
             // 구독 상태 확인 및 데이터 로드 함수
             const checkSubscription = React.useCallback(async (session, isManualCheck = false, localDataOverride = null) => {
@@ -3016,7 +3081,9 @@
                     if (chartInstancesRef.current['historyChart']) {
                         const chart = chartInstancesRef.current['historyChart'];
                         if (chart.canvas !== historyChartRef.current) {
-                            chart.destroy();
+                            chart.destroy(); // 캔버스 변경 시 파괴 후 재생성
+                            // 재생성은 아래 else 블록에서 처리되지 않으므로 여기서 생성하거나, 로직 흐름상 아래로 빠지게 해야 함.
+                            // 여기서는 간단히 재생성
                             chartInstancesRef.current['historyChart'] = new Chart(historyChartRef.current, chartConfig);
                         } else {
                             chart.data = chartConfig.data;
@@ -3030,7 +3097,7 @@
 
                 const timerId = setTimeout(renderHistoryChart, 50);
                 return () => clearTimeout(timerId);
-            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode, loadHistorySnapshot]);
+            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode, loadHistorySnapshot, deleteHistoryPoint]);
 
             // ===== 자산 관리 함수들 =====
             const addAsset = (sector) => setAssets(prev => ({
@@ -3323,14 +3390,18 @@
                                 }}
                                 className={`w-4 h-4 rounded focus:ring-blue-500 ${!isPro ? 'text-gray-400' : 'text-blue-600'}`}
                             />
-                            <span className={`text-xs font-semibold flex items-center gap-1 ${!isPro ? 'text-gray-500' : 'text-blue-700'}`}>
+                            <span className={`text-xs font-semibold flex items-center gap-1 select-none ${!isPro ? 'text-gray-500' : 'text-blue-700'}`}>
                                 {!isPro && <span>🔒</span>}
                                 미래 예상 자산 표시
                             </span>
                         </label>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 h-[600px] relative">
-                        <canvas ref={historyChartRef}></canvas>
+                        <canvas ref={historyChartRef} onContextMenu={handleHistoryContextMenu}></canvas>
+                        {/* [추가] 우클릭 이벤트 리스너를 위한 투명 오버레이 또는 캔버스 직접 제어 */}
+                        {/* Chart.js는 캔버스에 이벤트를 바인딩하므로, ref에 직접 리스너를 추가하는 것이 가장 확실함 */}
+                        {/* React ref callback을 사용하여 이벤트 리스너 부착 */}
+                        <div className="absolute top-2 right-2 text-[10px] text-gray-400 pointer-events-none">Tip: 점을 클릭하여 조회, 우클릭하여 삭제</div>
                     </div>
                 </>
             );
@@ -4862,6 +4933,12 @@
                         onClose={() => setIsAIModalOpen(false)} 
                         appData={appData} 
                         calculation={calculation} 
+                    />}
+                    {window.HistoryActionModal && <window.HistoryActionModal 
+                        isOpen={isHistoryActionModalOpen}
+                        onClose={() => { setIsHistoryActionModalOpen(false); setPendingHistoryData(null); }}
+                        date={pendingHistoryData?.date}
+                        onAction={confirmHistoryAction}
                     />}
                     </div>
             );

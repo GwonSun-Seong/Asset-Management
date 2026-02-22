@@ -23,6 +23,33 @@ window.Toast = ({ message, type, onClose }) => {
     );
 };
 
+// [추가] 히스토리 데이터 로드 액션 선택 모달
+window.HistoryActionModal = ({ isOpen, onClose, date, onAction }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[120] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in duration-300">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">📅 {date} 데이터 불러오기</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    과거 데이터를 어떻게 불러오시겠습니까?<br/>
+                    <span className="text-xs text-red-500">* 현재의 자산 히스토리와 시나리오 목록은 유지됩니다.</span>
+                </p>
+                <div className="space-y-3">
+                    <button onClick={() => onAction('view')} className="w-full p-4 text-left border rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
+                        <div className="font-bold text-blue-600 dark:text-blue-400 mb-1">1. 단순 조회 (View Only)</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">자동 저장이 차단됩니다. 데이터를 확인만 하고 싶을 때 선택하세요.</div>
+                    </button>
+                    <button onClick={() => onAction('restore')} className="w-full p-4 text-left border rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
+                        <div className="font-bold text-green-600 dark:text-green-400 mb-1">2. 오늘 데이터로 복구</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">이 시점의 자산 상태를 오늘 날짜의 데이터로 덮어씁니다.</div>
+                    </button>
+                </div>
+                <button onClick={onClose} className="w-full mt-4 py-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 text-sm">취소</button>
+            </div>
+        </div>
+    );
+};
+
 window.PrivacyPolicyModal = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
     return (
