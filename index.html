@@ -528,64 +528,93 @@
             const [isLoading, setIsLoading] = useState(false);
             const [marketItems, setMarketItems] = useState(window.INITIAL_MARKET_ITEMS || []);
 
-            // [추가] 실제 API 데이터 페칭 함수 (수동 새로고침 지원)
-            const fetchMarketData = React.useCallback(async () => {
+            // [추가] 상태 추적 및 재시도 로직을 위한 Ref
+            const marketItemsRef = useRef(marketItems);
+            useEffect(() => { marketItemsRef.current = marketItems; }, [marketItems]);
+            const retryTimeoutRef = useRef(null);
+
+            // [수정] 실제 API 데이터 페칭 함수 (수동 새로고침 및 자동 재시도 지원)
+            const fetchMarketData = React.useCallback(async (forceRefresh = false) => {
+                // forceRefresh가 이벤트 객체인 경우(버튼 클릭) true로 처리
+                const isForce = typeof forceRefresh === 'boolean' ? forceRefresh : true;
+                
+                if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
                 setIsLoading(true);
-                    try {
-                        // 병렬로 데이터 요청
-                        // [수정] allSettled를 사용하여 일부 요청이 실패해도 나머지는 업데이트되도록 개선
-                        const results = await Promise.allSettled([
-                            window.fetchYahooData('KRW=X'),   // 0: 환율
-                            window.fetchYahooData('^GSPC'),   // 1: S&P 500
-                            window.fetchYahooData('^IXIC'),   // 2: NASDAQ
-                            window.fetchYahooData('GC=F'),    // 3: 금 선물
-                            window.fetchBitcoinData()         // 4: 비트코인
-                        ]);
 
-                        const getData = (idx) => results[idx].status === 'fulfilled' ? results[idx].value : null;
-                        const usdData = getData(0);
-                        const sp500Data = getData(1);
-                        const nasdaqData = getData(2);
-                        const goldData = getData(3);
-                        const btcData = getData(4);
+                const targets = [
+                    { name: 'USD/KRW', fn: () => window.fetchYahooData('KRW=X') },
+                    { name: 'S&P 500', fn: () => window.fetchYahooData('^GSPC') },
+                    { name: 'NASDAQ', fn: () => window.fetchYahooData('^IXIC') },
+                    { name: 'Gold', fn: () => window.fetchYahooData('GC=F') },
+                    { name: 'Bitcoin', fn: () => window.fetchBitcoinData() }
+                ];
 
-                        // 상태 업데이트 헬퍼
-                        const updateItem = (item, data, isCurrency = false) => {
-                            if (!data) return item;
-                            const sign = data.change >= 0 ? '+' : '';
-                            const color = data.change >= 0 ? 'red' : 'blue'; // 한국식: 상승=빨강
-                            const formattedValue = isCurrency 
-                                ? `$${data.price.toLocaleString(undefined, {maximumFractionDigits: 2})}`
-                                : data.price.toLocaleString(undefined, {maximumFractionDigits: 2});
+                // 강제 새로고침이거나 아직 실시간 데이터가 없는 항목만 필터링
+                const itemsToFetch = isForce 
+                    ? targets 
+                    : targets.filter(t => {
+                        const item = marketItemsRef.current.find(m => m.name === t.name);
+                        return item && !item.isLive;
+                    });
 
-                            return {
-                                ...item,
-                                value: formattedValue,
-                                change: `${sign}${data.change.toFixed(2)}%`,
-                                color: color,
-                        data: data.data,
-                        isLive: true // [수정] 데이터 로드 성공 시 실시간 상태 반영
-                            };
-                        };
-                        
-                        setMarketItems(prev => prev.map(item => {
-                            if (item.name === 'USD/KRW') return updateItem(item, usdData, false);
-                            if (item.name === 'S&P 500') return updateItem(item, sp500Data, false);
-                            if (item.name === 'NASDAQ') return updateItem(item, nasdaqData, false);
-                            if (item.name === 'Gold') return updateItem(item, goldData, true);
-                            if (item.name === 'Bitcoin') return updateItem(item, btcData, true);
-                            return item;
-                        }));
-                        
-                    } catch (e) {
-                        console.warn("Market data fetch failed, using fallback data", e);
-                    } finally {
-                        setIsLoading(false);
+                if (itemsToFetch.length === 0) {
+                    setIsLoading(false);
+                    return;
+                }
+
+                try {
+                    const results = await Promise.allSettled(
+                        itemsToFetch.map(t => t.fn().then(data => ({ ...t, data })))
+                    );
+
+                    let failCount = 0;
+
+                    setMarketItems(prev => {
+                        const next = [...prev];
+                        results.forEach(res => {
+                            if (res.status === 'fulfilled' && res.value.data) {
+                                const { name, data } = res.value;
+                                const idx = next.findIndex(item => item.name === name);
+                                if (idx === -1) return;
+
+                                const item = next[idx];
+                                const sign = data.change >= 0 ? '+' : '';
+                                const color = data.change >= 0 ? 'red' : 'blue';
+                                const formattedValue = (item.name === 'Gold' || item.name === 'Bitcoin') 
+                                    ? `$${data.price.toLocaleString(undefined, {maximumFractionDigits: 2})}`
+                                    : data.price.toLocaleString(undefined, {maximumFractionDigits: 2});
+
+                                next[idx] = {
+                                    ...item,
+                                    value: formattedValue,
+                                    change: `${sign}${data.change.toFixed(2)}%`,
+                                    color: color,
+                                    data: data.data,
+                                    isLive: true
+                                };
+                            } else {
+                                failCount++;
+                            }
+                        });
+                        return next;
+                    });
+
+                    // 실패한 항목이 있으면 3초 후 자동으로 다시 시도
+                    if (failCount > 0) {
+                        retryTimeoutRef.current = setTimeout(() => fetchMarketData(false), 3000);
                     }
+
+                } catch (e) {
+                    console.warn("Market data fetch failed", e);
+                    retryTimeoutRef.current = setTimeout(() => fetchMarketData(false), 5000);
+                } finally {
+                    setIsLoading(false);
+                }
             }, []);
 
             useEffect(() => {
-                fetchMarketData();
+                fetchMarketData(true);
+                return () => { if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current); };
             }, [fetchMarketData]);
 
             const currentItem = marketItems[currentIndex];

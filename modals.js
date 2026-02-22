@@ -289,9 +289,19 @@ window.OnboardingGuide = ({ isOpen, onClose, scrollToPanel, isPro }) => {
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">{current.content}</p>
                 <div className="flex justify-between items-center">
                     <button onClick={onClose} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 underline">Skip</button>
-                    <button onClick={() => currentStep < ONBOARDING_STEPS.length - 1 ? setCurrentStep(s => s + 1) : onClose()} className="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md">
-                        {currentStep === ONBOARDING_STEPS.length - 1 ? '시작하기' : '다음'}
-                    </button>
+                    <div className="flex gap-2">
+                        {currentStep > 0 && (
+                            <button 
+                                onClick={() => setCurrentStep(s => s - 1)} 
+                                className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 shadow-sm dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors"
+                            >
+                                이전
+                            </button>
+                        )}
+                        <button onClick={() => currentStep < ONBOARDING_STEPS.length - 1 ? setCurrentStep(s => s + 1) : onClose()} className="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md transition-colors">
+                            {currentStep === ONBOARDING_STEPS.length - 1 ? '시작하기' : '다음'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

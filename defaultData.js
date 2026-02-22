@@ -16,14 +16,14 @@ const publicDefaultData = {
             { id: 'def-dep-2', name: '생활비통장', amount: 450, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
         ],
         savings: [
-            { id: 'def-sav-1', name: '청년도약계좌', amount: 400, rate: 6.0, feeRate: 0, monthlyContrib: 20, extraContrib: 0, extraFrom: '' },
+            { id: 'def-sav-1', name: '청년도약계좌', amount: 400, rate: 6.0, feeRate: 0, monthlyContrib: 30, extraContrib: 0, extraFrom: '' },
             { id: 'def-sav-2', name: '청약저축', amount: 100, rate: 6.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
         ],
         investment: [
-            { id: 'def-inv-1', name: '직접투자계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 20, extraContrib: 0, extraFrom: '' },
+            { id: 'def-inv-1', name: '직접투자계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' },
             { id: 'def-inv-2', name: 'ISA계좌', amount: 250, rate: 10.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' },
-            { id: 'def-inv-3', name: '금투자', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' },
-            { id: 'def-inv-4', name: '비트코인', amount: 50, rate: 12.0, feeRate: 0, monthlyContrib: 5, extraContrib: 0, extraFrom: '' }
+            { id: 'def-inv-3', name: '금투자', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 5, extraContrib: 0, extraFrom: '' },
+            { id: 'def-inv-4', name: '비트코인', amount: 50, rate: 12.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
         ],
         pension: [
             { id: 'def-pen-1', name: '연금저축', amount: 100, rate: 10.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
@@ -52,8 +52,8 @@ const publicDefaultData = {
         ]
     },
     monthlyExpenses: [
-        { name: '생활비', amount: 120, day: 15 }, // [수정] 지출일 추가
-        { name: '월세', amount: 50, day: 25 }
+        { name: '생활비', amount: 80, day: 15 }, // [수정] 지출일 추가
+        { name: '월세', amount: 40, day: 25 }
     ],
     expenseEvents: [
         {
