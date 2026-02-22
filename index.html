@@ -93,7 +93,7 @@
         );
 
         // [통합] SummaryPanel.js 내용 (CORS 오류 해결을 위해 파일 병합)
-        const AssetSummaryCard = ({ calculation, projectionMonths, baseMonth, displayMode }) => {
+        const AssetSummaryCard = ({ calculation, projectionMonths, baseMonth, baseDate, displayMode }) => {
             const formatNumber = window.formatNumber || ((n) => Number(n || 0).toLocaleString());
             const formatPercent = window.formatPercent || ((n) => (Number(n || 0)).toFixed(1));
             const TEXTS = window.TEXTS || {};
@@ -126,7 +126,11 @@
                         </div>
                     </div>
                     <div className="mt-6"> 
-                        <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">{projectionMonths}{TEXTS.summary?.projectedTotal || "개월 후 예상"} <span className="text-gray-400 text-sm">({(() => { try { const [y,m]= (baseMonth||'').split('-').map(Number); const d = new Date(y||new Date().getFullYear(), (m||1)-1, 1); d.setMonth(d.getMonth()+projectionMonths); return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`; } catch { return ''; } })()})</span></h2>
+                        <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">{projectionMonths}{TEXTS.summary?.projectedTotal || "개월 후 예상"} <span className="text-gray-400 text-sm">({(() => { 
+                            try { 
+                                const [y,m]= (baseDate || baseMonth || '').split('-').map(Number); 
+                                const d = new Date(y||new Date().getFullYear(), (m||1)-1, 1); d.setMonth(d.getMonth()+projectionMonths); return `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth()+1).padStart(2,'0')}월`; 
+                            } catch { return ''; } })()})</span></h2>
                         <div className="flex items-end gap-2">
                             <p className="text-3xl font-bold text-green-600 dark:text-green-400">{formatNumber(calculation.projectedGross, displayMode)}만원</p>
                             <span className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">(순자산 {formatNumber(calculation.projectedNet, displayMode)}만원)</span>
@@ -1300,13 +1304,17 @@
 
             setSyncStatus('syncing');
             try {
+                    // [수정] 클라우드 저장 시에도 로컬 날짜 기준 사용 (히스토리와 일관성 유지)
+                    const now = new Date();
+                    const recordDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
                 await withRetry(() => supabase.auth.refreshSession());
                 const { data, error } = await withRetry(() => 
                     supabase.from('user_assets').upsert({ 
                         email: targetEmail, data: payloadData,
                         encryption_type: targetPro ? targetMode : null,
                         updated_at: new Date().toISOString(),
-                        record_date: new Date().toISOString().split('T')[0]
+                            record_date: recordDate
                     }, { onConflict: 'email,record_date' }).select('updated_at').single()
                 );
                 if (error) throw error;
@@ -1780,7 +1788,11 @@
             const saveCurrentAsset = () => {
                 try {
                     const now = new Date();
-                    const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
+                    // [수정] UTC 대신 로컬 시간 기준으로 날짜 생성 (새벽 시간대 날짜 불일치 해결)
+                    const year = now.getFullYear();
+                    const month = String(now.getMonth() + 1).padStart(2, '0');
+                    const day = String(now.getDate()).padStart(2, '0');
+                    const currentDate = `${year}-${month}-${day}`;
                     const currentTime = now.toTimeString().split(' ')[0]; // HH:MM:SS
                     const netWorth = calculation?.grand || 0;
                     
@@ -1874,12 +1886,17 @@
                 }
             };
 
+            // [추가] 로컬 시간 기준 기본값 생성 (새벽 시간대 날짜 오류 방지)
+            const now = new Date();
+            const localDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const localMonthStr = localDateStr.slice(0, 7);
+
             // ===== 기본값 설정 (appData가 없을 때도 안전하게) =====
             const {
                 projectionMonths = 12, monthlySalary = 280, assets = {}, monthlyExpenses = [],
                 targetAmount = 10000, 
                 goalMode = 'period', displayMode = 'amount',
-                rebalancingAlerts = {}, baseMonth = new Date().toISOString().slice(0,7),
+                rebalancingAlerts = {}, baseMonth = localMonthStr, // [수정] UTC 대신 로컬 시간 사용
                 rebalanceMonths = 12, // [추가] 리밸런싱 목표 기간
                 mainCashFlowAccount = '생활비통장',
                 residualAccount = '생활비통장', // [추가] 잔여액 저축 계좌
@@ -1890,7 +1907,7 @@
                 incomeEvents = [],
                 expenseEvents = [],
                 salaryDay = 25,
-                baseDate = new Date().toISOString().slice(0,10) // [변경] 기본값
+                baseDate = localDateStr // [수정] UTC 대신 로컬 시간 사용
             } = appData || {};
 
             // ===== Setter 함수들 =====
@@ -2123,7 +2140,9 @@
                 
                 // [추가] 인쇄 시 파일명이 페이지 제목으로 설정되는 점을 이용해 파일명 지정
                 const originalTitle = document.title;
-                const fileName = `자산분석보고서_${new Date().toISOString().split('T')[0]}`;
+                const now = new Date();
+                const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                const fileName = `자산분석보고서_${dateStr}`;
                 document.title = fileName;
 
                 window.print();
@@ -2137,7 +2156,9 @@
             // ===== 시나리오 관리 함수들 =====
             const saveScenario = () => {
                 // [수정] 시나리오 저장 시 깔끔한 기본 이름 제공 (지저분한 자동완성 방지)
-                const name = prompt('시나리오 이름을 입력하세요:', `시나리오 ${new Date().toISOString().slice(0,10)}`);
+                const now = new Date();
+                const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                const name = prompt('시나리오 이름을 입력하세요:', `시나리오 ${dateStr}`);
                 if (name && name.trim()) {
                     const newScenario = {
                         id: Date.now(),

@@ -1,5 +1,14 @@
 // defaultData.js - 기본 데이터와 설정 관리 파일
 
+// [추가] 로컬 시간 기준 날짜 문자열 생성 헬퍼 (초기 데이터용)
+const getLocalToday = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 // 공개용 기본값 (제3자 공개 시 사용)
 const publicDefaultData = {
     projectionMonths: 12,
@@ -44,7 +53,7 @@ const publicDefaultData = {
                 repaymentMethod: '원리금균등',
                 repaymentAccount: '생활비통장',
                 maturityMonth: 10,
-                loanStartDate: new Date().toISOString().slice(0,7)
+                loanStartDate: getLocalToday().slice(0,7)
             }
         ],
         misc: [
@@ -59,7 +68,7 @@ const publicDefaultData = {
         {
             name: '휴대폰 할부',
             amount: 5,
-            startMonth: new Date().toISOString().slice(0,7),
+            startMonth: getLocalToday().slice(0,7),
             endMonth: (() => { const d = new Date(); d.setMonth(d.getMonth() + 23); return d.toISOString().slice(0,7); })(),
             day: 20, // [추가] 이벤트 발생일
             targetSector: 'deposit',
@@ -77,7 +86,7 @@ const publicDefaultData = {
     },
     simpleThresholds: { warning: 5, danger: 10 },
     rebalancingTargets: { deposit: 10, savings: 15, investment: 55, pension: 20, realestate: 0, car: 0, misc: 0 },
-    baseDate: new Date().toISOString().slice(0,10), // [변경] baseMonth -> baseDate (YYYY-MM-DD)
+    baseDate: getLocalToday(), // [변경] baseMonth -> baseDate (YYYY-MM-DD)
     mainCashFlowAccount: '생활비통장',
     memo: '' // [추가] 메모 기능
 };
