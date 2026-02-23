@@ -1,6 +1,17 @@
 // modals.js - 모달 및 가이드 컴포넌트 모음
 const { useState, useMemo, useEffect, useRef } = React;
 
+// [이동] 스마트 툴팁 가이드 컴포넌트 (index.html -> modals.js)
+window.TooltipGuide = ({ tip }) => (
+    <span className="group relative inline-block ml-1 align-middle">
+        <svg className="w-4 h-4 text-gray-400 cursor-help hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-56 p-2.5 bg-gray-800/95 backdrop-blur text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 text-center leading-relaxed border border-gray-700 font-normal block">
+            {tip}
+            <span className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800/95"></span>
+        </span>
+    </span>
+);
+
 // [추가] 토스트 알림 컴포넌트
 window.Toast = ({ message, type, onClose }) => {
     useEffect(() => {
@@ -236,103 +247,56 @@ window.ProFeaturesModal = ({ isOpen, onClose }) => {
     );
 };
 
-window.OnboardingGuide = ({ isOpen, onClose, scrollToPanel, isPro }) => {
-    const [currentStep, setCurrentStep] = useState(0);
-    const [spotlightStyle, setSpotlightStyle] = useState(null);
-    const tooltipRef = useRef(null);
-    const ONBOARDING_STEPS = window.ONBOARDING_STEPS || [];
+window.OnboardingGuide = ({ isOpen, onClose }) => {
+    const { useEffect } = React;
 
     useEffect(() => {
         if (isOpen) {
-            const step = ONBOARDING_STEPS[currentStep];
+            // 이미 드라이버가 실행 중인지 확인 (중복 실행 방지)
+            if (document.querySelector('.driver-active')) return;
+
             const isMobile = window.innerWidth < 640;
-            const targetId = (isMobile && step.id === 'header-actions') ? 'mobile-menu-trigger' : step.id;
-            const el = document.getElementById(targetId);
-            if (el) {
-                // 1. 타겟 요소로 스크롤
-                el.scrollIntoView({ behavior: 'auto', block: 'center' });
-                
-                const updatedRect = el.getBoundingClientRect();
-                const padding = 10;
-                const tooltipHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 220;
-                const tooltipWidth = tooltipRef.current ? tooltipRef.current.offsetWidth : 320;
-                
-                let tooltipTop, tooltipLeft;
-                if (isMobile) {
-                    tooltipTop = window.scrollY + (window.innerHeight - tooltipHeight) / 2;
-                    tooltipLeft = (window.innerWidth - tooltipWidth) / 2;
-                } else {
-                    if (updatedRect.top < window.innerHeight / 2) {
-                        tooltipTop = updatedRect.bottom + window.scrollY + 15;
-                    } else {
-                        tooltipTop = updatedRect.top + window.scrollY - tooltipHeight - 15;
-                    }
-                    tooltipLeft = Math.min(window.innerWidth - 340, Math.max(20, updatedRect.left + window.scrollX + (updatedRect.width / 2) - 160));
+            const steps = (window.ONBOARDING_STEPS || []).map(step => {
+                let targetId = step.id;
+                // 모바일 대응: 헤더 액션이 햄버거 메뉴로 숨겨져 있을 경우 타겟 변경
+                if (isMobile && step.id === 'header-actions') {
+                    targetId = 'mobile-menu-trigger';
                 }
+                
+                // 요소가 화면에 실제로 존재하는지 확인 (사용자가 패널 순서를 바꿨거나 숨겼을 수 있음)
+                const el = document.getElementById(targetId);
+                if (!el) return null;
 
-                setSpotlightStyle({
-                    top: updatedRect.top + window.scrollY - padding,
-                    left: updatedRect.left + window.scrollX - padding,
-                    width: updatedRect.width + (padding * 2),
-                    height: updatedRect.height + (padding * 2),
-                    tooltipTop: tooltipTop,
-                    tooltipLeft: tooltipLeft
-                });
+                return {
+                    element: `#${targetId}`,
+                    popover: {
+                        title: step.title,
+                        description: step.content,
+                        side: "bottom",
+                        align: 'start'
+                    }
+                };
+            }).filter(Boolean); // 존재하지 않는 요소의 단계는 제외
 
-                // 2. 부드러운 슬라이드 애니메이션 (1초 대기 후 시작)
-                const timer = setTimeout(() => {
-                    const tHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 220;
-                    const targetY = tooltipTop - (window.innerHeight / 2) + (tHeight / 2);
-                    const startY = window.scrollY;
-                    const distance = targetY - startY;
-                    const duration = 1500;
-                    let startTime = null;
-                    const smoothStep = (currentTime) => {
-                        if (!startTime) startTime = currentTime;
-                        const timeElapsed = currentTime - startTime;
-                        const progress = Math.min(timeElapsed / duration, 1);
-                        const easing = progress < 0.5 ? 4 * progress * progress * progress : (progress - 1) * (2 * progress - 2) * (2 * progress - 2) + 1;
-                        window.scrollTo(0, startY + distance * easing);
-                        if (timeElapsed < duration) requestAnimationFrame(smoothStep);
-                    };
-                    requestAnimationFrame(smoothStep);
-                }, 1000);
-                return () => clearTimeout(timer);
-            }
+            const driverObj = window.driver.js.driver({
+                steps: steps, // [수정] setSteps 대신 설정 객체에 직접 주입
+                showProgress: true,
+                animate: true,
+                allowClose: true,
+                doneBtnText: '시작하기',
+                nextBtnText: '다음',
+                prevBtnText: '이전',
+                progressText: '{{current}} / {{total}}',
+                onDestroyed: () => {
+                    onClose(); // 투어가 끝나거나 닫힐 때 상태 업데이트
+                }
+            });
+
+            driverObj.drive();
         }
-    }, [currentStep, isOpen]);
+    }, [isOpen, onClose]);
 
-    if (!isOpen || !spotlightStyle) return null;
-    const current = ONBOARDING_STEPS[currentStep];
-
-    return (
-        <div className="absolute inset-0 z-[9999] pointer-events-none overflow-hidden transition-colors duration-500" style={{ height: document.documentElement.scrollHeight }}>
-            <div className="absolute rounded-lg transition-all duration-500 ease-in-out pointer-events-auto" style={{ top: spotlightStyle.top, left: spotlightStyle.left, width: spotlightStyle.width, height: spotlightStyle.height, boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.7)' }} />
-            <div ref={tooltipRef} className="absolute pointer-events-auto w-72 sm:w-80 bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 transition-all duration-500" style={{ top: spotlightStyle.tooltipTop, left: spotlightStyle.tooltipLeft }}>
-                <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Step {currentStep + 1} of {ONBOARDING_STEPS.length}</span>
-                </div>
-                <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-2">{current.title}</h4>
-                <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">{current.content}</p>
-                <div className="flex justify-between items-center">
-                    <button onClick={onClose} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 underline">Skip</button>
-                    <div className="flex gap-2">
-                        {currentStep > 0 && (
-                            <button 
-                                onClick={() => setCurrentStep(s => s - 1)} 
-                                className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 shadow-sm dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors"
-                            >
-                                이전
-                            </button>
-                        )}
-                        <button onClick={() => currentStep < ONBOARDING_STEPS.length - 1 ? setCurrentStep(s => s + 1) : onClose()} className="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md transition-colors">
-                            {currentStep === ONBOARDING_STEPS.length - 1 ? '시작하기' : '다음'}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
+    return null; // Driver.js가 DOM을 직접 제어하므로 React 렌더링은 불필요
 };
 
 // [추가] 통합 설정 모달 (PRO 전용)
