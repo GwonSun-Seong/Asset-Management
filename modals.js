@@ -653,11 +653,17 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                     const assets = appData.assets[k] || [];
                     if (assets.length > 0 && window.sectorInfo[k]) {
                         const isLoan = k === 'loan';
-                        const rateLabel = isLoan ? '이자율' : '수익률';
-                        acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(현재 ${Math.round(a.amount)}만원, ${rateLabel} ${a.rate || 0}%, 월납입 ${a.monthlyContrib || 0}만원)`).join(', ');
+                        if (isLoan) {
+                            // [수정] 대출일 경우 상환 방식과 만기 정보를 포함하여 더 구체적으로 전송
+                            acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(현재 ${Math.round(a.amount)}만원, 이자율 ${a.rate || 0}%, 월납입 ${a.monthlyContrib || 0}만원, ${a.repaymentMethod || '원리금균등'}, 만기 ${a.maturityMonth || 0}개월 남음)`).join(', ');
+                        } else {
+                            acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(현재 ${Math.round(a.amount)}만원, 수익률 ${a.rate || 0}%, 월납입 ${a.monthlyContrib || 0}만원)`).join(', ');
+                        }
                     }
                     return acc;
                 }, {}),
+                // [추가] 사용자가 설정한 리밸런싱 목표 비중 전송 (AI가 목표 대비 현재 상태를 분석하도록 함)
+                targetRatios: appData.rebalancingTargets,
                 memo: appData.memo || '내용 없음',
                 fixedExpenses: (appData.monthlyExpenses || []).map(e => `${e.name}(${e.amount}만원)`).join(', '),
                 futureEvents: {
@@ -784,7 +790,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                                 <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                             </select>
                         </div>
-                        <div className="flex-1 flex gap-2">
+                        <div className="flex-1 flex flex-col sm:flex-row gap-2">
                             <input 
                                 type="password" 
                                 placeholder="Gemini API Key 입력" 
@@ -795,7 +801,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                             <button 
                                 onClick={handleAnalyze} 
                                 disabled={loading || !apiKey}
-                                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center gap-2 whitespace-nowrap"
+                                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap"
                             >
                                 {loading ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> 분석 중...</> : '분석 시작'}
                             </button>
