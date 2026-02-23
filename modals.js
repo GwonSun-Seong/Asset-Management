@@ -500,7 +500,6 @@ window.IconPickerModal = ({ isOpen, onClose, onSelect, currentIcon }) => {
 
 // [수정] 데이터 내보내기/불러오기 모달 (기존 로직 복구 및 버튼 액션 수정)
 window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initialMode = 'export' }) => {
-    if (!isOpen) return null;
     const [mode, setMode] = useState(initialMode);
     const [inputValue, setInputValue] = useState('');
     const [exportString, setExportString] = useState('');
@@ -566,6 +565,8 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
         }
     };
 
+    if (!isOpen) return null;
+
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
@@ -604,9 +605,6 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
 
 // [이동] AI 자산 분석 모달 (Gemini API 활용) - 커스텀 입력 제거됨
 window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
-    if (!isOpen) return null;
-    const { useState, useRef, useEffect } = React;
-
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
     const [model, setModel] = useState('gemini-3-flash-preview'); // [수정] 안정적인 모델명으로 기본값 변경
     const [persona, setPersona] = useState(() => localStorage.getItem('asset_ai_persona') || '냉철한 전문 자산 관리사');
@@ -628,7 +626,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
     const messagesEndRef = useRef(null);
 
     const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    useEffect(() => { scrollToBottom(); }, [messages, showSettings]);
+    useEffect(() => { if (isOpen) scrollToBottom(); }, [messages, showSettings, isOpen]);
 
     const handleAnalyze = async () => {
         const trimmedKey = apiKey.trim();
@@ -748,6 +746,8 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
             setLoading(false);
         }
     };
+
+    if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -914,16 +914,15 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
 
 // [추가] 자본소득(Cash Flow) 분석 모달
 window.CapitalIncomeAnalysisModal = ({ isOpen, onClose, appData, projections }) => {
-    if (!isOpen) return null;
-    const { useMemo } = React;
-
     const monthlyExpenseTotal = useMemo(() => 
-        (appData.monthlyExpenses || []).reduce((sum, e) => sum + (e.amount || 0), 0), 
-    [appData.monthlyExpenses]);
+        isOpen ? (appData.monthlyExpenses || []).reduce((sum, e) => sum + (e.amount || 0), 0) : 0, 
+    [appData.monthlyExpenses, isOpen]);
 
     const { flows, goldenCross } = useMemo(() => 
-        window.calculateCapitalIncomeFlow(projections, appData.assets, monthlyExpenseTotal),
-    [projections, appData.assets, monthlyExpenseTotal]);
+        isOpen ? window.calculateCapitalIncomeFlow(projections, appData.assets, monthlyExpenseTotal) : { flows: [], goldenCross: null },
+    [projections, appData.assets, monthlyExpenseTotal, isOpen]);
+
+    if (!isOpen) return null;
 
     // 차트 렌더링 계산
     const maxVal = Math.max(...flows.map(f => f.capitalIncome), monthlyExpenseTotal * 1.5);
