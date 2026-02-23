@@ -18,7 +18,6 @@
     <script src="config.js"></script>
     <script type="text/babel" src="modals.js"></script>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-    <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.css"/>
     <script src="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.js.iife.js"></script>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
@@ -152,16 +151,6 @@
                 }
             }
         })();
-    </script>
-    <script>
-        // [추가] PWA 서비스 워커 등록
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('Service Worker registered'))
-                    .catch(err => console.log('Service Worker registration failed: ', err));
-            });
-        }
     </script>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200 font-sans">
@@ -2406,6 +2395,16 @@
 
                 const localTotalMonthlyExpense = (appData.monthlyExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
                 
+                // [추가] 예산 초과 검증 변수 계산
+                const localMonthlySalary = Number(appData.monthlySalary || 0);
+                const localMaxContrib = Math.max(0, localMonthlySalary - localTotalMonthlyExpense);
+                let localTotalContrib = 0;
+                Object.values(appData.assets).forEach(arr => {
+                    if (Array.isArray(arr)) {
+                        arr.forEach(a => localTotalContrib += Number(a.monthlyContrib || 0));
+                    }
+                });
+                
                 // 1. High-Precision Initial Metrics
                 let currentTotal = 0;
                 let totalNetProfitMonthlyInitial = 0;
@@ -2622,8 +2621,17 @@
 
                 const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate, baseDate }, months);
 
+                // [추가] 월납입 한도 초과 시 경고 목록에 추가 (플로팅 버튼 트리거용)
+                if (localTotalContrib > localMaxContrib) {
+                    warnings.unshift({
+                        month: '설정',
+                        type: 'budget',
+                        message: `월납입 한도 초과! ${window.formatNumber(localTotalContrib - localMaxContrib)}만원이 부족합니다. (가용: ${window.formatNumber(localMaxContrib)}만원)`
+                    });
+                }
+
                 if (!monthlyProjections || monthlyProjections.length === 0) {
-                    return { error: true, warnings: [] };
+                    return { error: true, warnings: warnings };
                 }
 
                 const initialProjection = monthlyProjections[0] || {};
@@ -4954,10 +4962,6 @@
                     {window.SuggestionModal && <window.SuggestionModal isOpen={isSuggestionModalOpen} onClose={() => setIsSuggestionModalOpen(false)} onSubmit={handleSuggestionSubmit} />}
                     {window.ProFeaturesModal && <window.ProFeaturesModal isOpen={isProModalOpen} onClose={() => setIsProModalOpen(false)} />}
                     
-                    {calculation.warnings?.length > 0 && (
-                        <div className="fixed inset-0 border-[6px] border-red-500 pointer-events-none z-[9999] animate-pulse opacity-60"></div>
-                    )}
-
                     {/* Mobile Floating Quick Panel (Upgrade) */}
                     <button 
                         onClick={() => setIsQuickPanelOpen(true)}
@@ -4968,6 +4972,35 @@
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
                         </svg>
                     </button>
+
+                    {/* [수정] 경고 발생 시 화면 전체 테두리 대신 좌측 하단 플로팅 배지 표시 */}
+                    {calculation.warnings?.length > 0 && (
+                        <div className="fixed bottom-6 left-6 z-[90] group">
+                            {/* [추가] 에러 상세 내용 툴팁 (Hover 시 표시) */}
+                            <div className="absolute bottom-full left-0 mb-3 w-72 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-red-100 dark:border-red-900/50 p-4 text-xs text-gray-700 dark:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto transform translate-y-2 group-hover:translate-y-0 duration-200">
+                                <div className="font-bold text-red-600 dark:text-red-400 mb-2 border-b border-red-100 dark:border-red-900/50 pb-2 flex justify-between items-center">
+                                    <span>⚠️ 발견된 문제점</span>
+                                    <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px]">{calculation.warnings.length}건</span>
+                                </div>
+                                <ul className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                                    {calculation.warnings.slice(0, 5).map((w, i) => (
+                                        <li key={i} className="flex gap-2 items-start">
+                                            <span className="text-red-500 mt-0.5">•</span>
+                                            <span className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">[{w.month === '설정' ? '설정' : `${w.month}개월`}]</span> {w.message}</span>
+                                        </li>
+                                    ))}
+                                    {calculation.warnings.length > 5 && <li className="text-center text-gray-400 pt-1 italic">...외 {calculation.warnings.length - 5}건 더보기</li>}
+                                </ul>
+                            </div>
+                            <button 
+                                onClick={() => scrollToPanel('summary')}
+                                className="bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-full shadow-lg flex items-center gap-2 transition-all hover:scale-105 animate-in slide-in-from-bottom-2"
+                            >
+                                <svg className="w-5 h-5 group-hover:animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                <span className="text-sm font-bold">설정 주의 ({calculation.warnings.length})</span>
+                            </button>
+                        </div>
+                    )}
 
                     {/* [수정] 모바일 퀵 메뉴를 modals.js로 이동 */}
                     {window.MobileQuickMenu && <window.MobileQuickMenu 
