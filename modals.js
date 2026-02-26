@@ -1033,24 +1033,47 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
     // 데이터 로드
     useEffect(() => {
         if (!isOpen || !supabase) return;
-        fetchStats();
-        if (activeTab === 'users') fetchUsers();
-        if (activeTab === 'notice') fetchNotice();
+        
+        // [수정] 세션 강제 갱신 및 데이터 로드 (권한 문제 해결)
+        const loadData = async () => {
+            const { error: sessionError } = await supabase.auth.refreshSession();
+            if (sessionError) console.warn('Session refresh warning:', sessionError);
+
+            fetchStats();
+            if (activeTab === 'users') fetchUsers();
+            if (activeTab === 'notice') fetchNotice();
+        };
+        loadData();
     }, [isOpen, activeTab, supabase]);
 
     const fetchStats = async () => {
-        const { count: total } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true });
-        const { count: pro } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('is_paid', true);
+        // [수정] 에러 핸들링 추가
+        const { count: total, error: totalError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true });
+        if (totalError) console.error('Stats Error (Total):', totalError);
+
+        const { count: pro, error: proError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('is_paid', true);
+        if (proError) console.error('Stats Error (Pro):', proError);
+
         setStats({ totalUsers: total || 0, proUsers: pro || 0 });
     };
 
     const fetchUsers = async () => {
         setIsLoading(true);
-        let query = supabase.from('user_profiles').select('*').order('created_at', { ascending: false }).limit(50);
-        if (searchQuery) query = query.ilike('email', `%${searchQuery}%`);
-        const { data } = await query;
-        setUsers(data || []);
-        setIsLoading(false);
+        try {
+            let query = supabase.from('user_profiles').select('*').order('created_at', { ascending: false }).limit(50);
+            if (searchQuery) query = query.ilike('email', `%${searchQuery}%`);
+            
+            // [수정] 에러 핸들링 및 사용자 알림 추가
+            const { data, error } = await query;
+            if (error) throw error;
+            
+            setUsers(data || []);
+        } catch (err) {
+            console.error('Users Fetch Error:', err);
+            alert('유저 목록을 불러오는 중 오류가 발생했습니다: ' + err.message);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const toggleUserPro = async (userId, currentStatus) => {
