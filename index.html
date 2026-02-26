@@ -1820,12 +1820,6 @@
                         setIsPro(proStatus);
                         setIsAdmin(isAdminUser);
 
-                        // [추가] 공지사항 확인 (모든 사용자)
-                        const { data: notice } = await supabase.from('notices')
-                            .select('content').eq('is_active', true)
-                            .order('created_at', { ascending: false }).limit(1).maybeSingle();
-                        if (notice) setActiveNotice(notice.content);
-
                         if (proStatus) {
                             await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
                             // [추가] 관리자라면 제안 목록 가져오기
@@ -1847,6 +1841,28 @@
                     if (isManualCheck) setIsLoadingCloud(false);
                 }
             }, [supabase, withRetry, fetchFromCloud, addToast, fetchAdminSuggestions]);
+
+            // [추가] 공지사항 실시간 동기화 (새로고침 없이 즉시 반영)
+            useEffect(() => {
+                if (!supabase) return;
+                
+                const updateNotice = async () => {
+                    const { data } = await supabase.from('notices')
+                        .select('content').eq('is_active', true)
+                        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+                    // 활성 공지가 있으면 내용을 설정, 없으면 null (배너 사라짐)
+                    setActiveNotice(data ? data.content : null);
+                };
+
+                updateNotice(); // 초기 로드
+
+                // DB 변경사항 실시간 구독
+                const channel = supabase.channel('public:notices')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, updateNotice)
+                    .subscribe();
+
+                return () => supabase.removeChannel(channel);
+            }, [supabase]);
 
         useEffect(() => { 
             appDataRef.current = appData; 
