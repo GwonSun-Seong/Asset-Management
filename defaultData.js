@@ -9,6 +9,35 @@ const getLocalToday = () => {
     return `${year}-${month}-${day}`;
 };
 
+// [추가] 임의의 과거 자산 히스토리 생성 (50일치, 우상향 및 횡보 패턴)
+const generateMockHistory = () => {
+    const history = [];
+    const today = new Date();
+    // 현재 디폴트 자산 합계(약 1500만원)에 맞춰 자연스럽게 도달하도록 시작값 설정
+    let currentNetWorth = 1250; 
+    
+    for (let i = 50; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        
+        // 패턴: 50일치 (초기 상승 -> 횡보 -> 최근 급상승)
+        let change = 0;
+        if (i > 30) change = Math.random() * 8 + 2; // 초기 상승
+        else if (i > 15) change = (Math.random() - 0.5) * 15; // 중간 횡보 (등락 반복)
+        else change = Math.random() * 10 + 5; // 최근 급상승
+        
+        currentNetWorth += change;
+        
+        history.push({
+            date: dateStr,
+            netWorth: Math.floor(currentNetWorth),
+            time: "09:00:00"
+        });
+    }
+    return history;
+};
+
 // 공개용 기본값 (제3자 공개 시 사용)
 const publicDefaultData = {
     projectionMonths: 12,
@@ -88,6 +117,7 @@ const publicDefaultData = {
     rebalancingTargets: { deposit: 10, savings: 15, investment: 55, pension: 20, realestate: 0, car: 0, misc: 0 },
     baseDate: getLocalToday(), // [변경] baseMonth -> baseDate (YYYY-MM-DD)
     mainCashFlowAccount: '생활비통장',
+    history: generateMockHistory(), // [추가] 초기 히스토리 데이터
     memo: '' // [추가] 메모 기능
 };
 
