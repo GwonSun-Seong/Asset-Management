@@ -1078,6 +1078,14 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
         alert('공지사항이 업데이트되었습니다.');
     };
 
+    // [추가] 공지 내리기 함수
+    const withdrawNotice = async () => {
+        if (!confirm('현재 게시 중인 공지사항을 내리시겠습니까?')) return;
+        await supabase.from('notices').update({ is_active: false }).eq('is_active', true);
+        setNoticeContent('');
+        alert('공지사항이 내려갔습니다.');
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -1142,7 +1150,10 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
                         <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
                             <h4 className="font-bold mb-4 dark:text-white">전체 공지사항 발송</h4>
                             <textarea className="w-full h-32 border rounded-lg p-3 mb-4 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="공지 내용을 입력하세요. (비워두고 저장하면 공지가 내려갑니다)" value={noticeContent} onChange={e => setNoticeContent(e.target.value)}></textarea>
-                            <button onClick={saveNotice} className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold hover:bg-purple-700">공지사항 업데이트</button>
+                            <div className="flex gap-2">
+                                <button onClick={withdrawNotice} className="flex-1 bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300 py-3 rounded-lg font-bold hover:bg-gray-300 dark:hover:bg-gray-600">공지 내리기</button>
+                                <button onClick={saveNotice} className="flex-[2] bg-purple-600 text-white py-3 rounded-lg font-bold hover:bg-purple-700">공지사항 게시 (즉시 전송)</button>
+                            </div>
                         </div>
                     )}
                 </div>
