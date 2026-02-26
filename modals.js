@@ -1060,7 +1060,7 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
     const fetchUsers = async () => {
         setIsLoading(true);
         try {
-            let query = supabase.from('user_profiles').select('*').order('created_at', { ascending: false }).limit(50);
+            let query = supabase.from('user_profiles').select('*').limit(50);
             if (searchQuery) query = query.ilike('email', `%${searchQuery}%`);
             
             // [수정] 에러 핸들링 및 사용자 알림 추가
@@ -1151,13 +1151,12 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
                             <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                                        <tr><th className="p-3">이메일</th><th className="p-3">가입일</th><th className="p-3">상태</th><th className="p-3">관리</th></tr>
+                                        <tr><th className="p-3">이메일</th><th className="p-3">상태</th><th className="p-3">관리</th></tr>
                                     </thead>
                                     <tbody className="divide-y dark:divide-gray-700">
                                         {users.map(u => (
                                             <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                                                 <td className="p-3 dark:text-gray-300">{u.email}</td>
-                                                <td className="p-3 text-gray-500 text-xs">{new Date(u.created_at).toLocaleDateString()}</td>
                                                 <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${u.is_paid ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>{u.is_paid ? 'PRO' : 'FREE'}</span></td>
                                                 <td className="p-3"><button onClick={() => toggleUserPro(u.id, u.is_paid)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">권한변경</button></td>
                                             </tr>
