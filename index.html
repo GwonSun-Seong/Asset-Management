@@ -1211,6 +1211,8 @@
             const [isAIModalOpen, setIsAIModalOpen] = useState(false); // [추가] AI 분석 모달 상태
             const [isHistoryActionModalOpen, setIsHistoryActionModalOpen] = useState(false); // [추가] 히스토리 액션 모달
             const [pendingHistoryData, setPendingHistoryData] = useState(null); // [추가] 로드 대기 중인 히스토리 데이터
+            const [isAdminModalOpen, setIsAdminModalOpen] = useState(false); // [추가] 관리자 대시보드 모달 상태
+            const [activeNotice, setActiveNotice] = useState(null); // [추가] 활성화된 공지사항
             
             // [추가] 메모 관련 상태
             const [currentMemoIndex, setCurrentMemoIndex] = useState(0);
@@ -1817,6 +1819,12 @@
                         const proStatus = profile ? (profile.is_paid || isAdminUser) : false;
                         setIsPro(proStatus);
                         setIsAdmin(isAdminUser);
+
+                        // [추가] 공지사항 확인 (모든 사용자)
+                        const { data: notice } = await supabase.from('notices')
+                            .select('content').eq('is_active', true)
+                            .order('created_at', { ascending: false }).limit(1).maybeSingle();
+                        if (notice) setActiveNotice(notice.content);
 
                         if (proStatus) {
                             await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
@@ -4757,6 +4765,13 @@
                 </div>
                 :
                     <div className="relative min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors pb-20 sm:pb-0">
+                    {/* [추가] 전체 공지사항 배너 */}
+                    {activeNotice && (
+                        <div className="bg-indigo-600 text-white px-4 py-2 text-sm font-medium text-center relative animate-in slide-in-from-top duration-500">
+                            <span className="mr-2">📢</span> {activeNotice}
+                            <button onClick={() => setActiveNotice(null)} className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-200 hover:text-white">✕</button>
+                        </div>
+                    )}
                     <div className="sticky top-0 z-50 bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                             <div className="flex justify-between items-center h-16">
@@ -4934,6 +4949,12 @@
                                             <button onClick={() => handleLogout()} className="w-full py-1.5 text-[10px] text-gray-500 hover:text-red-500 transition-colors">
                                                 🚪 로그아웃
                                             </button>
+                                            {/* [추가] 관리자 대시보드 버튼 */}
+                                            {isAdmin && (
+                                                <button onClick={() => setIsAdminModalOpen(true)} className="w-full py-2 bg-purple-600 text-white rounded-lg text-[10px] font-bold hover:bg-purple-700 transition-all shadow-md mt-1">
+                                                    🛡️ 관리자 대시보드
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -5303,6 +5324,11 @@
                         onClose={() => { setIsHistoryActionModalOpen(false); setPendingHistoryData(null); }}
                         date={pendingHistoryData?.date}
                         onAction={confirmHistoryAction}
+                    />}
+                    {window.AdminDashboardModal && <window.AdminDashboardModal 
+                        isOpen={isAdminModalOpen}
+                        onClose={() => setIsAdminModalOpen(false)}
+                        supabase={supabase}
                     />}
                     </div>
             );

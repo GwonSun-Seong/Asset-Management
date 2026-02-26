@@ -1020,3 +1020,133 @@ window.CapitalIncomeAnalysisModal = ({ isOpen, onClose, appData, projections }) 
         </div>
     );
 };
+
+// [추가] 관리자 대시보드 모달 (통계, 유저관리, 공지사항)
+window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
+    const [activeTab, setActiveTab] = useState('stats');
+    const [stats, setStats] = useState({ totalUsers: 0, proUsers: 0 });
+    const [users, setUsers] = useState([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [noticeContent, setNoticeContent] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    // 데이터 로드
+    useEffect(() => {
+        if (!isOpen || !supabase) return;
+        fetchStats();
+        if (activeTab === 'users') fetchUsers();
+        if (activeTab === 'notice') fetchNotice();
+    }, [isOpen, activeTab, supabase]);
+
+    const fetchStats = async () => {
+        const { count: total } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true });
+        const { count: pro } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('is_paid', true);
+        setStats({ totalUsers: total || 0, proUsers: pro || 0 });
+    };
+
+    const fetchUsers = async () => {
+        setIsLoading(true);
+        let query = supabase.from('user_profiles').select('*').order('created_at', { ascending: false }).limit(50);
+        if (searchQuery) query = query.ilike('email', `%${searchQuery}%`);
+        const { data } = await query;
+        setUsers(data || []);
+        setIsLoading(false);
+    };
+
+    const toggleUserPro = async (userId, currentStatus) => {
+        if (!confirm(`이 사용자의 PRO 권한을 ${currentStatus ? '해제' : '부여'}하시겠습니까?`)) return;
+        const { error } = await supabase.from('user_profiles').update({ is_paid: !currentStatus }).eq('id', userId);
+        if (error) alert('수정 실패: ' + error.message);
+        else {
+            setUsers(users.map(u => u.id === userId ? { ...u, is_paid: !currentStatus } : u));
+            fetchStats(); // 통계 갱신
+        }
+    };
+
+    const fetchNotice = async () => {
+        const { data } = await supabase.from('notices').select('content').eq('is_active', true).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (data) setNoticeContent(data.content);
+    };
+
+    const saveNotice = async () => {
+        if (!confirm('전체 사용자에게 공지사항을 띄우시겠습니까?')) return;
+        // 기존 공지 비활성화 후 새 공지 등록
+        await supabase.from('notices').update({ is_active: false }).eq('is_active', true);
+        if (noticeContent.trim()) {
+            await supabase.from('notices').insert({ content: noticeContent, is_active: true });
+        }
+        alert('공지사항이 업데이트되었습니다.');
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[130] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col animate-in zoom-in duration-300 overflow-hidden">
+                <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-purple-50 dark:bg-purple-900/20">
+                    <h3 className="text-lg font-bold text-purple-800 dark:text-purple-300 flex items-center gap-2">🛡️ 관리자 대시보드</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400">✕</button>
+                </div>
+                
+                <div className="flex border-b dark:border-gray-700">
+                    {['stats', 'users', 'notice'].map(tab => (
+                        <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab === tab ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50/50 dark:bg-purple-900/10' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                            {tab === 'stats' ? '📊 통계' : tab === 'users' ? '👥 유저 관리' : '📢 공지사항'}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 bg-gray-50 dark:bg-gray-900">
+                    {activeTab === 'stats' && (
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <div className="text-sm text-gray-500 mb-1">총 가입자</div>
+                                <div className="text-3xl font-bold text-gray-900 dark:text-white">{stats.totalUsers.toLocaleString()}명</div>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <div className="text-sm text-gray-500 mb-1">PRO 사용자</div>
+                                <div className="text-3xl font-bold text-amber-500">{stats.proUsers.toLocaleString()}명</div>
+                                <div className="text-xs text-gray-400 mt-2">비율: {stats.totalUsers ? ((stats.proUsers/stats.totalUsers)*100).toFixed(1) : 0}%</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'users' && (
+                        <div className="space-y-4">
+                            <div className="flex gap-2">
+                                <input type="text" placeholder="이메일 검색..." className="flex-1 border rounded-lg px-4 py-2 dark:bg-gray-800 dark:border-gray-600 dark:text-white" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && fetchUsers()} />
+                                <button onClick={fetchUsers} className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">검색</button>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                        <tr><th className="p-3">이메일</th><th className="p-3">가입일</th><th className="p-3">상태</th><th className="p-3">관리</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y dark:divide-gray-700">
+                                        {users.map(u => (
+                                            <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                                <td className="p-3 dark:text-gray-300">{u.email}</td>
+                                                <td className="p-3 text-gray-500 text-xs">{new Date(u.created_at).toLocaleDateString()}</td>
+                                                <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${u.is_paid ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>{u.is_paid ? 'PRO' : 'FREE'}</span></td>
+                                                <td className="p-3"><button onClick={() => toggleUserPro(u.id, u.is_paid)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">권한변경</button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                {isLoading && <div className="p-4 text-center text-gray-500">로딩 중...</div>}
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'notice' && (
+                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+                            <h4 className="font-bold mb-4 dark:text-white">전체 공지사항 발송</h4>
+                            <textarea className="w-full h-32 border rounded-lg p-3 mb-4 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="공지 내용을 입력하세요. (비워두고 저장하면 공지가 내려갑니다)" value={noticeContent} onChange={e => setNoticeContent(e.target.value)}></textarea>
+                            <button onClick={saveNotice} className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold hover:bg-purple-700">공지사항 업데이트</button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
