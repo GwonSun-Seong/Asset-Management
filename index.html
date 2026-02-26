@@ -614,6 +614,7 @@
             const chartInstance = useRef(null);
             const [isLoading, setIsLoading] = useState(false);
             const [marketItems, setMarketItems] = useState(window.INITIAL_MARKET_ITEMS || []);
+            const retryCountRef = useRef(0);
 
             // [추가] 상태 추적 및 재시도 로직을 위한 Ref
             const marketItemsRef = useRef(marketItems);
@@ -626,6 +627,7 @@
                 const isForce = typeof forceRefresh === 'boolean' ? forceRefresh : true;
                 
                 if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+                if (isForce) retryCountRef.current = 0;
                 setIsLoading(true);
 
                 const targets = [
@@ -686,14 +688,15 @@
                         return next;
                     });
 
-                    // 실패한 항목이 있으면 3초 후 자동으로 다시 시도
-                    if (failCount > 0) {
+                    // 실패한 항목이 있고 3회 미만일 경우 3초 후 자동으로 다시 시도
+                    if (failCount > 0 && retryCountRef.current < 3) {
+                        retryCountRef.current += 1;
                         retryTimeoutRef.current = setTimeout(() => fetchMarketData(false), 3000);
                     }
 
                 } catch (e) {
                     console.warn("Market data fetch failed", e);
-                    retryTimeoutRef.current = setTimeout(() => fetchMarketData(false), 5000);
+                    if (retryCountRef.current < 3) retryTimeoutRef.current = setTimeout(() => fetchMarketData(false), 5000);
                 } finally {
                     setIsLoading(false);
                 }
@@ -902,6 +905,63 @@
             );
         };
 
+        // [이동 및 수정] 계산기 기능이 포함된 입력 컴포넌트 (전역 사용)
+        const CalculatorInput = ({ value, onChange, className, placeholder, style, ...props }) => {
+            const [localValue, setLocalValue] = useState(value);
+            const [isEditing, setIsEditing] = useState(false);
+
+            useEffect(() => {
+                if (!isEditing) {
+                    setLocalValue(value);
+                }
+            }, [value, isEditing]);
+
+            const safeEvaluate = (str) => {
+                try {
+                    if (/[^0-9+\-*/.()\s]/.test(str)) return null;
+                    // eslint-disable-next-line no-new-func
+                    const result = new Function('return ' + str)();
+                    return isFinite(result) ? result : null;
+                } catch (e) {
+                    return null;
+                }
+            };
+
+            const handleBlur = () => {
+                const strVal = String(localValue).trim();
+                if (/[\+\-\*\/]/.test(strVal)) {
+                    const result = safeEvaluate(strVal);
+                    if (result !== null) {
+                        const finalVal = Math.round(result * 100) / 100;
+                        setLocalValue(finalVal);
+                        onChange({ target: { value: finalVal } });
+                    } else { setLocalValue(value); }
+                } else { 
+                    // [수정] 090 -> 90 등 숫자 형식 자동 보정
+                    const numVal = parseFloat(strVal);
+                    if (!isNaN(numVal)) {
+                        setLocalValue(numVal);
+                        onChange({ target: { value: numVal } });
+                    } else {
+                        onChange({ target: { value: strVal } });
+                    }
+                }
+                setIsEditing(false);
+            };
+
+            return (
+                <input type={isEditing ? "text" : "number"} value={localValue} onChange={(e) => setLocalValue(e.target.value)} onBlur={handleBlur} className={className} placeholder={placeholder} style={style} step="any" {...props}
+                    onFocus={(e) => e.target.select()}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.target.blur();
+                        if (!isEditing && ['+', '-', '*', '/'].includes(e.key)) {
+                            e.preventDefault(); setIsEditing(true); setLocalValue(prev => String(prev) + e.key);
+                        }
+                    }}
+                />
+            );
+        };
+
         // [수정] EventSection을 외부로 분리하여 입력 포커스 끊김 방지
         const EventSection = React.memo(({ title, total, events, type, addFn, updateFn, removeFn, sectorInfo, assets, formatNumber }) => {
             const isIncome = type === 'income';
@@ -960,8 +1020,7 @@
                                         <div className="w-full lg:w-32">
                                             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">금액 (만원)</label>
                                             <div className="relative">
-                                                <input 
-                                                    type="number" 
+                                                <CalculatorInput 
                                                     value={event.amount} 
                                                     onChange={(e) => updateFn(index, 'amount', e.target.value)}
                                                     className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-right font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-opacity-50 focus:outline-none"
@@ -5329,65 +5388,6 @@
             );
         };
         
-        // [추가] 계산기 기능이 포함된 입력 컴포넌트
-        const CalculatorInput = ({ value, onChange, className, placeholder, style, ...props }) => {
-            const [localValue, setLocalValue] = useState(value);
-            const [isEditing, setIsEditing] = useState(false);
-
-            useEffect(() => {
-                if (!isEditing) {
-                    setLocalValue(value);
-                }
-            }, [value, isEditing]);
-
-            const safeEvaluate = (str) => {
-                try {
-                    // 숫자, 연산자(+, -, *, /), 괄호, 소수점, 공백만 허용
-                    if (/[^0-9+\-*/.()\s]/.test(str)) return null;
-                    // Function 생성자를 사용하여 안전하게 계산
-                    // eslint-disable-next-line no-new-func
-                    const result = new Function('return ' + str)();
-                    return isFinite(result) ? result : null;
-                } catch (e) {
-                    return null;
-                }
-            };
-
-            const handleBlur = () => {
-                setIsEditing(false);
-                const strVal = String(localValue).trim();
-                
-                if (/[\+\-\*\/]/.test(strVal)) {
-                    const result = safeEvaluate(strVal);
-                    if (result !== null) {
-                        const finalVal = Math.round(result * 100) / 100; // 소수점 2자리 반올림
-                        onChange({ target: { value: finalVal } });
-                        setLocalValue(finalVal);
-                    } else {
-                        setLocalValue(value); // 계산 실패 시 원래 값 복구
-                    }
-                } else {
-                    onChange({ target: { value: strVal } });
-                }
-            };
-
-            return (
-                <input
-                    type={isEditing ? "text" : "number"}
-                    value={localValue}
-                    onChange={(e) => setLocalValue(e.target.value)}
-                    onBlur={handleBlur}
-                    onFocus={() => setIsEditing(true)}
-                    onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
-                    className={className}
-                    placeholder={placeholder}
-                    style={style}
-                    step="any"
-                    {...props}
-                />
-            );
-        };
-
         // [최적화] 자산 입력 행 컴포넌트 분리 및 React.memo 적용
         // 개별 항목 수정 시 다른 항목들의 불필요한 리렌더링 방지
         const AssetRow = React.memo(({ 
