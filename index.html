@@ -1143,6 +1143,11 @@
             const [lastSyncTime, setLastSyncTime] = useState(null); // [추가] 마지막 동기화 시간
             const [analysisMode, setAnalysisMode] = useState('growth'); // [추가] 상세 분석 모드 ('growth' | 'income')
             
+            // [추가] 의견 보내기 버튼 표시 여부 상태
+            const [showSuggestionButton, setShowSuggestionButton] = useState(() => localStorage.getItem('assetShowSuggestionButton') !== 'false');
+            useEffect(() => { localStorage.setItem('assetShowSuggestionButton', showSuggestionButton); }, [showSuggestionButton]);
+
+
             // [추가] 하단에 있던 상태들을 초기화 순서 보장을 위해 위로 이동
             const [assetHistory, setAssetHistory] = useState([]);
             const [showProjectionInHistory, setShowProjectionInHistory] = useState(false);
@@ -5242,7 +5247,7 @@
                         )}
 
                         {/* 관리자용 제안 확인 플로팅 버튼 */}
-                        {isAdmin && adminSuggestions.length > 0 && (
+                        {isAdmin && adminSuggestions.length > 0 && showSuggestionButton && (
                             <div className="group relative pointer-events-auto">
                                 {/* 툴팁 */}
                                 <div className="absolute bottom-full left-0 pb-3 w-80 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto transform translate-y-2 group-hover:translate-y-0 duration-200">
@@ -5266,6 +5271,14 @@
                                     <span className="text-sm font-bold">의견함 ({adminSuggestions.length})</span>
                                 </button>
                             </div>
+                        )}
+
+                        {/* 일반 사용자용 의견 보내기 버튼 (관리자가 아닐 때 표시, 설정에서 제어 가능) */}
+                        {!isAdmin && showSuggestionButton && (
+                            <button onClick={() => setIsSuggestionModalOpen(true)} className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 h-12 rounded-full shadow-lg flex items-center gap-2 transition-all hover:scale-105 animate-in slide-in-from-bottom-2">
+                                <span className="text-lg">💡</span>
+                                <span className="text-sm font-bold hidden sm:inline">의견 보내기</span>
+                            </button>
                         )}
                     </div>
 
@@ -5309,6 +5322,8 @@
                         onLogoutBehaviorChange={setLogoutBehavior}
                         onSyncNow={() => fetchFromCloud(verifiedEmail, isPro, false, true)}
                         onLogout={handleLogout}
+                        showSuggestionButton={showSuggestionButton}
+                        onToggleSuggestionButton={setShowSuggestionButton}
                     />}
                     {/* [추가] 저장 완료 토스트 */}
                     {showSaveToast && (

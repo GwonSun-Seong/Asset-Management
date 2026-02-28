@@ -303,7 +303,8 @@ window.OnboardingGuide = ({ isOpen, onClose }) => {
 window.SettingsModal = ({ 
     isOpen, onClose, encryptionMode, onModeChange, 
     darkMode, onThemeToggle, logoutBehavior, onLogoutBehaviorChange,
-    onSyncNow, onLogout 
+    onSyncNow, onLogout,
+    showSuggestionButton, onToggleSuggestionButton
 }) => {
     if (!isOpen) return null;
     return (
@@ -335,6 +336,14 @@ window.SettingsModal = ({
                             <span className="text-sm font-medium dark:text-white">{darkMode ? '🌙 다크 모드 사용 중 (데모)' : '☀️ 라이트 모드 사용 중'}</span>
                             <span className="text-xs text-indigo-600 font-bold">변경하기</span>
                         </button>
+                    </section>
+                    {/* 화면 설정 */}
+                    <section>
+                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">🖥️ 화면 설정</h4>
+                        <div className="flex justify-between items-center p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700">
+                            <span className="text-sm font-medium dark:text-white">좌하단 '의견 보내기' 버튼 표시</span>
+                            <input type="checkbox" checked={showSuggestionButton} onChange={(e) => onToggleSuggestionButton(e.target.checked)} className="w-5 h-5 accent-indigo-600 cursor-pointer" />
+                        </div>
                     </section>
                     {/* 로그아웃 정책 */}
                     <section>
@@ -1024,8 +1033,9 @@ window.CapitalIncomeAnalysisModal = ({ isOpen, onClose, appData, projections }) 
 // [추가] 관리자 대시보드 모달 (통계, 유저관리, 공지사항)
 window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
     const [activeTab, setActiveTab] = useState('stats');
-    const [stats, setStats] = useState({ totalUsers: 0, proUsers: 0 });
+    const [stats, setStats] = useState({ totalUsers: 0, proUsers: 0, activeUsers: 0, totalSuggestions: 0 });
     const [users, setUsers] = useState([]);
+    const [suggestions, setSuggestions] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [noticeContent, setNoticeContent] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -1042,6 +1052,7 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
             fetchStats();
             if (activeTab === 'users') fetchUsers();
             if (activeTab === 'notice') fetchNotice();
+            if (activeTab === 'suggestions') fetchSuggestions();
         };
         loadData();
     }, [isOpen, activeTab, supabase]);
@@ -1054,7 +1065,17 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
         const { count: pro, error: proError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('is_paid', true);
         if (proError) console.error('Stats Error (Pro):', proError);
 
-        setStats({ totalUsers: total || 0, proUsers: pro || 0 });
+        // [추가] 최근 30일 내 활동 유저 (user_assets 업데이트 기준)
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const { count: active, error: activeError } = await supabase.from('user_assets').select('*', { count: 'exact', head: true }).gte('updated_at', thirtyDaysAgo.toISOString());
+        if (activeError) console.error('Stats Error (Active):', activeError);
+
+        // [추가] 의견이 있는 유저 수
+        const { count: suggCount, error: suggError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).not('suggestions', 'is', null);
+        if (suggError) console.error('Stats Error (Suggestions):', suggError);
+
+        setStats({ totalUsers: total || 0, proUsers: pro || 0, activeUsers: active || 0, totalSuggestions: suggCount || 0 });
     };
 
     const fetchUsers = async () => {
@@ -1071,6 +1092,19 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
         } catch (err) {
             console.error('Users Fetch Error:', err);
             alert('유저 목록을 불러오는 중 오류가 발생했습니다: ' + err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchSuggestions = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase.from('user_profiles').select('email, suggestions, updated_at').not('suggestions', 'is', null).order('updated_at', { ascending: false });
+            if (error) throw error;
+            setSuggestions(data || []);
+        } catch (err) {
+            console.error('Suggestions Fetch Error:', err);
         } finally {
             setIsLoading(false);
         }
@@ -1120,9 +1154,9 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
                 </div>
                 
                 <div className="flex border-b dark:border-gray-700">
-                    {['stats', 'users', 'notice'].map(tab => (
+                    {['stats', 'users', 'suggestions', 'notice'].map(tab => (
                         <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 text-sm font-bold transition-colors ${activeTab === tab ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50/50 dark:bg-purple-900/10' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
-                            {tab === 'stats' ? '📊 통계' : tab === 'users' ? '👥 유저 관리' : '📢 공지사항'}
+                            {tab === 'stats' ? '📊 통계' : tab === 'users' ? '👥 유저 관리' : tab === 'suggestions' ? '📬 의견함' : '📢 공지사항'}
                         </button>
                     ))}
                 </div>
@@ -1138,6 +1172,14 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
                                 <div className="text-sm text-gray-500 mb-1">PRO 사용자</div>
                                 <div className="text-3xl font-bold text-amber-500">{stats.proUsers.toLocaleString()}명</div>
                                 <div className="text-xs text-gray-400 mt-2">비율: {stats.totalUsers ? ((stats.proUsers/stats.totalUsers)*100).toFixed(1) : 0}%</div>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <div className="text-sm text-gray-500 mb-1">월간 활성 유저 (MAU)</div>
+                                <div className="text-3xl font-bold text-green-600 dark:text-green-400">{stats.activeUsers.toLocaleString()}명</div>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <div className="text-sm text-gray-500 mb-1">접수된 의견</div>
+                                <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{stats.totalSuggestions.toLocaleString()}건</div>
                             </div>
                         </div>
                     )}
@@ -1165,6 +1207,24 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
                                 </table>
                                 {isLoading && <div className="p-4 text-center text-gray-500">로딩 중...</div>}
                             </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'suggestions' && (
+                        <div className="space-y-4">
+                            {suggestions.length === 0 ? (
+                                <div className="text-center text-gray-500 py-10">접수된 의견이 없습니다.</div>
+                            ) : (
+                                suggestions.map((item, idx) => (
+                                    <div key={idx} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="font-bold text-gray-900 dark:text-white">{item.email}</span>
+                                            <span className="text-xs text-gray-400">{new Date(item.updated_at).toLocaleDateString()}</span>
+                                        </div>
+                                        <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">{item.suggestions}</div>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     )}
 
