@@ -33,15 +33,15 @@ const sectorInfo = {
     misc: { name: '기타', color: 'misc', icon: '📦', bgClass: 'bg-gray-50 dark:bg-gradient-to-r dark:from-gray-900/90 dark:to-gray-900/70', textClass: 'text-gray-600 dark:text-gray-400' }
 };
 
-// Supabase 연결 정보
-// Cloudflare Pages 빌드 시 sed 명령어로 __SUPABASE_URL__, __SUPABASE_KEY__, __SECURITY_KEY__가 주입됩니다.
-if (!window.SUPABASE_CONFIG) {
-    window.SUPABASE_CONFIG = {
+// [보안] 설정값 은폐 (IIFE Closure)
+(function() {
+    const _VAULT = {
         SUPABASE_URL: '__SUPABASE_URL__',
         SUPABASE_KEY: '__SUPABASE_KEY__',
         SECURITY_KEY: '__SECURITY_KEY__'
     };
-}
+    window.getVaultConfig = (key) => _VAULT[key];
+})();
 
 // 온보딩 가이드 단계 정의
 window.ONBOARDING_STEPS = [

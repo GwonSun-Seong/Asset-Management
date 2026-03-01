@@ -1521,7 +1521,7 @@
                     return;
                 }
                 try {
-                    payloadData = encryptData(unifiedData, key);
+                    payloadData = await encryptData(unifiedData, key);
                 } catch (e) {
                     console.error("Encryption error:", e);
                     addToast('데이터 암호화 중 오류가 발생했습니다.', 'error');
@@ -1617,13 +1617,13 @@
                         }
 
                         try {
-                            decryptedData = decryptData(data.data, key);
+                            decryptedData = await decryptData(data.data, key);
                         } catch (err) {
                             let recovered = false;
                             // [추가] 이전 버전 데이터(이메일 솔트 없음) 복구 시도 (Fallback)
                             if (encType === 'normal' && SECURITY_KEY && key !== SECURITY_KEY) {
                                 try {
-                                    decryptedData = decryptData(data.data, SECURITY_KEY);
+                                    decryptedData = await decryptData(data.data, SECURITY_KEY);
                                     recovered = true;
                                     addToast('이전 보안 형식의 데이터를 변환하여 불러왔습니다.', 'success');
                                 } catch (e) { /* Fallback failed */ }
@@ -1659,6 +1659,13 @@
                                     return; // Stop further processing
                                 }
                             }
+                        }
+
+                        // [Migration] V1 데이터(v2: 접두사 없음) 복호화 성공 시 V2로 즉시 업그레이드 저장 (Silent)
+                        if (typeof data.data === 'string' && !data.data.startsWith('v2:')) {
+                            console.log("Migrating V1 data to V2 security...");
+                            // 키를 명시하지 않아 saveToCloud 내부에서 getEncryptionKey를 통해 새 V2 키를 생성하도록 함
+                            await saveToCloud(decryptedData, true, email, pro, null, encType);
                         }
                     }
                     const cloudTime = new Date(data.updated_at).getTime();
@@ -1777,7 +1784,7 @@
                     const secret = (encType === 'secure') ? (userSecretKey || sessionStorage.getItem('assetDashboardSecretKey')) : null;
                     const key = window.getEncryptionKey(encType, secret, verifiedEmail, SECURITY_KEY);
                     if (!key) throw new Error('암호화 키를 생성할 수 없습니다. (비밀번호 확인 필요)');
-                    decryptedData = window.decryptData(data.data, key);
+                    decryptedData = await window.decryptData(data.data, key);
                 }
 
                 const actualAppData = decryptedData.appData || decryptedData;
@@ -2307,14 +2314,14 @@
                 else saveToCloud({ appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios }, true);
             };
 
-            const handlePasswordConfirm = (password) => {
+            const handlePasswordConfirm = async (password) => {
                 setUserSecretKey(password);
                 setIsPasswordPromptOpen(false);
                 const unifiedData = { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios };
                 if (pendingCiphertext.current) {
                     try {
                         const key = window.getEncryptionKey('secure', password, verifiedEmail, SECURITY_KEY);
-                        const decrypted = decryptData(pendingCiphertext.current, key);
+                        const decrypted = await decryptData(pendingCiphertext.current, key);
                         resetAppData(decrypted.appData || decrypted);
                         if (decrypted.scenarios) setScenarios(decrypted.scenarios);
                         if (decrypted.assetHistory) setAssetHistory(decrypted.assetHistory);

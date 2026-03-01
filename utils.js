@@ -443,21 +443,86 @@ const withRetry = async (fn, maxAttempts = 3, timeoutMs = 12000, delayMs = 2000,
     throw lastError;
 };
 
-// [추가] 데이터 암호화 함수
-const encryptData = (data, key) => {
-    if (!key) throw new Error('Encryption key is missing or invalid');
-    if (!window.CryptoJS || !window.pako) throw new Error('CryptoJS or pako library not loaded');
-    const jsonStr = JSON.stringify(data);
-    const compressed = window.pako.deflate(jsonStr);
-    const wordArray = window.CryptoJS.lib.WordArray.create(compressed);
-    return window.CryptoJS.AES.encrypt(wordArray, key).toString();
+// [추가] 바이너리 변환 헬퍼
+const bufferToBase64 = (buffer) => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
 };
 
-// [추가] 데이터 복호화 함수
-const decryptData = (ciphertext, key) => {
-    if (!key) throw new Error('Decryption key is missing or invalid');
+const base64ToBuffer = (base64) => {
+    const binary_string = window.atob(base64);
+    const len = binary_string.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binary_string.charCodeAt(i);
+    }
+    return bytes.buffer;
+};
+
+// [수정] Web Crypto API (AES-GCM) 기반 암호화 (Async)
+const encryptData = async (data, password) => {
+    if (!password) throw new Error('Encryption key is missing or invalid');
+    if (!window.pako) throw new Error('pako library not loaded');
+
+    // 1. Compress Data
+    const jsonStr = JSON.stringify(data);
+    const compressed = window.pako.deflate(jsonStr);
+
+    // 2. Generate Salt & IV
+    const salt = window.crypto.getRandomValues(new Uint8Array(16));
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+    // 3. Import Password & Derive Key (PBKDF2)
+    const enc = new TextEncoder();
+    const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
+    const key = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }, keyMaterial, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+
+    // 4. Encrypt (AES-GCM)
+    const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, compressed);
+
+    // 5. Pack: salt(16) + iv(12) + ciphertext
+    const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
+    combined.set(salt);
+    combined.set(iv, salt.length);
+    combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
+
+    return 'v2:' + bufferToBase64(combined);
+};
+
+// [수정] Web Crypto API (AES-GCM) 기반 복호화 (Async, Hybrid)
+const decryptData = async (ciphertext, password) => {
+    if (!password) throw new Error('Decryption key is missing or invalid');
+
+    // Step 1: Check Version (V2)
+    if (ciphertext.startsWith('v2:')) {
+        try {
+            const raw = base64ToBuffer(ciphertext.slice(3));
+            const bytes = new Uint8Array(raw);
+            const salt = bytes.slice(0, 16);
+            const iv = bytes.slice(16, 28);
+            const data = bytes.slice(28);
+
+            const enc = new TextEncoder();
+            const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
+            const key = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }, keyMaterial, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+            
+            const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, data);
+            const decompressed = window.pako.inflate(new Uint8Array(decrypted), { to: 'string' });
+            return JSON.parse(decompressed);
+        } catch (e) {
+            // [보안] Auth Tag 검증 실패 시 상세 내용 없이 즉시 에러 반환 (Oracle Attack 방지)
+            throw new Error('Decryption failed (V2): Invalid key or corrupted data');
+        }
+    }
+
+    // Step 3 (V1): Legacy CryptoJS (AES-CBC) Fallback
     if (!window.CryptoJS || !window.pako) throw new Error('CryptoJS or pako library not loaded');
-    const decrypted = window.CryptoJS.AES.decrypt(ciphertext, key);
+    const decrypted = window.CryptoJS.AES.decrypt(ciphertext, password);
     if (decrypted.sigBytes <= 0) throw new Error('Decryption failed: Invalid key or corrupted data');
     const typedArray = new Uint8Array(decrypted.sigBytes);
     const words = decrypted.words;
@@ -509,30 +574,27 @@ const createGradient = (ctx, colors) => {
     return gradient;
 };
 
-// [수정] 일관된 암호화 키 생성 로직
+// [수정] 암호화 키 생성 로직 (Pepper 전략 적용)
 const getEncryptionKey = (mode, secret, email, securityKey) => {
-    // [수정] 강화 모드: 이메일 + 사용자 설정 비밀번호 조합으로 보안 강화
-    if (mode === 'secure') {
-        return (email && secret) ? email + secret : null;
-    }
-    
-    // Normal 모드: 일관성을 위해 이메일을 식별자로 사용 (Salt Consistency)
     const placeholder = '__SECURITY' + '_KEY__';
-    // [Fix] Hardened Placeholder Check: Ensure placeholder string is never used as salt
     if (!securityKey || securityKey.includes(placeholder)) return null;
     
+    if (mode === 'secure') {
+        // Secure Mode: User Secret + System Pepper
+        return secret ? secret + securityKey : null;
+    }
+    
+    // Normal Mode: Email + System Pepper
     return email + securityKey;
 };
 
-// [추가] Supabase 환경변수 검증 및 추출 헬퍼
 const validateSupabaseConfig = () => {
-    const conf = window.SUPABASE_CONFIG || {};
+    const getVal = (k) => window.getVaultConfig ? window.getVaultConfig(k) : null;
     const isInvalid = (val, ph) => !val || val === ph || (typeof val === 'string' && val.includes(ph));
     
-    const url = isInvalid(conf.SUPABASE_URL, '__SUPABASE' + '_URL__') ? null : conf.SUPABASE_URL;
-    const key = isInvalid(conf.SUPABASE_KEY, '__SUPABASE' + '_KEY__') ? null : conf.SUPABASE_KEY;
-    // [Fix] Hardened Placeholder Check for SECURITY_KEY
-    const sec = isInvalid(conf.SECURITY_KEY, '__SECURITY' + '_KEY__') ? null : conf.SECURITY_KEY;
+    const url = isInvalid(getVal('SUPABASE_URL'), '__SUPABASE' + '_URL__') ? null : getVal('SUPABASE_URL');
+    const key = isInvalid(getVal('SUPABASE_KEY'), '__SUPABASE' + '_KEY__') ? null : getVal('SUPABASE_KEY');
+    const sec = isInvalid(getVal('SECURITY_KEY'), '__SECURITY' + '_KEY__') ? null : getVal('SECURITY_KEY');
 
     if (!url || !key) {
         console.warn("⚠️ Supabase Config Missing or Invalid: App will run in Local Storage Mode.");

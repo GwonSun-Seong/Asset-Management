@@ -1272,18 +1272,18 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                     const capitalIncomes = []; // [추가] 월 자본 소득
                     let validCount = 0;
 
-                    uniqueAssets.forEach(record => {
+                    for (const record of uniqueAssets) {
                         try {
                             let appData = record.data;
                             
                             // [수정] secure 모드는 제외하고, normal 모드 데이터 복호화 처리 (FREE/PRO 공통)
-                            if (record.encryption_type === 'secure') return;
+                            if (record.encryption_type === 'secure') continue;
 
-                            const securityKey = window.SUPABASE_CONFIG?.SECURITY_KEY;
+                            const securityKey = window.getVaultConfig ? window.getVaultConfig('SECURITY_KEY') : null;
                             // normal 모드이거나 암호화 타입이 명시되지 않았지만 암호화된 데이터일 경우 복호화 시도
                             if (record.encryption_type === 'normal' && securityKey && typeof appData === 'string') {
                                 const key = window.getEncryptionKey('normal', null, record.email, securityKey);
-                                if (key) appData = window.decryptData(record.data, key);
+                                if (key) appData = await window.decryptData(record.data, key);
                             }
 
                             // [수정] 데이터 구조 정규화 (래퍼 객체 처리)
@@ -1328,7 +1328,7 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                                 validCount++;
                             }
                         } catch (e) { /* Decryption failed */ }
-                    });
+                    }
 
                     if (validCount > 0) {
                         const sumTotal = totals.reduce((a, b) => a + b, 0);
