@@ -1185,7 +1185,10 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                                 if (key) appData = window.decryptData(record.data, key);
                             }
 
-                            const assets = appData.appData?.assets || appData.assets;
+                            // [수정] 데이터 구조 정규화 (래퍼 객체 처리)
+                            const actualAppData = appData.appData || appData;
+                            const assets = actualAppData.assets;
+
                             if (assets) {
                                 const total = window.calculateGrossTotal(assets); // 총 자산 (부채 제외)
                                 
@@ -1201,10 +1204,12 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                                 nets.push(net);
 
                                 // [추가] 소득/소비/자본소득 데이터 수집
-                                const salary = Number(appData.monthlySalary || 0);
-                                incomes.push(salary);
+                                const salary = Number(actualAppData.monthlySalary || 0);
+                                incomes.push(isNaN(salary) ? 0 : salary); // [안전장치] 숫자가 아닌 경우 0 처리
 
-                                const expenseTotal = (appData.monthlyExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+                                const mExpenses = actualAppData.monthlyExpenses;
+                                const expenseList = Array.isArray(mExpenses) ? mExpenses : []; // [안전장치] 배열이 아닌 경우 빈 배열 처리
+                                const expenseTotal = expenseList.reduce((sum, e) => sum + Number(e.amount || 0), 0);
                                 expenses.push(expenseTotal);
 
                                 let capIncome = 0;
