@@ -214,24 +214,19 @@ window.ProFeaturesModal = ({ isOpen, onClose }) => {
                                 <td className="px-4 py-3 text-center font-semibold dark:text-white">클라우드 자동 동기화</td>
                             </tr>
                             <tr>
-                                <td className="px-4 py-3 dark:text-gray-300">테마 설정</td>
-                                <td className="px-4 py-3 text-center text-gray-500">라이트 모드</td>
-                                <td className="px-4 py-3 text-center font-semibold dark:text-white">다크 모드 지원</td>
+                                <td className="px-4 py-3 dark:text-gray-300">시나리오 저장</td>
+                                <td className="px-4 py-3 text-center text-gray-500">최대 1개</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">무제한</td>
                             </tr>
                             <tr>
                                 <td className="px-4 py-3 dark:text-gray-300">차트 및 분석</td>
-                                <td className="px-4 py-3 text-center text-gray-500">기본 히스토리</td>
-                                <td className="px-4 py-3 text-center font-semibold dark:text-white">미래 예측 & 타임머신</td>
+                                <td className="px-4 py-3 text-center text-gray-500">기본</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">심화 (비교 및 불러오기)</td>
                             </tr>
                             <tr>
                                 <td className="px-4 py-3 dark:text-gray-300">보안 기능</td>
-                                <td className="px-4 py-3 text-center text-gray-500">표준 암호화</td>
-                                <td className="px-4 py-3 text-center font-semibold dark:text-white">강력한 종단간 암호화</td>
-                            </tr>
-                            <tr>
-                                <td className="px-4 py-3 dark:text-gray-300">기타</td>
-                                <td className="px-4 py-3 text-center text-gray-500">배너 표시</td>
-                                <td className="px-4 py-3 text-center font-semibold dark:text-white">광고/배너 제거</td>
+                                <td className="px-4 py-3 text-center text-gray-500">일반</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">일반 + 강화 (E2EE)</td>
                             </tr>
                         </tbody>
                     </table>
@@ -308,7 +303,8 @@ window.OnboardingGuide = ({ isOpen, onClose }) => {
 window.SettingsModal = ({ 
     isOpen, onClose, encryptionMode, onModeChange, 
     darkMode, onThemeToggle, logoutBehavior, onLogoutBehaviorChange,
-    onSyncNow, onLogout
+    onSyncNow, onLogout,
+    dataConsent, onToggleConsent
 }) => {
     if (!isOpen) return null;
     return (
@@ -340,6 +336,17 @@ window.SettingsModal = ({
                             <span className="text-sm font-medium dark:text-white">{darkMode ? '🌙 다크 모드 사용 중 (데모)' : '☀️ 라이트 모드 사용 중'}</span>
                             <span className="text-xs text-indigo-600 font-bold">변경하기</span>
                         </button>
+                    </section>
+                    {/* 개인정보 설정 */}
+                    <section>
+                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">👤 개인정보 설정</h4>
+                        <div className="flex justify-between items-center p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700">
+                            <div>
+                                <span className="text-sm font-medium dark:text-white block">데이터 익명 활용 동의</span>
+                                <span className="text-[10px] text-gray-500">통계 서비스 제공을 위해 익명화된 자산 데이터를 활용합니다.</span>
+                            </div>
+                            <input type="checkbox" checked={!!dataConsent} onChange={(e) => onToggleConsent(e.target.checked)} className="w-5 h-5 accent-indigo-600 cursor-pointer" />
+                        </div>
                     </section>
                     {/* 로그아웃 정책 */}
                     <section>

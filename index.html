@@ -1398,12 +1398,15 @@
                         const savedData = localStorage.getItem('assetDashboardDataV3');
                         const savedScenarios = localStorage.getItem('assetDashboardScenarios');
                         const savedHistory = localStorage.getItem('assetDashboardHistory');
+                        const savedReferences = localStorage.getItem('assetDashboardReferenceScenarios');
 
                         const initialScenarios = savedScenarios ? JSON.parse(savedScenarios) : [];
                         const initialHistory = savedHistory ? JSON.parse(savedHistory) : (baseData.history || []);
+                        const initialReferences = savedReferences ? JSON.parse(savedReferences) : [];
                         
                         if (savedScenarios) setScenarios(initialScenarios);
                         setAssetHistory(initialHistory);
+                        setReferenceScenarios(initialReferences);
 
                 if (savedData) {
                             const parsedData = JSON.parse(savedData);
@@ -1429,11 +1432,11 @@
                             });
                             setAppData(mergedData); // [수정] parsedData 대신 mergedData 사용
                             setOriginalUserData(parsedData); // [추가]
-                            lastSavedDataRef.current = JSON.stringify({ appData: mergedData, scenarios: initialScenarios, assetHistory: initialHistory });
+                            lastSavedDataRef.current = JSON.stringify({ appData: mergedData, scenarios: initialScenarios, assetHistory: initialHistory, referenceScenarios: initialReferences });
                         } else {
                             setAppData(baseData);
                             setOriginalUserData(baseData); // [추가]
-                            lastSavedDataRef.current = JSON.stringify({ appData: baseData, scenarios: initialScenarios, assetHistory: initialHistory });
+                            lastSavedDataRef.current = JSON.stringify({ appData: baseData, scenarios: initialScenarios, assetHistory: initialHistory, referenceScenarios: initialReferences });
                         }
                     } catch (error) {
                         console.error("로컬 데이터 로드 오류 (초기화 진행):", error);
@@ -1916,6 +1919,8 @@
                         
                         // [추가] 관리자라면 제안 목록 가져오기
                         if (isAdminUser) fetchAdminSuggestions();
+
+                        if (profile) setUserProfile(prev => ({ ...prev, ...profile }));
                     } else {
                         console.warn('Profile fetch error after retries:', fetchError);
                         setSyncStatus('error');
@@ -1944,6 +1949,24 @@
                     
                     setIsConsentModalOpen(false);
                     addToast('데이터 활용에 동의해주셔서 감사합니다.', 'success');
+                    setUserProfile(prev => ({ ...prev, data_consent: true }));
+                } catch (e) {
+                    console.error('Consent update error:', e);
+                    addToast('동의 처리 중 오류가 발생했습니다.', 'error');
+                }
+            };
+
+            // [추가] 데이터 활용 동의 토글 (설정 메뉴용)
+            const toggleDataConsent = async (newValue) => {
+                if (!supabase || !userProfile?.id) return addToast('로그인이 필요합니다.', 'error');
+                try {
+                    const { error } = await supabase.from('user_profiles').update({ 
+                        data_consent: newValue,
+                        consent_date: newValue ? new Date().toISOString() : null
+                    }).eq('id', userProfile.id);
+                    if (error) throw error;
+                    setUserProfile(prev => ({ ...prev, data_consent: newValue }));
+                    addToast(`데이터 활용 동의가 ${newValue ? '설정' : '해제'}되었습니다.`, 'success');
                 } catch (e) {
                     console.error('Consent update error:', e);
                     addToast('동의 처리 중 오류가 발생했습니다.', 'error');
@@ -2028,7 +2051,7 @@
                     const currentData = appDataRef.current;
                     if (currentData) {
                         localStorage.setItem('assetDashboardDataV3', JSON.stringify(currentData));
-                        saveToCloud({ appData: currentData, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current }, true);
+                        saveToCloud({ appData: currentData, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios }, true);
                         setShowSaveToast(true);
                         setTimeout(() => setShowSaveToast(false), 2000);
                     }
@@ -2062,13 +2085,14 @@
                 if (!isInitialized) return;
 
                 try {
-                    const fullState = { appData, scenarios, assetHistory };
+                    const fullState = { appData, scenarios, assetHistory, referenceScenarios };
                     const fullStateStr = JSON.stringify(fullState);
 
                     // 1. 각 항목별 로컬 스토리지 저장
                     if (appData) localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
                     localStorage.setItem('assetDashboardScenarios', JSON.stringify(scenarios));
                     localStorage.setItem('assetDashboardHistory', JSON.stringify(assetHistory));
+                    localStorage.setItem('assetDashboardReferenceScenarios', JSON.stringify(referenceScenarios));
 
                     // 2. 로컬 수정 여부 판단 (마지막 동기화 시점과 비교)
                     // lastSavedDataRef는 클라우드에서 불러오거나 클라우드에 저장 성공했을 때만 갱신됨
@@ -2082,7 +2106,7 @@
                     console.error("Local Storage Save Failed:", e);
                     // 저장 실패 시 앱이 멈추지 않도록 예외 처리 (필요 시 토스트 메시지 추가 가능)
                 }
-            }, [appData, scenarios, assetHistory, isInitialized]);
+            }, [appData, scenarios, assetHistory, referenceScenarios, isInitialized]);
 
             // [삭제] 기존의 개별 scenarios, assetHistory 저장 useEffect는 위 통합 로직으로 대체됨
 
@@ -2139,6 +2163,7 @@
                     if (selection.appData) exportData.appData = appData; 
                     if (selection.scenarios) exportData.scenarios = scenarios;
                     if (selection.assetHistory) exportData.assetHistory = assetHistory;
+                    exportData.referenceScenarios = referenceScenarios;
 
                     exportData.exportDate = new Date().toISOString();
                     exportData.version = '1.0';
@@ -2181,6 +2206,7 @@
                         if (selection.appData && importData.appData) setAppData(importData.appData);
                         if (selection.scenarios && importData.scenarios) setScenarios(importData.scenarios);
                         if (selection.assetHistory && importData.assetHistory) setAssetHistory(importData.assetHistory);
+                        if (importData.referenceScenarios) setReferenceScenarios(importData.referenceScenarios);
                         addToast('자산 데이터가 성공적으로 불러와졌습니다!', 'success');
                     }
                 } catch (error) {
@@ -2333,24 +2359,24 @@
                 if (!appData || !isInitialized || isFetchingRef.current || !isCloudLoaded) return;
                 const AUTO_SYNC_DELAY = 2000;
                 const timer = setTimeout(() => {
-                    saveToCloud({ appData, scenarios, assetHistory });
+                    saveToCloud({ appData, scenarios, assetHistory, referenceScenarios });
                 }, AUTO_SYNC_DELAY);
                 return () => clearTimeout(timer);
-            }, [appData, scenarios, assetHistory, isInitialized, isCloudLoaded, saveToCloud]);
+            }, [appData, scenarios, assetHistory, referenceScenarios, isInitialized, isCloudLoaded, saveToCloud]);
 
             // [추가] 암호화 모드 선택 핸들러
             const handleEncryptionSelect = (mode) => {
                 setEncryptionMode(mode);
                 setIsEncryptionModalOpen(false);
                 if (mode === 'secure') setIsPasswordPromptOpen(true);
-                else saveToCloud({ appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current }, true);
+                else saveToCloud({ appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios }, true);
             };
 
             // [추가] 비밀번호 입력 확인 핸들러
             const handlePasswordConfirm = (password) => {
                 setUserSecretKey(password);
                 setIsPasswordPromptOpen(false);
-                const unifiedData = { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current };
+                const unifiedData = { appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios };
                 if (pendingCiphertext.current) {
                     try {
                         const key = window.getEncryptionKey('secure', password, verifiedEmail, SECURITY_KEY);
@@ -2358,6 +2384,7 @@
                         resetAppData(decrypted.appData || decrypted);
                         if (decrypted.scenarios) setScenarios(decrypted.scenarios);
                         if (decrypted.assetHistory) setAssetHistory(decrypted.assetHistory);
+                        if (decrypted.referenceScenarios) setReferenceScenarios(decrypted.referenceScenarios);
                         pendingCiphertext.current = null;
                         setSyncStatus('synced');
                         setIsCloudLoaded(true);
@@ -2385,7 +2412,7 @@
                     setUserSecretKey('');
                     sessionStorage.removeItem('assetDashboardSecretKey');
                     const key = window.getEncryptionKey('normal', '', verifiedEmail, SECURITY_KEY);
-                    await saveToCloud({ appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current }, true, null, null, key, 'normal');
+                    await saveToCloud({ appData: appDataRef.current, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios }, true, null, null, key, 'normal');
                 }
             };
 
@@ -5501,6 +5528,8 @@
                         onLogoutBehaviorChange={setLogoutBehavior}
                         onSyncNow={() => fetchFromCloud(verifiedEmail, isPro, false, true)}
                         onLogout={handleLogout}
+                        dataConsent={userProfile?.data_consent}
+                        onToggleConsent={toggleDataConsent}
                     />}
                     {/* [추가] 저장 완료 토스트 */}
                     {showSaveToast && (
