@@ -1515,8 +1515,10 @@
             // [수정] FREE 유저도 기본적으로 'normal' 암호화 적용 (데이터 보호 및 로직 통일)
             const targetMode = targetPro ? (modeOverride || encryptionMode) : 'normal';
 
-            if (!targetEmail || isDemoMode || !unifiedData || !isInitialized || !isCloudLoaded) return;
-            if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
+            // [수정] force가 true일 경우(비밀번호 복구 등) isCloudLoaded 상태와 무관하게 저장 허용
+            if (!targetEmail || isDemoMode || !unifiedData || !isInitialized) return;
+            if (!force && !isCloudLoaded) return;
+            if (!force && isFetchingRef.current) return;
 
             const currentDataStr = JSON.stringify(unifiedData);
             if (!force && currentDataStr === lastSavedDataRef.current) return;
@@ -2500,6 +2502,10 @@
                     assetHistory: assetHistoryRef.current, 
                     referenceScenarios: referenceScenarios 
                 }, true, null, null, key, 'normal');
+
+                // [추가] 복구 완료 후 상태 정상화 (재진입 방지 및 동기화 재개)
+                setIsCloudLoaded(true);
+                setSyncStatus('synced');
 
                 addToast('계정이 복구되었습니다. (일반 모드 전환됨)', 'success');
             };
