@@ -304,7 +304,8 @@ window.SettingsModal = ({
     isOpen, onClose, encryptionMode, onModeChange, 
     darkMode, onThemeToggle, logoutBehavior, onLogoutBehaviorChange,
     onSyncNow, onLogout,
-    dataConsent, onToggleConsent
+    dataConsent, onToggleConsent,
+    isPro
 }) => {
     if (!isOpen) return null;
     return (
@@ -317,7 +318,10 @@ window.SettingsModal = ({
                 <div className="p-6 space-y-6">
                     {/* 보안 설정 */}
                     <section>
-                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">🔐 데이터 보안 (종단간 암호화)</h4>
+                        <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider">🔐 데이터 보안 (종단간 암호화)</h4>
+                            {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded">PRO 전용</span>}
+                        </div>
                         <div className="grid grid-cols-2 gap-2">
                             <button onClick={() => onModeChange('normal')} className={`p-3 rounded-xl border-2 transition-all text-left ${encryptionMode === 'normal' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-gray-700'}`}>
                                 <div className="text-sm font-bold dark:text-white">일반 모드</div>
@@ -325,16 +329,19 @@ window.SettingsModal = ({
                             </button>
                             <button onClick={() => onModeChange('secure')} className={`p-3 rounded-xl border-2 transition-all text-left ${encryptionMode === 'secure' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-gray-700'}`}>
                                 <div className="text-sm font-bold dark:text-white">강화 모드</div>
-                                <div className="text-[10px] text-gray-500">비밀번호 기반 암호화</div>
+                                <div className="text-[10px] text-gray-500">{!isPro ? '🔒 잠김' : '비밀번호 기반 암호화'}</div>
                             </button>
                         </div>
                     </section>
                     {/* 테마 설정 */}
                     <section>
-                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">🎨 화면 테마</h4>
+                        <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider">🎨 화면 테마</h4>
+                            {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded">PRO 전용</span>}
+                        </div>
                         <button onClick={onThemeToggle} className="w-full p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                             <span className="text-sm font-medium dark:text-white">{darkMode ? '🌙 다크 모드 사용 중 (데모)' : '☀️ 라이트 모드 사용 중'}</span>
-                            <span className="text-xs text-indigo-600 font-bold">변경하기</span>
+                            <span className="text-xs text-indigo-600 font-bold">{!isPro ? '🔒 잠김' : '변경하기'}</span>
                         </button>
                     </section>
                     {/* 개인정보 설정 */}
@@ -350,10 +357,13 @@ window.SettingsModal = ({
                     </section>
                     {/* 로그아웃 정책 */}
                     <section>
-                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">🚪 로그아웃 시 데이터 처리</h4>
-                        <div className="flex bg-gray-100 dark:bg-gray-900 p-1 rounded-xl">
-                            <button onClick={() => onLogoutBehaviorChange('keep')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${logoutBehavior === 'keep' ? 'bg-white dark:bg-gray-700 text-indigo-600 shadow-sm' : 'text-gray-500'}`}>로컬 데이터 유지</button>
-                            <button onClick={() => onLogoutBehaviorChange('reset')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${logoutBehavior === 'reset' ? 'bg-white dark:bg-gray-700 text-red-600 shadow-sm' : 'text-gray-500'}`}>데이터 즉시 삭제</button>
+                        <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider">🚪 로그아웃 시 데이터 처리</h4>
+                            {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded">PRO 전용</span>}
+                        </div>
+                        <div className={`flex bg-gray-100 dark:bg-gray-900 p-1 rounded-xl ${!isPro ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <button onClick={() => isPro && onLogoutBehaviorChange('keep')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${logoutBehavior === 'keep' ? 'bg-white dark:bg-gray-700 text-indigo-600 shadow-sm' : 'text-gray-500'}`}>로컬 데이터 유지</button>
+                            <button onClick={() => isPro && onLogoutBehaviorChange('reset')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${logoutBehavior === 'reset' ? 'bg-white dark:bg-gray-700 text-red-600 shadow-sm' : 'text-gray-500'}`}>데이터 즉시 삭제</button>
                         </div>
                         <p className="text-[10px] text-gray-500 mt-2 px-1">
                             {logoutBehavior === 'keep' ? '로그아웃 후에도 이 브라우저에 자산 데이터가 남습니다.' : '로그아웃 시 보안을 위해 브라우저의 모든 데이터를 초기화합니다.'}
@@ -1036,7 +1046,7 @@ window.CapitalIncomeAnalysisModal = ({ isOpen, onClose, appData, projections }) 
 // [추가] 관리자 대시보드 모달 (통계, 유저관리, 공지사항)
 window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton, onToggleSuggestionButton }) => {
     const [activeTab, setActiveTab] = useState('stats');
-    const [stats, setStats] = useState({ totalUsers: 0, proUsers: 0, activeUsers: 0, totalSuggestions: 0, consentedUsers: 0 });
+    const [stats, setStats] = useState({ totalUsers: 0, proUsers: 0, activeUsers: 0, totalSuggestions: 0, consentedUsers: 0, insights: null });
     const [users, setUsers] = useState([]);
     const [suggestions, setSuggestions] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -1090,7 +1100,62 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
         const { count: consentCount, error: consentError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('data_consent', true);
         if (consentError) console.error('Stats Error (Consent):', consentError);
 
-        setStats({ totalUsers: total || 0, proUsers: pro || 0, activeUsers: uniqueActiveUsers || 0, totalSuggestions: suggCount || 0, consentedUsers: consentCount || 0 });
+        // [추가] 익명 데이터 기반 인사이트 계산 (동의한 유저 샘플링)
+        let insights = null;
+        if (consentCount > 0) {
+            try {
+                // 1. 동의한 유저 이메일 가져오기 (최신 50명)
+                const { data: profiles } = await supabase.from('user_profiles').select('email').eq('data_consent', true).order('updated_at', { ascending: false }).limit(50);
+                
+                if (profiles && profiles.length > 0) {
+                    const emails = profiles.map(p => p.email);
+                    // 2. 해당 유저들의 자산 데이터 가져오기
+                    const { data: assetsData } = await supabase.from('user_assets').select('email, data, encryption_type').in('email', emails);
+                    
+                    if (assetsData) {
+                        let totalAssetsSum = 0;
+                        let validCount = 0;
+                        let sectorCounts = {};
+
+                        assetsData.forEach(record => {
+                            try {
+                                let appData = record.data;
+                                // 암호화된 경우 복호화 시도 (시스템 키 사용 가능한 경우만)
+                                if (record.encryption_type === 'normal' && window.SECURITY_KEY) {
+                                    const key = window.getEncryptionKey('normal', null, record.email, window.SECURITY_KEY);
+                                    if (key) appData = window.decryptData(record.data, key);
+                                } else if (record.encryption_type === 'secure') {
+                                    return; // 개인 비밀번호 암호화는 해독 불가하므로 통계 제외
+                                }
+
+                                const assets = appData.appData?.assets || appData.assets; // 구조 호환성
+                                if (assets) {
+                                    const total = window.calculateGrossTotal(assets);
+                                    totalAssetsSum += total;
+                                    validCount++;
+                                    
+                                    // 섹터별 보유 여부 카운트
+                                    Object.keys(assets).forEach(k => {
+                                        if (assets[k] && assets[k].length > 0) sectorCounts[k] = (sectorCounts[k] || 0) + 1;
+                                    });
+                                }
+                            } catch (e) { /* Decryption or parsing failed */ }
+                        });
+
+                        if (validCount > 0) {
+                            const sortedSectors = Object.entries(sectorCounts).sort((a, b) => b[1] - a[1]);
+                            insights = {
+                                avgTotalAsset: Math.round(totalAssetsSum / validCount),
+                                topSector: sortedSectors[0] ? window.sectorInfo[sortedSectors[0][0]]?.name : '-',
+                                sampleSize: validCount
+                            };
+                        }
+                    }
+                }
+            } catch (e) { console.error("Insight calc error:", e); }
+        }
+
+        setStats({ totalUsers: total || 0, proUsers: pro || 0, activeUsers: uniqueActiveUsers || 0, totalSuggestions: suggCount || 0, consentedUsers: consentCount || 0, insights });
     };
 
     const fetchUsers = async () => {
@@ -1179,29 +1244,45 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
 
                 <div className="flex-1 overflow-y-auto p-6 bg-gray-50 dark:bg-gray-900">
                     {activeTab === 'stats' && (
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                <div className="text-sm text-gray-500 mb-1">총 가입자</div>
-                                <div className="text-3xl font-bold text-gray-900 dark:text-white">{stats.totalUsers.toLocaleString()}명</div>
+                        <div className="space-y-6">
+                            {/* [수정] 통계 카드 컴팩트하게 변경 */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                    <div className="text-xs text-gray-500 mb-1">총 가입자</div>
+                                    <div className="text-xl font-bold text-gray-900 dark:text-white">{stats.totalUsers.toLocaleString()}</div>
+                                </div>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                    <div className="text-xs text-gray-500 mb-1">PRO / MAU</div>
+                                    <div className="text-xl font-bold text-amber-500">{stats.proUsers} <span className="text-gray-300 text-sm">/ {stats.activeUsers}</span></div>
+                                </div>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                    <div className="text-xs text-gray-500 mb-1">의견 / 동의</div>
+                                    <div className="text-xl font-bold text-purple-600 dark:text-purple-400">{stats.totalSuggestions} <span className="text-gray-300 text-sm">/ {stats.consentedUsers}</span></div>
+                                </div>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                    <div className="text-xs text-gray-500 mb-1">동의율</div>
+                                    <div className="text-xl font-bold text-blue-600 dark:text-blue-400">{stats.totalUsers ? ((stats.consentedUsers/stats.totalUsers)*100).toFixed(1) : 0}%</div>
+                                </div>
                             </div>
-                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                <div className="text-sm text-gray-500 mb-1">PRO 사용자</div>
-                                <div className="text-3xl font-bold text-amber-500">{stats.proUsers.toLocaleString()}명</div>
-                                <div className="text-xs text-gray-400 mt-2">비율: {stats.totalUsers ? ((stats.proUsers/stats.totalUsers)*100).toFixed(1) : 0}%</div>
-                            </div>
-                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                <div className="text-sm text-gray-500 mb-1">월간 활성 유저 (MAU)</div>
-                                <div className="text-3xl font-bold text-green-600 dark:text-green-400">{stats.activeUsers.toLocaleString()}명</div>
-                            </div>
-                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                <div className="text-sm text-gray-500 mb-1">접수된 의견</div>
-                                <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{stats.totalSuggestions.toLocaleString()}건</div>
-                            </div>
-                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                <div className="text-sm text-gray-500 mb-1">데이터 동의 유저</div>
-                                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{stats.consentedUsers.toLocaleString()}명</div>
-                                <div className="text-xs text-gray-400 mt-2">비율: {stats.totalUsers ? ((stats.consentedUsers/stats.totalUsers)*100).toFixed(1) : 0}%</div>
-                            </div>
+
+                            {/* [추가] 익명 데이터 인사이트 섹션 */}
+                            {stats.insights && (
+                                <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/20 p-5 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                                    <h4 className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-3 flex items-center gap-2">
+                                        📊 익명 데이터 인사이트 <span className="text-[10px] font-normal bg-white/50 px-2 py-0.5 rounded text-indigo-600">표본: {stats.insights.sampleSize}명</span>
+                                    </h4>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <div className="text-xs text-indigo-600/70 dark:text-indigo-400/70 mb-1">평균 총자산</div>
+                                            <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">{stats.insights.avgTotalAsset.toLocaleString()}만원</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-xs text-indigo-600/70 dark:text-indigo-400/70 mb-1">최다 보유 섹터</div>
+                                            <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">{stats.insights.topSector}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 

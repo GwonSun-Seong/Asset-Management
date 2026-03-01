@@ -1105,7 +1105,7 @@
         });
 
         // [추가] 저장된 시나리오 캐러셀 컴포넌트
-        const SavedScenariosCarousel = ({ scenarios, onLoad, onDelete, referenceScenarios, onToggleReference, onUpdateReferenceColor }) => {
+        const SavedScenariosCarousel = ({ scenarios, onLoad, onDelete, referenceScenarios, onToggleReference, onUpdateReferenceColor, isPro, onOpenProModal }) => {
             const [currentIndex, setCurrentIndex] = useState(0);
             
             useEffect(() => {
@@ -1142,15 +1142,15 @@
                         </button>
                         <div className="flex-1 flex gap-1">
                             <button 
-                                onClick={() => onToggleReference(current)} 
+                                onClick={() => isPro ? onToggleReference(current) : onOpenProModal()} 
                                 className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors border ${
                                     currentRef 
                                     ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' 
-                                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700'
+                                    : isPro ? 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700' : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700'
                                 }`}
                                 style={currentRef ? { borderColor: currentRef.color, color: currentRef.color, backgroundColor: currentRef.color + '1A' } : {}}
                             >
-                                {currentRef ? '기준 해제' : '비교 기준'}
+                                {currentRef ? '기준 해제' : (isPro ? '비교 기준' : '🔒 비교 기준')}
                             </button>
                             {currentRef && (
                                 <input 
@@ -3871,6 +3871,8 @@
                             referenceScenarios={referenceScenarios}
                             onToggleReference={toggleReference}
                             onUpdateReferenceColor={updateReferenceColor}
+                            isPro={isPro}
+                            onOpenProModal={() => setIsProModalOpen(true)}
                         />
                     </div>
                     <div className="flex-grow border-l border-gray-200 dark:border-gray-700 pl-6">
@@ -5131,10 +5133,10 @@
                                         </div>
                                         <div className="grid grid-cols-1 gap-2">
                                             <button 
-                                                onClick={() => isPro ? setIsSettingsModalOpen(true) : setIsProModalOpen(true)}
-                                                className={`w-full py-2.5 rounded-lg text-[11px] font-bold transition-all shadow-md flex items-center justify-center gap-2 ${isPro ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400 cursor-not-allowed'}`}
+                                                onClick={() => setIsSettingsModalOpen(true)}
+                                                className="w-full py-2.5 rounded-lg text-[11px] font-bold transition-all shadow-md flex items-center justify-center gap-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
                                             >
-                                                {isPro ? '⚙️ 앱 설정 및 보안' : '🔒 앱 설정 및 보안'}
+                                                ⚙️ 앱 설정 및 보안
                                             </button>
                                             {!isPro && (
                                                 <button 
@@ -5530,6 +5532,7 @@
                         onLogout={handleLogout}
                         dataConsent={userProfile?.data_consent}
                         onToggleConsent={toggleDataConsent}
+                        isPro={isPro}
                     />}
                     {/* [추가] 저장 완료 토스트 */}
                     {showSaveToast && (
