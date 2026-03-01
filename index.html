@@ -1295,6 +1295,7 @@
             const [isHistoryActionModalOpen, setIsHistoryActionModalOpen] = useState(false); // [추가] 히스토리 액션 모달
             const [pendingHistoryData, setPendingHistoryData] = useState(null); // [추가] 로드 대기 중인 히스토리 데이터
             const [isAdminModalOpen, setIsAdminModalOpen] = useState(false); // [추가] 관리자 대시보드 모달 상태
+            const [isConsentModalOpen, setIsConsentModalOpen] = useState(false); // [추가] 데이터 동의 모달 상태
             const [activeNotice, setActiveNotice] = useState(null); // [추가] 활성화된 공지사항
             
             // [추가] 메모 관련 상태
@@ -1895,8 +1896,8 @@
 
                 try {
                     const { data: profile, error: fetchError } = await withRetry(
-                        // [수정] 관리자 여부(is_admin)도 함께 조회
-                        () => supabase.from('user_profiles').select('is_paid, is_admin').eq('id', session.user.id).maybeSingle()
+                        // [수정] 관리자 여부(is_admin) 및 데이터 동의 여부(data_consent) 함께 조회
+                        () => supabase.from('user_profiles').select('is_paid, is_admin, data_consent').eq('id', session.user.id).maybeSingle()
                     );
                     if (!fetchError) {
                         // [수정] 유료 결제자(is_paid)이거나 관리자(is_admin)이면 PRO 기능 활성화
@@ -1904,6 +1905,11 @@
                         const proStatus = profile ? (profile.is_paid || isAdminUser) : false;
                         setIsPro(proStatus);
                         setIsAdmin(isAdminUser);
+
+                        // [추가] 데이터 활용 동의가 없으면 모달 띄우기 (null인 경우)
+                        if (profile && profile.data_consent === null) {
+                            setIsConsentModalOpen(true);
+                        }
 
                         // [수정] 무료 유저도 자동 동기화 활성화 (UX 개선: 수동 저장 제거)
                         await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
@@ -1924,6 +1930,25 @@
                     if (isManualCheck) setIsLoadingCloud(false);
                 }
             }, [supabase, withRetry, fetchFromCloud, addToast, fetchAdminSuggestions]);
+
+            // [추가] 데이터 활용 동의 처리
+            const handleConsent = async () => {
+                if (!supabase || !userProfile?.id) return;
+                try {
+                    const { error } = await supabase.from('user_profiles').update({ 
+                        data_consent: true,
+                        consent_date: new Date().toISOString()
+                    }).eq('id', userProfile.id);
+                    
+                    if (error) throw error;
+                    
+                    setIsConsentModalOpen(false);
+                    addToast('데이터 활용에 동의해주셔서 감사합니다.', 'success');
+                } catch (e) {
+                    console.error('Consent update error:', e);
+                    addToast('동의 처리 중 오류가 발생했습니다.', 'error');
+                }
+            };
 
             // [추가] 공지사항 실시간 동기화 (새로고침 없이 즉시 반영)
             useEffect(() => {
@@ -3542,7 +3567,8 @@
             }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios]);
 
             // ===== 자산 관리 함수들 =====
-            const addAsset = (sector) => setAssets(prev => ({
+            const addAsset = (sector) => {
+                setAssets(prev => ({
                 ...prev,
                 [sector]: [...(prev[sector] || []), {
                     id: Date.now() + Math.random(), // 고유 ID 추가
@@ -3559,7 +3585,9 @@
                     maturityMonth: 36,
                     loanStartDate: baseMonth
                 }]
-            }));
+                }));
+                setPanelCollapseState(prev => ({ ...prev, assets: false })); // [추가] 패널 자동 펼치기
+            };
 
             const updateAsset = React.useCallback((sector, index, field, value) => {
                 const numberFields = ['amount', 'rate', 'feeRate', 'monthlyContrib', 'extraContrib', 'maturityMonth']; 
@@ -3665,6 +3693,7 @@
                         name: '새 수입 이벤트', amount: 0, startMonth: baseMonth, endMonth: baseMonth, targetSector: 'deposit', targetAsset: 0 
                     }];
                 });
+                setPanelCollapseState(prev => ({ ...prev, events: false })); // [추가] 패널 자동 펼치기
             };
             
             const updateIncomeEvent = (index, field, value) => {
@@ -3763,13 +3792,16 @@
                 });
             }, [setExpenseEvents]);
 
-            const addExpenseEvent = () => setExpenseEvents(prev => {
+            const addExpenseEvent = () => {
+                setExpenseEvents(prev => {
                 // prev가 배열이 아닐 경우를 대비하여 안전하게 처리
                 const currentEvents = Array.isArray(prev) ? prev : [];
                 return [...currentEvents, { 
                     name: '새 지출 이벤트', amount: 0, startMonth: baseDate.slice(0,7), endMonth: baseDate.slice(0,7), targetSector: 'deposit', targetAsset: 0 
                 }];
-            });
+                });
+                setPanelCollapseState(prev => ({ ...prev, events: false })); // [추가] 패널 자동 펼치기
+            };
             const updateExpenseEvent = (index, field, value) => {
                 let newValue = value;
                 const numberFields = ['amount', 'targetAsset'];
@@ -5469,8 +5501,6 @@
                         onLogoutBehaviorChange={setLogoutBehavior}
                         onSyncNow={() => fetchFromCloud(verifiedEmail, isPro, false, true)}
                         onLogout={handleLogout}
-                        showSuggestionButton={showSuggestionButton}
-                        onToggleSuggestionButton={setShowSuggestionButton}
                     />}
                     {/* [추가] 저장 완료 토스트 */}
                     {showSaveToast && (
@@ -5507,6 +5537,13 @@
                         isOpen={isAdminModalOpen}
                         onClose={() => setIsAdminModalOpen(false)}
                         supabase={supabase}
+                        showSuggestionButton={showSuggestionButton}
+                        onToggleSuggestionButton={setShowSuggestionButton}
+                    />}
+                    {window.DataConsentModal && <window.DataConsentModal
+                        isOpen={isConsentModalOpen}
+                        onClose={() => setIsConsentModalOpen(false)}
+                        onConfirm={handleConsent}
                     />}
                     </div>
             );

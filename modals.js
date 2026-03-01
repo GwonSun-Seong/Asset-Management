@@ -308,8 +308,7 @@ window.OnboardingGuide = ({ isOpen, onClose }) => {
 window.SettingsModal = ({ 
     isOpen, onClose, encryptionMode, onModeChange, 
     darkMode, onThemeToggle, logoutBehavior, onLogoutBehaviorChange,
-    onSyncNow, onLogout,
-    showSuggestionButton, onToggleSuggestionButton
+    onSyncNow, onLogout
 }) => {
     if (!isOpen) return null;
     return (
@@ -341,14 +340,6 @@ window.SettingsModal = ({
                             <span className="text-sm font-medium dark:text-white">{darkMode ? '🌙 다크 모드 사용 중 (데모)' : '☀️ 라이트 모드 사용 중'}</span>
                             <span className="text-xs text-indigo-600 font-bold">변경하기</span>
                         </button>
-                    </section>
-                    {/* 화면 설정 */}
-                    <section>
-                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">🖥️ 화면 설정</h4>
-                        <div className="flex justify-between items-center p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700">
-                            <span className="text-sm font-medium dark:text-white">좌하단 '의견 보내기' 버튼 표시</span>
-                            <input type="checkbox" checked={showSuggestionButton} onChange={(e) => onToggleSuggestionButton(e.target.checked)} className="w-5 h-5 accent-indigo-600 cursor-pointer" />
-                        </div>
                     </section>
                     {/* 로그아웃 정책 */}
                     <section>
@@ -1036,9 +1027,9 @@ window.CapitalIncomeAnalysisModal = ({ isOpen, onClose, appData, projections }) 
 };
 
 // [추가] 관리자 대시보드 모달 (통계, 유저관리, 공지사항)
-window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
+window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton, onToggleSuggestionButton }) => {
     const [activeTab, setActiveTab] = useState('stats');
-    const [stats, setStats] = useState({ totalUsers: 0, proUsers: 0, activeUsers: 0, totalSuggestions: 0 });
+    const [stats, setStats] = useState({ totalUsers: 0, proUsers: 0, activeUsers: 0, totalSuggestions: 0, consentedUsers: 0 });
     const [users, setUsers] = useState([]);
     const [suggestions, setSuggestions] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -1088,7 +1079,11 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
         const { count: suggCount, error: suggError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).not('suggestions', 'is', null);
         if (suggError) console.error('Stats Error (Suggestions):', suggError);
 
-        setStats({ totalUsers: total || 0, proUsers: pro || 0, activeUsers: uniqueActiveUsers || 0, totalSuggestions: suggCount || 0 });
+        // [추가] 데이터 활용 동의 유저 수 (data_consent가 true인 유저만 카운트)
+        const { count: consentCount, error: consentError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('data_consent', true);
+        if (consentError) console.error('Stats Error (Consent):', consentError);
+
+        setStats({ totalUsers: total || 0, proUsers: pro || 0, activeUsers: uniqueActiveUsers || 0, totalSuggestions: suggCount || 0, consentedUsers: consentCount || 0 });
     };
 
     const fetchUsers = async () => {
@@ -1113,7 +1108,8 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
     const fetchSuggestions = async () => {
         setIsLoading(true);
         try {
-            const { data, error } = await supabase.from('user_profiles').select('email, suggestions, updated_at').not('suggestions', 'is', null).order('updated_at', { ascending: false });
+            // [수정] index.html과 로직 통일 (updated_at 제거 및 단순화)
+            const { data, error } = await supabase.from('user_profiles').select('email, suggestions').not('suggestions', 'is', null);
             if (error) throw error;
             setSuggestions(data || []);
         } catch (err) {
@@ -1194,6 +1190,11 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
                                 <div className="text-sm text-gray-500 mb-1">접수된 의견</div>
                                 <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{stats.totalSuggestions.toLocaleString()}건</div>
                             </div>
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <div className="text-sm text-gray-500 mb-1">데이터 동의 유저</div>
+                                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{stats.consentedUsers.toLocaleString()}명</div>
+                                <div className="text-xs text-gray-400 mt-2">비율: {stats.totalUsers ? ((stats.consentedUsers/stats.totalUsers)*100).toFixed(1) : 0}%</div>
+                            </div>
                         </div>
                     )}
 
@@ -1225,6 +1226,10 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
 
                     {activeTab === 'suggestions' && (
                         <div className="space-y-4">
+                            <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <span className="text-sm font-bold text-gray-900 dark:text-white">플로팅 버튼(의견함) 활성화</span>
+                                <input type="checkbox" checked={showSuggestionButton} onChange={(e) => onToggleSuggestionButton(e.target.checked)} className="w-5 h-5 accent-purple-600 cursor-pointer" />
+                            </div>
                             {suggestions.length === 0 ? (
                                 <div className="text-center text-gray-500 py-10">접수된 의견이 없습니다.</div>
                             ) : (
@@ -1232,7 +1237,6 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
                                     <div key={idx} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
                                         <div className="flex justify-between items-center mb-2">
                                             <span className="font-bold text-gray-900 dark:text-white">{item.email}</span>
-                                            <span className="text-xs text-gray-400">{new Date(item.updated_at).toLocaleDateString()}</span>
                                         </div>
                                         <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">{item.suggestions}</div>
                                     </div>
@@ -1251,6 +1255,44 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
                             </div>
                         </div>
                     )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// [추가] 데이터 활용 동의 모달
+window.DataConsentModal = ({ isOpen, onClose, onConfirm }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg p-6 animate-in zoom-in duration-300">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">📊 데이터 익명 활용 동의</h3>
+                <div className="space-y-4 text-sm text-gray-600 dark:text-gray-300 max-h-[60vh] overflow-y-auto custom-scrollbar p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl mb-6 border border-gray-100 dark:border-gray-700">
+                    <p className="font-medium">더 나은 서비스를 제공하기 위해 귀하의 자산 데이터를 <span className="text-blue-600 dark:text-blue-400 font-bold">익명화</span>하여 통계 자료로 활용하고자 합니다.</p>
+                    
+                    <h4 className="font-bold text-gray-800 dark:text-white mt-4 flex items-center gap-2">
+                        <span className="bg-blue-100 text-blue-600 rounded-full w-5 h-5 flex items-center justify-center text-xs">1</span> 수집 및 활용 목적
+                    </h4>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-xs">
+                        <li>사용자 평균 자산, 연령대별 자산 분포 등 통계 지표 산출</li>
+                        <li>AI 자산 분석 모델의 정확도 향상 및 학습 데이터 활용</li>
+                        <li>서비스 기능 개선 및 신규 기능(예: 또래 비교) 기획</li>
+                    </ul>
+
+                    <h4 className="font-bold text-gray-800 dark:text-white mt-4 flex items-center gap-2">
+                        <span className="bg-blue-100 text-blue-600 rounded-full w-5 h-5 flex items-center justify-center text-xs">2</span> 익명성 보장
+                    </h4>
+                    <p className="text-xs ml-2">수집된 데이터는 개인을 식별할 수 없는 형태로 가공되며, 이메일이나 이름 등 개인정보와는 <span className="font-bold">엄격히 분리되어 저장</span>됩니다.</p>
+
+                    <h4 className="font-bold text-gray-800 dark:text-white mt-4 flex items-center gap-2">
+                        <span className="bg-blue-100 text-blue-600 rounded-full w-5 h-5 flex items-center justify-center text-xs">3</span> 혜택
+                    </h4>
+                    <p className="text-xs ml-2">동의 시, 추후 제공될 '내 자산 순위 비교' 및 '연령대별 평균 비교' 기능을 무료로 이용하실 수 있습니다.</p>
+                </div>
+                <div className="flex gap-3">
+                    <button onClick={onClose} className="flex-1 py-3 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl font-bold transition-colors text-sm">나중에 하기</button>
+                    <button onClick={onConfirm} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-colors text-sm">동의하고 시작하기</button>
                 </div>
             </div>
         </div>
