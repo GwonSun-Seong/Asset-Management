@@ -1297,6 +1297,7 @@
             const [isAdminModalOpen, setIsAdminModalOpen] = useState(false); // [추가] 관리자 대시보드 모달 상태
             const [isConsentModalOpen, setIsConsentModalOpen] = useState(false); // [추가] 데이터 동의 모달 상태
             const [activeNotice, setActiveNotice] = useState(null); // [추가] 활성화된 공지사항
+            const [activeReply, setActiveReply] = useState(null); // [추가] 관리자 답변 배너 상태
             
             // [추가] 메모 관련 상태
             const [currentMemoIndex, setCurrentMemoIndex] = useState(0);
@@ -1905,8 +1906,8 @@
 
                 try {
                     const { data: profile, error: fetchError } = await withRetry(
-                        // [수정] 관리자 여부(is_admin) 및 데이터 동의 여부(data_consent) 함께 조회
-                        () => supabase.from('user_profiles').select('is_paid, is_admin, data_consent').eq('id', session.user.id).maybeSingle()
+                        // [수정] 관리자 답변(suggestions_reply) 및 읽음 여부(suggestions_reply_isread) 추가 조회
+                        () => supabase.from('user_profiles').select('is_paid, is_admin, data_consent, suggestions_reply, suggestions_reply_isread').eq('id', session.user.id).maybeSingle()
                     );
                     if (!fetchError) {
                         // [수정] 유료 결제자(is_paid)이거나 관리자(is_admin)이면 PRO 기능 활성화
@@ -1918,6 +1919,11 @@
                         // [추가] 데이터 활용 동의가 없으면 모달 띄우기 (null인 경우)
                         if (profile && profile.data_consent === null) {
                             setIsConsentModalOpen(true);
+                        }
+
+                        // [추가] 읽지 않은 관리자 답변이 있으면 배너 표시
+                        if (profile && profile.suggestions_reply && !profile.suggestions_reply_isread) {
+                            setActiveReply(profile.suggestions_reply);
                         }
 
                         // [수정] 무료 유저도 자동 동기화 활성화 (UX 개선: 수동 저장 제거)
@@ -1976,6 +1982,21 @@
                 } catch (e) {
                     console.error('Consent update error:', e);
                     addToast('동의 처리 중 오류가 발생했습니다.', 'error');
+                }
+            };
+
+            // [추가] 관리자 답변 확인(닫기) 처리
+            const handleDismissReply = async () => {
+                if (!confirm('답변을 확인하셨나요? 확인을 누르면 메시지가 영구히 사라집니다.\n(취소하면 다음에 다시 표시됩니다)')) return;
+                
+                setActiveReply(null); // UI에서 즉시 제거
+                if (!supabase || !userProfile?.id) return;
+
+                try {
+                    await supabase.from('user_profiles').update({ suggestions_reply_isread: true }).eq('id', userProfile.id);
+                } catch (e) {
+                    console.error('Reply dismiss error:', e);
+                    // 에러 발생 시 사용자에게 알리지 않고 조용히 실패 (다음 로드 시 다시 뜸)
                 }
             };
 
@@ -5009,6 +5030,13 @@
                         <div className="bg-indigo-600 text-white px-4 py-2 text-sm font-medium text-center relative animate-in slide-in-from-top duration-500">
                             <span className="mr-2">📢</span> {activeNotice}
                             <button onClick={() => setActiveNotice(null)} className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-200 hover:text-white">✕</button>
+                        </div>
+                    )}
+                    {/* [추가] 관리자 답변 배너 (공지사항 아래 표시) */}
+                    {activeReply && (
+                        <div className="bg-green-600 text-white px-4 py-2 text-sm font-medium text-center relative animate-in slide-in-from-top duration-500 border-t border-green-500">
+                            <span className="mr-2">📬</span> <b>관리자 답변:</b> {activeReply}
+                            <button onClick={handleDismissReply} className="absolute right-4 top-1/2 -translate-y-1/2 text-green-200 hover:text-white" title="확인 및 닫기">✕</button>
                         </div>
                     )}
                     <div className="sticky top-0 z-50 bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700">

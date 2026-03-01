@@ -1115,6 +1115,9 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                     const totals = [];
                     const debts = [];
                     const nets = [];
+                    const incomes = []; // [추가] 월 고정 소득
+                    const expenses = []; // [추가] 월 고정 소비
+                    const capitalIncomes = []; // [추가] 월 자본 소득
                     let validCount = 0;
 
                     uniqueAssets.forEach(record => {
@@ -1145,6 +1148,26 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                                 totals.push(total);
                                 debts.push(debt);
                                 nets.push(net);
+
+                                // [추가] 소득/소비/자본소득 데이터 수집
+                                const salary = Number(appData.monthlySalary || 0);
+                                incomes.push(salary);
+
+                                const expenseTotal = (appData.monthlyExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+                                expenses.push(expenseTotal);
+
+                                let capIncome = 0;
+                                Object.keys(assets).forEach(k => {
+                                    if (k === 'loan') {
+                                        // 대출 이자는 마이너스 자본소득
+                                        (assets[k] || []).forEach(a => capIncome -= (Number(a.amount||0) * (Number(a.rate||0)/100/12)));
+                                    } else {
+                                        // 자산 수익은 플러스 자본소득 (세전 기준)
+                                        (assets[k] || []).forEach(a => capIncome += (Number(a.amount||0) * (Number(a.rate||0)/100/12)));
+                                    }
+                                });
+                                capitalIncomes.push(capIncome);
+
                                 validCount++;
                             }
                         } catch (e) { /* Decryption failed */ }
@@ -1162,6 +1185,9 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                         const sumTotal = totals.reduce((a, b) => a + b, 0);
                         const sumDebt = debts.reduce((a, b) => a + b, 0);
                         const sumNet = nets.reduce((a, b) => a + b, 0);
+                        const sumIncome = incomes.reduce((a, b) => a + b, 0);
+                        const sumExpense = expenses.reduce((a, b) => a + b, 0);
+                        const sumCapIncome = capitalIncomes.reduce((a, b) => a + b, 0);
 
                         insights = {
                             avgTotal: Math.round(sumTotal / validCount),
@@ -1170,6 +1196,12 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                             medianDebt: Math.round(calculateMedian(debts)),
                             avgNet: Math.round(sumNet / validCount),
                             medianNet: Math.round(calculateMedian(nets)),
+                            avgIncome: Math.round(sumIncome / validCount),
+                            medianIncome: Math.round(calculateMedian(incomes)),
+                            avgExpense: Math.round(sumExpense / validCount),
+                            medianExpense: Math.round(calculateMedian(expenses)),
+                            avgCapIncome: Math.round(sumCapIncome / validCount),
+                            medianCapIncome: Math.round(calculateMedian(capitalIncomes)),
                             sampleSize: validCount,
                             totalUsers: totalUsersCount || 0
                         };
@@ -1206,8 +1238,8 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
     const fetchSuggestions = async () => {
         setIsLoading(true);
         try {
-            // [수정] index.html과 로직 통일 (updated_at 제거 및 단순화)
-            const { data, error } = await supabase.from('user_profiles').select('email, suggestions').not('suggestions', 'is', null);
+            // [수정] 답변 기능을 위해 id와 suggestions_reply 컬럼 추가 조회
+            const { data, error } = await supabase.from('user_profiles').select('id, email, suggestions, suggestions_reply').not('suggestions', 'is', null);
             if (error) throw error;
             setSuggestions(data || []);
         } catch (err) {
@@ -1215,6 +1247,17 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
         } finally {
             setIsLoading(false);
         }
+    };
+
+    // [추가] 관리자 답변 전송 함수
+    const sendReply = async (userId, replyText) => {
+        if (!confirm('답변을 전송하시겠습니까? 사용자의 상단 배너에 표시됩니다.')) return;
+        const { error } = await supabase.from('user_profiles')
+            .update({ suggestions_reply: replyText, suggestions_reply_isread: false })
+            .eq('id', userId);
+        
+        if (error) alert('전송 실패: ' + error.message);
+        else { alert('답변이 전송되었습니다.'); fetchSuggestions(); }
     };
 
     const toggleUserPro = async (userId, currentStatus) => {
@@ -1315,6 +1358,21 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                                                     <td className="p-4 text-right font-bold text-green-600 dark:text-green-400">{stats.insights.avgNet.toLocaleString()}만원</td>
                                                     <td className="p-4 text-right">{stats.insights.medianNet.toLocaleString()}만원</td>
                                                 </tr>
+                                                <tr>
+                                                    <td className="p-4 font-medium dark:text-gray-300">월 고정 소득</td>
+                                                    <td className="p-4 text-right font-bold text-blue-600 dark:text-blue-400">{stats.insights.avgIncome.toLocaleString()}만원</td>
+                                                    <td className="p-4 text-right">{stats.insights.medianIncome.toLocaleString()}만원</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="p-4 font-medium dark:text-gray-300">월 고정 소비</td>
+                                                    <td className="p-4 text-right font-bold text-red-500">{stats.insights.avgExpense.toLocaleString()}만원</td>
+                                                    <td className="p-4 text-right">{stats.insights.medianExpense.toLocaleString()}만원</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="p-4 font-medium dark:text-gray-300">월 자본 소득 (순수익)</td>
+                                                    <td className="p-4 text-right font-bold text-emerald-600 dark:text-emerald-400">{stats.insights.avgCapIncome.toLocaleString()}만원</td>
+                                                    <td className="p-4 text-right">{stats.insights.medianCapIncome.toLocaleString()}만원</td>
+                                                </tr>
                                             </tbody>
                                         </table>
                                     </div>
@@ -1362,10 +1420,23 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                             ) : (
                                 suggestions.map((item, idx) => (
                                     <div key={idx} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                        <div className="flex justify-between items-center mb-2">
+                                        <div className="flex justify-between items-start mb-2">
                                             <span className="font-bold text-gray-900 dark:text-white">{item.email}</span>
+                                            {item.suggestions_reply && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">답변 완료</span>}
                                         </div>
-                                        <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">{item.suggestions}</div>
+                                        <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-3 rounded-lg mb-3">{item.suggestions}</div>
+                                        
+                                        {/* [추가] 답변 입력 폼 */}
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="답변 입력 (사용자에게 배너로 표시됨)" 
+                                                className="flex-1 border rounded px-3 py-2 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                defaultValue={item.suggestions_reply || ''}
+                                                id={`reply-${item.id}`}
+                                            />
+                                            <button onClick={() => sendReply(item.id, document.getElementById(`reply-${item.id}`).value)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">전송</button>
+                                        </div>
                                     </div>
                                 ))
                             )}
