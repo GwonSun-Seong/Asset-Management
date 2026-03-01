@@ -1541,10 +1541,10 @@
             try {
                     // [수정] 클라우드 저장 시에도 로컬 날짜 기준 사용 (히스토리와 일관성 유지)
                     const now = new Date();
-                    // [수정] 무료 유저는 'latest' 키로 단일 레코드만 유지 (DB 용량 절약), PRO는 날짜별 기록
+                    // [수정] 무료 유저는 '1900-01-01' 고정값으로 단일 레코드 유지 (DB DATE 타입 호환), PRO는 날짜별 기록
                     const recordDate = targetPro 
                         ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-                        : 'latest';
+                        : '1900-01-01';
 
                 await withRetry(() => supabase.auth.refreshSession());
                 const { data, error } = await withRetry(() => 
@@ -1555,7 +1555,10 @@
                             record_date: recordDate
                     }, { onConflict: 'email,record_date' }).select('updated_at').single()
                 );
-                if (error) throw error;
+                if (error) {
+                    console.error('Supabase Upsert Error:', error.code, error.message);
+                    throw error;
+                }
                 if (data) {
                     setSyncStatus('synced');
                     setLastSyncTime(new Date().toLocaleTimeString('ko-KR', { hour12: false }));
