@@ -1105,7 +1105,7 @@
         });
 
         // [추가] 저장된 시나리오 캐러셀 컴포넌트
-        const SavedScenariosCarousel = ({ scenarios, onLoad, onDelete, onSetReference, referenceId }) => {
+        const SavedScenariosCarousel = ({ scenarios, onLoad, onDelete, referenceScenarios, onToggleReference, onUpdateReferenceColor }) => {
             const [currentIndex, setCurrentIndex] = useState(0);
             
             useEffect(() => {
@@ -1117,11 +1117,12 @@
             if (scenarios.length === 0) return <div className="text-sm text-gray-500">저장된 시나리오가 없습니다.</div>;
 
             const current = scenarios[currentIndex];
+            const currentRef = referenceScenarios.find(r => r.id === current.id);
             const prev = () => setCurrentIndex(p => (p === 0 ? scenarios.length - 1 : p - 1));
             const next = () => setCurrentIndex(p => (p === scenarios.length - 1 ? 0 : p + 1));
 
             return (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 relative group">
+                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 relative group pb-8">
                     <div className="flex items-center justify-between mb-3">
                         <button onClick={prev} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500">
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
@@ -1139,24 +1140,42 @@
                         <button onClick={() => onLoad(current)} className="flex-1 py-2 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">
                             불러오기
                         </button>
-                        <button 
-                            onClick={() => onSetReference(current.id === referenceId ? null : current)} 
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors border ${
-                                current.id === referenceId 
-                                ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' 
-                                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700'
-                            }`}
-                        >
-                            {current.id === referenceId ? '기준 해제' : '비교 기준 설정'}
-                        </button>
+                        <div className="flex-1 flex gap-1">
+                            <button 
+                                onClick={() => onToggleReference(current)} 
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors border ${
+                                    currentRef 
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' 
+                                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700'
+                                }`}
+                                style={currentRef ? { borderColor: currentRef.color, color: currentRef.color, backgroundColor: currentRef.color + '1A' } : {}}
+                            >
+                                {currentRef ? '기준 해제' : '비교 기준'}
+                            </button>
+                            {currentRef && (
+                                <input 
+                                    type="color" 
+                                    value={currentRef.color} 
+                                    onChange={(e) => onUpdateReferenceColor(current.id, e.target.value)}
+                                    className="w-8 h-full p-0 border border-gray-200 dark:border-gray-600 rounded overflow-hidden cursor-pointer"
+                                    title="색상 변경"
+                                />
+                            )}
+                        </div>
                         <button onClick={() => onDelete(current.id)} className="px-3 py-2 bg-white text-red-500 border border-red-100 hover:bg-red-50 dark:bg-gray-800 dark:border-red-900/30 dark:hover:bg-red-900/20 rounded-lg text-xs font-bold transition-colors">
                             삭제
                         </button>
                     </div>
-                    <div className="absolute bottom-2 right-1/2 transform translate-x-1/2 flex gap-1">
-                        {scenarios.map((_, i) => (
-                            <div key={i} className={`w-1.5 h-1.5 rounded-full ${i === currentIndex ? 'bg-gray-400 dark:bg-gray-500' : 'bg-gray-200 dark:bg-gray-700'}`}></div>
-                        ))}
+                    <div className="absolute bottom-2 right-1/2 transform translate-x-1/2 w-full flex justify-center">
+                        {scenarios.length > 15 ? (
+                            <div className="text-[10px] text-gray-400 font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">{currentIndex + 1} / {scenarios.length}</div>
+                        ) : (
+                            <div className="flex gap-1">
+                                {scenarios.map((_, i) => (
+                                    <div key={i} className={`w-1.5 h-1.5 rounded-full transition-colors ${i === currentIndex ? 'bg-gray-400 dark:bg-gray-500' : 'bg-gray-200 dark:bg-gray-700'}`}></div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             );
@@ -1209,7 +1228,7 @@
             // [추가] 하단에 있던 상태들을 초기화 순서 보장을 위해 위로 이동
             const [assetHistory, setAssetHistory] = useState([]);
             const [showProjectionInHistory, setShowProjectionInHistory] = useState(false);
-            const [referenceScenario, setReferenceScenario] = useState(null); // [추가] 비교 기준 시나리오
+            const [referenceScenarios, setReferenceScenarios] = useState([]); // [수정] 다중 비교 기준 시나리오 {id, color}
             const [logoutBehavior, setLogoutBehavior] = useState(() => localStorage.getItem('assetLogoutBehavior') || 'keep');
             useEffect(() => { localStorage.setItem('assetLogoutBehavior', logoutBehavior); }, [logoutBehavior]);
 
@@ -2460,6 +2479,24 @@
                 }
             };
 
+            const toggleReference = (scenario) => {
+                setReferenceScenarios(prev => {
+                    const exists = prev.find(r => r.id === scenario.id);
+                    if (exists) {
+                        return prev.filter(r => r.id !== scenario.id);
+                    } else {
+                        const colors = ['#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1'];
+                        const usedColors = prev.map(r => r.color);
+                        const nextColor = colors.find(c => !usedColors.includes(c)) || '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+                        return [...prev, { id: scenario.id, color: nextColor }];
+                    }
+                });
+            };
+
+            const updateReferenceColor = (id, color) => {
+                setReferenceScenarios(prev => prev.map(r => r.id === id ? { ...r, color } : r));
+            };
+
             // ===== 예산 계산 =====
             const totalMonthlyExpense = useMemo(() => {
                 if (!monthlyExpenses || !Array.isArray(monthlyExpenses)) return 0;
@@ -3354,9 +3391,12 @@
                     });
                 }
 
-                // [추가] 기준 시나리오 오버레이
-                if (referenceScenario) {
-                    const refData = referenceScenario.data;
+                // [수정] 기준 시나리오 오버레이 (다중 지원)
+                referenceScenarios.forEach(refConfig => {
+                    const scenario = scenarios.find(s => s.id === refConfig.id);
+                    if (!scenario) return;
+
+                    const refData = scenario.data;
                     const refBaseDate = refData.baseDate || (refData.baseMonth ? `${refData.baseMonth}-01` : null);
                     
                     if (refBaseDate) {
@@ -3394,9 +3434,9 @@
                         });
 
                         datasets.push({
-                            label: `기준: ${referenceScenario.name}`,
+                            label: `기준: ${scenario.name}`,
                             data: refDatasetData,
-                            borderColor: '#f59e0b', // Amber color
+                            borderColor: refConfig.color, // 사용자 지정 색상 사용
                             borderDash: [2, 2],
                             pointRadius: 0,
                             borderWidth: 2,
@@ -3404,7 +3444,7 @@
                             tension: 0.4
                         });
                     }
-                }
+                });
 
                 if (goalMode === 'target' && targetAmount > 0) {
                     datasets.push({
@@ -3499,7 +3539,7 @@
 
                 const timerId = setTimeout(renderHistoryChart, 50);
                 return () => clearTimeout(timerId);
-            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenario]);
+            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios]);
 
             // ===== 자산 관리 함수들 =====
             const addAsset = (sector) => setAssets(prev => ({
@@ -3769,8 +3809,9 @@
                             scenarios={scenarios} 
                             onLoad={loadScenario} 
                             onDelete={deleteScenario} 
-                            onSetReference={setReferenceScenario}
-                            referenceId={referenceScenario?.id}
+                            referenceScenarios={referenceScenarios}
+                            onToggleReference={toggleReference}
+                            onUpdateReferenceColor={updateReferenceColor}
                         />
                     </div>
                     <div className="flex-grow border-l border-gray-200 dark:border-gray-700 pl-6">
