@@ -75,7 +75,8 @@ window.PrivacyPolicyModal = ({ isOpen, onClose }) => {
                 <div className="p-6 overflow-y-auto text-sm text-gray-700 dark:text-gray-300 space-y-4">
                     <p><strong>1. 개인정보의 처리 목적</strong><br/>
                     '자산 플래너'(이하 '서비스')는 다음의 목적을 위하여 개인정보를 처리합니다. 처리하고 있는 개인정보는 다음의 목적 이외의 용도로는 이용되지 않으며 이용 목적이 변경되는 경우에는 별도의 동의를 받는 등 필요한 조치를 이행할 예정입니다.<br/>
-                    - 서비스 제공 및 콘텐츠 이용: 자산 시뮬레이션 데이터 저장 및 동기화 (선택 사항)</p>
+                    - 서비스 제공 및 콘텐츠 이용: 자산 시뮬레이션 데이터 저장 및 동기화 (선택 사항)<br/>
+                    - 통계 작성 및 서비스 개선: 접속 빈도 파악, 서비스 이용 통계, 익명화된 자산 데이터 분석</p>
 
                     <p><strong>2. 처리하는 개인정보의 항목</strong><br/>
                     서비스는 기본적인 기능 이용 시 별도의 개인정보를 수집하지 않으며, 모든 데이터는 사용자의 브라우저(Local Storage)에 저장됩니다.<br/>
@@ -89,6 +90,10 @@ window.PrivacyPolicyModal = ({ isOpen, onClose }) => {
 
                     <p><strong>4. 쿠키(Cookie)의 운용 및 거부</strong><br/>
                     서비스는 이용자에게 개별적인 맞춤서비스를 제공하기 위해 이용정보를 저장하고 수시로 불러오는 '쿠키(cookie)'를 사용합니다.</p>
+
+                    <p><strong>5. 가명/익명 정보의 처리</strong><br/>
+                    서비스는 통계 작성, 과학적 연구, 공익적 기록 보존 등을 위하여 수집한 개인정보를 특정 개인을 알아볼 수 없도록 가명/익명 처리하여 활용할 수 있습니다.<br/>
+                    - 가명/익명 정보는 개인정보와 분리하여 별도로 저장·관리합니다.</p>
                 </div>
                 <div className="p-6 border-t dark:border-gray-700 flex justify-end">
                     <button onClick={onClose} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">닫기</button>
@@ -226,7 +231,7 @@ window.ProFeaturesModal = ({ isOpen, onClose }) => {
                             <tr>
                                 <td className="px-4 py-3 dark:text-gray-300">보안 기능</td>
                                 <td className="px-4 py-3 text-center text-gray-500">일반</td>
-                                <td className="px-4 py-3 text-center font-semibold dark:text-white">일반 + 강화 (E2EE)</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">강화 모드 지원</td>
                             </tr>
                         </tbody>
                     </table>
@@ -625,8 +630,58 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
     );
 };
 
+// [추가] Gemini 스트리밍 응답 처리 헬퍼 함수
+const streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) => {
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            const errMsg = errData.error?.message || response.statusText;
+            if (response.status === 400) throw new Error(`잘못된 요청입니다 (400). API 키가 올바른지 확인해주세요.\n(상세: ${errMsg})`);
+            if (response.status === 403) throw new Error(`권한 오류 (403). API 키가 활성화되었는지 확인해주세요.\n(상세: ${errMsg})`);
+            if (response.status === 429) throw new Error(`요청 한도 초과 (429). 잠시 후 다시 시도해주세요.\n(상세: ${errMsg})`);
+            throw new Error(`API 호출 실패 (${response.status}): ${errMsg}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulatedText = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            // SSE 포맷 파싱 (data: {...})
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.slice(6);
+                    if (jsonStr.trim() === '[DONE]') continue;
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (text) {
+                            accumulatedText += text;
+                            onUpdate(accumulatedText);
+                        }
+                    } catch (e) { /* Ignore parse error */ }
+                }
+            }
+        }
+        onComplete(accumulatedText);
+    } catch (err) {
+        onError(err);
+    }
+};
+
 // [이동] AI 자산 분석 모달 (Gemini API 활용) - 커스텀 입력 제거됨
-window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
+window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory }) => {
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
     const [model, setModel] = useState('gemini-3-flash-preview'); // [수정] 안정적인 모델명으로 기본값 변경
     const [persona, setPersona] = useState(() => localStorage.getItem('asset_ai_persona') || '냉철한 전문 자산 관리사');
@@ -691,7 +746,13 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                 futureEvents: {
                     income: (appData.incomeEvents || []).map(e => `${e.name}(${e.amount}만원, ${e.startMonth}~${e.endMonth})`).join(', '),
                     expense: (appData.expenseEvents || []).map(e => `${e.name}(${e.amount}만원, ${e.startMonth}~${e.endMonth})`).join(', ')
-                }
+                },
+                // [추가] 자산 히스토리 전체 데이터 (날짜, 자산, 메모)
+                history: (assetHistory || []).map(h => ({
+                    date: h.date,
+                    asset: h.netWorth,
+                    memo: h.memo
+                }))
             };
 
             // [수정] 시스템 프롬프트 구성 (초기 컨텍스트)
@@ -711,30 +772,19 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
 
             setContextPrompt(prompt); // 컨텍스트 저장
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${trimmedKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-            });
-
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                const errMsg = errData.error?.message || response.statusText;
-                if (response.status === 400) throw new Error(`잘못된 요청입니다 (400). API 키가 올바른지 확인해주세요.\n(상세: ${errMsg})`);
-                if (response.status === 403) throw new Error(`권한 오류 (403). API 키가 활성화되었는지 확인해주세요.\n(상세: ${errMsg})`);
-                if (response.status === 429) throw new Error(`요청 한도 초과 (429). 잠시 후 다시 시도해주세요.\n(상세: ${errMsg})`);
-                throw new Error(`API 호출 실패 (${response.status}): ${errMsg}`);
-            }
-
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '분석 결과를 가져오지 못했습니다.';
-            
-            // [수정] 첫 번째 응답을 메시지 목록에 추가
-            setMessages([{ role: 'model', text: text }]);
+            // [수정] 스트리밍 적용 (빈 메시지 추가 후 업데이트)
+            setMessages([{ role: 'model', text: '' }]);
             setShowSettings(false);
+
+            await streamGeminiResponse(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${trimmedKey}`,
+                { contents: [{ parts: [{ text: prompt }] }] },
+                (text) => setMessages([{ role: 'model', text }]), // Update
+                () => setLoading(false), // Complete
+                (err) => { setError(err.message); setLoading(false); } // Error
+            );
         } catch (err) {
             setError(err.message);
-        } finally {
             setLoading(false);
         }
     };
@@ -748,6 +798,9 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
         setChatInput('');
         setLoading(true);
 
+        // [추가] 모델 응답을 위한 빈 메시지 미리 추가
+        setMessages(prev => [...prev, { role: 'model', text: '' }]);
+
         try {
             // 대화 히스토리 구성: [Context(User), Analysis(Model), ...History, Current(User)]
             const contents = [
@@ -756,21 +809,19 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation }) => {
                 { role: 'user', parts: [{ text: userMsg.text }] }
             ];
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents })
-            });
-
-            if (!response.ok) throw new Error('API 호출 실패');
-
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '답변을 가져오지 못했습니다.';
-            
-            setMessages(prev => [...prev, { role: 'model', text: text }]);
+            await streamGeminiResponse(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
+                { contents },
+                (text) => setMessages(prev => {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = { role: 'model', text };
+                    return updated;
+                }),
+                () => setLoading(false),
+                (err) => { setError('대화 중 오류가 발생했습니다: ' + err.message); setLoading(false); }
+            );
         } catch (err) {
             setError('대화 중 오류가 발생했습니다: ' + err.message);
-        } finally {
             setLoading(false);
         }
     };
@@ -1487,6 +1538,7 @@ window.DataConsentModal = ({ isOpen, onClose, onConfirm }) => {
                         <span className="bg-blue-100 text-blue-600 rounded-full w-5 h-5 flex items-center justify-center text-xs">3</span> 혜택
                     </h4>
                     <p className="text-xs ml-2">동의 시, 추후 제공될 '내 자산 순위 비교' 및 '연령대별 평균 비교' 기능을 무료로 이용하실 수 있습니다.</p>
+                    <p className="text-[10px] text-gray-400 mt-4 text-center">* 동의는 [설정] 메뉴에서 언제든지 철회할 수 있습니다.</p>
                 </div>
                 <div className="flex gap-3">
                     <button onClick={onClose} className="flex-1 py-3 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl font-bold transition-colors text-sm">나중에 하기</button>

@@ -9,6 +9,16 @@ const getLocalToday = () => {
     return `${year}-${month}-${day}`;
 };
 
+// [추가] 테스트용 과거 날짜 생성 헬퍼 (시나리오 기준일 맞춤용)
+const getPastDate = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 // [추가] 임의의 과거 자산 히스토리 생성 (50일치, 우상향 및 횡보 패턴)
 const generateMockHistory = () => {
     const history = [];
@@ -118,7 +128,67 @@ const publicDefaultData = {
     baseDate: getLocalToday(), // [변경] baseMonth -> baseDate (YYYY-MM-DD)
     mainCashFlowAccount: '생활비통장',
     history: generateMockHistory(), // [추가] 초기 히스토리 데이터
-    memo: '' // [추가] 메모 기능
+    memo: '', // [추가] 메모 기능
+    // [추가] 기본 시나리오 3종 세트
+    scenarios: [
+        {
+            id: 'sc_aggressive',
+            name: '🚀 공격적 투자 (History Beat)',
+            createdAt: getPastDate(50), // [수정] 히스토리 시작 시점(50일 전)과 동기화
+            data: {
+                baseDate: getPastDate(50), // [추가] 시뮬레이션 기준일도 과거로 설정
+                monthlySalary: 450, // [수정] 히스토리를 이기기 위해 고소득/고투자 설정
+                monthlyExpenses: [{ name: '생활비', amount: 100, day: 15 }],
+                assets: {
+                    deposit: [{ id: 'sc1_d1', name: 'CMA', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }],
+                    savings: [],
+                    investment: [
+                        { id: 'sc1_i1', name: '나스닥 3배 레버리지', amount: 800, rate: 25.0, feeRate: 0, monthlyContrib: 250, extraContrib: 0, extraFrom: '' },
+                        { id: 'sc1_i2', name: '비트코인', amount: 400, rate: 40.0, feeRate: 0, monthlyContrib: 100, extraContrib: 0, extraFrom: '' }
+                    ], // 초기 자산 합계: 1250
+                    pension: [], realestate: [], car: [], loan: [], misc: []
+                },
+                rebalancingTargets: { deposit: 5, savings: 0, investment: 95, pension: 0, realestate: 0, car: 0, misc: 0 }
+            }
+        },
+        {
+            id: 'sc_moderate',
+            name: '🛡️ 안정적 저축 (Moderate)',
+            createdAt: getPastDate(50), // [수정] 히스토리 시작 시점(50일 전)과 동기화
+            data: {
+                baseDate: getPastDate(50), // [추가] 시뮬레이션 기준일도 과거로 설정
+                monthlySalary: 300,
+                monthlyExpenses: [{ name: '생활비', amount: 100, day: 15 }],
+                assets: {
+                    deposit: [{ id: 'sc2_d1', name: '파킹통장', amount: 250, rate: 3.0, feeRate: 0, monthlyContrib: 50, extraContrib: 0, extraFrom: '' }],
+                    savings: [
+                        { id: 'sc2_s1', name: '정기예금', amount: 1000, rate: 4.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' },
+                        { id: 'sc2_s2', name: '적금', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 150, extraContrib: 0, extraFrom: '' }
+                    ], // 초기 자산 합계: 1250
+                    investment: [],
+                    realestate: [], car: [], loan: [], misc: []
+                },
+                rebalancingTargets: { deposit: 20, savings: 80, investment: 0, pension: 0, realestate: 0, car: 0, misc: 0 }
+            }
+        },
+        {
+            id: 'sc_conservative',
+            name: '📉 경기 침체 (Conservative)',
+            createdAt: getPastDate(50), // [수정] 히스토리 시작 시점(50일 전)과 동기화
+            data: {
+                baseDate: getPastDate(50), // [추가] 시뮬레이션 기준일도 과거로 설정
+                monthlySalary: 200, // [수정] 저소득 설정
+                monthlyExpenses: [{ name: '최소생계비', amount: 150, day: 15 }], // [수정] 고비용 설정
+                assets: {
+                    deposit: [{ id: 'sc3_d1', name: '비상금', amount: 1250, rate: 2.0, feeRate: 0, monthlyContrib: 50, extraContrib: 0, extraFrom: '' }],
+                    savings: [],
+                    investment: [], // 초기 자산 합계: 1250
+                    pension: [], realestate: [], car: [], loan: [], misc: []
+                },
+                rebalancingTargets: { deposit: 100, savings: 0, investment: 0, pension: 0, realestate: 0, car: 0, misc: 0 }
+            }
+        }
+    ]
 };
 
 // 서버 설정 로드 함수 (주석 처리/해제로 전환)

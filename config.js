@@ -9,14 +9,14 @@ tailwind.config = {
                 sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'Roboto', 'sans-serif']
             },
             colors: {
-                deposit: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', start: '#60a5fa', end: '#3b82f6', darkStart: '#1e3a8a', darkEnd: '#172554' },
-                savings: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a', start: '#34d399', end: '#10b981', darkStart: '#14532d', darkEnd: '#052e16' },
-                investment: { 50: '#fff7ed', 500: '#f97316', 600: '#ea580c', start: '#fb923c', end: '#f97316', darkStart: '#7c2d12', darkEnd: '#431407' },
-                pension: { 50: '#faf5ff', 500: '#a855f7', 600: '#9333ea', start: '#c084fc', end: '#a855f7', darkStart: '#581c87', darkEnd: '#3b0764' },
-                realestate: { 50: '#fef7f0', 500: '#f59e0b', 600: '#d97706', start: '#fbbf24', end: '#f59e0b', darkStart: '#78350f', darkEnd: '#451a03' },
-                car: { 50: '#ecfeff', 500: '#06b6d4', 600: '#0891b2', start: '#22d3ee', end: '#0891b2', darkStart: '#164e63', darkEnd: '#083344' },
-                loan: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280', darkStart: '#374151', darkEnd: '#111827' },
-                misc: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280', darkStart: '#374151', darkEnd: '#111827' }
+                deposit: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', start: '#60a5fa', end: '#3b82f6', darkStart: '#2563eb', darkEnd: '#1e40af' },
+                savings: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a', start: '#34d399', end: '#10b981', darkStart: '#16a34a', darkEnd: '#166534' },
+                investment: { 50: '#fff7ed', 500: '#f97316', 600: '#ea580c', start: '#fb923c', end: '#f97316', darkStart: '#ea580c', darkEnd: '#9a3412' },
+                pension: { 50: '#faf5ff', 500: '#a855f7', 600: '#9333ea', start: '#c084fc', end: '#a855f7', darkStart: '#9333ea', darkEnd: '#6b21a8' },
+                realestate: { 50: '#fef7f0', 500: '#f59e0b', 600: '#d97706', start: '#fbbf24', end: '#f59e0b', darkStart: '#d97706', darkEnd: '#92400e' },
+                car: { 50: '#ecfeff', 500: '#06b6d4', 600: '#0891b2', start: '#22d3ee', end: '#0891b2', darkStart: '#0891b2', darkEnd: '#155e75' },
+                loan: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280', darkStart: '#6b7280', darkEnd: '#374151' },
+                misc: { 50: '#f3f4f6', 500: '#6b7280', 600: '#4b5563', start: '#9ca3af', end: '#6b7280', darkStart: '#6b7280', darkEnd: '#374151' }
             }
         }
     }
@@ -24,14 +24,14 @@ tailwind.config = {
 
 // PRO 모드 다크 색상 정보 (다크모드 클래스 포함)
 const sectorInfo = {
-    deposit: { name: '입출금통장', color: 'deposit', icon: '🏦', bgClass: 'bg-blue-50 dark:bg-gradient-to-r dark:from-blue-950/50 dark:to-blue-950/30', textClass: 'text-blue-700 dark:text-blue-100' },
-    savings: { name: '저축', color: 'savings', icon: '💰', bgClass: 'bg-green-50 dark:bg-gradient-to-r dark:from-green-950/50 dark:to-green-950/30', textClass: 'text-green-700 dark:text-green-100' },
-    investment: { name: '투자', color: 'investment', icon: '📈', bgClass: 'bg-orange-50 dark:bg-gradient-to-r dark:from-orange-950/50 dark:to-orange-950/30', textClass: 'text-orange-700 dark:text-orange-100' },
-    pension: { name: '연금', color: 'pension', icon: '🏛️', bgClass: 'bg-purple-50 dark:bg-gradient-to-r dark:from-purple-950/50 dark:to-purple-950/30', textClass: 'text-purple-700 dark:text-purple-100' },
-    realestate: { name: '부동산', color: 'realestate', icon: '🏠', bgClass: 'bg-amber-50 dark:bg-gradient-to-r dark:from-amber-950/50 dark:to-amber-950/30', textClass: 'text-amber-700 dark:text-amber-100' },
-    car: { name: '자동차', color: 'car', icon: '🚗', bgClass: 'bg-cyan-50 dark:bg-gradient-to-r dark:from-cyan-950/50 dark:to-cyan-950/30', textClass: 'text-cyan-700 dark:text-cyan-100' },
-    loan: { name: '대출', color: 'loan', icon: '💳', bgClass: 'bg-gray-100 dark:bg-gradient-to-r dark:from-gray-800 dark:to-gray-900', textClass: 'text-gray-700 dark:text-gray-300' },
-    misc: { name: '기타', color: 'misc', icon: '📦', bgClass: 'bg-gray-50 dark:bg-gradient-to-r dark:from-gray-800/50 dark:to-gray-800/20', textClass: 'text-gray-600 dark:text-gray-400' }
+    deposit: { name: '입출금통장', color: 'deposit', icon: '🏦', bgClass: 'bg-blue-50 dark:bg-gradient-to-r dark:from-blue-950/90 dark:to-blue-950/70', textClass: 'text-blue-700 dark:text-blue-100' },
+    savings: { name: '저축', color: 'savings', icon: '💰', bgClass: 'bg-green-50 dark:bg-gradient-to-r dark:from-green-950/90 dark:to-green-950/70', textClass: 'text-green-700 dark:text-green-100' },
+    investment: { name: '투자', color: 'investment', icon: '📈', bgClass: 'bg-orange-50 dark:bg-gradient-to-r dark:from-orange-950/90 dark:to-orange-950/70', textClass: 'text-orange-700 dark:text-orange-100' },
+    pension: { name: '연금', color: 'pension', icon: '🏛️', bgClass: 'bg-purple-50 dark:bg-gradient-to-r dark:from-purple-950/90 dark:to-purple-950/70', textClass: 'text-purple-700 dark:text-purple-100' },
+    realestate: { name: '부동산', color: 'realestate', icon: '🏠', bgClass: 'bg-amber-50 dark:bg-gradient-to-r dark:from-amber-950/90 dark:to-amber-950/70', textClass: 'text-amber-700 dark:text-amber-100' },
+    car: { name: '자동차', color: 'car', icon: '🚗', bgClass: 'bg-cyan-50 dark:bg-gradient-to-r dark:from-cyan-950/90 dark:to-cyan-950/70', textClass: 'text-cyan-700 dark:text-cyan-100' },
+    loan: { name: '대출', color: 'loan', icon: '💳', bgClass: 'bg-gray-100 dark:bg-gradient-to-r dark:from-gray-900 dark:to-gray-950', textClass: 'text-gray-700 dark:text-gray-300' },
+    misc: { name: '기타', color: 'misc', icon: '📦', bgClass: 'bg-gray-50 dark:bg-gradient-to-r dark:from-gray-900/90 dark:to-gray-900/70', textClass: 'text-gray-600 dark:text-gray-400' }
 };
 
 // [설정] 서버 설정 사용 여부

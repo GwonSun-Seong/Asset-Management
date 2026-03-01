@@ -269,7 +269,8 @@
             monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
             setIsExportModalOpen, setIsImportModalOpen,
             salaryDay, setSalaryDay,
-            exportToCSV, importFromCSV, saveToPDF, saveCurrentAsset, saveScenario
+            exportToCSV, importFromCSV, saveToPDF, saveCurrentAsset, saveScenario,
+            displayMode
         }) => {
             const TEXTS = window.TEXTS || {};
 
@@ -280,7 +281,12 @@
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">{TEXTS.settings?.monthlySalary || "월 고정 수입 (만원)"}</label>
-                                <input type="number" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={monthlySalary} onChange={(e) => setMonthlySalary(Number(e.target.value))} />
+                                <CalculatorInput 
+                                    className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                    value={monthlySalary} 
+                                    onChange={(e) => setMonthlySalary(Number(e.target.value))} 
+                                    displayMode={displayMode}
+                                />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">고정 수입일</label>
@@ -302,19 +308,19 @@
                         <div className="pt-4 border-t dark:border-gray-700">
                             <h3 className="text-sm font-bold text-gray-700 dark:text-white mb-2">{TEXTS.settings?.dataManagement || "데이터 관리"}</h3>
                             <div className="grid grid-cols-2 gap-2">
-                                <button onClick={() => setIsExportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 shadow-sm transition-all">
+                                <button onClick={() => setIsExportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-500 dark:bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 dark:hover:bg-emerald-600 shadow-sm transition-all">
                                     <span>📤</span> {TEXTS.settings?.exportData || "데이터 내보내기"}
                                 </button>
-                                <button onClick={() => setIsImportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all">
+                                <button onClick={() => setIsImportModalOpen(true)} className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 dark:bg-purple-700 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 dark:hover:bg-purple-600 shadow-sm transition-all">
                                     <span>📥</span> {TEXTS.settings?.importData || "데이터 불러오기"}
                                 </button>
                                 <div className="col-span-2 mt-2">
                                     <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 px-1 uppercase tracking-wider">내보내기</h4>
                                     <div className="grid grid-cols-2 gap-2">
-                                        <button onClick={exportToCSV} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-500 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 shadow-sm transition-all">
+                                        <button onClick={exportToCSV} className="flex items-center justify-center gap-2 px-2 py-2 bg-emerald-500 dark:bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-600 dark:hover:bg-emerald-600 shadow-sm transition-all">
                                             <span>📊</span> {TEXTS.settings?.exportCSV || "CSV 내보내기"}
                                         </button>
-                                        <label className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 shadow-sm transition-all cursor-pointer">
+                                        <label className="flex items-center justify-center gap-2 px-2 py-2 bg-purple-500 dark:bg-purple-700 text-white text-sm font-semibold rounded-lg hover:bg-purple-600 dark:hover:bg-purple-600 shadow-sm transition-all cursor-pointer">
                                             <span>📥</span> {TEXTS.settings?.importCSV || "CSV 불러오기"}
                                             <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" />
                                         </label>
@@ -906,7 +912,7 @@
         };
 
         // [이동 및 수정] 계산기 기능이 포함된 입력 컴포넌트 (전역 사용)
-        const CalculatorInput = ({ value, onChange, className, placeholder, style, ...props }) => {
+        const CalculatorInput = ({ value, onChange, className, placeholder, style, displayMode, ...props }) => {
             const [localValue, setLocalValue] = useState(value);
             const [isEditing, setIsEditing] = useState(false);
 
@@ -949,21 +955,24 @@
                 setIsEditing(false);
             };
 
+            // [추가] 프라이빗 모드 마스킹 처리
+            const isMasked = displayMode === 'percent' && !isEditing;
+
             return (
-                <input type={isEditing ? "text" : "number"} value={localValue} onChange={(e) => setLocalValue(e.target.value)} onBlur={handleBlur} className={className} placeholder={placeholder} style={style} step="any" {...props}
-                    onFocus={(e) => e.target.select()}
+                <input type={isEditing || isMasked ? "text" : "number"} value={isMasked ? '***' : localValue} onChange={(e) => { if(!isMasked) setLocalValue(e.target.value); }} onBlur={handleBlur} className={className} placeholder={placeholder} style={style} step="any" {...props}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') e.target.blur();
                         if (!isEditing && ['+', '-', '*', '/'].includes(e.key)) {
                             e.preventDefault(); setIsEditing(true); setLocalValue(prev => String(prev) + e.key);
                         }
                     }}
+                    onFocus={(e) => { setIsEditing(true); e.target.select(); }}
                 />
             );
         };
 
         // [수정] EventSection을 외부로 분리하여 입력 포커스 끊김 방지
-        const EventSection = React.memo(({ title, total, events, type, addFn, updateFn, removeFn, moveFn, sectorInfo, assets, formatNumber }) => {
+        const EventSection = React.memo(({ title, total, events, type, addFn, updateFn, removeFn, moveFn, sectorInfo, assets, formatNumber, displayMode }) => {
             const isIncome = type === 'income';
             const gradientClass = isIncome ? 'from-emerald-500 to-teal-600 dark:from-emerald-900 dark:to-teal-900' : 'from-orange-500 to-amber-600 dark:from-orange-900 dark:to-amber-900';
             const icon = isIncome ? '💰' : '🛒';
@@ -1025,6 +1034,7 @@
                                                     onChange={(e) => updateFn(index, 'amount', e.target.value)}
                                                     className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-right font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-opacity-50 focus:outline-none"
                                                     style={{ borderColor: isIncome ? '#10b981' : '#f97316' }}
+                                                    displayMode={displayMode}
                                                 />
                                             </div>
                                         </div>
@@ -1298,7 +1308,14 @@
             const [isConsentModalOpen, setIsConsentModalOpen] = useState(false); // [추가] 데이터 동의 모달 상태
             const [activeNotice, setActiveNotice] = useState(null); // [추가] 활성화된 공지사항
             const [activeReply, setActiveReply] = useState(null); // [추가] 관리자 답변 배너 상태
+            const [historyPopover, setHistoryPopover] = useState(null); // [추가] 히스토리 팝오버 상태
+            const activeHistoryHoverRef = useRef(null); // [추가] 히스토리 차트 호버 상태 추적 (깜빡임 방지용)
+            const [historyChartInfo, setHistoryChartInfo] = useState(null); // [추가] 히스토리 차트 상단 정보바 상태
+            const lastHistoryInfoRef = useRef(null); // [추가] 정보바 업데이트 최적화용 Ref
             
+            // [추가] 로컬 환경 감지
+            const isLocal = useMemo(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1', []);
+
             // [추가] 메모 관련 상태
             const [currentMemoIndex, setCurrentMemoIndex] = useState(0);
             const [isEditingMemoTitle, setIsEditingMemoTitle] = useState(false);
@@ -1401,11 +1418,11 @@
                         const savedHistory = localStorage.getItem('assetDashboardHistory');
                         const savedReferences = localStorage.getItem('assetDashboardReferenceScenarios');
 
-                        const initialScenarios = savedScenarios ? JSON.parse(savedScenarios) : [];
+                        const initialScenarios = savedScenarios ? JSON.parse(savedScenarios) : (baseData.scenarios || []);
                         const initialHistory = savedHistory ? JSON.parse(savedHistory) : (baseData.history || []);
                         const initialReferences = savedReferences ? JSON.parse(savedReferences) : [];
                         
-                        if (savedScenarios) setScenarios(initialScenarios);
+                        setScenarios(initialScenarios);
                         setAssetHistory(initialHistory);
                         setReferenceScenarios(initialReferences);
 
@@ -1838,7 +1855,7 @@
         };
 
         // [추가] 히스토리 포인트 삭제 함수
-        const deleteHistoryPoint = (targetDate) => {
+        const deleteHistoryPoint = React.useCallback((targetDate) => {
             if (!confirm(`${targetDate} 기록을 삭제하시겠습니까?\n(서버 데이터는 유지되며, 로컬 히스토리 목록에서만 제외됩니다)`)) return;
             
             setAssetHistory(prev => {
@@ -1847,7 +1864,16 @@
                 return newHistory;
             });
             addToast(`${targetDate} 기록이 삭제되었습니다.`, 'info');
-        };
+        }, [addToast]);
+
+            // [추가] 히스토리 메모 업데이트 함수
+            const updateHistoryMemo = React.useCallback((index, memo) => {
+                setAssetHistory(prev => {
+                    const newHistory = [...prev];
+                    newHistory[index] = { ...newHistory[index], memo };
+                    return newHistory;
+                });
+            }, []);
 
         // [추가] 히스토리 차트 우클릭 핸들러 (컴포넌트 스코프로 이동)
         const handleHistoryContextMenu = React.useCallback((e) => {
@@ -1997,6 +2023,27 @@
                 } catch (e) {
                     console.error('Reply dismiss error:', e);
                     // 에러 발생 시 사용자에게 알리지 않고 조용히 실패 (다음 로드 시 다시 뜸)
+                }
+            };
+
+            // [추가] 로컬 테스트용 계정 전환 핸들러 (FREE <-> PRO)
+            const handleLocalTestToggle = () => {
+                if (!isLocal) return;
+
+                if (!verifiedEmail) {
+                    setVerifiedEmail('test@local.dev');
+                    setUserProfile({ id: 'local-test-id', email: 'test@local.dev', full_name: '테스트 유저' });
+                    setIsPro(false);
+                    setIsAdmin(false);
+                    addToast('🛠️ 로컬 테스트: FREE 모드 (가상 로그인)', 'info');
+                } else if (!isPro) {
+                    setIsPro(true);
+                    setIsAdmin(false);
+                    addToast('🛠️ 로컬 테스트: PRO 모드', 'success');
+                } else {
+                    setIsPro(false);
+                    setIsAdmin(false);
+                    addToast('🛠️ 로컬 테스트: FREE 모드', 'info');
                 }
             };
 
@@ -3117,7 +3164,9 @@
                         data = sectorAssets.map(a => a.amount);
                         // [수정] 전역 getRGB 함수를 사용하여 드릴다운 색상 일관성 유지
                         const baseRGB = window.getRGB(sectorInfo[currentDrillDown].color);
-                        colors = sectorAssets.map((_, i) => `rgba(${baseRGB}, ${0.9 - (i * 0.1)})`);
+                        // [수정] 다크모드일 때 드릴다운 색상 투명도 조정 (톤 다운)
+                        const startAlpha = darkMode ? 0.8 : 0.9;
+                        colors = sectorAssets.map((_, i) => `rgba(${baseRGB}, ${Math.max(0.1, startAlpha - (i * 0.1))})`);
                     } else {
                         labels = filteredKeys.map(key => sectorInfo[key]?.name || key);
                         data = filteredKeys.map(key => currentSectorTotals[key]?.amount || 0);
@@ -3126,7 +3175,9 @@
                     const ctx = currentPieRef.current.getContext('2d');
                     const bgColors = currentDrillDown ? colors : filteredKeys.map(key => {
                         const c = tailwind?.config?.theme?.extend?.colors?.[key] || { start: '#3b82f6', end: '#1d4ed8' };
-                        return createGradient(ctx, c);
+                        // [수정] 다크모드일 경우 더 어두운 그라데이션 색상 사용
+                        const colorSet = (darkMode && c.darkStart && c.darkEnd) ? { start: c.darkStart, end: c.darkEnd } : c;
+                        return createGradient(ctx, colorSet);
                     });
 
                     const chartConfig = {
@@ -3190,7 +3241,9 @@
                         data = projAssets.map(a => a.amount);
                         // [수정] 전역 getRGB 함수를 사용하여 드릴다운 색상 일관성 유지
                         const baseRGB = window.getRGB(sectorInfo[projectedDrillDown].color);
-                        colors = projAssets.map((_, i) => `rgba(${baseRGB}, ${0.9 - (i * 0.1)})`);
+                        // [수정] 다크모드일 때 드릴다운 색상 투명도 조정 (톤 다운)
+                        const startAlpha = darkMode ? 0.8 : 0.9;
+                        colors = projAssets.map((_, i) => `rgba(${baseRGB}, ${Math.max(0.1, startAlpha - (i * 0.1))})`);
                     } else {
                         labels = projectedKeys.map(key => sectorInfo[key]?.name || key);
                         data = projectedKeys.map(key => projectedSectorTotals[key]?.amount || 0);
@@ -3199,7 +3252,9 @@
                     const ctx = projectedPieRef.current.getContext('2d');
                     const bgColors = projectedDrillDown ? colors : projectedKeys.map(key => {
                         const c = tailwind?.config?.theme?.extend?.colors?.[key] || { start: '#10b981', end: '#059669' };
-                        return createGradient(ctx, c);
+                        // [수정] 다크모드일 경우 더 어두운 그라데이션 색상 사용
+                        const colorSet = (darkMode && c.darkStart && c.darkEnd) ? { start: c.darkStart, end: c.darkEnd } : c;
+                        return createGradient(ctx, colorSet);
                     });
 
                     const chartConfig = {
@@ -3317,6 +3372,20 @@
                 };
             }, []);
 
+            // [추가] 히스토리 차트 최적화를 위한 데이터 메모이제이션
+            // showProjectionInHistory가 꺼져있으면 baseDate나 calculation이 변해도 null을 반환하여 리렌더링 방지
+            const historyProjectionData = useMemo(() => {
+                if (!showProjectionInHistory) return null;
+                return {
+                    projections: calculation.monthlyProjections,
+                    baseDate: baseDate
+                };
+            }, [showProjectionInHistory, calculation.monthlyProjections, baseDate]);
+
+            const historyTargetData = useMemo(() => {
+                return goalMode === 'target' ? targetAmount : null;
+            }, [goalMode, targetAmount]);
+
             // [분리] 히스토리 차트 전용 useEffect
             useEffect(() => {
                 if (panelCollapseState['history'] || assetHistory.length === 0) return;
@@ -3348,7 +3417,7 @@
                     optimisticData = new Array(finalHistoryData.length).fill(null);
                     pessimisticData = new Array(finalHistoryData.length).fill(null);
 
-                if (showProjectionInHistory && calculation.monthlyProjections && calculation.monthlyProjections.length > 0) {
+                if (historyProjectionData && historyProjectionData.projections && historyProjectionData.projections.length > 0) {
                     // 마지막 히스토리 지점과 연결하여 연속성 확보
                     if (finalHistoryData.length > 0) {
                         const lastVal = finalHistoryData[finalHistoryData.length - 1];
@@ -3357,11 +3426,11 @@
                         pessimisticData[finalHistoryData.length - 1] = lastVal;
                     }
                     
-                    calculation.monthlyProjections.forEach((p, idx) => {
+                    historyProjectionData.projections.forEach((p, idx) => {
                         if (idx === 0) return;
                         
                         // 미래 날짜 라벨 생성
-                        const [y, m] = (baseMonth || new Date().toISOString().slice(0, 7)).split('-').map(Number);
+                        const [y, m] = (historyProjectionData.baseDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
                         const d = new Date(y, m - 1 + idx);
                         const label = `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth() + 1).padStart(2, '0')}월`; // 미래는 항상 월 단위
                         
@@ -3382,6 +3451,7 @@
 
                 // [수정] 월말 데이터 판별 함수 (날짜 문자열 기준)
                 const isMonthEnd = (index) => {
+                    if (index >= assetHistory.length) return false; // [Fix] 히스토리 범위를 벗어난 경우(예상 데이터) 처리
                     if (index === assetHistory.length - 1) return true; // 마지막 데이터는 항상 표시
                     const currDate = assetHistory[index].date;
                     const nextDate = assetHistory[index + 1].date;
@@ -3529,10 +3599,10 @@
                     }
                 });
 
-                if (goalMode === 'target' && targetAmount > 0) {
+                if (historyTargetData && historyTargetData > 0) {
                     datasets.push({
-                        label: `목표 자산 (${formatNumber(targetAmount, displayMode)}만원)`,
-                        data: new Array(finalLabels.length).fill(targetAmount),
+                        label: `목표 자산 (${formatNumber(historyTargetData, displayMode)}만원)`,
+                        data: new Array(finalLabels.length).fill(historyTargetData),
                         borderColor: 'rgba(239, 68, 68, 0.8)',
                         borderDash: [5, 5],
                         pointRadius: 0,
@@ -3541,22 +3611,140 @@
                     });
                 }
 
-                // [추가] 차트 클릭 핸들러
-                const handleChartClick = (evt, elements) => {
-                    if (!elements || elements.length === 0) return;
-                    const index = elements[0].index;
-                    
-                    let targetDate = null;
-                    if (useMonthlyAverage) {
-                        // 월별 그룹화된 경우: YYYY-MM 키 사용
-                        if (index < sortedMonthKeys.length) targetDate = sortedMonthKeys[index];
-                    } else {
-                        // 개별 데이터인 경우: YYYY-MM-DD 날짜 사용
-                        if (index < assetHistory.length) targetDate = assetHistory[index].date;
+                // [추가] 차트 인터랙션 핸들러 (클릭: 팝오버, 호버: 포커스)
+                const handleChartClick = (evt, elements, chart) => {
+                    if (!elements || elements.length === 0) {
+                        setHistoryPopover(null);
+                        return;
                     }
+                    const element = elements[0];
+                    const index = element.index;
+                    const datasetIndex = element.datasetIndex;
 
-                    if (targetDate) {
-                        loadHistorySnapshot(targetDate);
+                    // 히스토리 데이터셋(0번)인 경우에만 팝오버 표시
+                    if (datasetIndex === 0) {
+                        const point = assetHistory[index];
+                        if (point) {
+                            const rect = chart.canvas.getBoundingClientRect();
+                            // 캔버스 내부 좌표 계산
+                            const x = evt.native.clientX - rect.left;
+                            const y = evt.native.clientY - rect.top;
+                            
+                            setHistoryPopover({
+                                x, y,
+                                date: point.date,
+                                netWorth: point.netWorth,
+                                index: index,
+                                memo: point.memo
+                            });
+                        }
+                    } else {
+                        setHistoryPopover(null);
+                    }
+                };
+
+                const handleChartHover = (e, elements, chart) => {
+                    // [수정] 마우스가 선 위에 정확히 없어도 가장 가까운 요소를 찾도록 강제 (intersect: false)
+                    const activeElements = chart.getElementsAtEventForMode(e, 'nearest', { intersect: false }, true);
+                    
+                    if (activeElements.length > 0) {
+                        const activeIdx = activeElements[0].datasetIndex;
+
+                        // [최적화] 이미 활성화된 상태라면 불필요한 업데이트 방지 (깜빡임 해결)
+                        if (activeHistoryHoverRef.current === activeIdx) return;
+                        activeHistoryHoverRef.current = activeIdx;
+
+                        e.native.target.style.cursor = 'pointer';
+                        const datasets = chart.data.datasets;
+
+                        datasets.forEach((ds, i) => {
+                            // 원본 속성 저장
+                            if (ds._originalBorder === undefined) ds._originalBorder = ds.borderColor;
+                            if (ds._originalBg === undefined) ds._originalBg = ds.backgroundColor;
+                            if (ds._originalFill === undefined) ds._originalFill = ds.fill;
+                            if (ds._originalOrder === undefined) ds._originalOrder = ds.order || 0;
+                            
+                            if (i === activeIdx) {
+                                // 선택된 시나리오 강조
+                                ds.borderColor = ds._originalBorder;
+                                ds.backgroundColor = ds._originalBg;
+                                ds.order = -1; // 맨 위로 올리기
+
+                                // Gap 시각화 적용
+                                if (ds.label && ds.label.startsWith('기준:') && datasets[0]) {
+                                    ds.fill = {
+                                        target: 0,
+                                        above: 'rgba(239, 68, 68, 0.2)',
+                                        below: 'rgba(34, 197, 94, 0.2)'
+                                    };
+                                } else {
+                                    ds.fill = ds._originalFill;
+                                }
+                            } else if (i === 0) {
+                                // 히스토리(비교 대상)는 항상 선명하게
+                                ds.borderColor = ds._originalBorder;
+                                ds.backgroundColor = ds._originalBg;
+                                ds.fill = ds._originalFill;
+                                ds.order = 0;
+                            } else {
+                                // 나머지 흐리게 처리
+                                ds.borderColor = darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+                                ds.backgroundColor = 'transparent';
+                                ds.fill = false;
+                                ds.order = 10;
+                            }
+                        });
+                        chart.update();
+                    } else {
+                        // 마우스가 차트 밖으로 나갔거나 감지된 요소가 없을 때만 초기화
+                        if (activeHistoryHoverRef.current !== null) {
+                            activeHistoryHoverRef.current = null;
+                            e.native.target.style.cursor = 'default';
+                            
+                            const datasets = chart.data.datasets;
+                        datasets.forEach(ds => {
+                                if (ds._originalBorder !== undefined) ds.borderColor = ds._originalBorder;
+                                if (ds._originalBg !== undefined) ds.backgroundColor = ds._originalBg;
+                            if (ds._originalFill !== undefined) ds.fill = ds._originalFill;
+                            if (ds._originalOrder !== undefined) ds.order = ds._originalOrder;
+                        });
+                            chart.update();
+                        }
+                    }
+                };
+
+                // [추가] 크로스헤어 플러그인 (세로 점선 그리기)
+                const crosshairPlugin = {
+                    id: 'crosshair',
+                    defaults: {
+                        width: 1,
+                        color: darkMode ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.3)',
+                        dash: [3, 3]
+                    },
+                    afterInit: (chart) => { chart.crosshair = { x: 0, y: 0 }; },
+                    afterEvent: (chart, args) => {
+                        const {inChartArea} = args;
+                        const {x, y} = args.event;
+                        chart.crosshair = {x, y, draw: inChartArea};
+                        chart.draw();
+                    },
+                    afterDraw: (chart, args, options) => {
+                        if (chart.tooltip?._active?.length) {
+                            const activePoint = chart.tooltip._active[0];
+                            const ctx = chart.ctx;
+                            const x = activePoint.element.x;
+                            const topY = chart.scales.y.top;
+                            const bottomY = chart.scales.y.bottom;
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.moveTo(x, topY);
+                            ctx.lineTo(x, bottomY);
+                            ctx.lineWidth = options.width;
+                            ctx.strokeStyle = options.color;
+                            ctx.setLineDash(options.dash);
+                            ctx.stroke();
+                            ctx.restore();
+                        }
                     }
                 };
 
@@ -3571,11 +3759,43 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         onClick: handleChartClick, // [추가] 클릭 이벤트 연결
-                        onHover: (event, chartElement) => { event.native.target.style.cursor = chartElement[0] ? 'pointer' : 'default'; }, // [추가] 커서 변경
+                        onHover: handleChartHover, // [수정] 호버 핸들러 교체
+                        hover: { mode: 'nearest', intersect: false }, // [추가] 근접 감지 모드 활성화 (필수)
                         plugins: {
                             legend: { position: 'bottom', labels: { color: textColor } },
                             title: { display: false },
-                            tooltip: { mode: 'index', intersect: false },
+                            // [수정] 툴팁 비활성화 및 외부 상태 업데이트 (상단 정보바 연동)
+                            tooltip: { 
+                                enabled: false, // 기본 툴팁 끄기
+                                mode: 'index', 
+                                intersect: false,
+                                external: (context) => {
+                                    const tooltipModel = context.tooltip;
+                                    if (tooltipModel.opacity === 0) {
+                                        if (lastHistoryInfoRef.current !== null) {
+                                            lastHistoryInfoRef.current = null;
+                                            setHistoryChartInfo(null);
+                                        }
+                                        return;
+                                    }
+                                    
+                                    const title = tooltipModel.title[0] || '';
+                                    const items = tooltipModel.body.map((item, i) => {
+                                        const dataPoint = tooltipModel.dataPoints[i];
+                                        return {
+                                            label: dataPoint.dataset.label,
+                                            value: formatNumber(dataPoint.raw, displayMode) + '만원',
+                                            color: dataPoint.dataset.borderColor
+                                        };
+                                    });
+
+                                    const newInfoStr = JSON.stringify({ title, items });
+                                    if (lastHistoryInfoRef.current !== newInfoStr) {
+                                        lastHistoryInfoRef.current = newInfoStr;
+                                        setHistoryChartInfo({ title, items });
+                                    }
+                                }
+                            },
                             // [추가] 줌 플러그인 설정
                             zoom: {
                                 zoom: {
@@ -3600,7 +3820,8 @@
                                 grid: { color: gridColor }
                             }
                         }
-                    }
+                    },
+                    plugins: [crosshairPlugin] // [추가] 플러그인 등록
                 };
 
                     if (chartInstancesRef.current['historyChart']) {
@@ -3613,7 +3834,7 @@
                         } else {
                             chart.data = chartConfig.data;
                             chart.options = chartConfig.options;
-                            chart.update('none');
+                            chart.update(); // [Fix] 데이터 구조 변경 시 확실한 갱신을 위해 기본 모드 사용
                         }
                     } else {
                         chartInstancesRef.current['historyChart'] = new Chart(historyChartRef.current, chartConfig);
@@ -3621,8 +3842,8 @@
                 };
 
                 const timerId = setTimeout(renderHistoryChart, 50);
-                return () => clearTimeout(timerId);
-            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios]);
+                return () => clearTimeout(timerId); 
+            }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo]);
 
             // ===== 자산 관리 함수들 =====
             const addAsset = (sector) => {
@@ -3960,7 +4181,62 @@
                         {/* [추가] 우클릭 이벤트 리스너를 위한 투명 오버레이 또는 캔버스 직접 제어 */}
                         {/* Chart.js는 캔버스에 이벤트를 바인딩하므로, ref에 직접 리스너를 추가하는 것이 가장 확실함 */}
                         {/* React ref callback을 사용하여 이벤트 리스너 부착 */}
-                        <div className="absolute top-2 right-2 text-[10px] text-gray-400 pointer-events-none">Tip: 점을 클릭하여 조회, 우클릭하여 삭제</div>
+                        <div className="absolute top-2 right-2 text-[10px] text-gray-400 pointer-events-none">Tip: 점을 클릭하여 메뉴 열기, 시나리오 호버 시 강조</div>
+                        
+                        {/* [추가] 고정 위치 툴팁 (Option 4) - 차트 내부 좌측 상단 고정 */}
+                        {historyChartInfo && (
+                            <div className="absolute top-4 left-16 z-10 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm p-3 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 pointer-events-none transition-opacity duration-200 min-w-[180px]">
+                                <div className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 pb-1">
+                                    <span>📅</span> {historyChartInfo.title}
+                                </div>
+                                <div className="space-y-1.5">
+                                    {historyChartInfo.items.map((item, idx) => (
+                                        <div key={idx} className="flex items-center justify-between text-xs">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></span>
+                                                <span className="text-gray-700 dark:text-gray-300 font-medium truncate max-w-[100px]">{item.label}</span>
+                                            </div>
+                                            <span className="font-bold text-gray-900 dark:text-white tabular-nums">{item.value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* [추가] 히스토리 포인트 팝오버 */}
+                        {historyPopover && (
+                            <div 
+                                className="absolute z-20 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 w-56 animate-in zoom-in-95 duration-200"
+                                style={{ left: historyPopover.x, top: historyPopover.y + 10, transform: historyPopover.x > 300 ? 'translateX(-100%)' : 'none' }}
+                            >
+                                <div className="flex justify-between items-start mb-3 pb-2 border-b dark:border-gray-700">
+                                    <div>
+                                        <div className="text-xs font-bold text-gray-500 dark:text-gray-400">{historyPopover.date}</div>
+                                        <div className="text-gray-900 dark:text-white font-bold text-lg">{formatNumber(historyPopover.netWorth, displayMode)}만원</div>
+                                    </div>
+                                    <button onClick={() => setHistoryPopover(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
+                                </div>
+                                <div className="space-y-1">
+                                    <button onClick={() => { loadHistorySnapshot(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
+                                        <span>📂</span> 데이터 불러오기
+                                    </button>
+                                    <button onClick={() => { 
+                                        const memo = prompt('메모를 입력하세요:', historyPopover.memo || '');
+                                        if (memo !== null) { updateHistoryMemo(historyPopover.index, memo); setHistoryPopover(null); }
+                                    }} className="w-full text-left px-3 py-2 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
+                                        <span>📝</span> {historyPopover.memo ? '메모 수정' : '메모 남기기'}
+                                    </button>
+                                    <button onClick={() => { deleteHistoryPoint(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left px-3 py-2 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
+                                        <span>🗑️</span> 기록 삭제
+                                    </button>
+                                </div>
+                                {historyPopover.memo && (
+                                    <div className="mt-3 pt-2 border-t dark:border-gray-700 text-xs text-gray-600 dark:text-gray-300 italic bg-gray-50 dark:bg-gray-900/50 p-2 rounded">
+                                        "{historyPopover.memo}"
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </>
             );
@@ -4363,6 +4639,7 @@
                                                                     value={asset.amount} 
                                                                     onChange={(e) => updateAsset(sectorKey, idx, 'amount', e.target.value)}
                                                                     className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg pl-8 pr-4 py-2.5 text-right font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                                                                    displayMode={displayMode}
                                                                 />
                                                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold">₩</span>
                                                             </div>
@@ -4377,7 +4654,7 @@
                                                         {isLoan ? (
                                                             <>
                                                                 <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">이자율</label><div className="relative"><input type="number" step="0.1" value={asset.rate} onChange={(e) => updateAsset(sectorKey, idx, 'rate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
-                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">월 상환액</label><CalculatorInput value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" /></div>
+                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">월 상환액</label><CalculatorInput value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" displayMode={displayMode} /></div>
                                                                 <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">만기 (개월)</label><input type="number" value={asset.maturityMonth ?? 12} onChange={(e) => updateAsset(sectorKey, idx, 'maturityMonth', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" /></div>
                                                                 <div>
                                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">상환 방식</label>
@@ -4393,7 +4670,7 @@
                                                                 <div>
                                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">월 납입액</label>
                                                                     <div className="relative">
-                                                                        <CalculatorInput value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" />
+                                                                        <CalculatorInput value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" displayMode={displayMode} />
                                                                         {itemRec > 0 && <span className="absolute -top-5 right-0 text-[9px] text-blue-500 font-bold bg-blue-50 px-1 rounded">권장: {Math.round(itemRec).toLocaleString()}</span>}
                                                                     </div>
                                                                 </div>
@@ -4505,6 +4782,7 @@
                                                         className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg pl-3 pr-8 py-2 text-right font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
                                                         value={expense.amount} 
                                                         onChange={(e) => updateExpense(index, 'amount', e.target.value)} 
+                                                        displayMode={displayMode}
                                                     />
                                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">만원</span>
                                                 </div>
@@ -4555,6 +4833,7 @@
                             assets={assets}
                             formatNumber={formatNumber}
                             moveFn={moveIncomeEvent}
+                            displayMode={displayMode}
                         />
                         <EventSection 
                             title="지출 이벤트" 
@@ -4568,6 +4847,7 @@
                             assets={assets}
                             formatNumber={formatNumber}
                             moveFn={moveExpenseEvent}
+                            displayMode={displayMode}
                         />
                     </div>
                 );
@@ -4698,11 +4978,11 @@
                                     <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                                         <div>
                                             <span className="text-xs text-gray-500 dark:text-gray-400 block">현재 금액</span>
-                                            <span className="font-semibold tabular-nums">{formatNumber(current.amount)}</span>
+                                            <span className="font-semibold tabular-nums">{formatNumber(current.amount, displayMode)}</span>
                                         </div>
                                         <div>
                                             <span className="text-xs text-gray-500 dark:text-gray-400 block">예상 금액</span>
-                                            <span className="font-semibold tabular-nums">{formatNumber(projected.amount)}</span>
+                                            <span className="font-semibold tabular-nums">{formatNumber(projected.amount, displayMode)}</span>
                                         </div>
                                         <div>
                                             <span className="text-xs text-gray-500 dark:text-gray-400 block">현재 비중</span>
@@ -4726,7 +5006,7 @@
                                                     <div key={`${sectorKey}-${idx}`} className="flex justify-between items-center text-xs bg-white/50 dark:bg-black/20 p-2 rounded">
                                                         <span className="font-medium truncate flex-1">{asset.name}</span>
                                                         <div className="text-right">
-                                                            <div>{formatNumber(asset.amount)} → {formatNumber(projectedAmount)}</div>
+                                                            <div>{formatNumber(asset.amount, displayMode)} → {formatNumber(projectedAmount, displayMode)}</div>
                                                             <div className={`${isAssetPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                                                                 {formatPercent(assetGrowthRate)}%
                                                             </div>
@@ -4747,8 +5027,8 @@
                                 </span>
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-sm">
-                                <div><span className="text-xs text-gray-500 dark:text-gray-400 block">현재 총자산</span><span className="font-bold tabular-nums">{formatNumber(calculation.currentTotal)}</span></div>
-                                <div><span className="text-xs text-gray-500 dark:text-gray-400 block">예상 총자산</span><span className="font-bold tabular-nums">{formatNumber(calculation.projectedTotal)}</span></div>
+                                <div><span className="text-xs text-gray-500 dark:text-gray-400 block">현재 총자산</span><span className="font-bold tabular-nums">{formatNumber(calculation.currentTotal, displayMode)}</span></div>
+                                <div><span className="text-xs text-gray-500 dark:text-gray-400 block">예상 총자산</span><span className="font-bold tabular-nums">{formatNumber(calculation.projectedTotal, displayMode)}</span></div>
                             </div>
                         </div>
                     </div>
@@ -4782,8 +5062,8 @@
                                             <td className="p-3 font-semibold">
                                                 {sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}
                                             </td>
-                                            <td className="p-3 text-right tabular-nums">{formatNumber(current.amount)}</td>
-                                            <td className="p-3 text-right tabular-nums">{formatNumber(projected.amount)}</td>
+                                            <td className="p-3 text-right tabular-nums">{formatNumber(current.amount, displayMode)}</td>
+                                            <td className="p-3 text-right tabular-nums">{formatNumber(projected.amount, displayMode)}</td>
                                             <td className={`p-3 text-right tabular-nums ${isPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatPercent(growthRate)}%</td>
                                             <td className="p-3 text-right tabular-nums">{formatPercent(current.percentage)}%</td>
                                             <td className="p-3 text-right tabular-nums">{formatPercent(projected.percentage)}%</td>
@@ -4805,8 +5085,8 @@
                                             return (
                                                 <tr key={`${sectorKey}-${idx}`} className="border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                                                     <td className="p-3 pl-8 text-[11px] dark:text-gray-400">└ {asset.name}</td>
-                                                    <td className="p-3 text-right text-[11px] tabular-nums">{formatNumber(asset.amount)}</td>
-                                                    <td className="p-3 text-right text-[11px] tabular-nums">{formatNumber(projectedAmount)}</td>
+                                                    <td className="p-3 text-right text-[11px] tabular-nums">{formatNumber(asset.amount, displayMode)}</td>
+                                                    <td className="p-3 text-right text-[11px] tabular-nums">{formatNumber(projectedAmount, displayMode)}</td>
                                                     <td className={`p-3 text-right text-[11px] tabular-nums ${isAssetPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatPercent(assetGrowthRate)}%</td>
                                                     <td className="p-3 text-right text-[11px] tabular-nums">
                                                         {sectorKey !== 'loan' ? `${formatPercent(currentAssetPercentageInPortfolio)}% (${formatPercent(currentAssetPercentageInSector)}%)` : '-'}
@@ -4823,8 +5103,8 @@
                             })}
                             <tr className="border-t-2 border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-700">
                                 <td className="p-3 font-bold">총계</td>
-                                <td className="p-3 text-right font-bold tabular-nums">{formatNumber(calculation.currentTotal)}</td>
-                                <td className="p-3 text-right font-bold tabular-nums">{formatNumber(calculation.projectedTotal)}</td>
+                                <td className="p-3 text-right font-bold tabular-nums">{formatNumber(calculation.currentTotal, displayMode)}</td>
+                                <td className="p-3 text-right font-bold tabular-nums">{formatNumber(calculation.projectedTotal, displayMode)}</td>
                                 <td className="p-3 text-right font-bold text-green-600 dark:text-green-400 tabular-nums">{formatPercent(calculation.growth / calculation.currentTotal * 100)}%</td>
                                 <td className="p-3 text-right font-bold tabular-nums">100.0%</td>
                                 <td className="p-3 text-right font-bold tabular-nums">100.0%</td>
@@ -5047,11 +5327,13 @@
                                         자산 플래너 {titleText}
                                     </h1>
                                     <span 
+                                        onClick={handleLocalTestToggle}
                                         className={`px-2 py-0.5 text-[10px] font-bold rounded-full transition-all border ${
                                             isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800' :
                                             isPro ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800' : 
                                             'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-600'
-                                        }`}
+                                        } ${isLocal ? 'cursor-pointer hover:ring-2 ring-offset-1 ring-indigo-500' : ''}`}
+                                        title={isLocal ? "클릭하여 로컬 테스트 모드 전환 (FREE/PRO)" : ""}
                                     >
                                         {isAdmin ? 'ADMIN' : (isPro ? 'PRO' : 'FREE')}
                                     </span>
@@ -5132,7 +5414,7 @@
                             {/* 클라우드 동기화 카드 */}
                             <div className="mb-4 p-3 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800 shadow-sm">
                                 <div className="flex items-center justify-between mb-2">
-                                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1">
+                                    <span onClick={handleLocalTestToggle} className={`text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1 ${isLocal ? 'cursor-pointer hover:text-indigo-800 dark:hover:text-indigo-200' : ''}`} title={isLocal ? "클릭하여 로컬 테스트 모드 전환" : ""}>
                                         내 정보
                                         {syncStatus === 'error' && <span title={syncError} className="cursor-help text-red-500">⚠️</span>}
                                     </span>
@@ -5172,7 +5454,7 @@
                                         <div className="grid grid-cols-1 gap-2">
                                             <button 
                                                 onClick={() => setIsSettingsModalOpen(true)}
-                                                className="w-full py-2.5 rounded-lg text-[11px] font-bold transition-all shadow-md flex items-center justify-center gap-2 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-900/30 dark:text-sky-300 dark:hover:bg-sky-900/50 border border-sky-100 dark:border-sky-800"
+                                                className="w-full py-2.5 rounded-lg text-[11px] font-bold transition-all shadow-sm flex items-center justify-center gap-2 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-900/30 dark:text-sky-300 dark:hover:bg-sky-900/50 border border-sky-100 dark:border-sky-800"
                                             >
                                                 ⚙️ 앱 설정 및 보안
                                             </button>
@@ -5202,26 +5484,26 @@
                                                             }
                                                         }
                                                     }}
-                                                    className="w-full py-2 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-[10px] font-bold hover:bg-green-100 dark:hover:bg-green-900/50 transition-all border border-green-100 dark:border-green-800"
+                                                    className="w-full py-2.5 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-[11px] font-bold hover:bg-green-100 dark:hover:bg-green-900/50 transition-all shadow-sm border border-green-100 dark:border-green-800"
                                                 >
                                                     🎫 후원 코드 등록
                                                 </button>
                                             )}
-                                            <button 
-                                                onClick={() => setIsSuggestionModalOpen(true)} 
-                                                className="w-full py-2 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-lg text-[10px] font-bold hover:bg-yellow-100 dark:hover:bg-yellow-900/50 transition-all border border-yellow-100 dark:border-yellow-800"
-                                            >
-                                                💡 기능 제안 / 버그 신고
-                                            </button>
-                                            <button onClick={() => handleLogout()} className="w-full py-1.5 text-[10px] text-gray-500 hover:text-red-500 transition-colors">
-                                                🚪 로그아웃
-                                            </button>
-                                            {/* [추가] 관리자 대시보드 버튼 */}
+                                            {/* [수정] 관리자 대시보드: 후원 코드와 동일한 스타일(녹색) 적용 및 위치 이동 */}
                                             {isAdmin && (
-                                                <button onClick={() => setIsAdminModalOpen(true)} className="w-full py-2 bg-purple-600 text-white rounded-lg text-[10px] font-bold hover:bg-purple-700 transition-all shadow-md mt-1">
+                                                <button onClick={() => setIsAdminModalOpen(true)} className="w-full py-2.5 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg text-[11px] font-bold hover:bg-green-100 dark:hover:bg-green-900/50 transition-all shadow-sm border border-green-100 dark:border-green-800">
                                                     🛡️ 관리자 대시보드
                                                 </button>
                                             )}
+                                            <button 
+                                                onClick={() => setIsSuggestionModalOpen(true)} 
+                                                className="w-full py-2.5 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-lg text-[11px] font-bold hover:bg-yellow-100 dark:hover:bg-yellow-900/50 transition-all shadow-sm border border-yellow-100 dark:border-yellow-800"
+                                            >
+                                                💡 기능 제안 / 버그 신고
+                                            </button>
+                                            <button onClick={() => handleLogout()} className="w-full py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 rounded-lg text-[11px] font-bold hover:bg-red-50 hover:text-red-500 hover:border-red-200 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-all shadow-sm">
+                                                🚪 로그아웃
+                                            </button>
                                         </div>
                                     </div>
                                 )}
@@ -5254,7 +5536,7 @@
                             <MarketDataWidget darkMode={darkMode} />
                             
                             {/* [이동] AI 자산 분석 위젯 (시장 지표 아래로 이동) */}
-                            <div className="mt-4 p-4 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl shadow-lg text-white relative overflow-hidden group cursor-pointer transition-transform hover:scale-[1.02]" onClick={() => setIsAIModalOpen(true)}>
+                            <div className="mt-4 p-4 bg-gradient-to-br from-indigo-600 to-violet-600 dark:from-indigo-900 dark:to-violet-950 rounded-xl shadow-lg text-white relative overflow-hidden group cursor-pointer transition-transform hover:scale-[1.02]" onClick={() => setIsAIModalOpen(true)}>
                                 <div className="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-white opacity-10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
                                 <div className="relative z-10">
                                     <div className="flex items-center gap-2 mb-2">
@@ -5521,7 +5803,7 @@
 
                         {/* 일반 사용자용 의견 보내기 버튼 (관리자가 아닐 때 표시, 설정에서 제어 가능) */}
                         {!isAdmin && showSuggestionButton && (
-                            <button onClick={() => setIsSuggestionModalOpen(true)} className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 h-12 rounded-full shadow-lg flex items-center gap-2 transition-all hover:scale-105 animate-in slide-in-from-bottom-2">
+                            <button onClick={() => setIsSuggestionModalOpen(true)} className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 h-12 rounded-full shadow-lg flex items-center gap-2 transition-all hover:scale-105 animate-in slide-in-from-bottom-2 pointer-events-auto">
                                 <span className="text-lg">💡</span>
                                 <span className="text-sm font-bold hidden sm:inline">의견 보내기</span>
                             </button>
@@ -5596,6 +5878,7 @@
                         onClose={() => setIsAIModalOpen(false)} 
                         appData={appData} 
                         calculation={calculation} 
+                        assetHistory={assetHistory}
                     />}
                     {window.HistoryActionModal && <window.HistoryActionModal 
                         isOpen={isHistoryActionModalOpen}
@@ -5866,7 +6149,8 @@
             sectorInfo,
             sectorTotal,
             rgb,
-            itemRec
+            itemRec,
+            displayMode
         }) => {
             const assetPercentage = (Number(asset.amount || 0) / sectorTotal) * 100;
             const amountBgStyle = { backgroundImage: `linear-gradient(to right, rgba(${rgb}, 0.15) ${assetPercentage}%, transparent ${assetPercentage}%)` };
@@ -5879,12 +6163,12 @@
                             <input type="text" placeholder="항목명" aria-label="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">현재금액</label>
-                                <CalculatorInput aria-label="현재금액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                                <CalculatorInput aria-label="현재금액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} displayMode={displayMode} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월납입</label>
                                 <div className="relative">
-                                    <CalculatorInput aria-label="월납입액" className="w-full border rounded px-2 py-1 pr-16 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
+                                    <CalculatorInput aria-label="월납입액" className="w-full border rounded px-2 py-1 pr-16 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} displayMode={displayMode} />
                                     {itemRec > 0 && (
                                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-blue-500 dark:text-blue-400 pointer-events-none font-medium">
                                             권장 납입: {Math.round(itemRec).toLocaleString()}
@@ -5920,7 +6204,7 @@
                             <input type="text" placeholder="항목명" aria-label="대출명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">현재잔액</label>
-                                <CalculatorInput aria-label="대출 잔액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} />
+                                <CalculatorInput aria-label="대출 잔액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} displayMode={displayMode} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">이자율(%)</label>
@@ -5928,7 +6212,7 @@
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월 상환액</label>
-                                <CalculatorInput aria-label="월 상환액" placeholder="0이면 자동계산" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} />
+                                <CalculatorInput aria-label="월 상환액" placeholder="0이면 자동계산" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} displayMode={displayMode} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">만기(개월)</label>
