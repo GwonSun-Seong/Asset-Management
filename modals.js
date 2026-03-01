@@ -210,8 +210,8 @@ window.ProFeaturesModal = ({ isOpen, onClose }) => {
                         <tbody className="divide-y dark:divide-gray-700">
                             <tr>
                                 <td className="px-4 py-3 dark:text-gray-300">데이터 저장</td>
-                                <td className="px-4 py-3 text-center text-gray-500">클라우드 자동 동기화</td>
-                                <td className="px-4 py-3 text-center font-semibold dark:text-white">클라우드 자동 동기화</td>
+                                <td className="px-4 py-3 text-center text-gray-900 dark:text-gray-300">기본 저장 (최신 1개)</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">무제한 히스토리 & 동기화</td>
                             </tr>
                             <tr>
                                 <td className="px-4 py-3 dark:text-gray-300">시나리오 저장</td>
@@ -1117,8 +1117,9 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                         try {
                             let appData = record.data;
                             // 복호화 시도
-                            if (window.SECURITY_KEY) {
-                                const key = window.getEncryptionKey('normal', null, record.email, window.SECURITY_KEY);
+                            const securityKey = window.SUPABASE_CONFIG?.SECURITY_KEY;
+                            if (securityKey) {
+                                const key = window.getEncryptionKey('normal', null, record.email, securityKey);
                                 if (key) appData = window.decryptData(record.data, key);
                             }
 
