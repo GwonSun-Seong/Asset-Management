@@ -159,7 +159,7 @@ window.EncryptionModal = ({ isOpen, onSelect }) => {
     );
 };
 
-window.PasswordPromptModal = ({ isOpen, onConfirm, onCancel }) => {
+window.PasswordPromptModal = ({ isOpen, onConfirm, onCancel, onReset }) => {
     const [password, setPassword] = useState('');
     if (!isOpen) return null;
     return (
@@ -172,6 +172,11 @@ window.PasswordPromptModal = ({ isOpen, onConfirm, onCancel }) => {
                     <button onClick={onCancel} className="flex-1 py-3 text-gray-600 dark:text-gray-400 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors">취소</button>
                     <button onClick={() => onConfirm(password)} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">확인</button>
                 </div>
+                {onReset && (
+                    <div className="mt-4 text-center border-t dark:border-gray-700 pt-3">
+                        <button onClick={onReset} className="text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 underline transition-colors">비밀번호를 잊으셨나요? (로컬 데이터로 복구)</button>
+                    </div>
+                )}
             </div>
         </div>
     );

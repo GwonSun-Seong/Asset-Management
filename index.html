@@ -1562,12 +1562,16 @@
             try {
                     // [수정] 클라우드 저장 시에도 로컬 날짜 기준 사용 (히스토리와 일관성 유지)
                     const now = new Date();
-                    // [수정] 무료 유저는 '1900-01-01' 고정값으로 단일 레코드 유지 (DB DATE 타입 호환), PRO는 날짜별 기록
-                    const recordDate = targetPro 
-                        ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-                        : '1900-01-01';
+                    // [수정] 1900년 고정 해제: FREE/PRO 모두 실제 저장 날짜 기록
+                    const recordDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
                 await withRetry(() => supabase.auth.refreshSession());
+
+                // [추가] FREE 유저는 단일 레코드 유지를 위해 오늘 날짜가 아닌 과거 데이터 삭제
+                if (!targetPro) {
+                    await withRetry(() => supabase.from('user_assets').delete().eq('email', targetEmail).neq('record_date', recordDate));
+                }
+
                 const { data, error } = await withRetry(() => 
                     supabase.from('user_assets').upsert({ 
                         email: targetEmail, data: payloadData,
@@ -2473,6 +2477,31 @@
                     const key = window.getEncryptionKey('secure', password, verifiedEmail, SECURITY_KEY);
                     saveToCloud(unifiedData, true, null, null, key, 'secure');
                 }
+            };
+
+            // [추가] 비밀번호 분실 시 로컬 데이터로 복구 핸들러
+            const handlePasswordReset = async () => {
+                if (!confirm("⚠️ 경고: 비밀번호를 분실하면 서버에 저장된 기존 암호화 데이터는 영구적으로 복구할 수 없습니다.\n\n정말로 현재 기기의 '로컬 데이터'로 서버 데이터를 덮어쓰고 계정을 복구하시겠습니까?\n(복구 후에는 일반 모드로 전환됩니다)")) return;
+
+                setIsPasswordPromptOpen(false);
+                pendingCiphertext.current = null;
+                
+                // 일반 모드로 전환 및 강제 저장
+                setEncryptionMode('normal');
+                setUserSecretKey('');
+                sessionStorage.removeItem('assetDashboardSecretKey');
+                
+                const key = window.getEncryptionKey('normal', '', verifiedEmail, SECURITY_KEY);
+                if (!key) return addToast('시스템 보안 키 오류로 복구할 수 없습니다.', 'error');
+
+                await saveToCloud({ 
+                    appData: appDataRef.current, 
+                    scenarios: scenariosRef.current, 
+                    assetHistory: assetHistoryRef.current, 
+                    referenceScenarios: referenceScenarios 
+                }, true, null, null, key, 'normal');
+
+                addToast('계정이 복구되었습니다. (일반 모드 전환됨)', 'success');
             };
 
             // [추가] 암호화 모드 변경 핸들러
@@ -5837,7 +5866,8 @@
                     {window.PasswordPromptModal && <window.PasswordPromptModal 
                         isOpen={isPasswordPromptOpen} 
                         onConfirm={handlePasswordConfirm}
-                        onCancel={() => setIsPasswordPromptOpen(false)}
+                        onCancel={() => { setIsPasswordPromptOpen(false); pendingCiphertext.current = null; setSyncStatus('error'); addToast('비밀번호 입력이 취소되었습니다. 로컬 데이터 모드로 동작합니다.', 'warning'); }}
+                        onReset={handlePasswordReset}
                     />}
                     {window.SettingsModal && <window.SettingsModal 
                         isOpen={isSettingsModalOpen} 
