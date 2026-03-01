@@ -1104,6 +1104,64 @@
             );
         });
 
+        // [추가] 저장된 시나리오 캐러셀 컴포넌트
+        const SavedScenariosCarousel = ({ scenarios, onLoad, onDelete, onSetReference, referenceId }) => {
+            const [currentIndex, setCurrentIndex] = useState(0);
+            
+            useEffect(() => {
+                if (currentIndex >= scenarios.length && scenarios.length > 0) {
+                    setCurrentIndex(scenarios.length - 1);
+                }
+            }, [scenarios.length, currentIndex]);
+
+            if (scenarios.length === 0) return <div className="text-sm text-gray-500">저장된 시나리오가 없습니다.</div>;
+
+            const current = scenarios[currentIndex];
+            const prev = () => setCurrentIndex(p => (p === 0 ? scenarios.length - 1 : p - 1));
+            const next = () => setCurrentIndex(p => (p === scenarios.length - 1 ? 0 : p + 1));
+
+            return (
+                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 relative group">
+                    <div className="flex items-center justify-between mb-3">
+                        <button onClick={prev} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+                        </button>
+                        <div className="text-center">
+                            <h4 className="font-bold text-gray-900 dark:text-white text-lg">{current.name}</h4>
+                            <p className="text-xs text-gray-500">{new Date(current.createdAt).toLocaleDateString()} 저장</p>
+                        </div>
+                        <button onClick={next} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                    </div>
+                    
+                    <div className="flex gap-2 mt-2">
+                        <button onClick={() => onLoad(current)} className="flex-1 py-2 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">
+                            불러오기
+                        </button>
+                        <button 
+                            onClick={() => onSetReference(current.id === referenceId ? null : current)} 
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors border ${
+                                current.id === referenceId 
+                                ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' 
+                                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700'
+                            }`}
+                        >
+                            {current.id === referenceId ? '기준 해제' : '비교 기준 설정'}
+                        </button>
+                        <button onClick={() => onDelete(current.id)} className="px-3 py-2 bg-white text-red-500 border border-red-100 hover:bg-red-50 dark:bg-gray-800 dark:border-red-900/30 dark:hover:bg-red-900/20 rounded-lg text-xs font-bold transition-colors">
+                            삭제
+                        </button>
+                    </div>
+                    <div className="absolute bottom-2 right-1/2 transform translate-x-1/2 flex gap-1">
+                        {scenarios.map((_, i) => (
+                            <div key={i} className={`w-1.5 h-1.5 rounded-full ${i === currentIndex ? 'bg-gray-400 dark:bg-gray-500' : 'bg-gray-200 dark:bg-gray-700'}`}></div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
         // [최적화] 정적 데이터 외부로 이동 및 스타일 클래스 하드코딩 (다크모드 해결)
         const AssetDashboard = () => {
             // config.js에서 로드된 sectorInfo 사용
@@ -1151,6 +1209,7 @@
             // [추가] 하단에 있던 상태들을 초기화 순서 보장을 위해 위로 이동
             const [assetHistory, setAssetHistory] = useState([]);
             const [showProjectionInHistory, setShowProjectionInHistory] = useState(false);
+            const [referenceScenario, setReferenceScenario] = useState(null); // [추가] 비교 기준 시나리오
             const [logoutBehavior, setLogoutBehavior] = useState(() => localStorage.getItem('assetLogoutBehavior') || 'keep');
             useEffect(() => { localStorage.setItem('assetLogoutBehavior', logoutBehavior); }, [logoutBehavior]);
 
@@ -3295,6 +3354,58 @@
                     });
                 }
 
+                // [추가] 기준 시나리오 오버레이
+                if (referenceScenario) {
+                    const refData = referenceScenario.data;
+                    const refBaseDate = refData.baseDate || (refData.baseMonth ? `${refData.baseMonth}-01` : null);
+                    
+                    if (refBaseDate) {
+                        const { projections: refProjections } = calculateMonthlyProjection(refData, 120);
+                        const refDatasetData = finalLabels.map(label => {
+                            let targetDate;
+                            if (label.includes('년')) {
+                                const parts = label.match(/(\d+)년 (\d+)월/);
+                                if (parts) targetDate = new Date(Number('20' + parts[1]), Number(parts[2]) - 1, 1);
+                            } else {
+                                const historyItem = assetHistory.find(h => {
+                                    const [y, m, d] = h.date.split('-');
+                                    return `${Number(m)}/${Number(d)}` === label;
+                                });
+                                if (historyItem) targetDate = new Date(historyItem.date);
+                            }
+
+                            if (!targetDate) return null;
+
+                            const [bY, bM, bD] = refBaseDate.split('-').map(Number);
+                            const base = new Date(bY, bM - 1, bD);
+                            
+                            // 월 차이 계산 (소수점 포함하여 보간)
+                            const diffTime = targetDate - base;
+                            const diffMonths = diffTime / (1000 * 60 * 60 * 24 * 30.44); // 평균 월 일수
+                            
+                            if (diffMonths >= 0 && diffMonths < refProjections.length - 1) {
+                                const idx = Math.floor(diffMonths);
+                                const fraction = diffMonths - idx;
+                                const val1 = refProjections[idx]?.total || 0;
+                                const val2 = refProjections[idx + 1]?.total || val1;
+                                return Math.floor(val1 + (val2 - val1) * fraction);
+                            }
+                            return null;
+                        });
+
+                        datasets.push({
+                            label: `기준: ${referenceScenario.name}`,
+                            data: refDatasetData,
+                            borderColor: '#f59e0b', // Amber color
+                            borderDash: [2, 2],
+                            pointRadius: 0,
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.4
+                        });
+                    }
+                }
+
                 if (goalMode === 'target' && targetAmount > 0) {
                     datasets.push({
                         label: `목표 자산 (${formatNumber(targetAmount, displayMode)}만원)`,
@@ -3388,7 +3499,7 @@
 
                 const timerId = setTimeout(renderHistoryChart, 50);
                 return () => clearTimeout(timerId);
-            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode, loadHistorySnapshot, deleteHistoryPoint]);
+            }, [assetHistory, panelCollapseState['history'], goalMode, targetAmount, displayMode, showProjectionInHistory, calculation.monthlyProjections, baseMonth, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenario]);
 
             // ===== 자산 관리 함수들 =====
             const addAsset = (sector) => setAssets(prev => ({
@@ -3654,18 +3765,13 @@
                 <div className="flex flex-col lg:flex-row lg:items-start gap-6">
                     <div className="lg:w-full lg:max-w-md">
                         <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">저장된 시나리오</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
-                            {scenarios.map(scenario => (
-                                <div key={scenario.id} className="border dark:border-gray-700 rounded-lg p-4">
-                                    <h4 className="font-medium text-gray-900 dark:text-white">{scenario.name}</h4>
-                                    <p className="text-sm text-gray-500">{new Date(scenario.createdAt).toLocaleDateString()}</p>
-                                    <div className="mt-2 flex gap-2">
-                                        <button onClick={() => loadScenario(scenario)} className="flex-1 px-3 py-1 rounded text-sm bg-indigo-500 text-white hover:bg-indigo-600">불러오기</button>
-                                        <button onClick={() => deleteScenario(scenario.id)} className="px-3 py-1 rounded text-sm bg-rose-500 text-white hover:bg-rose-600">삭제</button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                        <SavedScenariosCarousel 
+                            scenarios={scenarios} 
+                            onLoad={loadScenario} 
+                            onDelete={deleteScenario} 
+                            onSetReference={setReferenceScenario}
+                            referenceId={referenceScenario?.id}
+                        />
                     </div>
                     <div className="flex-grow border-l border-gray-200 dark:border-gray-700 pl-6">
                         <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">시나리오 비교 (최대 3개)</h3>
@@ -5086,7 +5192,7 @@
 </PanelWrapper>;
                                     case 'scenario': 
                                         return scenarios.length > 0 && (
-                                            <PanelWrapper key={panelId} {...panelProps} title="🔀 시나리오 비교" className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow">
+                                            <PanelWrapper key={panelId} {...panelProps} title="🔀 시나리오 비교" className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow p-6">
                                                 {renderScenarioPanel()}
                                             </PanelWrapper>
                                         );

@@ -1065,17 +1065,25 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase }) => {
         const { count: pro, error: proError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('is_paid', true);
         if (proError) console.error('Stats Error (Pro):', proError);
 
-        // [추가] 최근 30일 내 활동 유저 (user_assets 업데이트 기준)
+        // [수정] 최근 30일 내 활동 유저 (user_assets 업데이트 기준) - 중복 제거 로직 적용
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const { count: active, error: activeError } = await supabase.from('user_assets').select('*', { count: 'exact', head: true }).gte('updated_at', thirtyDaysAgo.toISOString());
+        
+        // user_assets 테이블에서 이메일만 가져와서 JS Set으로 중복 제거 (Supabase select count는 distinct 미지원)
+        const { data: activeData, error: activeError } = await supabase
+            .from('user_assets')
+            .select('email')
+            .gte('updated_at', thirtyDaysAgo.toISOString());
+            
         if (activeError) console.error('Stats Error (Active):', activeError);
+        
+        const uniqueActiveUsers = activeData ? new Set(activeData.map(d => d.email)).size : 0;
 
         // [추가] 의견이 있는 유저 수
         const { count: suggCount, error: suggError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).not('suggestions', 'is', null);
         if (suggError) console.error('Stats Error (Suggestions):', suggError);
 
-        setStats({ totalUsers: total || 0, proUsers: pro || 0, activeUsers: active || 0, totalSuggestions: suggCount || 0 });
+        setStats({ totalUsers: total || 0, proUsers: pro || 0, activeUsers: uniqueActiveUsers || 0, totalSuggestions: suggCount || 0 });
     };
 
     const fetchUsers = async () => {
