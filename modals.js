@@ -1073,6 +1073,10 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
     const fetchStats = async () => {
         setIsLoading(true);
         try {
+            // [추가] 총 가입자 수 조회
+            const { count: totalUsersCount, error: countError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true });
+            if (countError) console.error('Total users count error:', countError);
+
             // 1. 동의한 유저 이메일 가져오기
             const { data: profiles, error: profileError } = await supabase
                 .from('user_profiles')
@@ -1107,10 +1111,11 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                         }
                     }
 
-                    let totalAssetsSum = 0;
-                    let totalDebtSum = 0;
+                    // [수정] 통계 계산을 위한 배열 초기화
+                    const totals = [];
+                    const debts = [];
+                    const nets = [];
                     let validCount = 0;
-                    let sectorCounts = {};
 
                     uniqueAssets.forEach(record => {
                         try {
@@ -1130,6 +1135,15 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                                     break;
                                 default:
                                     // null 또는 'none': 암호화되지 않은 데이터이므로 그대로 사용
+                                    // [추가] 문자열인 경우 파싱 시도 (DB 컬럼이 text일 경우 대비)
+                                    if (typeof appData === 'string') {
+                                        try {
+                                            appData = JSON.parse(appData);
+                                        } catch (e) {
+                                            // 파싱 실패 시 무시
+                                            return;
+                                        }
+                                    }
                                     break;
                             }
 
@@ -1142,29 +1156,38 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                                 if (assets.loan) {
                                     debt = assets.loan.reduce((sum, a) => sum + (a.amount || 0), 0);
                                 }
+                                const net = total - debt;
 
-                                totalAssetsSum += total;
-                                totalDebtSum += debt;
+                                totals.push(total);
+                                debts.push(debt);
+                                nets.push(net);
                                 validCount++;
-                                
-                                // 섹터별 보유 카운트
-                                Object.keys(assets).forEach(k => {
-                                    if (k !== 'loan' && assets[k] && assets[k].length > 0) {
-                                        sectorCounts[k] = (sectorCounts[k] || 0) + 1;
-                                    }
-                                });
                             }
                         } catch (e) { /* Decryption failed */ }
                     });
 
                     if (validCount > 0) {
-                        const sortedSectors = Object.entries(sectorCounts).sort((a, b) => b[1] - a[1]);
+                        // [추가] 중위값 계산 함수
+                        const calculateMedian = (arr) => {
+                            if (arr.length === 0) return 0;
+                            const sorted = [...arr].sort((a, b) => a - b);
+                            const mid = Math.floor(sorted.length / 2);
+                            return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+                        };
+
+                        const sumTotal = totals.reduce((a, b) => a + b, 0);
+                        const sumDebt = debts.reduce((a, b) => a + b, 0);
+                        const sumNet = nets.reduce((a, b) => a + b, 0);
+
                         insights = {
-                            avgTotalAsset: Math.round(totalAssetsSum / validCount),
-                            avgDebt: Math.round(totalDebtSum / validCount),
-                            avgNetWorth: Math.round((totalAssetsSum - totalDebtSum) / validCount),
-                            topSector: sortedSectors[0] ? window.sectorInfo[sortedSectors[0][0]]?.name : '-',
-                            sampleSize: validCount
+                            avgTotal: Math.round(sumTotal / validCount),
+                            medianTotal: Math.round(calculateMedian(totals)),
+                            avgDebt: Math.round(sumDebt / validCount),
+                            medianDebt: Math.round(calculateMedian(debts)),
+                            avgNet: Math.round(sumNet / validCount),
+                            medianNet: Math.round(calculateMedian(nets)),
+                            sampleSize: validCount,
+                            totalUsers: totalUsersCount || 0
                         };
                     }
                 }
@@ -1272,36 +1295,45 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                                 {isLoading ? (
                                     <div className="p-10 text-center text-gray-500">데이터 분석 중...</div>
                                 ) : stats.insights ? (
-                                    <table className="w-full text-sm text-left">
-                                        <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                                            <tr>
-                                                <th className="p-4">항목</th>
-                                                <th className="p-4 text-right">값</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y dark:divide-gray-700">
-                                            <tr>
-                                                <td className="p-4 font-medium dark:text-gray-300">분석 대상 (표본)</td>
-                                                <td className="p-4 text-right dark:text-gray-300">{stats.insights.sampleSize}명</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="p-4 font-medium dark:text-gray-300">평균 총자산 (부채 제외)</td>
-                                                <td className="p-4 text-right font-bold text-blue-600 dark:text-blue-400">{stats.insights.avgTotalAsset.toLocaleString()}만원</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="p-4 font-medium dark:text-gray-300">평균 부채</td>
-                                                <td className="p-4 text-right font-bold text-red-500">{stats.insights.avgDebt.toLocaleString()}만원</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="p-4 font-medium dark:text-gray-300">평균 순자산</td>
-                                                <td className="p-4 text-right font-bold text-green-600 dark:text-green-400">{stats.insights.avgNetWorth.toLocaleString()}만원</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="p-4 font-medium dark:text-gray-300">가장 많이 보유한 자산군</td>
-                                                <td className="p-4 text-right dark:text-gray-300">{stats.insights.topSector}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
+                                    <div className="p-4">
+                                        <div className="grid grid-cols-2 gap-4 mb-6">
+                                            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg text-center">
+                                                <div className="text-xs text-gray-500 dark:text-gray-400">총 가입자</div>
+                                                <div className="text-xl font-bold text-gray-900 dark:text-white">{stats.insights.totalUsers.toLocaleString()}명</div>
+                                            </div>
+                                            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-center">
+                                                <div className="text-xs text-blue-600 dark:text-blue-400">분석 대상 (동의)</div>
+                                                <div className="text-xl font-bold text-blue-700 dark:text-blue-300">{stats.insights.sampleSize.toLocaleString()}명</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                                <tr>
+                                                    <th className="p-4">구분</th>
+                                                    <th className="p-4 text-right">평균값</th>
+                                                    <th className="p-4 text-right">중위값</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y dark:divide-gray-700">
+                                                <tr>
+                                                    <td className="p-4 font-medium dark:text-gray-300">총자산 (부채 제외)</td>
+                                                    <td className="p-4 text-right font-bold text-blue-600 dark:text-blue-400">{stats.insights.avgTotal.toLocaleString()}만원</td>
+                                                    <td className="p-4 text-right">{stats.insights.medianTotal.toLocaleString()}만원</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="p-4 font-medium dark:text-gray-300">부채</td>
+                                                    <td className="p-4 text-right font-bold text-red-500">{stats.insights.avgDebt.toLocaleString()}만원</td>
+                                                    <td className="p-4 text-right">{stats.insights.medianDebt.toLocaleString()}만원</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="p-4 font-medium dark:text-gray-300">순자산</td>
+                                                    <td className="p-4 text-right font-bold text-green-600 dark:text-green-400">{stats.insights.avgNet.toLocaleString()}만원</td>
+                                                    <td className="p-4 text-right">{stats.insights.medianNet.toLocaleString()}만원</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 ) : (
                                     <div className="p-10 text-center text-gray-500">통계를 낼 충분한 데이터가 없습니다.</div>
                                 )}
