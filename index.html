@@ -957,13 +957,29 @@
 
             // [추가] 프라이빗 모드 마스킹 처리
             const isMasked = displayMode === 'percent' && !isEditing;
+            
+            // [수정] 연산자가 포함된 경우에만 text 타입으로 전환하여 number 타입의 네이티브 기능(스피너, 화살표) 유지
+            const hasOperators = /[\+\-\*\/]/.test(String(localValue));
+            const inputType = isMasked || (isEditing && hasOperators) ? "text" : "number";
 
             return (
-                <input type={isEditing || isMasked ? "text" : "number"} value={isMasked ? '***' : localValue} onChange={(e) => { if(!isMasked) setLocalValue(e.target.value); }} onBlur={handleBlur} className={className} placeholder={placeholder} style={style} step="any" {...props}
+                <input type={inputType} value={isMasked ? '***' : localValue} onChange={(e) => { if(!isMasked) setLocalValue(e.target.value); }} onBlur={handleBlur} className={className} placeholder={placeholder} style={style} step="any" {...props}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') e.target.blur();
                         if (!isEditing && ['+', '-', '*', '/'].includes(e.key)) {
                             e.preventDefault(); setIsEditing(true); setLocalValue(prev => String(prev) + e.key);
+                        }
+                        // [추가] 화살표 키보드 동작 커스텀 (1단위 증감 보장 및 즉시 반영)
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                            if (!hasOperators) {
+                                e.preventDefault();
+                                const currentVal = parseFloat(localValue) || 0;
+                                const step = Number(props.step) || 1;
+                                const direction = e.key === 'ArrowUp' ? 1 : -1;
+                                const newVal = Math.round((currentVal + step * direction) * 10000) / 10000;
+                                setLocalValue(newVal);
+                                onChange({ target: { value: newVal } });
+                            }
                         }
                     }}
                     onFocus={(e) => { setIsEditing(true); e.target.select(); }}
@@ -2401,7 +2417,11 @@
                     const newEntry = `[${timestamp}] ${content}`;
                     const updatedSuggestions = currentProfile?.suggestions ? currentProfile.suggestions + '\n\n' + newEntry : newEntry;
                     const { error } = await withRetry(() => 
-                        supabase.from('user_profiles').update({ suggestions: updatedSuggestions }).eq('id', user.id)
+                        supabase.from('user_profiles').update({ 
+                            suggestions: updatedSuggestions,
+                            suggestions_reply: null, // [수정] 새 문의 등록 시 기존 답변 초기화 (미답변 상태로 전환)
+                            suggestions_reply_isread: false
+                        }).eq('id', user.id)
                     );
                     if (error) throw error;
                     addToast('소중한 의견 감사합니다!', 'success');
