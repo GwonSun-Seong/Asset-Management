@@ -1,6 +1,6 @@
 // defaultData.js - 기본 데이터와 설정 관리 파일
 
-// [추가] 로컬 시간 기준 날짜 문자열 생성 헬퍼 (초기 데이터용)
+// 로컬 시간 기준 날짜 문자열 생성 헬퍼 (초기 데이터용)
 const getLocalToday = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -9,7 +9,7 @@ const getLocalToday = () => {
     return `${year}-${month}-${day}`;
 };
 
-// [추가] 테스트용 과거 날짜 생성 헬퍼 (시나리오 기준일 맞춤용)
+// 테스트용 과거 날짜 생성 헬퍼 (시나리오 기준일 맞춤용)
 const getPastDate = (days) => {
     const d = new Date();
     d.setDate(d.getDate() - days);
@@ -19,7 +19,7 @@ const getPastDate = (days) => {
     return `${year}-${month}-${day}`;
 };
 
-// [추가] 임의의 과거 자산 히스토리 생성 (50일치, 우상향 및 횡보 패턴)
+// 임의의 과거 자산 히스토리 생성 (50일치, 우상향 및 횡보 패턴)
 const generateMockHistory = () => {
     const history = [];
     const today = new Date();
@@ -55,8 +55,8 @@ const publicDefaultData = {
     salaryDay: 25,
     targetAmount: 10000, // 목표 자산 금액 (만원)
     goalMode: 'period', // 'period' 또는 'target'
-    displayMode: 'amount', // [추가] displayMode 기본값
-    darkMode: false, // [추가] 다크 모드 상태
+    displayMode: 'amount', // displayMode 기본값
+    darkMode: false, // 다크 모드 상태
     rebalancingMode: 'simple', // 'simple' | 'advanced'
     assets: {
         deposit: [
@@ -100,7 +100,7 @@ const publicDefaultData = {
         ]
     },
     monthlyExpenses: [
-        { name: '생활비', amount: 80, day: 15 }, // [수정] 지출일 추가
+        { name: '생활비', amount: 80, day: 15 }, // 지출일 추가
         { name: '월세', amount: 40, day: 25 }
     ],
     expenseEvents: [
@@ -109,7 +109,7 @@ const publicDefaultData = {
             amount: 5,
             startMonth: getLocalToday().slice(0,7),
             endMonth: (() => { const d = new Date(); d.setMonth(d.getMonth() + 23); return d.toISOString().slice(0,7); })(),
-            day: 20, // [추가] 이벤트 발생일
+            day: 20, // 이벤트 발생일
             targetSector: 'deposit',
             targetAsset: 1
         }
@@ -125,19 +125,19 @@ const publicDefaultData = {
     },
     simpleThresholds: { warning: 5, danger: 10 },
     rebalancingTargets: { deposit: 10, savings: 15, investment: 55, pension: 20, realestate: 0, car: 0, misc: 0 },
-    baseDate: getLocalToday(), // [변경] baseMonth -> baseDate (YYYY-MM-DD)
+    baseDate: getLocalToday(), // baseMonth -> baseDate (YYYY-MM-DD)
     mainCashFlowAccount: '생활비통장',
-    history: generateMockHistory(), // [추가] 초기 히스토리 데이터
-    memo: '', // [추가] 메모 기능
-    // [추가] 기본 시나리오 3종 세트
+    history: generateMockHistory(), // 초기 히스토리 데이터
+    memo: '', // 메모 기능
+    // 기본 시나리오 3종 세트
     scenarios: [
         {
             id: 'sc_aggressive',
             name: '🚀 공격적 투자 (History Beat)',
-            createdAt: getPastDate(50), // [수정] 히스토리 시작 시점(50일 전)과 동기화
+            createdAt: getPastDate(50), // 히스토리 시작 시점(50일 전)과 동기화
             data: {
-                baseDate: getPastDate(50), // [추가] 시뮬레이션 기준일도 과거로 설정
-                monthlySalary: 450, // [수정] 히스토리를 이기기 위해 고소득/고투자 설정
+                baseDate: getPastDate(50), // 시뮬레이션 기준일도 과거로 설정
+                monthlySalary: 450, // 히스토리를 이기기 위해 고소득/고투자 설정
                 monthlyExpenses: [{ name: '생활비', amount: 100, day: 15 }],
                 assets: {
                     deposit: [{ id: 'sc1_d1', name: 'CMA', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }],
@@ -154,9 +154,9 @@ const publicDefaultData = {
         {
             id: 'sc_moderate',
             name: '🛡️ 안정적 저축 (Moderate)',
-            createdAt: getPastDate(50), // [수정] 히스토리 시작 시점(50일 전)과 동기화
+            createdAt: getPastDate(50), // 히스토리 시작 시점(50일 전)과 동기화
             data: {
-                baseDate: getPastDate(50), // [추가] 시뮬레이션 기준일도 과거로 설정
+                baseDate: getPastDate(50), // 시뮬레이션 기준일도 과거로 설정
                 monthlySalary: 300,
                 monthlyExpenses: [{ name: '생활비', amount: 100, day: 15 }],
                 assets: {
@@ -174,11 +174,11 @@ const publicDefaultData = {
         {
             id: 'sc_conservative',
             name: '📉 경기 침체 (Conservative)',
-            createdAt: getPastDate(50), // [수정] 히스토리 시작 시점(50일 전)과 동기화
+            createdAt: getPastDate(50), // 히스토리 시작 시점(50일 전)과 동기화
             data: {
-                baseDate: getPastDate(50), // [추가] 시뮬레이션 기준일도 과거로 설정
-                monthlySalary: 200, // [수정] 저소득 설정
-                monthlyExpenses: [{ name: '최소생계비', amount: 150, day: 15 }], // [수정] 고비용 설정
+                baseDate: getPastDate(50), // 시뮬레이션 기준일도 과거로 설정
+                monthlySalary: 200, // 저소득 설정
+                monthlyExpenses: [{ name: '최소생계비', amount: 150, day: 15 }], // 고비용 설정
                 assets: {
                     deposit: [{ id: 'sc3_d1', name: '비상금', amount: 1250, rate: 2.0, feeRate: 0, monthlyContrib: 50, extraContrib: 0, extraFrom: '' }],
                     savings: [],
@@ -191,33 +191,18 @@ const publicDefaultData = {
     ]
 };
 
-// 서버 설정 로드 함수 (주석 처리/해제로 전환)
-async function loadServerConfig() {
-    if (!window.USE_SERVER_CONFIG) return publicDefaultData;
-
-    try {
-        // const response = await fetch('/api/defaultconfig');
-        // return await response.json();
-        return publicDefaultData; // 서버 연결 실패시 기본값 사용
-    } catch (error) {
-        console.error('서버 설정 로드 실패:', error);
-        return publicDefaultData;
-    }
-}
-
-// [추가] 기본 레이아웃 순서 정의
+// 기본 레이아웃 순서 정의
 const DEFAULT_LAYOUT_ORDER = [
     'summary', 'scenario', 'charts', 'history', 'budget', 'memo', 
     'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'
 ];
 
-// [추가] 기본 자산 섹터 순서 정의
+// 기본 자산 섹터 순서 정의
 const DEFAULT_SECTOR_ORDER = [
     'deposit', 'savings', 'investment', 'pension', 'realestate', 'car', 'loan', 'misc'
 ];
 
 // 전역으로 노출
 window.publicDefaultData = publicDefaultData;
-window.loadServerConfig = loadServerConfig;
 window.DEFAULT_LAYOUT_ORDER = DEFAULT_LAYOUT_ORDER;
 window.DEFAULT_SECTOR_ORDER = DEFAULT_SECTOR_ORDER;

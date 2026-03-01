@@ -98,7 +98,6 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
     const {
         monthlySalary = 0, assets = {}, monthlyExpenses = [],
-        targetAmount = 10000,
         mainCashFlowAccount, baseDate, // [변경] baseMonth -> baseDate
         salaryDay = 25, // [기본값 변경]
     } = data;
@@ -542,77 +541,220 @@ const validateSupabaseConfig = () => {
     return { SUPABASE_URL: url, SUPABASE_KEY: key, SECURITY_KEY: sec };
 };
 
-// [추가] CSV 생성 헬퍼
-const generateCSV = (assets) => {
-    const sectorMap = {
-        deposit: '입출금통장', savings: '저축', investment: '투자', pension: '연금',
-        realestate: '부동산', car: '자동차', loan: '대출', misc: '기타'
-    };
-    const headers = ['섹터', '항목명', '현재금액', '수익률', '수수료율', '월납입', '추가납입', '출금계좌', '만기개월', '대출시작일'];
-    let csvContent = headers.join(',') + '\n';
+const generateCSV = (appData) => {
+    const assets = appData.assets || {};
+    const expenses = appData.monthlyExpenses || [];
+    const incomeEvents = appData.incomeEvents || [];
+    const expenseEvents = appData.expenseEvents || [];
 
+    let csv = '\ufeff'; // BOM for Excel
+
+    // Section 1: Basic Info
+    csv += '## 기본 정보\n';
+    csv += '항목,값\n';
+    csv += `월 고정 수입,${appData.monthlySalary || 0}\n`;
+    csv += `고정 수입일,${appData.salaryDay || 25}\n`;
+    csv += `기준일,${appData.baseDate || ''}\n`;
+    csv += `목표 금액,${appData.targetAmount || 0}\n`;
+    csv += '\n';
+
+    // Section 2: Assets
+    csv += '## 자산 목록\n';
+    csv += '섹터(영문),항목명,현재금액,연수익률(%),수수료율(%),월납입액,추가납입액,추가납입출처,만기(개월),대출시작일,상환방식,상환계좌,ID\n';
     Object.keys(assets).forEach(sector => {
-        const koreanSector = sectorMap[sector] || sector;
         (assets[sector] || []).forEach(asset => {
             const row = [
-                koreanSector,
-                `"${asset.name}"`,
+                sector,
+                `"${asset.name.replace(/"/g, '""')}"`, // Escape quotes
                 asset.amount || 0,
                 asset.rate || 0,
                 asset.feeRate || 0,
                 asset.monthlyContrib || 0,
                 asset.extraContrib || 0,
-                `"${asset.extraFrom || ''}"`,
+                `"${(asset.extraFrom || '').replace(/"/g, '""')}"`,
                 asset.maturityMonth || '',
-                asset.loanStartDate || ''
+                asset.loanStartDate || '',
+                asset.repaymentMethod || '',
+                `"${(asset.repaymentAccount || '').replace(/"/g, '""')}"`,
+                asset.id || '' // [추가] ID 보존
             ];
-            csvContent += row.join(',') + '\n';
+            csv += row.join(',') + '\n';
         });
     });
-    return csvContent;
+    csv += '\n';
+
+    // Section 3: Monthly Expenses
+    csv += '## 월 고정 지출\n';
+    csv += '항목명,금액,지출일\n';
+    expenses.forEach(exp => {
+        csv += `"${exp.name.replace(/"/g, '""')}",${exp.amount || 0},${exp.day || ''}\n`;
+    });
+    csv += '\n';
+
+    // Section 4: Events
+    csv += '## 이벤트\n';
+    csv += '유형(수입/지출),이름,금액,시작월,종료월,대상섹터,발생일\n';
+    incomeEvents.forEach(e => {
+        csv += `수입,"${e.name.replace(/"/g, '""')}",${e.amount},${e.startMonth},${e.endMonth},${e.targetSector},${e.day||''}\n`;
+    });
+    expenseEvents.forEach(e => {
+        csv += `지출,"${e.name.replace(/"/g, '""')}",${e.amount},${e.startMonth},${e.endMonth},${e.targetSector},${e.day||''}\n`;
+    });
+    csv += '\n';
+
+    // Section 5: Rebalancing Targets (Sector)
+    csv += '## 리밸런싱 목표(섹터)\n';
+    csv += '섹터,비중\n';
+    const rebTargets = appData.rebalancingTargets || {};
+    Object.keys(rebTargets).forEach(k => {
+        csv += `${k},${rebTargets[k]}\n`;
+    });
+    csv += '\n';
+
+    // Section 6: Rebalancing Targets (Item)
+    csv += '## 리밸런싱 목표(항목)\n';
+    csv += '항목ID,비중\n';
+    const itemTargets = appData.itemTargets || {};
+    Object.keys(itemTargets).forEach(k => {
+        csv += `${k},${itemTargets[k]}\n`;
+    });
+    csv += '\n';
+
+    // Section 7: Memo
+    csv += '## 메모\n';
+    csv += 'ID,제목,내용\n';
+    const memoData = appData.memo;
+    if (Array.isArray(memoData)) {
+        memoData.forEach(m => {
+            csv += `${m.id},"${(m.title||'').replace(/"/g, '""')}","${(m.content||'').replace(/"/g, '""')}"\n`;
+        });
+    } else if (typeof memoData === 'string' && memoData.trim()) {
+        csv += `default,"기본 메모","${memoData.replace(/"/g, '""')}"\n`;
+    }
+
+    return csv;
 };
 
-// [추가] CSV 파싱 헬퍼
 const parseCSV = (text) => {
-    const reverseSectorMap = {
-        '입출금통장': 'deposit', '저축': 'savings', '투자': 'investment', '연금': 'pension',
-        '부동산': 'realestate', '자동차': 'car', '대출': 'loan', '기타': 'misc',
-        'deposit': 'deposit', 'savings': 'savings', 'investment': 'investment',
-        'pension': 'pension', 'realestate': 'realestate', 'car': 'car',
-        'loan': 'loan', 'misc': 'misc', '예적금': 'savings', '주식': 'investment', '펀드': 'investment', '부채': 'loan'
+    // [수정] BOM(Byte Order Mark) 제거하여 첫 줄 파싱 오류 방지
+    const cleanText = text.replace(/^\uFEFF/, '');
+    const lines = cleanText.split(/\r?\n/);
+    const result = {
+        assets: { deposit: [], savings: [], investment: [], pension: [], realestate: [], car: [], loan: [], misc: [] },
+        monthlyExpenses: [],
+        incomeEvents: [],
+        expenseEvents: [],
+        monthlySalary: 0,
+        salaryDay: 25,
+        baseDate: '',
+        targetAmount: 0,
+        rebalancingTargets: {},
+        itemTargets: {},
+        memo: []
     };
-    
-    const lines = text.split('\n');
-    const newAssets = {};
-    // 기본 섹터 초기화
-    ['deposit', 'savings', 'investment', 'pension', 'realestate', 'car', 'loan', 'misc'].forEach(k => newAssets[k] = []);
 
-    for (let i = 1; i < lines.length; i++) {
+    let currentSection = '';
+    let hasValidSection = false;
+
+    for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
-        
-        const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-        if (parts.length < 3) continue;
 
-        const koreanSector = parts[0].trim();
-        const sector = reverseSectorMap[koreanSector] || koreanSector;
-        if (!newAssets[sector]) newAssets[sector] = [];
+        if (line.startsWith('##')) {
+            currentSection = line.replace('##', '').trim();
+            hasValidSection = true;
+            continue;
+        }
+        if (line.startsWith('항목,값') || line.startsWith('섹터') || line.startsWith('항목명') || line.startsWith('유형') || line.startsWith('항목ID') || line.startsWith('ID,제목')) continue;
 
-        const asset = {
-            id: Date.now() + Math.random() + i,
-            name: parts[1].replace(/"/g, '').trim(),
-            amount: Number(parts[2].replace(/,/g, '')) || 0,
-            rate: Number(parts[3].replace(/,/g, '')) || 0,
-            feeRate: Number(parts[4].replace(/,/g, '')) || 0,
-            monthlyContrib: Number(parts[5].replace(/,/g, '')) || 0,
-            extraContrib: Number(parts[6].replace(/,/g, '')) || 0,
-            extraFrom: parts[7]?.replace(/"/g, '').trim() || '',
-            maturityMonth: Number(parts[8]) || 12,
-            loanStartDate: parts[9]?.trim() || ''
-        };
-        newAssets[sector].push(asset);
+        // CSV split logic handling quotes
+        const parts = [];
+        let currentPart = '';
+        let inQuotes = false;
+        for (let j = 0; j < line.length; j++) {
+            const char = line[j];
+            if (char === '"') {
+                if (inQuotes && line[j+1] === '"') {
+                    currentPart += '"';
+                    j++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (char === ',' && !inQuotes) {
+                parts.push(currentPart);
+                currentPart = '';
+            } else {
+                currentPart += char;
+            }
+        }
+        parts.push(currentPart);
+
+        if (currentSection === '기본 정보') {
+            if (parts[0] === '월 고정 수입') result.monthlySalary = Number(parts[1]);
+            if (parts[0] === '고정 수입일') result.salaryDay = Number(parts[1]);
+            if (parts[0] === '기준일') result.baseDate = parts[1];
+            if (parts[0] === '목표 금액') result.targetAmount = Number(parts[1]);
+        } else if (currentSection === '자산 목록') {
+            if (parts.length < 3) continue;
+            const sector = parts[0].trim();
+            
+            // [수정] 유효하지 않은 섹터 키가 들어올 경우 건너뛰기 (에러 방지)
+            if (!result.assets.hasOwnProperty(sector)) {
+                continue;
+            }
+            
+            result.assets[sector].push({
+                id: parts[12] || (Date.now() + Math.random()), // [수정] ID 복원 또는 생성
+                name: parts[1],
+                amount: Number(parts[2]) || 0,
+                rate: Number(parts[3]) || 0,
+                feeRate: Number(parts[4]) || 0,
+                monthlyContrib: Number(parts[5]) || 0,
+                extraContrib: Number(parts[6]) || 0,
+                extraFrom: parts[7] || '',
+                maturityMonth: Number(parts[8]) || 0,
+                loanStartDate: parts[9] || '',
+                repaymentMethod: parts[10] || '',
+                repaymentAccount: parts[11] || ''
+            });
+        } else if (currentSection === '월 고정 지출') {
+            result.monthlyExpenses.push({
+                name: parts[0],
+                amount: Number(parts[1]) || 0,
+                day: Number(parts[2]) || 15
+            });
+        } else if (currentSection === '이벤트') {
+            const event = {
+                name: parts[1],
+                amount: Number(parts[2]) || 0,
+                startMonth: parts[3],
+                endMonth: parts[4],
+                targetSector: parts[5],
+                day: Number(parts[6]) || 1,
+                targetAsset: 0
+            };
+            if (parts[0] === '수입') result.incomeEvents.push(event);
+            else result.expenseEvents.push(event);
+        } else if (currentSection === '리밸런싱 목표(섹터)') {
+            if (parts.length >= 2) result.rebalancingTargets[parts[0]] = Number(parts[1]);
+        } else if (currentSection === '리밸런싱 목표(항목)') {
+            if (parts.length >= 2) result.itemTargets[parts[0]] = Number(parts[1]);
+        } else if (currentSection === '메모') {
+            if (parts.length >= 3) {
+                result.memo.push({
+                    id: parts[0],
+                    title: parts[1],
+                    content: parts[2]
+                });
+            }
+        }
     }
-    return newAssets;
+
+    if (!hasValidSection) {
+        throw new Error('유효한 CSV 형식이 아닙니다. (섹션 헤더를 찾을 수 없습니다)');
+    }
+
+    return result;
 };
 
 // [추가] 데이터 압축 (Base64)
@@ -632,14 +774,24 @@ const compressData = (data) => {
 // [추가] 데이터 압축 해제 (Base64)
 const decompressData = (base64String) => {
     if (!window.pako) throw new Error('pako library not loaded');
-    const binaryString = atob(base64String);
-    const len = binaryString.length;
-    const compressedDataArray = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        compressedDataArray[i] = binaryString.charCodeAt(i);
+    
+    try {
+        const binaryString = atob(base64String.trim());
+        const len = binaryString.length;
+        const compressedDataArray = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            compressedDataArray[i] = binaryString.charCodeAt(i);
+        }
+        const jsonString = window.pako.inflate(compressedDataArray, { to: 'string' });
+        return JSON.parse(jsonString);
+    } catch (e) {
+        // [수정] atob 디코딩 실패(한글 포함 등) 시 일반 JSON으로 파싱 시도 (Fallback)
+        try {
+            return JSON.parse(base64String);
+        } catch (jsonErr) {
+            throw new Error('데이터 형식이 올바르지 않습니다.');
+        }
     }
-    const jsonString = window.pako.inflate(compressedDataArray, { to: 'string' });
-    return JSON.parse(jsonString);
 };
 
 // [추가] 야후 파이낸스 데이터 가져오기 (CORS 프록시 사용)
@@ -648,12 +800,12 @@ const fetchYahooData = async (symbol) => {
     
     // [수정] 프록시 서버 확장 (배포 환경 호환성 강화)
     const proxies = [
-        // 1. AllOrigins: 배포 환경에서 비교적 차단이 적음
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        // 2. CodeTabs: 별도 헤더 없이 잘 동작함
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-        // 3. CorsProxy.io: 빠르지만 도메인에 따라 차단될 수 있음
+        // 1. CorsProxy.io: 속도가 빠르고 안정적임
         u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+        // 2. AllOrigins: 배포 환경에서 비교적 차단이 적음 (백업)
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+        // 3. CodeTabs: 별도 헤더 없이 잘 동작함
+        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
         // 4. ThingProxy: 예비용
         u => `https://thingproxy.freeboard.io/fetch/${u}`
     ];
@@ -775,7 +927,7 @@ const calculateCapitalIncomeFlow = (projections, currentAssets, monthlyExpense) 
             (p.itemTotals[sector] || []).forEach(item => {
                 const rate = rateMap[item.id] || 0;
                 // 월 이자 수익 = 자산 * (연이율/100/12)
-                monthlyCapitalIncome += item.amount * (rate / 100 / 12);
+                monthlyCapitalIncome += (item.amount || 0) * (rate / 100 / 12);
             });
         });
 

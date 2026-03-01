@@ -1,5 +1,4 @@
 // config.js - 폰트와 색깔 정보 관리 파일
-// 다크모드 관련: PRO 모드일 때에만 사용 가능 (코드에서 처리)
 
 tailwind.config = {
     darkMode: 'class',
@@ -34,10 +33,7 @@ const sectorInfo = {
     misc: { name: '기타', color: 'misc', icon: '📦', bgClass: 'bg-gray-50 dark:bg-gradient-to-r dark:from-gray-900/90 dark:to-gray-900/70', textClass: 'text-gray-600 dark:text-gray-400' }
 };
 
-// [설정] 서버 설정 사용 여부
-window.USE_SERVER_CONFIG = false;
-
-// [설정] Supabase 연결 정보
+// Supabase 연결 정보
 // Cloudflare Pages 빌드 시 sed 명령어로 __SUPABASE_URL__, __SUPABASE_KEY__, __SECURITY_KEY__가 주입됩니다.
 if (!window.SUPABASE_CONFIG) {
     window.SUPABASE_CONFIG = {
@@ -47,7 +43,7 @@ if (!window.SUPABASE_CONFIG) {
     };
 }
 
-// [설정] 온보딩 가이드 단계 정의
+// 온보딩 가이드 단계 정의
 window.ONBOARDING_STEPS = [
     { id: 'header-actions', title: '기본값 및 시나리오 관리', content: '설정한 데이터를 저장하거나 불러오고, PDF로 내보낼 수 있습니다.', isPro: true },
     { id: 'summary', title: '요약 및 설정', content: '현재 자산 상황과 물가 상승을 고려한 실질 가치를 한눈에 파악할 수 있습니다.', isPro: true },
@@ -80,7 +76,7 @@ window.navLabels = {
     assumptions: { title: "가정 사항", icon: "💡" }
 };
 
-// [추가] UI 텍스트 리소스 (i18n 준비)
+// UI 텍스트 리소스 (i18n 준비)
 window.TEXTS = {
     titles: {
         summary: "요약 및 설정",
@@ -127,7 +123,7 @@ window.TEXTS = {
     }
 };
 
-// [추가] 가정 사항 패널 데이터 (인플레이션율 동적 적용을 위해 함수로 정의)
+// 가정 사항 패널 데이터 (인플레이션율 동적 적용을 위해 함수로 정의)
 window.getAssumptionsContent = (inflationRate = 0) => [
     {
         icon: '📈',
@@ -150,7 +146,7 @@ window.getAssumptionsContent = (inflationRate = 0) => [
     }
 ];
 
-// [추가] 시장 지표 위젯 초기 데이터
+// 시장 지표 위젯 초기 데이터
 window.INITIAL_MARKET_ITEMS = [
     { name: 'USD/KRW', value: '1,340.50', change: '+0.5%', color: 'red', isLive: false, data: [1328, 1330, 1332, 1335, 1331, 1334, 1338, 1340, 1342, 1339, 1335, 1330, 1328, 1332, 1335, 1338, 1340, 1345, 1342, 1340, 1338, 1335, 1332, 1330, 1335, 1338, 1340, 1342, 1341, 1340.50] },
     { name: 'S&P 500', value: '5,120.30', change: '+1.2%', color: 'green', isLive: false, data: [4700, 4720, 4750, 4730, 4780, 4800, 4820, 4850, 4840, 4880, 4900, 4920, 4910, 4950, 4980, 5000, 5020, 5010, 5050, 5080, 5100, 5090, 5120, 5150, 5140, 5160, 5150, 5130, 5120, 5120.30] },

@@ -1,7 +1,14 @@
 // modals.js - 모달 및 가이드 컴포넌트 모음
 const { useState, useMemo, useEffect, useRef } = React;
 
-// [이동] 스마트 툴팁 가이드 컴포넌트 (index.html -> modals.js)
+// 중위값 계산 헬퍼 함수
+const calculateMedian = (arr) => {
+    if (arr.length === 0) return 0;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
 window.TooltipGuide = ({ tip }) => (
     <span className="group relative inline-block ml-1 align-middle">
         <svg className="w-4 h-4 text-gray-400 cursor-help hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -12,7 +19,6 @@ window.TooltipGuide = ({ tip }) => (
     </span>
 );
 
-// [추가] 토스트 알림 컴포넌트
 window.Toast = ({ message, type, onClose }) => {
     useEffect(() => {
         const timer = setTimeout(onClose, 3000);
@@ -34,7 +40,6 @@ window.Toast = ({ message, type, onClose }) => {
     );
 };
 
-// [추가] 히스토리 데이터 로드 액션 선택 모달
 window.HistoryActionModal = ({ isOpen, onClose, date, onAction }) => {
     if (!isOpen) return null;
     return (
@@ -309,7 +314,6 @@ window.OnboardingGuide = ({ isOpen, onClose }) => {
     return null; // Driver.js가 DOM을 직접 제어하므로 React 렌더링은 불필요
 };
 
-// [추가] 통합 설정 모달 (PRO 전용)
 window.SettingsModal = ({ 
     isOpen, onClose, encryptionMode, onModeChange, 
     darkMode, onThemeToggle, logoutBehavior, onLogoutBehaviorChange,
@@ -400,7 +404,6 @@ window.SettingsModal = ({
     );
 };
 
-// [추가] 모바일 퀵 메뉴 (Bottom Sheet)
 window.MobileQuickMenu = ({ isOpen, onClose, layoutOrder, scenarios, assetHistory, onNavigate }) => {
     if (!isOpen) return null;
     const navLabels = window.navLabels || {};
@@ -436,7 +439,6 @@ window.MobileQuickMenu = ({ isOpen, onClose, layoutOrder, scenarios, assetHistor
     );
 };
 
-// [추가] 에러 바운더리 컴포넌트
 window.ErrorBoundary = class ErrorBoundary extends React.Component {
     constructor(props) {
         super(props);
@@ -530,41 +532,60 @@ window.IconPickerModal = ({ isOpen, onClose, onSelect, currentIcon }) => {
     );
 };
 
-// [수정] 데이터 내보내기/불러오기 모달 (기존 로직 복구 및 버튼 액션 수정)
 window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initialMode = 'export' }) => {
     const [mode, setMode] = useState(initialMode);
+    const [format, setFormat] = useState('json'); // 'json' | 'csv'
     const [inputValue, setInputValue] = useState('');
-    const [exportString, setExportString] = useState('');
+    const [previewText, setPreviewText] = useState('');
     const [copyStatus, setCopyStatus] = useState('idle');
 
-    useEffect(() => {
-        if (isOpen) {
-            setMode(initialMode);
-            setInputValue('');
-            setCopyStatus('idle');
+    const updatePreview = () => {
+        if (mode === 'export') {
             try {
-                // [복구] 무조건 압축(인코딩)된 데이터 생성
-                if (window.compressData) {
-                    const data = window.compressData(currentData);
-                    setExportString(data);
+                if (format === 'json') {
+                    if (window.compressData) {
+                        const data = window.compressData(currentData);
+                        setPreviewText(data);
+                    } else {
+                        setPreviewText('오류: 압축 라이브러리가 로드되지 않았습니다.');
+                    }
                 } else {
-                    setExportString('오류: 압축 라이브러리가 로드되지 않았습니다.');
+                    // CSV 생성 (전체 데이터)
+                    const appData = currentData.appData || {};
+                    const csv = window.generateCSV ? window.generateCSV(appData) : 'CSV 생성 함수를 찾을 수 없습니다.';
+                    setPreviewText(csv);
                 }
             } catch (e) {
                 console.error(e);
-                setExportString('데이터 생성 실패');
+                setPreviewText('데이터 생성 실패');
             }
+        } else {
+            setPreviewText('');
         }
-    }, [isOpen, currentData, initialMode]);
+    };
+
+    // 모달 열릴 때 초기화
+    useEffect(() => {
+        if (isOpen) {
+            setMode(initialMode);
+            setFormat('json'); // 기본값 JSON
+            setInputValue('');
+            setCopyStatus('idle');
+        }
+    }, [isOpen, initialMode]);
+
+    // 포맷이나 모드 변경 시 미리보기 업데이트
+    useEffect(() => {
+        if (isOpen) updatePreview();
+    }, [isOpen, currentData, mode, format]);
 
     const handleCopy = async () => {
         try {
-            // [수정] 클립보드 API 실패 시 폴백(Fallback) 처리 추가 (버튼 먹통 해결)
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(exportString);
+                await navigator.clipboard.writeText(previewText);
             } else {
                 const textArea = document.createElement("textarea");
-                textArea.value = exportString;
+                textArea.value = previewText;
                 textArea.style.position = "fixed";
                 textArea.style.left = "-9999px";
                 document.body.appendChild(textArea);
@@ -580,20 +601,61 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
         }
     };
 
-    const handleImport = () => {
-        if (!inputValue.trim()) return alert('데이터 코드를 입력해주세요.');
+    const handleDownload = () => {
         try {
-            // [복구] 무조건 압축 해제 시도
-            if (window.decompressData) {
-                const data = window.decompressData(inputValue.trim());
-                onImport(data);
-                onClose();
+            const blob = new Blob([format === 'csv' ? '\ufeff' + previewText : previewText], { type: format === 'csv' ? 'text/csv;charset=utf-8;' : 'text/plain;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            const dateStr = new Date().toISOString().slice(0, 10);
+            link.download = format === 'csv' ? `asset_data_${dateStr}.csv` : `asset_backup_${dateStr}.txt`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (err) {
+            console.error(err);
+            alert('파일 다운로드 중 오류가 발생했습니다.');
+        }
+    };
+
+    const handleFileSelect = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            setInputValue(event.target.result);
+        };
+        reader.readAsText(file);
+        e.target.value = ''; // Reset input
+    };
+
+    const handleImport = () => {
+        const trimmedInput = inputValue.trim();
+        if (!trimmedInput) return alert('데이터 코드를 입력해주세요.');
+        try {
+            if (format === 'json') {
+                if (/[^\x00-\xff]/.test(trimmedInput)) {
+                    throw new Error('JSON 백업 코드에는 한글이 포함될 수 없습니다. CSV 탭을 이용하세요.');
+                }
+                if (window.decompressData) {
+                    const data = window.decompressData(trimmedInput);
+                    onImport(data, 'json');
+                    onClose();
+                } else {
+                    alert('오류: 압축 해제 라이브러리가 로드되지 않았습니다.');
+                }
             } else {
-                alert('오류: 압축 해제 라이브러리가 로드되지 않았습니다.');
+                if (window.parseCSV) {
+                    const data = window.parseCSV(trimmedInput);
+                    onImport({ appData: data }, 'csv');
+                    onClose();
+                } else {
+                    alert('오류: CSV 파싱 라이브러리가 로드되지 않았습니다.');
+                }
             }
         } catch (e) {
             console.error(e);
-            alert('데이터 형식이 올바르지 않습니다. 코드를 확인해주세요.');
+            alert(`데이터 형식이 올바르지 않습니다. 코드를 확인해주세요.\n(상세 오류: ${e.message})`);
         }
     };
 
@@ -603,30 +665,68 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
                 <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">💾 데이터 백업 및 복구</h3>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">💾 데이터 관리</h3>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
                 </div>
                 <div className="p-6">
+                    {/* 모드 선택 탭 */}
                     <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl mb-6">
                         <button onClick={() => setMode('export')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === 'export' ? 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>내보내기</button>
                         <button onClick={() => setMode('import')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === 'import' ? 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>불러오기</button>
                     </div>
 
+                    {/* 포맷 선택 버튼 그룹 */}
+                    <div className="flex gap-2 mb-4">
+                        <button 
+                            onClick={() => setFormat('json')}
+                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 ${format === 'json' ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:border-blue-400 dark:text-blue-300' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'}`}
+                        >
+                            <span>📦</span>JSON
+                        </button>
+                        <button 
+                            onClick={() => setFormat('csv')}
+                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 ${format === 'csv' ? 'bg-green-50 border-green-500 text-green-700 dark:bg-green-900/30 dark:border-green-400 dark:text-green-300' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'}`}
+                        >
+                            <span>📊</span>CSV
+                        </button>
+                    </div>
+
                     {mode === 'export' ? (
                         <div className="space-y-4">
-                            <p className="text-sm text-gray-600 dark:text-gray-300">현재 데이터를 압축된 문자열로 변환했습니다.<br/>아래 코드를 복사하여 안전한 곳에 보관하세요.</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-300">
+                                {format === 'json' 
+                                    ? '모든 데이터(설정, 시나리오, 히스토리 포함)를 압축된 코드로 변환했습니다.' 
+                                    : '현재 데이터를 엑셀에서 열 수 있는 CSV 형식으로 변환했습니다.'}
+                                <br/>아래 내용을 복사하거나 파일로 저장하세요.
+                            </p>
                             <div className="relative">
-                                <textarea readOnly value={exportString} className="w-full h-32 p-4 text-xs font-mono bg-gray-50 dark:bg-gray-900 border dark:border-gray-600 rounded-xl resize-none focus:outline-none dark:text-gray-300" />
+                                <textarea readOnly value={previewText} className="w-full h-32 p-4 text-xs font-mono bg-gray-50 dark:bg-gray-900 border dark:border-gray-600 rounded-xl resize-none focus:outline-none dark:text-gray-300" />
                             </div>
-                            <button onClick={handleCopy} className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${copyStatus === 'copied' ? 'bg-green-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
-                                {copyStatus === 'copied' ? '✅ 복사되었습니다' : '📋 클립보드에 복사'}
-                            </button>
+                            <div className="flex gap-2">
+                                <button onClick={handleCopy} className={`flex-1 py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${copyStatus === 'copied' ? 'bg-green-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                                    {copyStatus === 'copied' ? '✅ 복사됨' : '📋 복사하기'}
+                                </button>
+                                <button onClick={handleDownload} className="flex-1 py-3 bg-gray-600 text-white rounded-xl font-bold hover:bg-gray-700 transition-colors flex items-center justify-center gap-2">
+                                    💾 파일 저장
+                                </button>
+                            </div>
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            <p className="text-sm text-gray-600 dark:text-gray-300">보관해둔 데이터 코드를 아래에 붙여넣으세요.<br/><span className="text-red-500 text-xs">* 현재 데이터가 덮어씌워집니다.</span></p>
-                            <textarea value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="w-full h-32 p-4 text-xs font-mono bg-white dark:bg-gray-900 border dark:border-gray-600 rounded-xl resize-none focus:ring-2 focus:ring-blue-500 outline-none dark:text-white" placeholder="여기에 데이터 코드 붙여넣기..." />
-                            <button onClick={handleImport} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">📥 데이터 불러오기</button>
+                            <p className="text-sm text-gray-600 dark:text-gray-300">
+                                {format === 'json' ? 'JSON 내용을 텍스트 파일을 선택하세요.' : 'CSV 내용을 붙여넣거나 파일을 선택하세요.'}
+                                <br/><span className="text-red-500 text-xs font-bold">* 주의: 현재 데이터가 덮어씌워집니다.</span>
+                            </p>
+                            <div className="relative">
+                                <textarea value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="w-full h-32 p-4 text-xs font-mono bg-white dark:bg-gray-900 border dark:border-gray-600 rounded-xl resize-none focus:ring-2 focus:ring-blue-500 outline-none dark:text-white" placeholder={format === 'json' ? "백업 코드를 입력하세요 (한글 불가)" : "CSV 원문을 입력하세요"} />
+                                <label className="absolute bottom-3 right-3 cursor-pointer bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-gray-300 dark:border-gray-600">
+                                    📂 파일 선택
+                                    <input type="file" accept={format === 'json' ? ".txt" : ".csv"} onChange={handleFileSelect} className="hidden" />
+                                </label>
+                            </div>
+                            <button onClick={handleImport} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">
+                                📥 {format === 'json' ? 'JSON 데이터 복구하기' : 'CSV 데이터 복구하기'}
+                            </button>
                         </div>
                     )}
                 </div>
@@ -635,7 +735,6 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
     );
 };
 
-// [추가] Gemini 스트리밍 응답 처리 헬퍼 함수
 const streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) => {
     try {
         const response = await fetch(url, {
@@ -685,7 +784,6 @@ const streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) =>
     }
 };
 
-// [이동] AI 자산 분석 모달 (Gemini API 활용) - 커스텀 입력 제거됨
 window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory }) => {
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
     const [model, setModel] = useState('gemini-3-flash-preview'); // [수정] 안정적인 모델명으로 기본값 변경
@@ -996,7 +1094,6 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
     );
 };
 
-// [추가] 자본소득(Cash Flow) 분석 모달
 window.CapitalIncomeAnalysisModal = ({ isOpen, onClose, appData, projections }) => {
     const monthlyExpenseTotal = useMemo(() => 
         isOpen ? (appData.monthlyExpenses || []).reduce((sum, e) => sum + (e.amount || 0), 0) : 0, 
@@ -1099,7 +1196,6 @@ window.CapitalIncomeAnalysisModal = ({ isOpen, onClose, appData, projections }) 
     );
 };
 
-// [추가] 관리자 대시보드 모달 (통계, 유저관리, 공지사항)
 window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton, onToggleSuggestionButton }) => {
     const [activeTab, setActiveTab] = useState('stats');
     const [stats, setStats] = useState({ insights: null });
@@ -1235,14 +1331,6 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                     });
 
                     if (validCount > 0) {
-                        // [추가] 중위값 계산 함수
-                        const calculateMedian = (arr) => {
-                            if (arr.length === 0) return 0;
-                            const sorted = [...arr].sort((a, b) => a - b);
-                            const mid = Math.floor(sorted.length / 2);
-                            return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-                        };
-
                         const sumTotal = totals.reduce((a, b) => a + b, 0);
                         const sumDebt = debts.reduce((a, b) => a + b, 0);
                         const sumNet = nets.reduce((a, b) => a + b, 0);
@@ -1520,7 +1608,6 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
     );
 };
 
-// [추가] 데이터 활용 동의 모달
 window.DataConsentModal = ({ isOpen, onClose, onConfirm }) => {
     if (!isOpen) return null;
     return (
