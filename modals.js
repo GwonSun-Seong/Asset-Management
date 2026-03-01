@@ -1086,12 +1086,11 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
             if (profiles && profiles.length > 0) {
                 const emails = profiles.map(p => p.email);
                 
-                // 2. 해당 유저들의 'normal' 암호화 자산 데이터 가져오기
+                // 2. 해당 유저들의 자산 데이터 가져오기 (암호화된 것과 안 된 것 모두 조회)
                 const { data: assetsData, error: assetsError } = await supabase
                     .from('user_assets')
-                    .select('email, data, updated_at')
+                    .select('email, data, updated_at, encryption_type')
                     .in('email', emails)
-                    .eq('encryption_type', 'normal')
                     .order('updated_at', { ascending: false });
 
                 if (assetsError) throw assetsError;
@@ -1116,11 +1115,22 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                     uniqueAssets.forEach(record => {
                         try {
                             let appData = record.data;
-                            // 복호화 시도
-                            const securityKey = window.SUPABASE_CONFIG?.SECURITY_KEY;
-                            if (securityKey) {
-                                const key = window.getEncryptionKey('normal', null, record.email, securityKey);
-                                if (key) appData = window.decryptData(record.data, key);
+                            
+                            // [수정] 암호화 타입에 따른 데이터 처리 (Switch Case)
+                            switch (record.encryption_type) {
+                                case 'secure':
+                                    return; // 개인 키가 필요한 강화 모드는 관리자가 해독 불가하므로 통계 제외
+                                case 'normal':
+                                    // 일반 모드: 시스템 키로 복호화 시도
+                                    const securityKey = window.SUPABASE_CONFIG?.SECURITY_KEY;
+                                    if (securityKey && typeof appData === 'string') {
+                                        const key = window.getEncryptionKey('normal', null, record.email, securityKey);
+                                        if (key) appData = window.decryptData(record.data, key);
+                                    }
+                                    break;
+                                default:
+                                    // null 또는 'none': 암호화되지 않은 데이터이므로 그대로 사용
+                                    break;
                             }
 
                             const assets = appData.appData?.assets || appData.assets;
