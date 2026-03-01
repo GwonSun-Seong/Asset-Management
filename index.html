@@ -1494,7 +1494,9 @@
 
             const targetEmail = emailOverride || verifiedEmail;
             const targetPro = proOverride !== null ? proOverride : isPro;
-            const targetMode = modeOverride || encryptionMode;
+            // [수정] FREE 유저도 기본적으로 'normal' 암호화 적용 (데이터 보호 및 로직 통일)
+            const targetMode = targetPro ? (modeOverride || encryptionMode) : 'normal';
+
             if (!targetEmail || isDemoMode || !unifiedData || !isInitialized || !isCloudLoaded) return;
             if (!force && (!isCloudLoaded || isFetchingRef.current)) return;
 
@@ -1502,7 +1504,8 @@
             if (!force && currentDataStr === lastSavedDataRef.current) return;
 
             let payloadData = unifiedData;
-            if (targetPro && targetMode) {
+            // [수정] targetMode가 있으면 암호화 시도 (PRO 여부 무관)
+            if (targetMode) {
                 let key = keyOverride;
                 
                 if (!key) {
@@ -1550,7 +1553,7 @@
                 const { data, error } = await withRetry(() => 
                     supabase.from('user_assets').upsert({ 
                         email: targetEmail, data: payloadData,
-                        encryption_type: targetPro ? targetMode : null,
+                        encryption_type: targetMode,
                         updated_at: new Date().toISOString(),
                             record_date: recordDate
                     }, { onConflict: 'email,record_date' }).select('updated_at').single()
@@ -1597,8 +1600,8 @@
                     else if (pro) setEncryptionMode(encType);
 
                     let decryptedData = data.data;
-                    if (!isLegacy && pro) {
-                        // [수정] 일반 보안 모드(normal)일 때는 비밀번호를 참조하지 않음
+                    // [수정] PRO 여부와 관계없이 암호화된 데이터면 복호화 시도
+                    if (!isLegacy) {
                         let secret = null;
                         if (encType === 'secure') {
                             secret = userSecretKey || sessionStorage.getItem('assetDashboardSecretKey');

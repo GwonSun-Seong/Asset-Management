@@ -1121,30 +1121,14 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                         try {
                             let appData = record.data;
                             
-                            // [수정] 암호화 타입에 따른 데이터 처리 (Switch Case)
-                            switch (record.encryption_type) {
-                                case 'secure':
-                                    return; // 개인 키가 필요한 강화 모드는 관리자가 해독 불가하므로 통계 제외
-                                case 'normal':
-                                    // 일반 모드: 시스템 키로 복호화 시도
-                                    const securityKey = window.SUPABASE_CONFIG?.SECURITY_KEY;
-                                    if (securityKey && typeof appData === 'string') {
-                                        const key = window.getEncryptionKey('normal', null, record.email, securityKey);
-                                        if (key) appData = window.decryptData(record.data, key);
-                                    }
-                                    break;
-                                default:
-                                    // null 또는 'none': 암호화되지 않은 데이터이므로 그대로 사용
-                                    // [추가] 문자열인 경우 파싱 시도 (DB 컬럼이 text일 경우 대비)
-                                    if (typeof appData === 'string') {
-                                        try {
-                                            appData = JSON.parse(appData);
-                                        } catch (e) {
-                                            // 파싱 실패 시 무시
-                                            return;
-                                        }
-                                    }
-                                    break;
+                            // [수정] secure 모드는 제외하고, normal 모드 데이터 복호화 처리 (FREE/PRO 공통)
+                            if (record.encryption_type === 'secure') return;
+
+                            const securityKey = window.SUPABASE_CONFIG?.SECURITY_KEY;
+                            // normal 모드이거나 암호화 타입이 명시되지 않았지만 암호화된 데이터일 경우 복호화 시도
+                            if (record.encryption_type === 'normal' && securityKey && typeof appData === 'string') {
+                                const key = window.getEncryptionKey('normal', null, record.email, securityKey);
+                                if (key) appData = window.decryptData(record.data, key);
                             }
 
                             const assets = appData.appData?.assets || appData.assets;
