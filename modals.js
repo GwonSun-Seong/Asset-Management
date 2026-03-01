@@ -210,23 +210,28 @@ window.ProFeaturesModal = ({ isOpen, onClose }) => {
                         <tbody className="divide-y dark:divide-gray-700">
                             <tr>
                                 <td className="px-4 py-3 dark:text-gray-300">데이터 저장</td>
-                                <td className="px-4 py-3 text-center text-gray-500">로컬 저장</td>
-                                <td className="px-4 py-3 text-center font-semibold dark:text-white">클라우드 동기화</td>
+                                <td className="px-4 py-3 text-center text-gray-500">클라우드 자동 동기화</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">클라우드 자동 동기화</td>
                             </tr>
                             <tr>
                                 <td className="px-4 py-3 dark:text-gray-300">테마 설정</td>
-                                <td className="px-4 py-3 text-center text-gray-500">-</td>
-                                <td className="px-4 py-3 text-center font-semibold dark:text-white">다크모드 완벽 지원</td>
+                                <td className="px-4 py-3 text-center text-gray-500">라이트 모드</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">다크 모드 지원</td>
                             </tr>
                             <tr>
-                                <td className="px-4 py-3 dark:text-gray-300">자산 미래 예측 그래프</td>
-                                <td className="px-4 py-3 text-center text-gray-500">-</td>
-                                <td className="px-4 py-3 text-center font-semibold dark:text-white">제공</td>
+                                <td className="px-4 py-3 dark:text-gray-300">차트 및 분석</td>
+                                <td className="px-4 py-3 text-center text-gray-500">기본 히스토리</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">미래 예측 & 타임머신</td>
                             </tr>
                             <tr>
                                 <td className="px-4 py-3 dark:text-gray-300">보안 기능</td>
-                                <td className="px-4 py-3 text-center text-gray-500">기본</td>
-                                <td className="px-4 py-3 text-center font-semibold dark:text-white">강화 (종단간 암호화)</td>
+                                <td className="px-4 py-3 text-center text-gray-500">표준 암호화</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">강력한 종단간 암호화</td>
+                            </tr>
+                            <tr>
+                                <td className="px-4 py-3 dark:text-gray-300">기타</td>
+                                <td className="px-4 py-3 text-center text-gray-500">배너 표시</td>
+                                <td className="px-4 py-3 text-center font-semibold dark:text-white">광고/배너 제거</td>
                             </tr>
                         </tbody>
                     </table>

@@ -1537,7 +1537,10 @@
             try {
                     // [수정] 클라우드 저장 시에도 로컬 날짜 기준 사용 (히스토리와 일관성 유지)
                     const now = new Date();
-                    const recordDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    // [수정] 무료 유저는 'latest' 키로 단일 레코드만 유지 (DB 용량 절약), PRO는 날짜별 기록
+                    const recordDate = targetPro 
+                        ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+                        : 'latest';
 
                 await withRetry(() => supabase.auth.refreshSession());
                 const { data, error } = await withRetry(() => 
@@ -1574,7 +1577,6 @@
                     supabase.from('user_assets')
                         .select('data, updated_at, encryption_type')
                         .eq('email', email)
-                        .order('record_date', { ascending: false })
                         .order('updated_at', { ascending: false })
                         .limit(1)
                         .maybeSingle()
@@ -1903,13 +1905,11 @@
                         setIsPro(proStatus);
                         setIsAdmin(isAdminUser);
 
-                        if (proStatus) {
-                            await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
-                            // [추가] 관리자라면 제안 목록 가져오기
-                            if (isAdminUser) fetchAdminSuggestions();
-                        } else {
-                            setSyncStatus('idle');
-                        }
+                        // [수정] 무료 유저도 자동 동기화 활성화 (UX 개선: 수동 저장 제거)
+                        await fetchFromCloud(session.user.email, proStatus, true, false, localDataOverride);
+                        
+                        // [추가] 관리자라면 제안 목록 가져오기
+                        if (isAdminUser) fetchAdminSuggestions();
                     } else {
                         console.warn('Profile fetch error after retries:', fetchError);
                         setSyncStatus('error');
