@@ -5061,7 +5061,7 @@
                                                     <button onClick={() => { redo(); addToast('다시 실행되었습니다.', 'info'); }} disabled={!canRedo} className="flex-1 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded disabled:opacity-30">↪ 다시 실행</button>
                                                 </div>
                                                         {/* [추가] 모바일 메뉴 내 동기화 상태 표시 */}
-                                                        {verifiedEmail && (isPro || syncStatus === 'syncing') && (
+                                                        {verifiedEmail && (
                                                             <div className="flex items-center gap-1 mt-1">
                                                                 <span className={`text-[9px] flex items-center gap-1 ${syncStatus === 'synced' ? 'text-green-600' : syncStatus === 'syncing' ? 'text-yellow-600' : syncStatus === 'error' ? 'text-red-600' : 'text-gray-400'}`}>
                                                                     <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'synced' ? 'bg-green-500' : syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-300'}`}></span>
@@ -5105,7 +5105,7 @@
                                         내 정보
                                         {syncStatus === 'error' && <span title={syncError} className="cursor-help text-red-500">⚠️</span>}
                                     </span>
-                                    {verifiedEmail && (isPro || syncStatus === 'syncing') && (
+                                    {verifiedEmail && (
                                         <div className="flex items-center gap-1.5">
                                             <span className={`text-[9px] font-medium ${syncStatus === 'synced' ? 'text-green-600' : syncStatus === 'syncing' ? 'text-yellow-600' : syncStatus === 'error' ? 'text-red-600' : 'text-gray-400'}`}>
                                                 {syncStatus === 'synced' ? (lastSyncTime ? `동기화됨 (${lastSyncTime})` : '동기화됨') : syncStatus === 'syncing' ? '동기화 중' : syncStatus === 'error' ? '동기화 실패' : '대기'}
