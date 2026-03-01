@@ -2282,6 +2282,7 @@
                         }
                         return;
                     }
+                    setIsSettingsModalOpen(false); // [수정] 설정 모달 닫기
                     return setIsProModalOpen(true);
                 }
                 setDarkMode(!darkMode);
@@ -2402,7 +2403,10 @@
 
             // [추가] 암호화 모드 변경 핸들러
             const handleModeChange = async (newMode) => {
-                if (!isPro) return setIsProModalOpen(true);
+                if (!isPro) {
+                    setIsSettingsModalOpen(false); // [수정] 설정 모달 닫기
+                    return setIsProModalOpen(true);
+                }
                 if (newMode === encryptionMode) return;
                 if (newMode === 'secure') {
                     pendingSave.current = true;
@@ -5134,7 +5138,7 @@
                                         <div className="grid grid-cols-1 gap-2">
                                             <button 
                                                 onClick={() => setIsSettingsModalOpen(true)}
-                                                className="w-full py-2.5 rounded-lg text-[11px] font-bold transition-all shadow-md flex items-center justify-center gap-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
+                                                className="w-full py-2.5 rounded-lg text-[11px] font-bold transition-all shadow-md flex items-center justify-center gap-2 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-900/30 dark:text-sky-300 dark:hover:bg-sky-900/50 border border-sky-100 dark:border-sky-800"
                                             >
                                                 ⚙️ 앱 설정 및 보안
                                             </button>

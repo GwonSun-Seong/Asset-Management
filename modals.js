@@ -1046,7 +1046,7 @@ window.CapitalIncomeAnalysisModal = ({ isOpen, onClose, appData, projections }) 
 // [추가] 관리자 대시보드 모달 (통계, 유저관리, 공지사항)
 window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton, onToggleSuggestionButton }) => {
     const [activeTab, setActiveTab] = useState('stats');
-    const [stats, setStats] = useState({ totalUsers: 0, proUsers: 0, activeUsers: 0, totalSuggestions: 0, consentedUsers: 0, insights: null });
+    const [stats, setStats] = useState({ insights: null });
     const [users, setUsers] = useState([]);
     const [suggestions, setSuggestions] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -1062,7 +1062,7 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
             const { error: sessionError } = await supabase.auth.refreshSession();
             if (sessionError) console.warn('Session refresh warning:', sessionError);
 
-            fetchStats();
+            if (activeTab === 'stats') fetchStats();
             if (activeTab === 'users') fetchUsers();
             if (activeTab === 'notice') fetchNotice();
             if (activeTab === 'suggestions') fetchSuggestions();
@@ -1071,91 +1071,99 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
     }, [isOpen, activeTab, supabase]);
 
     const fetchStats = async () => {
-        // [수정] 에러 핸들링 추가
-        const { count: total, error: totalError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true });
-        if (totalError) console.error('Stats Error (Total):', totalError);
-
-        const { count: pro, error: proError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('is_paid', true);
-        if (proError) console.error('Stats Error (Pro):', proError);
-
-        // [수정] 최근 30일 내 활동 유저 (user_assets 업데이트 기준) - 중복 제거 로직 적용
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        
-        // user_assets 테이블에서 이메일만 가져와서 JS Set으로 중복 제거 (Supabase select count는 distinct 미지원)
-        const { data: activeData, error: activeError } = await supabase
-            .from('user_assets')
-            .select('email')
-            .gte('updated_at', thirtyDaysAgo.toISOString());
+        setIsLoading(true);
+        try {
+            // 1. 동의한 유저 이메일 가져오기
+            const { data: profiles, error: profileError } = await supabase
+                .from('user_profiles')
+                .select('email')
+                .eq('data_consent', true);
             
-        if (activeError) console.error('Stats Error (Active):', activeError);
-        
-        const uniqueActiveUsers = activeData ? new Set(activeData.map(d => d.email)).size : 0;
+            if (profileError) throw profileError;
 
-        // [추가] 의견이 있는 유저 수
-        const { count: suggCount, error: suggError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).not('suggestions', 'is', null);
-        if (suggError) console.error('Stats Error (Suggestions):', suggError);
+            let insights = null;
 
-        // [추가] 데이터 활용 동의 유저 수 (data_consent가 true인 유저만 카운트)
-        const { count: consentCount, error: consentError } = await supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('data_consent', true);
-        if (consentError) console.error('Stats Error (Consent):', consentError);
-
-        // [추가] 익명 데이터 기반 인사이트 계산 (동의한 유저 샘플링)
-        let insights = null;
-        if (consentCount > 0) {
-            try {
-                // 1. 동의한 유저 이메일 가져오기 (최신 50명)
-                const { data: profiles } = await supabase.from('user_profiles').select('email').eq('data_consent', true).order('updated_at', { ascending: false }).limit(50);
+            if (profiles && profiles.length > 0) {
+                const emails = profiles.map(p => p.email);
                 
-                if (profiles && profiles.length > 0) {
-                    const emails = profiles.map(p => p.email);
-                    // 2. 해당 유저들의 자산 데이터 가져오기
-                    const { data: assetsData } = await supabase.from('user_assets').select('email, data, encryption_type').in('email', emails);
+                // 2. 해당 유저들의 'normal' 암호화 자산 데이터 가져오기
+                const { data: assetsData, error: assetsError } = await supabase
+                    .from('user_assets')
+                    .select('email, data, updated_at')
+                    .in('email', emails)
+                    .eq('encryption_type', 'normal')
+                    .order('updated_at', { ascending: false });
+
+                if (assetsError) throw assetsError;
+
+                if (assetsData) {
+                    // 3. 이메일별 최신 데이터 하나만 추출 (중복 제거)
+                    const uniqueAssets = [];
+                    const seenEmails = new Set();
                     
-                    if (assetsData) {
-                        let totalAssetsSum = 0;
-                        let validCount = 0;
-                        let sectorCounts = {};
-
-                        assetsData.forEach(record => {
-                            try {
-                                let appData = record.data;
-                                // 암호화된 경우 복호화 시도 (시스템 키 사용 가능한 경우만)
-                                if (record.encryption_type === 'normal' && window.SECURITY_KEY) {
-                                    const key = window.getEncryptionKey('normal', null, record.email, window.SECURITY_KEY);
-                                    if (key) appData = window.decryptData(record.data, key);
-                                } else if (record.encryption_type === 'secure') {
-                                    return; // 개인 비밀번호 암호화는 해독 불가하므로 통계 제외
-                                }
-
-                                const assets = appData.appData?.assets || appData.assets; // 구조 호환성
-                                if (assets) {
-                                    const total = window.calculateGrossTotal(assets);
-                                    totalAssetsSum += total;
-                                    validCount++;
-                                    
-                                    // 섹터별 보유 여부 카운트
-                                    Object.keys(assets).forEach(k => {
-                                        if (assets[k] && assets[k].length > 0) sectorCounts[k] = (sectorCounts[k] || 0) + 1;
-                                    });
-                                }
-                            } catch (e) { /* Decryption or parsing failed */ }
-                        });
-
-                        if (validCount > 0) {
-                            const sortedSectors = Object.entries(sectorCounts).sort((a, b) => b[1] - a[1]);
-                            insights = {
-                                avgTotalAsset: Math.round(totalAssetsSum / validCount),
-                                topSector: sortedSectors[0] ? window.sectorInfo[sortedSectors[0][0]]?.name : '-',
-                                sampleSize: validCount
-                            };
+                    for (const record of assetsData) {
+                        if (!seenEmails.has(record.email)) {
+                            seenEmails.add(record.email);
+                            uniqueAssets.push(record);
                         }
                     }
-                }
-            } catch (e) { console.error("Insight calc error:", e); }
-        }
 
-        setStats({ totalUsers: total || 0, proUsers: pro || 0, activeUsers: uniqueActiveUsers || 0, totalSuggestions: suggCount || 0, consentedUsers: consentCount || 0, insights });
+                    let totalAssetsSum = 0;
+                    let totalDebtSum = 0;
+                    let validCount = 0;
+                    let sectorCounts = {};
+
+                    uniqueAssets.forEach(record => {
+                        try {
+                            let appData = record.data;
+                            // 복호화 시도
+                            if (window.SECURITY_KEY) {
+                                const key = window.getEncryptionKey('normal', null, record.email, window.SECURITY_KEY);
+                                if (key) appData = window.decryptData(record.data, key);
+                            }
+
+                            const assets = appData.appData?.assets || appData.assets;
+                            if (assets) {
+                                const total = window.calculateGrossTotal(assets); // 총 자산 (부채 제외)
+                                
+                                // 부채 계산
+                                let debt = 0;
+                                if (assets.loan) {
+                                    debt = assets.loan.reduce((sum, a) => sum + (a.amount || 0), 0);
+                                }
+
+                                totalAssetsSum += total;
+                                totalDebtSum += debt;
+                                validCount++;
+                                
+                                // 섹터별 보유 카운트
+                                Object.keys(assets).forEach(k => {
+                                    if (k !== 'loan' && assets[k] && assets[k].length > 0) {
+                                        sectorCounts[k] = (sectorCounts[k] || 0) + 1;
+                                    }
+                                });
+                            }
+                        } catch (e) { /* Decryption failed */ }
+                    });
+
+                    if (validCount > 0) {
+                        const sortedSectors = Object.entries(sectorCounts).sort((a, b) => b[1] - a[1]);
+                        insights = {
+                            avgTotalAsset: Math.round(totalAssetsSum / validCount),
+                            avgDebt: Math.round(totalDebtSum / validCount),
+                            avgNetWorth: Math.round((totalAssetsSum - totalDebtSum) / validCount),
+                            topSector: sortedSectors[0] ? window.sectorInfo[sortedSectors[0][0]]?.name : '-',
+                            sampleSize: validCount
+                        };
+                    }
+                }
+            }
+            setStats({ insights });
+        } catch (err) {
+            console.error('Stats Error:', err);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const fetchUsers = async () => {
@@ -1245,44 +1253,48 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
                 <div className="flex-1 overflow-y-auto p-6 bg-gray-50 dark:bg-gray-900">
                     {activeTab === 'stats' && (
                         <div className="space-y-6">
-                            {/* [수정] 통계 카드 컴팩트하게 변경 */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                    <div className="text-xs text-gray-500 mb-1">총 가입자</div>
-                                    <div className="text-xl font-bold text-gray-900 dark:text-white">{stats.totalUsers.toLocaleString()}</div>
+                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden border dark:border-gray-700">
+                                <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                                    <h4 className="font-bold text-gray-900 dark:text-white">📊 익명 자산 통계 요약</h4>
+                                    <p className="text-xs text-gray-500 mt-1">데이터 활용에 동의한 사용자의 최신 데이터를 기반으로 산출된 통계입니다.</p>
                                 </div>
-                                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                    <div className="text-xs text-gray-500 mb-1">PRO / MAU</div>
-                                    <div className="text-xl font-bold text-amber-500">{stats.proUsers} <span className="text-gray-300 text-sm">/ {stats.activeUsers}</span></div>
-                                </div>
-                                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                    <div className="text-xs text-gray-500 mb-1">의견 / 동의</div>
-                                    <div className="text-xl font-bold text-purple-600 dark:text-purple-400">{stats.totalSuggestions} <span className="text-gray-300 text-sm">/ {stats.consentedUsers}</span></div>
-                                </div>
-                                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                    <div className="text-xs text-gray-500 mb-1">동의율</div>
-                                    <div className="text-xl font-bold text-blue-600 dark:text-blue-400">{stats.totalUsers ? ((stats.consentedUsers/stats.totalUsers)*100).toFixed(1) : 0}%</div>
-                                </div>
+                                {isLoading ? (
+                                    <div className="p-10 text-center text-gray-500">데이터 분석 중...</div>
+                                ) : stats.insights ? (
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                            <tr>
+                                                <th className="p-4">항목</th>
+                                                <th className="p-4 text-right">값</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y dark:divide-gray-700">
+                                            <tr>
+                                                <td className="p-4 font-medium dark:text-gray-300">분석 대상 (표본)</td>
+                                                <td className="p-4 text-right dark:text-gray-300">{stats.insights.sampleSize}명</td>
+                                            </tr>
+                                            <tr>
+                                                <td className="p-4 font-medium dark:text-gray-300">평균 총자산 (부채 제외)</td>
+                                                <td className="p-4 text-right font-bold text-blue-600 dark:text-blue-400">{stats.insights.avgTotalAsset.toLocaleString()}만원</td>
+                                            </tr>
+                                            <tr>
+                                                <td className="p-4 font-medium dark:text-gray-300">평균 부채</td>
+                                                <td className="p-4 text-right font-bold text-red-500">{stats.insights.avgDebt.toLocaleString()}만원</td>
+                                            </tr>
+                                            <tr>
+                                                <td className="p-4 font-medium dark:text-gray-300">평균 순자산</td>
+                                                <td className="p-4 text-right font-bold text-green-600 dark:text-green-400">{stats.insights.avgNetWorth.toLocaleString()}만원</td>
+                                            </tr>
+                                            <tr>
+                                                <td className="p-4 font-medium dark:text-gray-300">가장 많이 보유한 자산군</td>
+                                                <td className="p-4 text-right dark:text-gray-300">{stats.insights.topSector}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                ) : (
+                                    <div className="p-10 text-center text-gray-500">통계를 낼 충분한 데이터가 없습니다.</div>
+                                )}
                             </div>
-
-                            {/* [추가] 익명 데이터 인사이트 섹션 */}
-                            {stats.insights && (
-                                <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/20 p-5 rounded-xl border border-indigo-100 dark:border-indigo-800">
-                                    <h4 className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-3 flex items-center gap-2">
-                                        📊 익명 데이터 인사이트 <span className="text-[10px] font-normal bg-white/50 px-2 py-0.5 rounded text-indigo-600">표본: {stats.insights.sampleSize}명</span>
-                                    </h4>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <div className="text-xs text-indigo-600/70 dark:text-indigo-400/70 mb-1">평균 총자산</div>
-                                            <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">{stats.insights.avgTotalAsset.toLocaleString()}만원</div>
-                                        </div>
-                                        <div>
-                                            <div className="text-xs text-indigo-600/70 dark:text-indigo-400/70 mb-1">최다 보유 섹터</div>
-                                            <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">{stats.insights.topSector}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     )}
 
