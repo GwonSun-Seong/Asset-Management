@@ -1299,6 +1299,7 @@
             const [activeNotice, setActiveNotice] = useState(null); // [추가] 활성화된 공지사항
             const [activeReply, setActiveReply] = useState(null); // [추가] 관리자 답변 배너 상태
             const [historyPopover, setHistoryPopover] = useState(null); // [추가] 히스토리 팝오버 상태
+            const [scenarioSortOrder, setScenarioSortOrder] = useState('default'); // [추가] 시나리오 정렬 순서
             const activeHistoryHoverRef = useRef(null); // [추가] 히스토리 차트 호버 상태 추적 (깜빡임 방지용)
             const [historyChartInfo, setHistoryChartInfo] = useState(null); // [추가] 히스토리 차트 상단 정보바 상태
             const lastHistoryInfoRef = useRef(null); // [추가] 정보바 업데이트 최적화용 Ref
@@ -3282,6 +3283,7 @@
                     let optimisticData = []; // [추가] 낙관적 시나리오 데이터
                     let pessimisticData = []; // [추가] 비관적 시나리오 데이터
                     let sortedMonthKeys = []; // [추가] 클릭 이벤트 핸들링을 위해 키 저장
+                    let refDatasetsData = []; // [추가] 평균 계산을 위한 참조 데이터 수집
 
                     // 항상 원본 날짜 그대로 사용
                     finalLabels = assetHistory.map(item => {
@@ -3367,6 +3369,7 @@
                         label: '순자산 (만원)',
                         data: finalHistoryData,
                         borderColor: 'rgb(79, 70, 229)',
+                        _originalBorder: 'rgb(79, 70, 229)', // [추가] 원본 색상 보존
                         backgroundColor: darkMode ? 'rgba(79, 70, 229, 0.5)' : 'rgba(79, 70, 229, 0.3)',
                         backgroundColor: (context) => {
                             const ctx = context.chart.ctx;
@@ -3383,6 +3386,7 @@
                         pointHoverBorderWidth: 2,
                         pointHoverBorderColor: 'rgb(79, 70, 229)', // [수정] 콤마 추가
                         pointRadius: getDynamicPointRadius // [적용] 동적 포인트 크기
+                        ,order: 1 // [추가] 순서 명시 (맨 위)
                         ,pointHitRadius: getDynamicInteractionRadius // [추가] 숨겨진 점 클릭 방지
                     }
                 ];
@@ -3396,7 +3400,8 @@
                         backgroundColor: darkMode ? 'rgba(34, 197, 94, 0.1)' : 'rgba(34, 197, 94, 0.1)',
                         fill: '+1', // 다음 데이터셋(예상 자산)까지 채움 (순서 중요)
                         pointRadius: 0,
-                        tension: 0.4
+                        tension: 0.4,
+                        order: 10
                     });
 
                     datasets.push({
@@ -3407,7 +3412,8 @@
                         tension: 0.3,
                         fill: '-1', // 이전 데이터셋(낙관적)까지 채움 -> 실제로는 아래 비관적과 샌드위치 효과를 위해 조정 필요하나 Chart.js fill 로직상 단색 처리
                         pointRadius: 2,
-                        pointBackgroundColor: 'rgba(79, 70, 229, 0.5)'
+                        pointBackgroundColor: 'rgba(79, 70, 229, 0.5)',
+                        order: 10
                     });
 
                     // [추가] 비관적 시나리오 (범위 하단)
@@ -3418,7 +3424,8 @@
                         backgroundColor: darkMode ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.1)',
                         fill: '-1', // 바로 위 데이터셋(예상 자산)까지 채움
                         pointRadius: 0,
-                        tension: 0.4
+                        tension: 0.4,
+                        order: 10
                     });
                 }
 
@@ -3463,19 +3470,50 @@
                             }
                             return null;
                         });
+                        refDatasetsData.push(refDatasetData);
 
                         datasets.push({
                             label: `기준: ${scenario.name}`,
                             data: refDatasetData,
                             borderColor: refConfig.color, // 사용자 지정 색상 사용
+                            _originalBorder: refConfig.color, // [추가] 원본 색상 보존
                             borderDash: [2, 2],
                             pointRadius: 0,
                             borderWidth: 2,
                             fill: false,
-                            tension: 0.4
+                            tension: 0.4,
+                            order: 5,
+                            createdAt: scenario.createdAt // [추가] 정렬을 위한 메타데이터
                         });
                     }
                 });
+
+                // [추가] 시나리오 평균선 (2개 이상일 때만 표시)
+                if (refDatasetsData.length >= 2) {
+                    const averageData = finalLabels.map((_, idx) => {
+                        let sum = 0;
+                        let count = 0;
+                        refDatasetsData.forEach(data => {
+                            if (data[idx] !== null && data[idx] !== undefined) {
+                                sum += data[idx];
+                                count++;
+                            }
+                        });
+                        return count > 0 ? Math.floor(sum / count) : null;
+                    });
+
+                    datasets.push({
+                        label: '시나리오 평균',
+                        data: averageData,
+                        borderColor: '#8b5cf6', // Purple (Solid Line)
+                        _originalBorder: '#8b5cf6', // [추가] 원본 색상 보존
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0.4,
+                        order: 2 // 순자산 다음으로 중요
+                    });
+                }
 
                 if (historyTargetData && historyTargetData > 0) {
                     datasets.push({
@@ -3485,7 +3523,8 @@
                         borderDash: [5, 5],
                         pointRadius: 0,
                         fill: false,
-                        borderWidth: 2
+                        borderWidth: 2,
+                        order: 20
                     });
                 }
 
@@ -3545,7 +3584,7 @@
                                 // 선택된 시나리오 강조
                                 ds.borderColor = ds._originalBorder;
                                 ds.backgroundColor = ds._originalBg;
-                                ds.order = -1; // 맨 위로 올리기
+                                ds.order = 100; // 시각적으로 맨 위에 그리기 (높은 숫자가 나중에 그려짐)
 
                                 // Gap 시각화 적용
                                 if (ds.label && ds.label.startsWith('기준:') && datasets[0]) {
@@ -3557,12 +3596,12 @@
                                 } else {
                                     ds.fill = ds._originalFill;
                                 }
-                            } else if (i === 0) {
-                                // 히스토리(비교 대상)는 항상 선명하게
+                            } else if (i === 0 || ds.label === '시나리오 평균') {
+                                // 히스토리(비교 대상)와 평균선은 항상 선명하게 유지
                                 ds.borderColor = ds._originalBorder;
                                 ds.backgroundColor = ds._originalBg;
                                 ds.fill = ds._originalFill;
-                                ds.order = 0;
+                                ds.order = (i === 0) ? 0 : 2;
                             } else {
                                 // 나머지 흐리게 처리
                                 ds.borderColor = darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
@@ -3657,11 +3696,39 @@
                                     const title = tooltipModel.title[0] || '';
                                     const items = tooltipModel.body.map((item, i) => {
                                         const dataPoint = tooltipModel.dataPoints[i];
+                                        const dataset = dataPoint.dataset;
                                         return {
-                                            label: dataPoint.dataset.label,
+                                            label: dataset.label,
                                             value: formatNumber(dataPoint.raw, displayMode) + '만원',
-                                            color: dataPoint.dataset.borderColor
+                                            rawValue: dataPoint.raw,
+                                            // [수정] 호버 시 색상 변경(투명화)되어도 원본 색상 유지
+                                            color: dataset._originalBorder || dataset.borderColor,
+                                            createdAt: dataset.createdAt,
+                                            isNetWorth: dataPoint.datasetIndex === 0, // [수정] 데이터셋 인덱스로 순자산 식별 (정렬 안전성 확보)
+                                            isAverage: dataset.label === '시나리오 평균'
                                         };
+                                    });
+
+                                    // [추가] 툴팁 항목 정렬 로직
+                                    items.sort((a, b) => {
+                                        if (scenarioSortOrder === 'default') {
+                                            // 1. 순자산 최상단
+                                            if (a.isNetWorth) return -1;
+                                            if (b.isNetWorth) return 1;
+                                            // 2. 시나리오 평균 두 번째
+                                            if (a.isAverage) return -1;
+                                            if (b.isAverage) return 1;
+                                            
+                                            // 3. 나머지(시나리오 등) 최신순 정렬
+                                            if (!a.createdAt) return 1;
+                                            if (!b.createdAt) return -1;
+                                            return new Date(b.createdAt) - new Date(a.createdAt);
+                                        } else if (scenarioSortOrder === 'high') {
+                                            return b.rawValue - a.rawValue;
+                                        } else if (scenarioSortOrder === 'low') {
+                                            return a.rawValue - b.rawValue;
+                                        }
+                                        return 0;
                                     });
 
                                     const newInfoStr = JSON.stringify({ title, items });
@@ -3718,7 +3785,7 @@
 
                 const timerId = setTimeout(renderHistoryChart, 50);
                 return () => clearTimeout(timerId); 
-            }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo]);
+            }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo, scenarioSortOrder]);
 
             const addAsset = (sector) => {
                 setAssets(prev => ({
@@ -4043,6 +4110,18 @@
                                 미래 예상 자산 표시
                             </span>
                         </label>
+                        <div className="flex items-center gap-2 ml-4">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">정렬:</span>
+                            <select 
+                                value={scenarioSortOrder} 
+                                onChange={(e) => setScenarioSortOrder(e.target.value)}
+                                className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-700 focus:ring-1 focus:ring-blue-500 outline-none"
+                            >
+                                <option value="default">기본</option>
+                                <option value="high">높은순</option>
+                                <option value="low">낮은순</option>
+                            </select>
+                        </div>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 h-[600px] relative">
                         <canvas ref={historyChartRef} onContextMenu={handleHistoryContextMenu}></canvas>
