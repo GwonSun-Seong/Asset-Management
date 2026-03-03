@@ -3807,6 +3807,7 @@
                 }]
                 }));
                 setPanelCollapseState(prev => ({ ...prev, assets: false })); // [추가] 패널 자동 펼치기
+                setHiddenSectors(prev => ({ ...prev, [sector]: false })); // [Fix] 섹터 자동 펼침
             };
 
             const updateAsset = React.useCallback((sector, index, field, value) => {
@@ -4603,12 +4604,22 @@
                                                                 <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">이자율</label><div className="relative"><input type="number" step="0.1" value={asset.rate} onChange={(e) => updateAsset(sectorKey, idx, 'rate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
                                                                 <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">월 상환액</label><CalculatorInput value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" displayMode={displayMode} /></div>
                                                                 <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">만기 (개월)</label><input type="number" value={asset.maturityMonth ?? 12} onChange={(e) => updateAsset(sectorKey, idx, 'maturityMonth', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" /></div>
+                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">대출 시작월</label><input type="month" value={asset.loanStartDate ? asset.loanStartDate.slice(0, 7) : ''} onChange={(e) => updateAsset(sectorKey, idx, 'loanStartDate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" /></div>
                                                                 <div>
                                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">상환 방식</label>
                                                                     <select value={asset.repaymentMethod || '원리금균등'} onChange={(e) => updateAsset(sectorKey, idx, 'repaymentMethod', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500">
                                                                         <option value="원리금균등">원리금균등</option>
                                                                         <option value="원금균등">원금균등</option>
                                                                         <option value="만기일시">만기일시</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">상환 계좌</label>
+                                                                    <select value={asset.repaymentAccount} onChange={(e) => updateAsset(sectorKey, idx, 'repaymentAccount', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500">
+                                                                        <option value="salary">월급(고정수입)</option>
+                                                                        {accountOptions.filter(name => name !== asset.name).map((name, i) => (
+                                                                            <option key={i} value={name}>{name}</option>
+                                                                        ))}
                                                                     </select>
                                                                 </div>
                                                             </>
@@ -6121,27 +6132,28 @@
                             <button onClick={() => removeAsset(sectorKey, index)} aria-label={`${asset.name} 삭제`} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3 items-center">
-                            <input type="text" placeholder="항목명" aria-label="대출명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.5fr_1.2fr_0.6fr_1.2fr_0.6fr_1.1fr_1.1fr_1.3fr_min-content] gap-1 items-center">
+                            <input type="text" placeholder="항목명" aria-label="대출명" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">현재잔액</label>
-                                <CalculatorInput aria-label="대출 잔액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} displayMode={displayMode} />
+                                <CalculatorInput aria-label="대출 잔액" style={amountBgStyle} className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} displayMode={displayMode} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">이자율(%)</label>
-                                <input type="number" step="0.1" aria-label="대출 이자율" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
+                                <input type="number" step="0.1" aria-label="대출 이자율" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-right" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월 상환액</label>
-                                <CalculatorInput aria-label="월 상환액" placeholder="0이면 자동계산" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} displayMode={displayMode} />
+                                <CalculatorInput aria-label="월 상환액" placeholder="0=자동" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-right" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} displayMode={displayMode} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">만기(개월)</label>
-                                <input type="number" aria-label="대출 만기 개월 수" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.maturityMonth ?? 12} onChange={(e) => updateAsset(sectorKey, index, 'maturityMonth', e.target.value)} />
+                                <input type="number" aria-label="대출 만기 개월 수" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-right" value={asset.maturityMonth ?? 12} onChange={(e) => updateAsset(sectorKey, index, 'maturityMonth', e.target.value)} />
                             </div>
+                            <input type="month" aria-label="대출 시작월" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.loanStartDate ? asset.loanStartDate.slice(0, 7) : ''} onChange={(e) => updateAsset(sectorKey, index, 'loanStartDate', e.target.value)} />
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">상환 방식</label>
-                                <select aria-label="상환 방식" className="w-full border rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.repaymentMethod || '원리금균등'} onChange={(e) => updateAsset(sectorKey, index, 'repaymentMethod', e.target.value)}>
+                                <select aria-label="상환 방식" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white p-0" value={asset.repaymentMethod || '원리금균등'} onChange={(e) => updateAsset(sectorKey, index, 'repaymentMethod', e.target.value)}>
                                     <option value="원리금균등">원리금균등</option>
                                     <option value="원금균등">원금균등</option>
                                     <option value="만기일시">만기일시</option>
@@ -6149,7 +6161,8 @@
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">상환 계좌</label>
-                                <select aria-label="상환 출금 계좌" className="w-full border rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.repaymentAccount} onChange={(e) => updateAsset(sectorKey, index, 'repaymentAccount', e.target.value)}>
+                                <select aria-label="상환 출금 계좌" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white p-0" value={asset.repaymentAccount} onChange={(e) => updateAsset(sectorKey, index, 'repaymentAccount', e.target.value)}>
+                                    <option value="salary">월급(고정수입)</option>
                                     {accountOptions.filter(name => name !== asset.name).map((name, i) => (
                                         <option key={i} value={name}>{name}</option>
                                     ))}

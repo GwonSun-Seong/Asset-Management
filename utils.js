@@ -261,6 +261,58 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 });
             });
 
+            // [추가] 3a-1. 대출 상환 (월급/고정수입 원천) - 계좌 배분 전 우선 차감
+            (currentAssets.loan || []).forEach((loan) => {
+                loan._processedThisMonth = false; // 플래그 초기화
+
+                const simStartToLoanStart = getMonthDiff(loan.loanStartDate || `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`, `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`);
+                const loanMonthAtSimMonth = month + simStartToLoanStart;
+
+                // 대출 기간 체크
+                if (loanMonthAtSimMonth < 1 || loan.amount <= 0 || (loan.maturityMonth !== undefined && loanMonthAtSimMonth > loan.maturityMonth)) return;
+                
+                // 상환일 체크
+                const repaymentDay = loan.repaymentDay || salaryDay || 25;
+                const effectiveRepaymentDay = Math.min(repaymentDay, daysInSimMonth);
+                if (effectiveRepaymentDay < startDayOfLoop) return;
+
+                // 'salary' 인 경우에만 처리
+                if (loan.repaymentAccount === 'salary') {
+                    const monthlyRate = (loan.rate / 100) / 12;
+                    const interestForMonth = loan.amount * monthlyRate;
+
+                    // 1. 이자 가산
+                    loan.amount += interestForMonth;
+
+                    // 2. 상환액 계산
+                    const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
+                    const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
+                    let totalScheduledPayment = (loan.monthlyContrib > 0) ? loan.monthlyContrib : paymentInfo.payment;
+
+                    // 3. 상환 (현금 보유액에서 차감)
+                    if (totalScheduledPayment > 0) {
+                        // [Fix] 대출 잔액보다 더 많이 갚는 오류 방지 (잔액 한도 내 상환)
+                        const actualPayment = Math.min(totalScheduledPayment, loan.amount);
+                        cashInHand -= actualPayment;
+                        loan.amount -= actualPayment;
+                    }
+
+                    // 만기일시 상환의 만기달 원금 상환
+                    if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth === loan.maturityMonth && loan.amount > 0) {
+                        const finalPrincipal = loan.amount;
+                        cashInHand -= finalPrincipal;
+                        loan.amount -= finalPrincipal;
+                    }
+
+                    // 보정
+                    loan.amount = Math.round(loan.amount * 10000) / 10000;
+                    if (loan.amount < 0.01) loan.amount = 0;
+                    loan.amount = Math.max(0, loan.amount);
+                    
+                    loan._processedThisMonth = true; // 처리 완료 표시
+                }
+            });
+
             if (cashInHand < 0) {
                 warnings.push({ month, type: 'cashflow', message: `월 ${month}: 월급 기반 월납입액이 월 가용 현금을 초과합니다. (${cashInHand.toFixed(2)}만원 부족)` });
             }
@@ -293,6 +345,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
             // 3b. 대출 상환 (계좌이체 기반) (Fix #1, #3)
             (currentAssets.loan || []).forEach((loan) => {
+                if (loan._processedThisMonth) return; // 이미 처리된 대출 스킵
+
                 const simStartToLoanStart = getMonthDiff(loan.loanStartDate || `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`, `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`);
                 const loanMonthAtSimMonth = month + simStartToLoanStart;
 
@@ -323,7 +377,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 let totalScheduledPayment = (loan.monthlyContrib > 0) ? loan.monthlyContrib : paymentInfo.payment;
 
                 if (totalScheduledPayment > 0) {
-                    const actualRepayment = Math.min(totalScheduledPayment, repaymentAccount.amount);
+                    // [Fix] 계좌 잔액과 대출 잔액 중 작은 금액만큼만 상환 (과다 납부 방지)
+                    const actualRepayment = Math.min(totalScheduledPayment, repaymentAccount.amount, loan.amount);
                     repaymentAccount.amount -= actualRepayment;
 
                     // 3. 상환액 전체 차감 (이자 가산이 선행되었으므로 원리금 전체를 차감)
