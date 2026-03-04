@@ -1304,6 +1304,9 @@
             const [historyChartInfo, setHistoryChartInfo] = useState(null); // [추가] 히스토리 차트 상단 정보바 상태
             const lastHistoryInfoRef = useRef(null); // [추가] 정보바 업데이트 최적화용 Ref
             
+            const [isDiffModalOpen, setIsDiffModalOpen] = useState(false); // [추가] Diff 모달 상태
+            const [diffData, setDiffData] = useState(null); // [추가] Diff 데이터
+
             const isLocal = useMemo(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1', []);
 
             const [currentMemoIndex, setCurrentMemoIndex] = useState(0);
@@ -2422,6 +2425,59 @@
                 }
             };
 
+            // [추가] AI 제안 적용 핸들러
+            const handleApplyAIProposal = (proposal) => {
+                setDiffData({
+                    currentData: appData,
+                    proposalData: proposal
+                });
+                setIsDiffModalOpen(true);
+                setIsAIModalOpen(false); // AI 모달 닫기
+            };
+
+            // [추가] Diff 확인 및 적용 핸들러
+            const handleConfirmDiff = (action) => {
+                if (!diffData) return;
+                const { proposalData } = diffData;
+                const { rebalancingTargets, monthlyContrib } = proposalData;
+
+                // 새로운 데이터 생성
+                const newData = { ...appData };
+                
+                // 1. 리밸런싱 타겟 적용
+                if (rebalancingTargets) {
+                    newData.rebalancingTargets = { ...newData.rebalancingTargets, ...rebalancingTargets };
+                }
+
+                // 2. 월 납입금 적용
+                if (monthlyContrib) {
+                    const newAssets = { ...newData.assets };
+                    Object.keys(newAssets).forEach(sector => {
+                        newAssets[sector] = newAssets[sector].map(asset => {
+                            if (monthlyContrib[asset.name] !== undefined) {
+                                return { ...asset, monthlyContrib: monthlyContrib[asset.name] };
+                            }
+                            return asset;
+                        });
+                    });
+                    newData.assets = newAssets;
+                }
+
+                if (action === 'apply') {
+                    setAppData(newData);
+                    addToast('AI 제안이 현재 설정에 적용되었습니다.', 'success');
+                } else if (action === 'scenario') {
+                    const name = prompt('새 시나리오 이름을 입력하세요:', 'AI 추천 시나리오');
+                    if (name) {
+                        const newScenario = { id: Date.now(), name, data: newData, createdAt: new Date().toISOString() };
+                        setScenarios(prev => [...prev, newScenario]);
+                        addToast('AI 제안이 새 시나리오로 저장되었습니다.', 'success');
+                    }
+                }
+                setIsDiffModalOpen(false);
+                setDiffData(null);
+            };
+
             const cycleDisplayMode = () => {
                 if (!isDemoMode && appData?.displayMode === 'amount') setAppData(prev => ({ ...prev, displayMode: 'percent' }));
                 else if (!isDemoMode && appData?.displayMode === 'percent') { resetAppData(window.publicDefaultData || {}); setIsDemoMode(true); }
@@ -2528,9 +2584,27 @@
             const totalSectorMonthlyContrib = useMemo(() => {
                 if (!assets || typeof assets !== 'object') return 0;
                 let sum = 0;
+                // [추가] 현재 날짜 기준 (미래 대출 제외용)
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                const currentMonth = now.getMonth() + 1;
+
                 Object.entries(assets).forEach(([sector, arr]) => {
                     if (Array.isArray(arr)) {
-                        arr.forEach(asset => { sum += Number(asset.monthlyContrib || 0); });
+                        arr.forEach(asset => { 
+                            // [수정] 대출의 경우 조건부 합산
+                            if (sector === 'loan') {
+                                // 1. 상환 계좌가 '월급(salary)'이 아니면 월납입 예산에서 제외 (자산에서 차감되므로)
+                                if (asset.repaymentAccount !== 'salary') return;
+                                
+                                // 2. 대출 시작일이 미래인 경우 현재 예산에서 제외
+                                if (asset.loanStartDate) {
+                                    const [y, m] = asset.loanStartDate.split('-').map(Number);
+                                    if (y > currentYear || (y === currentYear && m > currentMonth)) return;
+                                }
+                            }
+                            sum += Number(asset.monthlyContrib || 0); 
+                        });
                     }
                 });
                 return sum;
@@ -5813,6 +5887,7 @@
                         appData={appData} 
                         calculation={calculation} 
                         assetHistory={assetHistory}
+                        onApplyProposal={handleApplyAIProposal}
                     />}
                     {window.HistoryActionModal && <window.HistoryActionModal 
                         isOpen={isHistoryActionModalOpen}
@@ -5831,6 +5906,13 @@
                         isOpen={isConsentModalOpen}
                         onClose={() => setIsConsentModalOpen(false)}
                         onConfirm={handleConsent}
+                    />}
+                    {window.DiffModal && <window.DiffModal 
+                        isOpen={isDiffModalOpen}
+                        onClose={() => setIsDiffModalOpen(false)}
+                        currentData={diffData?.currentData}
+                        proposalData={diffData?.proposalData}
+                        onConfirm={handleConfirmDiff}
                     />}
                     </div>
             );

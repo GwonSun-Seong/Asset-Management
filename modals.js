@@ -784,15 +784,21 @@ const streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) =>
     }
 };
 
-window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory }) => {
+window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory, onApplyProposal }) => {
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
     const [model, setModel] = useState('gemini-3-flash-preview'); // [수정] 안정적인 모델명으로 기본값 변경
     const [persona, setPersona] = useState(() => localStorage.getItem('asset_ai_persona') || '냉철한 전문 자산 관리사');
+    const [requestProposal, setRequestProposal] = useState(() => localStorage.getItem('asset_ai_request_proposal') !== 'false'); // [추가] 제안 요청 여부 (기본값 true)
 
     // [추가] 페르소나 변경 시 로컬 스토리지 자동 저장
     useEffect(() => {
         localStorage.setItem('asset_ai_persona', persona);
     }, [persona]);
+
+    // [추가] 제안 요청 설정 저장
+    useEffect(() => {
+        localStorage.setItem('asset_ai_request_proposal', requestProposal);
+    }, [requestProposal]);
 
     const [additionalRequest, setAdditionalRequest] = useState('');
     const [showSettings, setShowSettings] = useState(true);
@@ -803,10 +809,24 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
     const [contextPrompt, setContextPrompt] = useState(''); // 초기 컨텍스트 저장용
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [proposal, setProposal] = useState(null); // [추가] AI 제안 데이터
     const messagesEndRef = useRef(null);
 
     const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     useEffect(() => { if (isOpen) scrollToBottom(); }, [messages, showSettings, isOpen]);
+
+    // [추가] JSON 추출 헬퍼
+    const extractJSON = (text) => {
+        const start = text.indexOf('---JSON_START---');
+        const end = text.indexOf('---JSON_END---');
+        if (start !== -1 && end !== -1) {
+            try {
+                const jsonStr = text.substring(start + 16, end);
+                return JSON.parse(jsonStr);
+            } catch (e) { return null; }
+        }
+        return null;
+    };
 
     const handleAnalyze = async () => {
         const trimmedKey = apiKey.trim();
@@ -815,6 +835,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
         setLoading(true);
         setError('');
         setMessages([]);
+        setProposal(null);
         
         try {
             const sectorTotals = window.getSectorTotals(appData.assets, calculation.currentTotal);
@@ -859,7 +880,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
             };
 
             // [수정] 시스템 프롬프트 구성 (초기 컨텍스트)
-            const prompt = `
+            let prompt = `
                 당신은 ${persona}입니다. 아래 재무 데이터를 분석해주세요.
                 데이터: ${JSON.stringify(summary)}
                 
@@ -868,7 +889,21 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
                 2. ⚖️ **리밸런싱 제안**: 목표 달성을 위해 비중을 조절해야 할 섹터
                 3. 💡 **액션 플랜**: 구체적으로 실행해야 할 3가지 조언
                 ${additionalRequest ? `4. 🗣️ **추가 답변**: 사용자의 요청("${additionalRequest}")에 대한 답변` : ''}
-                
+            `;
+
+            if (requestProposal) {
+                prompt += `
+                마지막에 반드시 아래 JSON 형식으로 구체적인 변경 제안을 포함해주세요(코드 블록 안에 넣지 말고 텍스트로). 제안할 변경사항이 없으면 빈 객체 {}를 주세요:
+                ---JSON_START---
+                {
+                    "rebalancingTargets": { "deposit": 10, "savings": 20, ... },
+                    "monthlyContrib": { "자산이름": 50, ... }
+                }
+                ---JSON_END---
+                `;
+            }
+            
+            prompt += `
                 너무 길지 않게 핵심만 요약해서 답변해주세요.
                 이후 사용자의 질문에 대해서도 위 데이터를 바탕으로 답변해주세요.
             `;
@@ -882,8 +917,17 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
             await streamGeminiResponse(
                 `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${trimmedKey}`,
                 { contents: [{ parts: [{ text: prompt }] }] },
-                (text) => setMessages([{ role: 'model', text }]), // Update
-                () => setLoading(false), // Complete
+                (text) => {
+                    setMessages([{ role: 'model', text }]);
+                    // 스트리밍 중 JSON 파싱 시도 (완성되었을 때만 성공)
+                    const extracted = extractJSON(text);
+                    if (extracted) setProposal(extracted);
+                }, 
+                (finalText) => {
+                    setLoading(false);
+                    const extracted = extractJSON(finalText);
+                    if (extracted) setProposal(extracted);
+                }, 
                 (err) => { setError(err.message); setLoading(false); } // Error
             );
         } catch (err) {
@@ -933,7 +977,8 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl m-4 h-[80vh] flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden">
+            {/* [수정] 모바일: 전체화면(h-[100dvh]) 및 마진 제거 / 데스크탑: 기존 스타일 유지 */}
+            <div className="bg-white dark:bg-gray-800 sm:rounded-xl shadow-2xl w-full max-w-2xl h-[100dvh] sm:h-[80vh] sm:m-4 flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-4 border-b dark:border-gray-700 pb-3">
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">🤖 AI 자산 분석 <span className="text-xs font-normal text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">Powered by Gemini</span></h3>
@@ -987,13 +1032,24 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
                     <div className="space-y-3 pt-2 border-t dark:border-gray-700">
                         <div>
                             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">AI 페르소나 (자산 관리사 성격)</label>
-                            <input 
-                                type="text" 
-                                className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                                value={persona}
-                                onChange={(e) => setPersona(e.target.value)}
-                                placeholder="예: 100년 경력의 워렌 버핏, 냉철한 분석가, 친절한 이웃집 은행원"
-                            />
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                                    value={persona}
+                                    onChange={(e) => setPersona(e.target.value)}
+                                    placeholder="예: 100년 경력의 워렌 버핏, 냉철한 분석가, 친절한 이웃집 은행원"
+                                />
+                                <label className="flex items-center gap-2 px-3 border dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="체크 시 AI가 구체적인 리밸런싱/월납입금 변경 제안을 JSON 데이터로 함께 제공합니다.">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={requestProposal} 
+                                        onChange={(e) => setRequestProposal(e.target.checked)}
+                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap">자산배분 설정 제안 받기</span>
+                                </label>
+                            </div>
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">추가 요청사항 (선택)</label>
@@ -1014,7 +1070,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
                     {!showSettings && (
                         <>
                         <div className="flex justify-end mb-2">
-                            <button onClick={() => { setShowSettings(true); setMessages([]); }} className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 flex items-center gap-1">
+                            <button onClick={() => { setShowSettings(true); setMessages([]); setProposal(null); }} className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 flex items-center gap-1">
                                 🔄 처음부터 다시 시작
                             </button>
                         </div>
@@ -1032,7 +1088,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
                                         ) : (
                                             <div className="prose dark:prose-invert prose-sm max-w-none">
                                                 <div className="whitespace-pre-wrap leading-relaxed">
-                                                    {msg.text.split('\n').map((line, i) => {
+                                                    {msg.text.replace(/---JSON_START---[\s\S]*?---JSON_END---/g, '').split('\n').map((line, i) => {
                                                         if (line.startsWith('#')) return <h4 key={i} className="text-base font-bold mt-2 mb-1 text-indigo-600 dark:text-indigo-400">{line.replace(/^#+\s/, '')}</h4>;
                                                         const parts = line.split(/(\*\*.*?\*\*)/g);
                                                         return (
@@ -1058,6 +1114,17 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
                                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-75"></div>
                                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-150"></div>
                                     </div>
+                                </div>
+                            )}
+                            {/* [추가] 제안 적용 버튼 */}
+                            {proposal && !loading && (
+                                <div className="flex justify-center mt-4 animate-in fade-in slide-in-from-bottom-4">
+                                    <button 
+                                        onClick={() => onApplyProposal(proposal)}
+                                        className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all font-bold flex items-center gap-2"
+                                    >
+                                        <span>✨</span> AI 제안 검토 및 적용하기
+                                    </button>
                                 </div>
                             )}
                             <div ref={messagesEndRef} />
@@ -1089,6 +1156,122 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory 
                         </div>
                     </div>
                 )}
+            </div>
+        </div>
+    );
+};
+
+window.DiffModal = ({ isOpen, onClose, currentData, proposalData, onConfirm }) => {
+    if (!isOpen || !proposalData) return null;
+
+    const { rebalancingTargets: currentTargets, assets } = currentData;
+    const { rebalancingTargets: newTargets, monthlyContrib: newContribs } = proposalData;
+
+    // 리밸런싱 비교 데이터 생성
+    const targetDiffs = [];
+    if (newTargets) {
+        Object.keys(newTargets).forEach(sector => {
+            const oldVal = currentTargets[sector] || 0;
+            const newVal = newTargets[sector];
+            if (oldVal !== newVal) {
+                targetDiffs.push({ sector, oldVal, newVal, diff: newVal - oldVal });
+            }
+        });
+    }
+
+    // 월납입금 비교 데이터 생성
+    const contribDiffs = [];
+    if (newContribs) {
+        Object.keys(newContribs).forEach(assetName => {
+            // 자산 이름으로 찾기
+            let found = false;
+            Object.keys(assets).forEach(sector => {
+                assets[sector].forEach(asset => {
+                    if (asset.name === assetName) {
+                        const oldVal = asset.monthlyContrib || 0;
+                        const newVal = newContribs[assetName];
+                        if (oldVal !== newVal) {
+                            contribDiffs.push({ name: assetName, oldVal, newVal, diff: newVal - oldVal });
+                        }
+                        found = true;
+                    }
+                });
+            });
+        });
+    }
+
+    const hasChanges = targetDiffs.length > 0 || contribDiffs.length > 0;
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg p-6 animate-in zoom-in duration-300">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                    ⚖️ 변경 사항 미리보기
+                </h3>
+                
+                {!hasChanges ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        변경할 내용이 없습니다.
+                    </div>
+                ) : (
+                    <div className="space-y-6 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+                        {targetDiffs.length > 0 && (
+                            <div>
+                                <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 border-b dark:border-gray-700 pb-1">🎯 리밸런싱 목표 비중</h4>
+                                <div className="space-y-2">
+                                    {targetDiffs.map((item, i) => (
+                                        <div key={i} className="flex justify-between items-center text-sm bg-gray-50 dark:bg-gray-700/50 p-2 rounded">
+                                            <span className="font-medium text-gray-800 dark:text-gray-200">{window.sectorInfo[item.sector]?.name || item.sector}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500 line-through">{item.oldVal}%</span>
+                                                <span>→</span>
+                                                <span className="font-bold text-blue-600 dark:text-blue-400">{item.newVal}%</span>
+                                                <span className={`text-xs ${item.diff > 0 ? 'text-green-500' : 'text-red-500'}`}>({item.diff > 0 ? '+' : ''}{item.diff}%)</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {contribDiffs.length > 0 && (
+                            <div>
+                                <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 border-b dark:border-gray-700 pb-1">💰 월 납입금 설정</h4>
+                                <div className="space-y-2">
+                                    {contribDiffs.map((item, i) => (
+                                        <div key={i} className="flex justify-between items-center text-sm bg-gray-50 dark:bg-gray-700/50 p-2 rounded">
+                                            <span className="font-medium text-gray-800 dark:text-gray-200">{item.name}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500 line-through">{item.oldVal}만</span>
+                                                <span>→</span>
+                                                <span className="font-bold text-blue-600 dark:text-blue-400">{item.newVal}만</span>
+                                                <span className={`text-xs ${item.diff > 0 ? 'text-green-500' : 'text-red-500'}`}>({item.diff > 0 ? '+' : ''}{item.diff}만)</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                <div className="mt-6 flex flex-col gap-2">
+                    <button 
+                        onClick={() => onConfirm('apply')} 
+                        disabled={!hasChanges}
+                        className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        ✅ 현재 설정에 덮어쓰기
+                    </button>
+                    <button 
+                        onClick={() => onConfirm('scenario')} 
+                        disabled={!hasChanges}
+                        className="w-full py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-xl font-bold hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                    >
+                        💾 새 시나리오로 저장
+                    </button>
+                    <button onClick={onClose} className="w-full py-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 text-sm">취소</button>
+                </div>
             </div>
         </div>
     );
