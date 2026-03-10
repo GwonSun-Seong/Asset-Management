@@ -1,5 +1,8 @@
 // defaultData.js - 기본 데이터와 설정 관리 파일
 
+// [수정] 납입 출처 기본값 상수 (utils.js의 전역 설정 참조, 충돌 방지 위해 변수명 변경)
+const DEFAULT_INCOME_SOURCE = window.MONTHLY_INCOME_SOURCE || '월 고정수입';
+
 // 로컬 시간 기준 날짜 문자열 생성 헬퍼 (초기 데이터용)
 const getLocalToday = () => {
     const now = new Date();
@@ -60,24 +63,24 @@ const publicDefaultData = {
     rebalancingMode: 'simple', // 'simple' | 'advanced'
     assets: {
         deposit: [
-            { id: 'def-dep-1', name: '비상금통장', amount: 100, rate: 2.0, feeRate: 0, monthlyContrib: 5, extraContrib: 0, extraFrom: '' },
-            { id: 'def-dep-2', name: '생활비통장', amount: 450, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+            { id: 'def-dep-1', name: '비상금통장', amount: 100, rate: 2.0, feeRate: 0, monthlyContrib: 5, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+            { id: 'def-dep-2', name: '생활비통장', amount: 450, rate: 2.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
         ],
         savings: [
-            { id: 'def-sav-1', name: '청년도약계좌', amount: 400, rate: 6.0, feeRate: 0, monthlyContrib: 30, extraContrib: 0, extraFrom: '' },
-            { id: 'def-sav-2', name: '청약저축', amount: 100, rate: 6.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
+            { id: 'def-sav-1', name: '청년도약계좌', amount: 400, rate: 6.0, feeRate: 0, monthlyContrib: 30, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+            { id: 'def-sav-2', name: '청약저축', amount: 100, rate: 6.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
         ],
         investment: [
-            { id: 'def-inv-1', name: '직접투자계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' },
-            { id: 'def-inv-2', name: 'ISA계좌', amount: 250, rate: 10.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' },
-            { id: 'def-inv-3', name: '금투자', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 5, extraContrib: 0, extraFrom: '' },
-            { id: 'def-inv-4', name: '비트코인', amount: 50, rate: 12.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+            { id: 'def-inv-1', name: '직접투자계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+            { id: 'def-inv-2', name: 'ISA계좌', amount: 250, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+            { id: 'def-inv-3', name: '금투자', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 5, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+            { id: 'def-inv-4', name: '비트코인', amount: 50, rate: 12.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
         ],
         pension: [
-            { id: 'def-pen-1', name: '연금저축', amount: 100, rate: 10.0, feeRate: 0, monthlyContrib: 10, extraContrib: 0, extraFrom: '' }
+            { id: 'def-pen-1', name: '연금저축', amount: 100, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
         ],
         realestate: [
-            { id: 'def-re-1', name: '아파트', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+            { id: 'def-re-1', name: '아파트', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
         ],
         car: [],
         loan: [
@@ -87,16 +90,16 @@ const publicDefaultData = {
                 amount: 500,
                 rate: 3.0,
                 monthlyContrib: 40,
-                extraContrib: 0,
-                extraFrom: '',
+                monthlyContributionFrom: DEFAULT_INCOME_SOURCE,
                 repaymentMethod: '원리금균등',
                 repaymentAccount: '생활비통장',
                 maturityMonth: 10,
-                loanStartDate: getLocalToday().slice(0,7)
+                loanStartDate: getLocalToday().slice(0,7),
+                memo: ''
             }
         ],
         misc: [
-            { id: 'def-misc-1', name: '기타자산', amount: 0, rate: 2.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }
+            { id: 'def-misc-1', name: '기타자산', amount: 0, rate: 2.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
         ]
     },
     monthlyExpenses: [
@@ -140,11 +143,11 @@ const publicDefaultData = {
                 monthlySalary: 450, // 히스토리를 이기기 위해 고소득/고투자 설정
                 monthlyExpenses: [{ name: '생활비', amount: 100, day: 15 }],
                 assets: {
-                    deposit: [{ id: 'sc1_d1', name: 'CMA', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' }],
+                    deposit: [{ id: 'sc1_d1', name: 'CMA', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
                     savings: [],
                     investment: [
-                        { id: 'sc1_i1', name: '나스닥 3배 레버리지', amount: 800, rate: 25.0, feeRate: 0, monthlyContrib: 250, extraContrib: 0, extraFrom: '' },
-                        { id: 'sc1_i2', name: '비트코인', amount: 400, rate: 40.0, feeRate: 0, monthlyContrib: 100, extraContrib: 0, extraFrom: '' }
+                        { id: 'sc1_i1', name: '나스닥 3배 레버리지', amount: 800, rate: 25.0, feeRate: 0, monthlyContrib: 250, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+                        { id: 'sc1_i2', name: '비트코인', amount: 400, rate: 40.0, feeRate: 0, monthlyContrib: 100, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
                     ], // 초기 자산 합계: 1250
                     pension: [], realestate: [], car: [], loan: [], misc: []
                 },
@@ -160,10 +163,10 @@ const publicDefaultData = {
                 monthlySalary: 300,
                 monthlyExpenses: [{ name: '생활비', amount: 100, day: 15 }],
                 assets: {
-                    deposit: [{ id: 'sc2_d1', name: '파킹통장', amount: 250, rate: 3.0, feeRate: 0, monthlyContrib: 50, extraContrib: 0, extraFrom: '' }],
+                    deposit: [{ id: 'sc2_d1', name: '파킹통장', amount: 250, rate: 3.0, feeRate: 0, monthlyContrib: 50, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
                     savings: [
-                        { id: 'sc2_s1', name: '정기예금', amount: 1000, rate: 4.0, feeRate: 0, monthlyContrib: 0, extraContrib: 0, extraFrom: '' },
-                        { id: 'sc2_s2', name: '적금', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 150, extraContrib: 0, extraFrom: '' }
+                        { id: 'sc2_s1', name: '정기예금', amount: 1000, rate: 4.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+                        { id: 'sc2_s2', name: '적금', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 150, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
                     ], // 초기 자산 합계: 1250
                     investment: [],
                     realestate: [], car: [], loan: [], misc: []
@@ -180,7 +183,7 @@ const publicDefaultData = {
                 monthlySalary: 200, // 저소득 설정
                 monthlyExpenses: [{ name: '최소생계비', amount: 150, day: 15 }], // 고비용 설정
                 assets: {
-                    deposit: [{ id: 'sc3_d1', name: '비상금', amount: 1250, rate: 2.0, feeRate: 0, monthlyContrib: 50, extraContrib: 0, extraFrom: '' }],
+                    deposit: [{ id: 'sc3_d1', name: '비상금', amount: 1250, rate: 2.0, feeRate: 0, monthlyContrib: 50, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
                     savings: [],
                     investment: [], // 초기 자산 합계: 1250
                     pension: [], realestate: [], car: [], loan: [], misc: []

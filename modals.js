@@ -108,10 +108,25 @@ window.PrivacyPolicyModal = ({ isOpen, onClose }) => {
     );
 };
 
-window.SuggestionModal = ({ isOpen, onClose, onSubmit }) => {
+window.SuggestionModal = ({ isOpen, onClose, onSubmit, user }) => {
     const [content, setContent] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     if (!isOpen) return null;
+
+    // [추가] 로그인 상태 체크: 로그인이 안 되어 있으면 입력 폼 대신 안내 메시지 표시
+    if (!user) {
+        return (
+            <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200 text-center">
+                    <div className="text-5xl mb-4">🔒</div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">로그인이 필요합니다</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">소중한 의견을 보내주시려면 로그인이 필요합니다.<br/>설정(⚙️) 메뉴에서 로그인 후 이용해주세요.</p>
+                    <button onClick={onClose} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors">확인</button>
+                </div>
+            </div>
+        );
+    }
+
     const handleSubmit = async () => {
         if (!content.trim()) return alert('내용을 입력해주세요.');
         setIsSubmitting(true);

@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>자산 플래너</title>
+    <!-- PWA 설정 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2503/2503939.png">
     <script>
         // HTTPS 강제 리다이렉트 (로컬 개발 환경 제외)
         if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && window.location.protocol === 'http:') {
@@ -158,6 +162,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script>
         // 인앱 브라우저(카카오톡) 감지 및 외부 브라우저 전환 스크립트
         (function() {
@@ -2484,29 +2490,163 @@
                 else { resetAppData({...originalUserData, displayMode: 'amount'}); setIsDemoMode(false); }
             };
 
-            const titleText = isDemoMode 
+            const titleText = isDemoMode
                 ? <span className="text-sm text-red-500">(데모 모드)</span>
-                : appData?.displayMode === 'percent' 
+                : appData?.displayMode === 'percent'
                     ? <span className="text-sm text-blue-500">(프라이빗 모드)</span> : null;
 
-            // ===== 개선된 PDF 저장 함수 (브라우저 기본 인쇄 활용) =====
+            // ===== 개선된 PDF 저장 함수 (html2canvas + jsPDF) =====
             const saveToPDF = async () => {
-                // [Fix] html2canvas의 렌더링 문제(잘림, 흐림)를 해결하기 위해 브라우저 네이티브 인쇄 기능 사용
-                // CSS @media print를 통해 불필요한 UI(사이드바, 버튼 등)는 자동으로 숨겨집니다.
-                
-                // [추가] 인쇄 시 파일명이 페이지 제목으로 설정되는 점을 이용해 파일명 지정
-                const originalTitle = document.title;
-                const now = new Date();
-                const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                const fileName = `자산분석보고서_${dateStr}`;
-                document.title = fileName;
+                if (!window.html2canvas || !window.jspdf) {
+                    addToast('PDF 라이브러리가 로드되지 않았습니다.', 'error');
+                    return;
+                }
 
-                window.print();
+                addToast('PDF 문서를 생성하고 있습니다...', 'info');
 
-                // 인쇄 대화상자가 뜬 후 제목 복구 (즉시 복구 시 파일명 반영 안 될 수 있음)
-                setTimeout(() => {
-                    document.title = originalTitle;
-                }, 1000);
+                const element = document.getElementById('dashboard-content');
+                if (!element) return;
+
+                let clone;
+                try {
+                    // 1. Deep Clone
+                    clone = element.cloneNode(true);
+                    clone.id = 'dashboard-clone-pdf';
+                    
+                    // Style to keep it out of view but rendered correctly
+                    Object.assign(clone.style, {
+                        position: 'absolute',
+                        top: '-9999px',
+                        left: '0',
+                        width: `${element.scrollWidth}px`, // [Fix] 전체 너비 캡처
+                        zIndex: '-9999',
+                        backgroundColor: darkMode ? '#111827' : '#f9fafb', // Match theme background
+                        height: 'auto', // [Fix] 높이 자동 확장
+                        overflow: 'visible', // [Fix] 스크롤 제거
+                        maxHeight: 'none'
+                    });
+                    document.body.appendChild(clone);
+
+                    // [Fix] 차트(Canvas) 이미지 복사 (cloneNode는 캔버스 내용을 복사하지 않음)
+                    const originalCanvases = element.querySelectorAll('canvas');
+                    const clonedCanvases = clone.querySelectorAll('canvas');
+                    originalCanvases.forEach((orig, i) => {
+                        const cloned = clonedCanvases[i];
+                        if (cloned) {
+                            cloned.width = orig.width;
+                            cloned.height = orig.height;
+                            const ctx = cloned.getContext('2d');
+                            if (ctx) ctx.drawImage(orig, 0, 0);
+                        }
+                    });
+
+                    // [Fix] 스크롤 영역 강제 확장 (잘림 방지)
+                    const scrollables = clone.querySelectorAll('.overflow-y-auto, .overflow-x-auto, .overflow-hidden, .max-h-screen, .max-h-60, .max-h-48, .max-h-40');
+                    scrollables.forEach(el => {
+                        el.style.overflow = 'visible';
+                        el.style.maxHeight = 'none';
+                        el.style.height = 'auto';
+                    });
+
+                    // 2. Flatten Inputs (Sync values from original to clone)
+                    const originalInputs = element.querySelectorAll('input, textarea, select');
+                    const clonedInputs = clone.querySelectorAll('input, textarea, select');
+
+                    originalInputs.forEach((orig, i) => {
+                        const cloned = clonedInputs[i];
+                        if (!cloned) return;
+
+                        // Skip hidden inputs
+                        if (orig.type === 'hidden' || orig.style.display === 'none') return;
+                        
+                        // Handle Checkbox/Radio
+                        if (orig.type === 'checkbox' || orig.type === 'radio') {
+                            cloned.checked = orig.checked;
+                            return;
+                        }
+
+                        // Get display text
+                        let text = orig.value;
+                        if (orig.tagName === 'SELECT') {
+                            text = orig.options[orig.selectedIndex]?.text || text;
+                        }
+
+                        // Create static element
+                        const replacement = document.createElement(orig.tagName === 'TEXTAREA' ? 'div' : 'span');
+                        replacement.textContent = text;
+
+                        // Copy computed styles
+                        const style = window.getComputedStyle(orig);
+                        Array.from(style).forEach(key => {
+                            replacement.style[key] = style.getPropertyValue(key);
+                        });
+                        
+                        // Ensure specific styles for text representation
+                        replacement.style.border = 'none';
+                        replacement.style.backgroundColor = 'transparent';
+                        replacement.style.display = 'inline-block';
+                        // replacement.style.width = style.width; // [Fix] 텍스트 길이에 맞게 자동 조절
+                        replacement.style.minHeight = style.height;
+                        replacement.style.whiteSpace = 'pre-wrap'; // For textarea
+                        replacement.style.overflow = 'visible';
+                        replacement.style.height = 'auto';
+
+                        if (cloned.parentNode) cloned.parentNode.replaceChild(replacement, cloned);
+                    });
+
+                    // 3. Remove Unwanted UI
+                    const selectorsToRemove = ['.no-print', 'aside', 'button', '.fixed', '.sticky', 'nav', '#header-actions'];
+                    clone.querySelectorAll(selectorsToRemove.join(',')).forEach(el => el.remove());
+
+                    // 4. Render to Canvas
+                    const canvas = await window.html2canvas(clone, {
+                        scale: 1.5, // [Fix] 해상도 약간 향상
+                        useCORS: true,
+                        backgroundColor: darkMode ? '#111827' : '#f9fafb',
+                        logging: false,
+                        width: clone.scrollWidth, // [Fix] 전체 스크롤 영역 캡처
+                        height: clone.scrollHeight,
+                        windowWidth: clone.scrollWidth, // [Fix] 윈도우 크기도 맞춰줌
+                        windowHeight: clone.scrollHeight
+                    });
+
+                    // 5. Generate PDF
+                    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF('p', 'mm', 'a4');
+                    
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = pdf.internal.pageSize.getHeight();
+                    const imgWidth = canvas.width;
+                    const imgHeight = canvas.height;
+                    const ratio = imgWidth / imgHeight;
+                    
+                    const widthInPdf = pdfWidth;
+                    const heightInPdf = widthInPdf / ratio;
+
+                    let heightLeft = heightInPdf;
+                    let position = 0;
+
+                    pdf.addImage(imgData, 'JPEG', 0, position, widthInPdf, heightInPdf);
+                    heightLeft -= pdfHeight;
+
+                    while (heightLeft > 0) {
+                        position -= pdfHeight;
+                        pdf.addPage();
+                        pdf.addImage(imgData, 'JPEG', 0, position, widthInPdf, heightInPdf);
+                        heightLeft -= pdfHeight;
+                    }
+
+                    const dateStr = new Date().toISOString().slice(0, 10);
+                    pdf.save(`Asset_Planner_Report_${dateStr}.pdf`);
+                    addToast('PDF 파일이 저장되었습니다.', 'success');
+
+                } catch (error) {
+                    console.error('PDF Export Error:', error);
+                    addToast('PDF 생성 중 오류가 발생했습니다.', 'error');
+                } finally {
+                    if (clone && clone.parentNode) document.body.removeChild(clone);
+                }
             };
 
             // ===== 시나리오 관리 함수들 =====
@@ -2602,6 +2742,10 @@
                                     const [y, m] = asset.loanStartDate.split('-').map(Number);
                                     if (y > currentYear || (y === currentYear && m > currentMonth)) return;
                                 }
+                            } else {
+                                // [수정] 일반 자산: 납입 출처가 '월 고정수입'이 아니면 예산 합산 제외
+                                const source = asset.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE;
+                                if (source !== window.MONTHLY_INCOME_SOURCE) return;
                             }
                             sum += Number(asset.monthlyContrib || 0); 
                         });
@@ -2719,9 +2863,20 @@
                 const localMonthlySalary = Number(appData.monthlySalary || 0);
                 const localMaxContrib = Math.max(0, localMonthlySalary - localTotalMonthlyExpense);
                 let localTotalContrib = 0;
-                Object.values(appData.assets).forEach(arr => {
+                
+                // [수정] 예산 초과 검증 시에도 납입 출처 확인 (이체는 제외)
+                Object.entries(appData.assets).forEach(([sector, arr]) => {
                     if (Array.isArray(arr)) {
-                        arr.forEach(a => localTotalContrib += Number(a.monthlyContrib || 0));
+                        arr.forEach(a => {
+                            let include = true;
+                            if (sector === 'loan') {
+                                if (a.repaymentAccount !== 'salary') include = false;
+                            } else {
+                                const source = a.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE;
+                                if (source !== window.MONTHLY_INCOME_SOURCE) include = false;
+                            }
+                            if (include) localTotalContrib += Number(a.monthlyContrib || 0);
+                        });
                     }
                 });
                 
@@ -3038,15 +3193,35 @@
 
             const getAutoDepositBreakdown = () => {
                 const breakdown = [];
+                // [추가] 현재 날짜 기준 (미래 대출 제외용)
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                const currentMonth = now.getMonth() + 1;
+
                 Object.keys(assets).forEach(sectorKey => {
                     if (Array.isArray(assets[sectorKey])) {
                         assets[sectorKey].forEach(asset => {
                             if (asset.monthlyContrib > 0) {
-                                breakdown.push({
-                                    sector: sectorKey,
-                                    name: asset.name,
-                                    amount: asset.monthlyContrib
-                                });
+                                // [수정] 예산 포함 여부 체크 (totalSectorMonthlyContrib와 동일 로직)
+                                let isBudget = true;
+                                if (sectorKey === 'loan') {
+                                    if (asset.repaymentAccount !== 'salary') isBudget = false;
+                                    if (asset.loanStartDate) {
+                                        const [y, m] = asset.loanStartDate.split('-').map(Number);
+                                        if (y > currentYear || (y === currentYear && m > currentMonth)) isBudget = false;
+                                    }
+                                } else {
+                                    const source = asset.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE;
+                                    if (source !== window.MONTHLY_INCOME_SOURCE) isBudget = false;
+                                }
+
+                                if (isBudget) {
+                                    breakdown.push({
+                                        sector: sectorKey,
+                                        name: asset.name,
+                                        amount: asset.monthlyContrib
+                                    });
+                                }
                             }
                         });
                     }
@@ -3871,8 +4046,7 @@
                     rate: sector === 'loan' ? 3.0 : (sector === 'car' ? -2.0 : 10.0),
                     feeRate: 0,
                     monthlyContrib: 0, // 대출의 경우 '월 상환액'으로 사용
-                    extraContrib: 0, 
-                    extraFrom: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '',
+                    monthlyContributionFrom: window.MONTHLY_INCOME_SOURCE, // [수정] 납입 출처 기본값 명시
                     // [수정] 대출 전용 필드 추가
                     repaymentMethod: '원리금균등', // 상환방식
                     repaymentAccount: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '',
@@ -3915,12 +4089,18 @@
                         if (prevData.mainCashFlowAccount === oldName) {
                             newData.mainCashFlowAccount = newValue;
                         }
+                        // [추가] 잔여액 입금 계좌 이름 업데이트
+                        if (prevData.residualAccount === oldName) {
+                            newData.residualAccount = newValue;
+                        }
                         // 다른 자산에서의 참조 업데이트 (대출 상환계좌, 추가납입 출처)
                         Object.keys(newAssets).forEach(s => {
                             newAssets[s] = newAssets[s].map(a => {
                                 let changed = false;
                                 let newA = { ...a };
                                 if (newA.extraFrom === oldName) { newA.extraFrom = newValue; changed = true; }
+                                // [추가] 월납입 출처 참조 업데이트
+                                if (newA.monthlyContributionFrom === oldName) { newA.monthlyContributionFrom = newValue; changed = true; }
                                 if (s === 'loan' && newA.repaymentAccount === oldName) { newA.repaymentAccount = newValue; changed = true; }
                                 return changed ? newA : a;
                             });
@@ -3937,8 +4117,9 @@
                 const currentMainAccount = currentData.mainCashFlowAccount;
 
                 const assetToRemove = currentAssets[sector][index];
+                const assetName = assetToRemove.name; // [추가] 삭제 대상 이름 저장
                 
-                if (assetToRemove.name === currentMainAccount) {
+                if (assetName === currentMainAccount) {
                     const allAccounts = Object.values(currentAssets).flat();
                     const nextAccount = allAccounts.find(a => a.id !== assetToRemove.id);
                     
@@ -3949,11 +4130,42 @@
                         return;
                     }
                 }
-                setAssets(prev => ({
-                    ...prev,
-                    [sector]: prev[sector].filter((_, i) => i !== index)
-                }));
-            }, [setAssets, setMainCashFlowAccount, addToast]); // [수정] 의존성 명시
+                
+                // [수정] 자산 삭제 시 해당 자산을 참조하는 다른 설정(납입출처, 상환계좌 등)도 함께 초기화하여 오류 방지
+                setAppData(prevData => {
+                    const prevAssets = prevData.assets;
+                    const newSectorAssets = prevAssets[sector].filter((_, i) => i !== index);
+                    const newAssets = { ...prevAssets, [sector]: newSectorAssets };
+                    
+                    // 삭제된 자산을 참조하는 다른 자산들의 설정 업데이트
+                    Object.keys(newAssets).forEach(s => {
+                        newAssets[s] = newAssets[s].map(a => {
+                            let changed = false;
+                            let newA = { ...a };
+                            // 납입 출처가 삭제된 자산이면 기본값으로 복구
+                            if (newA.monthlyContributionFrom === assetName) { 
+                                newA.monthlyContributionFrom = window.MONTHLY_INCOME_SOURCE; 
+                                changed = true; 
+                            }
+                            // 대출 상환 계좌가 삭제된 자산이면 초기화
+                            if (s === 'loan' && newA.repaymentAccount === assetName) { 
+                                newA.repaymentAccount = ''; 
+                                changed = true; 
+                            }
+                            return changed ? newA : a;
+                        });
+                    });
+
+                    // 잔여액 입금 계좌가 삭제된 경우 처리
+                    let newResidualAccount = prevData.residualAccount;
+                    if (prevData.residualAccount === assetName) {
+                        const firstAvailable = Object.values(newAssets).flat().find(a => a.name !== assetName && a.name !== '새 항목');
+                        newResidualAccount = firstAvailable ? firstAvailable.name : (prevData.mainCashFlowAccount !== assetName ? prevData.mainCashFlowAccount : '');
+                    }
+
+                    return { ...prevData, assets: newAssets, residualAccount: newResidualAccount };
+                });
+            }, [setAppData, setMainCashFlowAccount, addToast]);
 
             const accountOptions = useMemo(() => {
                 return Object.values(assets).flat().map(a => a.name);
@@ -4696,6 +4908,10 @@
                                                                         ))}
                                                                     </select>
                                                                 </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">메모</label>
+                                                                    <input type="text" placeholder="메모" value={asset.memo || ''} onChange={(e) => updateAsset(sectorKey, idx, 'memo', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" />
+                                                                </div>
                                                             </>
                                                         ) : (
                                                             <>
@@ -4709,15 +4925,21 @@
                                                                 <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">연 수익률</label><div className="relative"><input type="number" step="0.1" value={asset.rate} onChange={(e) => updateAsset(sectorKey, idx, 'rate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
                                                                 <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">수수료/세금</label><div className="relative"><input type="number" step="0.01" value={asset.feeRate ?? 0} onChange={(e) => updateAsset(sectorKey, idx, 'feeRate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
                                                                 <div>
-                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">추가 납입</label>
-                                                                    <div className="flex gap-1">
-                                                                        <input type="number" value={asset.extraContrib} onChange={(e) => updateAsset(sectorKey, idx, 'extraContrib', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" />
-                                                                        {asset.extraContrib > 0 && (
-                                                                            <select value={asset.extraFrom} onChange={(e) => updateAsset(sectorKey, idx, 'extraFrom', e.target.value)} className="w-16 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md text-[10px] text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" title="출금 계좌 선택">
-                                                                                {accountOptions.filter(name => name !== asset.name).map((name, i) => (<option key={i} value={name}>{name}</option>))}
-                                                                            </select>
-                                                                        )}
-                                                                    </div>
+                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">납입 출처</label>
+                                                                    <select 
+                                                                        value={asset.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE} 
+                                                                        onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContributionFrom', e.target.value)} 
+                                                                        className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500"
+                                                                    >
+                                                                        <option value={window.MONTHLY_INCOME_SOURCE}>{window.MONTHLY_INCOME_SOURCE}</option>
+                                                                        {accountOptions.filter(name => name !== asset.name).map((name, i) => (
+                                                                            <option key={i} value={name}>{name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">메모</label>
+                                                                    <input type="text" placeholder="간단한 메모를 입력하세요" value={asset.memo || ''} onChange={(e) => updateAsset(sectorKey, idx, 'memo', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" />
                                                                 </div>
                                                             </>
                                                         )}
@@ -6173,21 +6395,41 @@
                 <div className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-3" role="group" aria-label={`${asset.name} 입력 행`}>
                     <div className="flex-1">
                     {sectorKey !== 'loan' ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-center">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.2fr_1.2fr_1.8fr_0.5fr_0.5fr_1.2fr_min-content] gap-3 items-center">
                             <input type="text" placeholder="항목명" aria-label="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">현재금액</label>
                                 <CalculatorInput aria-label="현재금액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} displayMode={displayMode} />
                             </div>
                             <div>
-                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월납입</label>
-                                <div className="relative">
-                                    <CalculatorInput aria-label="월납입액" className="w-full border rounded px-2 py-1 pr-16 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} displayMode={displayMode} />
-                                    {itemRec > 0 && (
-                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-blue-500 dark:text-blue-400 pointer-events-none font-medium">
-                                            권장 납입: {Math.round(itemRec).toLocaleString()}
-                                        </span>
-                                    )}
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월납입 / 출처</label>
+                                <div className="flex gap-0 shadow-sm rounded-md">
+                                    <div className="relative flex-1">
+                                        <CalculatorInput 
+                                            aria-label="월납입액" 
+                                            className="w-full border rounded-l px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:z-10" 
+                                            value={asset.monthlyContrib} 
+                                            onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} 
+                                            displayMode={displayMode} 
+                                        />
+                                        {itemRec > 0 && (
+                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-blue-500 dark:text-blue-400 pointer-events-none font-medium z-20">
+                                                권장: {Math.round(itemRec).toLocaleString()}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <select 
+                                        aria-label="납입 출처 계좌" 
+                                        className="w-24 border-y border-r rounded-r border-l-0 px-1 py-1 text-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white truncate focus:z-10" 
+                                        value={asset.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE} 
+                                        onChange={(e) => updateAsset(sectorKey, index, 'monthlyContributionFrom', e.target.value)}
+                                        title="납입 출처"
+                                    >
+                                        <option value={window.MONTHLY_INCOME_SOURCE}>{window.MONTHLY_INCOME_SOURCE}</option>
+                                        {accountOptions.filter(name => name !== asset.name).map((name, i) => (
+                                            <option key={i} value={name}>{name}</option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                             <div>
@@ -6199,34 +6441,33 @@
                                 <input type="number" step="0.001" aria-label="수수료 및 세금" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.feeRate ?? 0} onChange={(e) => updateAsset(sectorKey, index, 'feeRate', e.target.value)} />
                             </div>
                             <div>
-                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월수입외 납입</label>
-                                <div className="flex gap-1">
-                                    <input type="number" min="0" aria-label="월수입외 추가 납입액" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraContrib} onChange={(e) => updateAsset(sectorKey, index, 'extraContrib', e.target.value)} />
-                                    {asset.extraContrib > 0 && (
-                                        <select aria-label="추가 납입 출처 계좌" className="w-24 border rounded px-1 py-1 text-[10px] bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.extraFrom} onChange={(e) => updateAsset(sectorKey, index, 'extraFrom', e.target.value)}>
-                                            {accountOptions.filter(name => name !== asset.name).map((name, i) => (
-                                                <option key={i} value={name}>{name}</option>
-                                            ))}
-                                        </select>
-                                    )}
-                                </div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">메모</label>
+                                <input type="text" placeholder="메모" aria-label="메모" className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs" value={asset.memo || ''} onChange={(e) => updateAsset(sectorKey, index, 'memo', e.target.value)} />
                             </div>
                             <button onClick={() => removeAsset(sectorKey, index)} aria-label={`${asset.name} 삭제`} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.5fr_1.2fr_0.6fr_1.2fr_0.6fr_1.1fr_1.1fr_1.3fr_min-content] gap-1 items-center">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.2fr_1.2fr_1.8fr_0.5fr_0.5fr_0.7fr_0.8fr_1.2fr_min-content] gap-2 items-center">
                             <input type="text" placeholder="항목명" aria-label="대출명" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">현재잔액</label>
                                 <CalculatorInput aria-label="대출 잔액" style={amountBgStyle} className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} displayMode={displayMode} />
                             </div>
                             <div>
-                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">이자율(%)</label>
-                                <input type="number" step="0.1" aria-label="대출 이자율" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-right" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월 상환액 / 계좌</label>
+                                <div className="flex gap-0 shadow-sm rounded-md">
+                                    <CalculatorInput aria-label="월 상환액" placeholder="0=자동" className="flex-1 border rounded-l px-2 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-right focus:z-10" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} displayMode={displayMode} />
+                                    <select aria-label="상환 출금 계좌" className="w-24 border-y border-r rounded-r border-l-0 px-1 py-1 text-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white truncate focus:z-10" value={asset.repaymentAccount} onChange={(e) => updateAsset(sectorKey, index, 'repaymentAccount', e.target.value)} title="상환 계좌">
+                                        <option value="salary">월급</option>
+                                        {accountOptions.filter(name => name !== asset.name).map((name, i) => (
+                                            <option key={i} value={name}>{name}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                             <div>
-                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월 상환액</label>
-                                <CalculatorInput aria-label="월 상환액" placeholder="0=자동" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-right" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} displayMode={displayMode} />
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">이자율(%)</label>
+                                <input type="number" step="0.1" aria-label="대출 이자율" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-right" value={asset.rate} onChange={(e) => updateAsset(sectorKey, index, 'rate', e.target.value)} />
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">만기(개월)</label>
@@ -6242,13 +6483,8 @@
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">상환 계좌</label>
-                                <select aria-label="상환 출금 계좌" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white p-0" value={asset.repaymentAccount} onChange={(e) => updateAsset(sectorKey, index, 'repaymentAccount', e.target.value)}>
-                                    <option value="salary">월급(고정수입)</option>
-                                    {accountOptions.filter(name => name !== asset.name).map((name, i) => (
-                                        <option key={i} value={name}>{name}</option>
-                                    ))}
-                                </select>
+                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">메모</label>
+                                <input type="text" placeholder="메모" aria-label="메모" className="w-full border rounded px-1 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.memo || ''} onChange={(e) => updateAsset(sectorKey, index, 'memo', e.target.value)} />
                             </div>
                             <button onClick={() => removeAsset(sectorKey, index)} aria-label={`${asset.name} 삭제`} className="text-red-500 hover:text-red-700 whitespace-nowrap">삭제</button>
                         </div>

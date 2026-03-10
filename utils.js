@@ -1,5 +1,8 @@
 // utils.js - 유틸리티 함수들
 
+// [추가] 납입 출처 기본값 상수 정의
+const MONTHLY_INCOME_SOURCE = '월 고정수입';
+
 // [추가] 정밀한 금융 계산을 위한 Decimal 헬퍼 (Decimal.js 로드 확인)
 const toD = (val) => {
     if (window.Decimal) return new window.Decimal(val || 0);
@@ -116,7 +119,19 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     let currentAssets = {};
     Object.keys(assets).forEach(sector => {
         if (Array.isArray(assets[sector])) {
-            currentAssets[sector] = assets[sector].map(asset => ({ ...asset }));
+            currentAssets[sector] = assets[sector].map(asset => {
+                const newAsset = { ...asset, _sector: sector }; // [수정] 로직 내에서 섹터 구분을 위해 태그 추가
+                // [호환성] 기존 데이터의 추가납입액(extraContrib)이 있다면 월납입액으로 통합
+                if (newAsset.extraContrib > 0) {
+                    newAsset.monthlyContrib = (newAsset.monthlyContrib || 0) + newAsset.extraContrib;
+                    delete newAsset.extraContrib;
+                }
+                // [호환성] 납입 출처가 없으면 기본값 설정
+                if (!newAsset.monthlyContributionFrom) {
+                    newAsset.monthlyContributionFrom = MONTHLY_INCOME_SOURCE;
+                }
+                return newAsset;
+            });
         } else {
             currentAssets[sector] = [];
         }
@@ -253,7 +268,9 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             Object.keys(currentAssets).forEach(sector => {
                 if (sector === 'loan') return;
                 currentAssets[sector].forEach(asset => {
-                    if (asset.monthlyContrib > 0) {
+                    // [수정] 납입 출처가 기본값(월 고정수입)인 경우에만 월급(cashInHand)에서 차감
+                    const source = asset.monthlyContributionFrom || MONTHLY_INCOME_SOURCE;
+                    if (asset.monthlyContrib > 0 && source === MONTHLY_INCOME_SOURCE) {
                         const paymentAmount = asset.monthlyContrib;
                         cashInHand -= paymentAmount;
                         asset.amount += paymentAmount;
@@ -378,8 +395,14 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
                 if (totalScheduledPayment > 0) {
                     // [Fix] 계좌 잔액과 대출 잔액 중 작은 금액만큼만 상환 (과다 납부 방지)
-                    const actualRepayment = Math.min(totalScheduledPayment, repaymentAccount.amount, loan.amount);
-                    repaymentAccount.amount -= actualRepayment;
+                    // [수정] 상환 계좌가 대출(마이너스 통장 등)인 경우 잔액 체크 없이 부채 증가, 자산인 경우 잔액 체크 후 차감
+                    const isSourceLoan = repaymentAccount._sector === 'loan';
+                    const actualRepayment = isSourceLoan 
+                        ? Math.min(totalScheduledPayment, loan.amount) 
+                        : Math.min(totalScheduledPayment, repaymentAccount.amount, loan.amount);
+
+                    if (isSourceLoan) repaymentAccount.amount += actualRepayment;
+                    else repaymentAccount.amount -= actualRepayment;
 
                     // 3. 상환액 전체 차감 (이자 가산이 선행되었으므로 원리금 전체를 차감)
                     loan.amount -= actualRepayment;
@@ -392,8 +415,12 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 // 만기일시 상환의 만기달 원금 상환 처리
                 if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth === loan.maturityMonth && loan.amount > 0) {
                     const finalPrincipal = loan.amount;
-                    const actualFinalRepayment = Math.min(finalPrincipal, repaymentAccount.amount);
-                    repaymentAccount.amount -= actualFinalRepayment;
+                    const isSourceLoan = repaymentAccount._sector === 'loan';
+                    const actualFinalRepayment = isSourceLoan ? finalPrincipal : Math.min(finalPrincipal, repaymentAccount.amount);
+                    
+                    if (isSourceLoan) repaymentAccount.amount += actualFinalRepayment;
+                    else repaymentAccount.amount -= actualFinalRepayment;
+
                     loan.amount -= actualFinalRepayment;
                     if (actualFinalRepayment < finalPrincipal) {
                         warnings.push({ month, type: 'repayment', message: `[${loan.name}] 만기 원금 상환 실패. [${repaymentAccount.name}] 잔액 부족.` });
@@ -407,15 +434,22 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 loan.amount = Math.max(0, loan.amount);
             });
 
-            // 3c. 월수입 외 추가 납입/상환 (계좌이체) (Fix #2)
+            // 3c. 월수입 외 다른 통장에서의 납입 (계좌이체)
             Object.keys(currentAssets).forEach(sector => {
                 currentAssets[sector].forEach(asset => {
-                    if (asset.extraContrib > 0 && asset.extraFrom) {
+                    // [수정] 기본값이 아닌 경우(즉, 특정 계좌 이름인 경우) 이체 로직 수행
+                    if (asset.monthlyContrib > 0 && asset.monthlyContributionFrom && asset.monthlyContributionFrom !== MONTHLY_INCOME_SOURCE) {
                         // 참조를 깨뜨리지 않도록 수정
-                        const fromAccount = allAccountsFlat.find(d => d.name === asset.extraFrom);
+                        const fromAccount = allAccountsFlat.find(d => d.name === asset.monthlyContributionFrom);
                         if (fromAccount) {
-                            const actualDeduction = Math.min(asset.extraContrib, fromAccount.amount);
-                            fromAccount.amount -= actualDeduction;
+                            // [수정] 출처가 대출(loan)인 경우 부채를 증가시키고(한도 체크는 복잡하므로 생략), 자산인 경우 잔액 차감
+                            const isSourceLoan = fromAccount._sector === 'loan';
+                            const actualDeduction = isSourceLoan 
+                                ? asset.monthlyContrib 
+                                : Math.min(asset.monthlyContrib, fromAccount.amount);
+
+                            if (isSourceLoan) fromAccount.amount += actualDeduction;
+                            else fromAccount.amount -= actualDeduction;
 
                             if (sector === 'loan') {
                                 asset.amount = Math.max(0, asset.amount - actualDeduction);
@@ -423,10 +457,10 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                                 asset.amount += actualDeduction;
                             }
 
-                            if (actualDeduction < asset.extraContrib) {
+                            if (actualDeduction < asset.monthlyContrib) {
                                 warnings.push({
                                     month, type: 'transfer',
-                                    message: `월 ${month}: [${fromAccount.name}] 잔액 부족으로 [${asset.name}]에 ${asset.extraContrib}만원 이체 중 ${actualDeduction.toFixed(2)}만원만 실행되었습니다.`
+                                    message: `월 ${month}: [${fromAccount.name}] 잔액 부족으로 [${asset.name}]에 ${asset.monthlyContrib}만원 이체 중 ${actualDeduction.toFixed(2)}만원만 실행되었습니다.`
                                 });
                             }
 
@@ -470,7 +504,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             sectorTotals: sectorTotals,
             itemTotals: itemTotals,
             // 매달 전체 자산 객체를 복사하는 대신, 마지막 달만 복사하도록 최적화
-            assets: month === monthsToProject ? JSON.parse(JSON.stringify(currentAssets, (k, v) => k === '_repaymentAccountRef' ? undefined : v)) : null
+            assets: month === monthsToProject ? JSON.parse(JSON.stringify(currentAssets, (k, v) => (k === '_repaymentAccountRef' || k === '_sector') ? undefined : v)) : null
         });
     }
     return { projections: monthlyProjections, warnings };
@@ -677,7 +711,7 @@ const generateCSV = (appData) => {
 
     // Section 2: Assets
     csv += '## 자산 목록\n';
-    csv += '섹터(영문),항목명,현재금액,연수익률(%),수수료율(%),월납입액,추가납입액,추가납입출처,만기(개월),대출시작일,상환방식,상환계좌,ID\n';
+    csv += '섹터(영문),항목명,현재금액,연수익률(%),수수료율(%),월납입액,납입출처,메모,만기(개월),대출시작일,상환방식,상환계좌,ID\n';
     Object.keys(assets).forEach(sector => {
         (assets[sector] || []).forEach(asset => {
             const row = [
@@ -687,8 +721,8 @@ const generateCSV = (appData) => {
                 asset.rate || 0,
                 asset.feeRate || 0,
                 asset.monthlyContrib || 0,
-                asset.extraContrib || 0,
-                `"${(asset.extraFrom || '').replace(/"/g, '""')}"`,
+                asset.monthlyContributionFrom || MONTHLY_INCOME_SOURCE,
+                `"${(asset.memo || '').replace(/"/g, '""')}"`,
                 asset.maturityMonth || '',
                 asset.loanStartDate || '',
                 asset.repaymentMethod || '',
@@ -827,8 +861,8 @@ const parseCSV = (text) => {
                 rate: Number(parts[3]) || 0,
                 feeRate: Number(parts[4]) || 0,
                 monthlyContrib: Number(parts[5]) || 0,
-                extraContrib: Number(parts[6]) || 0,
-                extraFrom: parts[7] || '',
+                monthlyContributionFrom: (parts[6] || '').trim() || MONTHLY_INCOME_SOURCE,
+                memo: parts[7] || '',
                 maturityMonth: Number(parts[8]) || 0,
                 loanStartDate: parts[9] || '',
                 repaymentMethod: parts[10] || '',
@@ -1065,7 +1099,121 @@ const calculateCapitalIncomeFlow = (projections, currentAssets, monthlyExpense) 
     return { flows, goldenCross };
 };
 
+// [추가] PDF 내보내기 기능 (html2canvas + jsPDF)
+const exportDashboardToPDF = async (addToast, darkMode) => {
+    if (!window.html2canvas || !window.jspdf) {
+        alert('PDF 생성 라이브러리(html2canvas, jspdf)가 로드되지 않았습니다.');
+        return;
+    }
+
+    const element = document.getElementById('dashboard-content');
+    if (!element) {
+        alert('출력할 대시보드 영역(ID: dashboard-content)을 찾을 수 없습니다.');
+        return;
+    }
+
+    if (addToast) addToast('PDF 문서를 생성하고 있습니다...', 'info');
+
+    let clone;
+    try {
+        // 1. 복제 및 스타일 설정 (화면 밖에서 렌더링)
+        clone = element.cloneNode(true);
+        clone.id = 'dashboard-clone-for-pdf';
+        Object.assign(clone.style, {
+            position: 'absolute',
+            top: '-9999px',
+            left: '0',
+            width: `${element.offsetWidth}px`,
+            zIndex: '-9999',
+            backgroundColor: darkMode ? '#1f2937' : '#ffffff' // 다크모드 대응
+        });
+        document.body.appendChild(clone);
+
+        // 2. 불필요한 UI 제거
+        const selectorsToRemove = ['.no-print', 'aside', 'button', '.fixed', '.sticky', 'nav'];
+        clone.querySelectorAll(selectorsToRemove.join(',')).forEach(el => el.remove());
+
+        // 3. 입력 필드 평탄화 (Flatten Inputs)
+        const inputs = clone.querySelectorAll('input, textarea, select');
+        inputs.forEach(input => {
+            if (input.type === 'hidden' || input.style.display === 'none') return;
+            
+            let textValue = input.value;
+            if (input.tagName === 'SELECT') {
+                textValue = input.options[input.selectedIndex]?.text || input.value;
+            } else if (input.type === 'checkbox' || input.type === 'radio') {
+                return; // 체크박스는 그대로 렌더링
+            }
+
+            const textEl = document.createElement(input.tagName === 'TEXTAREA' ? 'div' : 'span');
+            textEl.textContent = textValue;
+            
+            // 스타일 복사 (Computed Style)
+            const style = window.getComputedStyle(input);
+            Object.assign(textEl.style, {
+                fontFamily: style.fontFamily,
+                fontSize: style.fontSize,
+                fontWeight: style.fontWeight,
+                color: style.color,
+                textAlign: style.textAlign,
+                lineHeight: style.lineHeight,
+                padding: style.padding,
+                display: 'inline-block',
+                width: '100%',
+                whiteSpace: 'pre-wrap',
+                border: 'none',
+                background: 'transparent'
+            });
+
+            if (input.parentNode) input.parentNode.replaceChild(textEl, input);
+        });
+
+        // 4. 캔버스 생성
+        const canvas = await window.html2canvas(clone, {
+            scale: 1.2, // 요구사항: 1.2배율
+            useCORS: true,
+            logging: false,
+            backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+            windowWidth: clone.scrollWidth,
+            windowHeight: clone.scrollHeight
+        });
+
+        // 5. PDF 생성
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const imgWidth = 210;
+        const pageHeight = 297;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 0) {
+            position -= pageHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+        }
+
+        const dateStr = new Date().toISOString().slice(0, 10);
+        pdf.save(`Asset_Planner_Report_${dateStr}.pdf`);
+
+        if (addToast) addToast('PDF 파일이 저장되었습니다.', 'success');
+
+    } catch (error) {
+        console.error('PDF Export Error:', error);
+        if (addToast) addToast('PDF 생성 중 오류가 발생했습니다.', 'error');
+    } finally {
+        if (clone) document.body.removeChild(clone);
+    }
+};
+
 // 전역 객체에 노출
+window.MONTHLY_INCOME_SOURCE = MONTHLY_INCOME_SOURCE;
 window.formatNumber = formatNumber;
 window.formatPercent = formatPercent;
 window.calculateGrossTotal = calculateGrossTotal;
@@ -1089,3 +1237,4 @@ window.fetchBitcoinData = fetchBitcoinData;
 window.calculateGoalReachMonth = calculateGoalReachMonth;
 window.normalizeTargets = normalizeTargets;
 window.calculateCapitalIncomeFlow = calculateCapitalIncomeFlow;
+window.exportDashboardToPDF = exportDashboardToPDF;
