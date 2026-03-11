@@ -1100,7 +1100,7 @@ const calculateCapitalIncomeFlow = (projections, currentAssets, monthlyExpense) 
 };
 
 // [추가] PDF 내보내기 기능 (html2canvas + jsPDF)
-const exportDashboardToPDF = async (addToast, darkMode) => {
+const exportDashboardToPDF = async (addToast, darkMode, fileName) => {
     if (!window.html2canvas || !window.jspdf) {
         alert('PDF 생성 라이브러리(html2canvas, jspdf)가 로드되지 않았습니다.');
         return;
@@ -1128,6 +1128,19 @@ const exportDashboardToPDF = async (addToast, darkMode) => {
             backgroundColor: darkMode ? '#1f2937' : '#ffffff' // 다크모드 대응
         });
         document.body.appendChild(clone);
+
+        // [Fix] 차트(Canvas) 이미지 복사 (cloneNode는 캔버스 내용을 복사하지 않음)
+        const originalCanvases = element.querySelectorAll('canvas');
+        const clonedCanvases = clone.querySelectorAll('canvas');
+        originalCanvases.forEach((orig, i) => {
+            const cloned = clonedCanvases[i];
+            if (cloned) {
+                cloned.width = orig.width;
+                cloned.height = orig.height;
+                const ctx = cloned.getContext('2d');
+                if (ctx) ctx.drawImage(orig, 0, 0);
+            }
+        });
 
         // 2. 불필요한 UI 제거
         const selectorsToRemove = ['.no-print', 'aside', 'button', '.fixed', '.sticky', 'nav'];
@@ -1200,7 +1213,8 @@ const exportDashboardToPDF = async (addToast, darkMode) => {
         }
 
         const dateStr = new Date().toISOString().slice(0, 10);
-        pdf.save(`Asset_Planner_Report_${dateStr}.pdf`);
+        const finalFileName = fileName ? `${fileName}.pdf` : `자산분석 보고서_${dateStr}.pdf`;
+        pdf.save(finalFileName);
 
         if (addToast) addToast('PDF 파일이 저장되었습니다.', 'success');
 

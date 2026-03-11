@@ -824,7 +824,7 @@
             const [showReset, setShowReset] = useState(false);
 
             useEffect(() => {
-                const timer = setTimeout(() => setShowReset(true), 3000); // 3초 이상 로딩 시 초기화 버튼 표시
+                const timer = setTimeout(() => setShowReset(true), 8000); // 8초 이상 로딩 시 초기화 버튼 표시
                 return () => clearTimeout(timer);
             }, []);
 
@@ -891,10 +891,10 @@
                 {showReset && (
                     <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[9999]">
                         <button 
-                            onClick={() => { if(confirm('로딩이 멈췄나요? 로컬 데이터를 삭제하고 초기화하시겠습니까?')) { localStorage.clear(); window.location.reload(); } }}
+                            onClick={() => { if(confirm("로딩이 멈춘 것으로 보입니다. 브라우저에 저장된 데이터에 문제가 있을 수 있습니다.\n\n[확인]을 누르면 모든 로컬 데이터(자산, 히스토리, 시나리오 등)를 삭제하고 앱을 초기화합니다. 이 작업은 되돌릴 수 없습니다.\n\n[취소]를 누르면 현재 상태를 유지합니다. 새로고침을 먼저 시도해보세요.")) { localStorage.clear(); window.location.reload(); } }}
                             className="bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700 text-red-500 px-5 py-2 rounded-full shadow-xl text-sm font-bold hover:bg-red-50 dark:hover:bg-red-900/30 transition-all animate-bounce"
                         >
-                            ⚠️ 로딩이 늦어지나요? 데이터 초기화
+                            ⚠️ 로딩에 문제가 있나요? (도움말)
                         </button>
                     </div>
                 )}
@@ -2497,155 +2497,23 @@
 
             // ===== 개선된 PDF 저장 함수 (html2canvas + jsPDF) =====
             const saveToPDF = async () => {
-                if (!window.html2canvas || !window.jspdf) {
-                    addToast('PDF 라이브러리가 로드되지 않았습니다.', 'error');
+                const dateStr = new Date().toISOString().slice(0, 10);
+                const defaultName = `자산분석 보고서_${dateStr}`;
+                const fileName = prompt('PDF 파일명을 입력하세요:', defaultName);
+
+                // 사용자가 취소하거나 빈 파일명을 입력한 경우 중단
+                if (!fileName) {
+                    addToast('PDF 저장이 취소되었습니다.', 'info');
                     return;
                 }
 
-                addToast('PDF 문서를 생성하고 있습니다...', 'info');
-
-                const element = document.getElementById('dashboard-content');
-                if (!element) return;
-
-                let clone;
-                try {
-                    // 1. Deep Clone
-                    clone = element.cloneNode(true);
-                    clone.id = 'dashboard-clone-pdf';
-                    
-                    // Style to keep it out of view but rendered correctly
-                    Object.assign(clone.style, {
-                        position: 'absolute',
-                        top: '-9999px',
-                        left: '0',
-                        width: `${element.scrollWidth}px`, // [Fix] 전체 너비 캡처
-                        zIndex: '-9999',
-                        backgroundColor: darkMode ? '#111827' : '#f9fafb', // Match theme background
-                        height: 'auto', // [Fix] 높이 자동 확장
-                        overflow: 'visible', // [Fix] 스크롤 제거
-                        maxHeight: 'none'
-                    });
-                    document.body.appendChild(clone);
-
-                    // [Fix] 차트(Canvas) 이미지 복사 (cloneNode는 캔버스 내용을 복사하지 않음)
-                    const originalCanvases = element.querySelectorAll('canvas');
-                    const clonedCanvases = clone.querySelectorAll('canvas');
-                    originalCanvases.forEach((orig, i) => {
-                        const cloned = clonedCanvases[i];
-                        if (cloned) {
-                            cloned.width = orig.width;
-                            cloned.height = orig.height;
-                            const ctx = cloned.getContext('2d');
-                            if (ctx) ctx.drawImage(orig, 0, 0);
-                        }
-                    });
-
-                    // [Fix] 스크롤 영역 강제 확장 (잘림 방지)
-                    const scrollables = clone.querySelectorAll('.overflow-y-auto, .overflow-x-auto, .overflow-hidden, .max-h-screen, .max-h-60, .max-h-48, .max-h-40');
-                    scrollables.forEach(el => {
-                        el.style.overflow = 'visible';
-                        el.style.maxHeight = 'none';
-                        el.style.height = 'auto';
-                    });
-
-                    // 2. Flatten Inputs (Sync values from original to clone)
-                    const originalInputs = element.querySelectorAll('input, textarea, select');
-                    const clonedInputs = clone.querySelectorAll('input, textarea, select');
-
-                    originalInputs.forEach((orig, i) => {
-                        const cloned = clonedInputs[i];
-                        if (!cloned) return;
-
-                        // Skip hidden inputs
-                        if (orig.type === 'hidden' || orig.style.display === 'none') return;
-                        
-                        // Handle Checkbox/Radio
-                        if (orig.type === 'checkbox' || orig.type === 'radio') {
-                            cloned.checked = orig.checked;
-                            return;
-                        }
-
-                        // Get display text
-                        let text = orig.value;
-                        if (orig.tagName === 'SELECT') {
-                            text = orig.options[orig.selectedIndex]?.text || text;
-                        }
-
-                        // Create static element
-                        const replacement = document.createElement(orig.tagName === 'TEXTAREA' ? 'div' : 'span');
-                        replacement.textContent = text;
-
-                        // Copy computed styles
-                        const style = window.getComputedStyle(orig);
-                        Array.from(style).forEach(key => {
-                            replacement.style[key] = style.getPropertyValue(key);
-                        });
-                        
-                        // Ensure specific styles for text representation
-                        replacement.style.border = 'none';
-                        replacement.style.backgroundColor = 'transparent';
-                        replacement.style.display = 'inline-block';
-                        // replacement.style.width = style.width; // [Fix] 텍스트 길이에 맞게 자동 조절
-                        replacement.style.minHeight = style.height;
-                        replacement.style.whiteSpace = 'pre-wrap'; // For textarea
-                        replacement.style.overflow = 'visible';
-                        replacement.style.height = 'auto';
-
-                        if (cloned.parentNode) cloned.parentNode.replaceChild(replacement, cloned);
-                    });
-
-                    // 3. Remove Unwanted UI
-                    const selectorsToRemove = ['.no-print', 'aside', 'button', '.fixed', '.sticky', 'nav', '#header-actions'];
-                    clone.querySelectorAll(selectorsToRemove.join(',')).forEach(el => el.remove());
-
-                    // 4. Render to Canvas
-                    const canvas = await window.html2canvas(clone, {
-                        scale: 1.5, // [Fix] 해상도 약간 향상
-                        useCORS: true,
-                        backgroundColor: darkMode ? '#111827' : '#f9fafb',
-                        logging: false,
-                        width: clone.scrollWidth, // [Fix] 전체 스크롤 영역 캡처
-                        height: clone.scrollHeight,
-                        windowWidth: clone.scrollWidth, // [Fix] 윈도우 크기도 맞춰줌
-                        windowHeight: clone.scrollHeight
-                    });
-
-                    // 5. Generate PDF
-                    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-                    const { jsPDF } = window.jspdf;
-                    const pdf = new jsPDF('p', 'mm', 'a4');
-                    
-                    const pdfWidth = pdf.internal.pageSize.getWidth();
-                    const pdfHeight = pdf.internal.pageSize.getHeight();
-                    const imgWidth = canvas.width;
-                    const imgHeight = canvas.height;
-                    const ratio = imgWidth / imgHeight;
-                    
-                    const widthInPdf = pdfWidth;
-                    const heightInPdf = widthInPdf / ratio;
-
-                    let heightLeft = heightInPdf;
-                    let position = 0;
-
-                    pdf.addImage(imgData, 'JPEG', 0, position, widthInPdf, heightInPdf);
-                    heightLeft -= pdfHeight;
-
-                    while (heightLeft > 0) {
-                        position -= pdfHeight;
-                        pdf.addPage();
-                        pdf.addImage(imgData, 'JPEG', 0, position, widthInPdf, heightInPdf);
-                        heightLeft -= pdfHeight;
-                    }
-
-                    const dateStr = new Date().toISOString().slice(0, 10);
-                    pdf.save(`Asset_Planner_Report_${dateStr}.pdf`);
-                    addToast('PDF 파일이 저장되었습니다.', 'success');
-
-                } catch (error) {
-                    console.error('PDF Export Error:', error);
-                    addToast('PDF 생성 중 오류가 발생했습니다.', 'error');
-                } finally {
-                    if (clone && clone.parentNode) document.body.removeChild(clone);
+                // window.exportDashboardToPDF 함수 호출
+                if (window.exportDashboardToPDF) {
+                    // .pdf 확장자 제거 (함수 내부에서 추가됨)
+                    const finalName = fileName.endsWith('.pdf') ? fileName.slice(0, -4) : fileName;
+                    await window.exportDashboardToPDF(addToast, darkMode, finalName);
+                } else {
+                    addToast('PDF 내보내기 기능을 사용할 수 없습니다.', 'error');
                 }
             };
 
@@ -5966,7 +5834,7 @@
                         />
                     )}
                     {window.PrivacyPolicyModal && <window.PrivacyPolicyModal isOpen={isPrivacyModalOpen} onClose={() => setIsPrivacyModalOpen(false)} />}
-                    {window.SuggestionModal && <window.SuggestionModal isOpen={isSuggestionModalOpen} onClose={() => setIsSuggestionModalOpen(false)} onSubmit={handleSuggestionSubmit} />}
+                    {window.SuggestionModal && <window.SuggestionModal isOpen={isSuggestionModalOpen} onClose={() => setIsSuggestionModalOpen(false)} onSubmit={handleSuggestionSubmit} user={verifiedEmail} />}
                     {window.ProFeaturesModal && <window.ProFeaturesModal isOpen={isProModalOpen} onClose={() => setIsProModalOpen(false)} />}
                     
                     <button 
@@ -6173,7 +6041,7 @@
                 comparisonInterval = Math.ceil(uniqueMonths.length / maxComparisonMonths);
             }
             const displayMonths = uniqueMonths.filter((_, index) => index % comparisonInterval === 0);
-            if (!displayMonths.includes(uniqueMonths[uniqueMonths.length - 1])) {
+            if (uniqueMonths.length > 0 && !displayMonths.includes(uniqueMonths[uniqueMonths.length - 1])) {
                 displayMonths.push(uniqueMonths[uniqueMonths.length - 1]); // Always include the last month
             }
 
@@ -6198,10 +6066,10 @@
                             <table className="w-full text-sm dark:text-gray-300">
                                 <thead className="bg-gray-100 dark:bg-gray-700">
                                     <tr>
-                                        <th className="p-3 text-left">섹터/항목</th>
-                                        {results.map(r => (<th key={r.id} className="p-3 text-right">{r.name} (최종)</th>))}
+                                        <th className="p-3 text-left whitespace-nowrap">섹터/항목</th>
+                                        {results.map(r => (<th key={r.id} className="p-3 text-right whitespace-nowrap">{r.name} (최종)</th>))}
                                         {results.length === 2 && (
-                                            <th className="p-3 text-right">차이(금액/비중)</th>
+                                            <th className="p-3 text-right whitespace-nowrap">차이(금액/비중)</th>
                                         )}
                                     </tr>
                                 </thead>
@@ -6209,18 +6077,18 @@
                                     {Object.keys(sectorInfo).map(sectorKey => (
                                         <React.Fragment key={sectorKey}>
                                             <tr className="border-t dark:border-gray-700">
-                                                <td className="p-3 font-semibold">{sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}</td>
+                                                <td className="p-3 font-semibold whitespace-nowrap">{sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}</td>
                                                 {results.map(r => {
                                                     const finalProjection = r.projections[r.projections.length - 1];
                                                     const sectorTotal = finalProjection?.sectorTotals[sectorKey] || { amount: 0, percentage: 0 };
                                                     return (
-                                                        <td key={r.id} className="p-3 text-right">
+                                                        <td key={r.id} className="p-3 text-right whitespace-nowrap">
                                                             {formatNumber(sectorTotal.amount)} ({(sectorTotal.percentage || 0).toFixed(1)}%)
                                                         </td>
                                                     );
                                                 })}
                                                 {results.length === 2 && (
-                                                    <td className="p-3 text-right text-indigo-700 dark:text-indigo-400">
+                                                    <td className="p-3 text-right text-indigo-700 dark:text-indigo-400 whitespace-nowrap">
                                                         {(() => {
                                                             const finalA = results[0].projections[results[0].projections.length - 1];
                                                             const finalB = results[1].projections[results[1].projections.length - 1];
@@ -6264,13 +6132,13 @@
                                                         const items = finalProjection?.itemTotals[sectorKey] || [];
                                                         const itemData = items.find(item => (item.id || item.name) === key) || { amount: 0, percentage: 0 };
                                                         return (
-                                                            <td key={r.id} className="p-3 text-right text-sm">
+                                                            <td key={r.id} className="p-3 text-right text-sm whitespace-nowrap">
                                                                 <div>{formatNumber(itemData.amount)}</div>
                                                             </td>
                                                         );
                                                     })}
                                                     {results.length === 2 && (
-                                                        <td className="p-3 text-right text-sm text-indigo-700 dark:text-indigo-400">
+                                                        <td className="p-3 text-right text-sm text-indigo-700 dark:text-indigo-400 whitespace-nowrap">
                                                             {(() => {
                                                                 const finalA = results[0].projections[results[0].projections.length - 1]; 
                                                                 const finalB = results[1].projections[results[1].projections.length - 1]; 
@@ -6297,15 +6165,15 @@
                                         </React.Fragment>
                                     ))}
                                     <tr className="border-t-2 border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-700">
-                                        <td className="p-3 font-bold">총계</td>
+                                        <td className="p-3 font-bold whitespace-nowrap">총계</td>
                                         {results.map(r => {
                                             const finalProjection = r.projections[r.projections.length - 1];
                                             return (
-                                                <td key={r.id} className="p-3 text-right font-bold">{formatNumber(finalProjection?.total || 0)}</td>
+                                                <td key={r.id} className="p-3 text-right font-bold whitespace-nowrap">{formatNumber(finalProjection?.total || 0)}</td>
                                             );
                                         })}
                                         {results.length === 2 && (
-                                            <td className="p-3 text-right font-bold text-indigo-700 dark:text-indigo-400">
+                                            <td className="p-3 text-right font-bold text-indigo-700 dark:text-indigo-400 whitespace-nowrap">
                                                 {(() => { 
                                                     const finalA = results[0].projections[results[0].projections.length - 1];
                                                     const finalB = results[1].projections[results[1].projections.length - 1];
@@ -6327,10 +6195,10 @@
                             <table className="w-full text-sm dark:text-gray-300">
                                 <thead className="bg-gray-100 dark:bg-gray-700">
                                     <tr>
-                                        <th className="p-3 text-left">월차</th>
-                                        {results.map(r => (<th key={r.id} className="p-3 text-right">{r.name} (총자산)</th>))}
+                                        <th className="p-3 text-left whitespace-nowrap">월차</th>
+                                        {results.map(r => (<th key={r.id} className="p-3 text-right whitespace-nowrap">{r.name} (총자산)</th>))}
                                         {results.length === 2 && (
-                                            <th className="p-3 text-right">차이</th>
+                                            <th className="p-3 text-right whitespace-nowrap">차이</th>
                                         )}
                                     </tr>
                                 </thead>
@@ -6339,17 +6207,17 @@
                                         const monthLabel = getMonthLabel(monthIndex, results[0]?.data.baseMonth);
                                         return (
                                             <tr key={monthIndex} className="border-t dark:border-gray-700">
-                                                <td className="p-3 font-semibold">{monthLabel}</td>
+                                                <td className="p-3 font-semibold whitespace-nowrap">{monthLabel}</td>
                                                 {results.map(r => {
                                                     const projection = r.projections.find(p => p.month === monthIndex);
                                                     return (
-                                                        <td key={r.id} className="p-3 text-right">
+                                                        <td key={r.id} className="p-3 text-right whitespace-nowrap">
                                                             {projection ? formatNumber(projection.total) : '-'}
                                                         </td>
                                                     );
                                                 })}
                                                 {results.length === 2 && (
-                                                    <td className="p-3 text-right text-indigo-700 dark:text-indigo-400">
+                                                    <td className="p-3 text-right text-indigo-700 dark:text-indigo-400 whitespace-nowrap">
                                                         {(() => {
                                                             const projA = results[0].projections.find(p => p.month === monthIndex);
                                                             const projB = results[1].projections.find(p => p.month === monthIndex);
