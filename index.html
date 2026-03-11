@@ -5653,6 +5653,9 @@
                                                     </div>
                                                 <button onClick={() => setIsSettingsModalOpen(true)} className="w-full text-left px-3 py-2 rounded bg-gray-100 dark:bg-gray-700 text-blue-600 dark:text-blue-400 font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">⚙️ 앱 설정</button>
                                                     <button onClick={() => setIsSuggestionModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-sm">💡 기능 제안</button>
+                                                    {isAdmin && (
+                                                        <button onClick={() => setIsAdminModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-600 dark:text-purple-400 font-bold text-sm">🛡️ 관리자 대시보드</button>
+                                                    )}
                                                 </>
                                             )}
                                             <div className="border-t dark:border-gray-700 my-1"></div>
