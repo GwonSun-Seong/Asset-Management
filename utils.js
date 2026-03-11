@@ -773,15 +773,23 @@ const generateCSV = (appData) => {
 
     // Section 7: Memo
     csv += '## 메모\n';
-    csv += 'ID,제목,내용\n';
+    csv += 'ID,제목,내용,고정됨,생성일,수정일\n';
     const memoData = appData.memo;
-    if (Array.isArray(memoData)) {
-        memoData.forEach(m => {
-            csv += `${m.id},"${(m.title||'').replace(/"/g, '""')}","${(m.content||'').replace(/"/g, '""')}"\n`;
-        });
-    } else if (typeof memoData === 'string' && memoData.trim()) {
-        csv += `default,"기본 메모","${memoData.replace(/"/g, '""')}"\n`;
-    }
+    const memos = Array.isArray(memoData) 
+        ? memoData 
+        : (typeof memoData === 'string' && memoData.trim() ? [{ id: 'default', title: '기본 메모', content: memoData, isPinned: false, createdAt: '', updatedAt: '' }] : []);
+
+    memos.forEach(m => {
+        const row = [
+            m.id,
+            `"${(m.title||'').replace(/"/g, '""')}"`,
+            `"${(m.content||'').replace(/"/g, '""')}"`,
+            m.isPinned ? 'true' : 'false',
+            m.createdAt || '',
+            m.updatedAt || ''
+        ];
+        csv += row.join(',') + '\n';
+    });
 
     return csv;
 };
@@ -891,11 +899,14 @@ const parseCSV = (text) => {
         } else if (currentSection === '리밸런싱 목표(항목)') {
             if (parts.length >= 2) result.itemTargets[parts[0]] = Number(parts[1]);
         } else if (currentSection === '메모') {
-            if (parts.length >= 3) {
+            if (parts.length >= 3) { // 하위 호환성 유지
                 result.memo.push({
                     id: parts[0],
                     title: parts[1],
-                    content: parts[2]
+                    content: parts[2],
+                    isPinned: parts[3] === 'true',
+                    createdAt: parts[4] ? Number(parts[4]) : Date.now(),
+                    updatedAt: parts[5] ? Number(parts[5]) : Date.now()
                 });
             }
         }

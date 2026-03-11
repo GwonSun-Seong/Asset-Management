@@ -4343,23 +4343,183 @@
                 </>
             );
 
-            const renderBudgetPanel = () => ( 
-                <div className="bg-blue-50 dark:bg-slate-800 rounded-lg shadow p-6">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월 고정 수입</div><div className="text-xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(monthlySalary, displayMode)}만원</div></div>
-                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월별 지출</div><div className="text-xl font-bold text-red-600 dark:text-red-400">{formatNumber(totalMonthlyExpense, displayMode)}만원</div></div>
-                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월납입 가능액</div><div className="text-xl font-bold text-green-600 dark:text-green-400">{formatNumber(maxSectorMonthlyContrib, displayMode)}만원</div></div>
-                        <div className="text-center"><div className="text-sm text-gray-600 dark:text-white">월납입 사용액</div><div className={`text-xl font-bold ${totalSectorMonthlyContrib > maxSectorMonthlyContrib ? 'text-red-600' : 'text-blue-600 dark:text-blue-400'}`}>{formatNumber(totalSectorMonthlyContrib, displayMode)}만원</div></div>
+            const renderBudgetPanel = () => {
+                const totalMonthly = monthlyExpenses.reduce((sum, e) => sum + Number(e.amount||0), 0);
+                const usagePercent = maxSectorMonthlyContrib > 0 ? (totalSectorMonthlyContrib / maxSectorMonthlyContrib) * 100 : 0;
+                const isOverBudget = totalSectorMonthlyContrib > maxSectorMonthlyContrib;
+
+                return (
+                    <div className="space-y-6">
+                        {/* 1. 수입/지출 카드 */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden transition-transform hover:scale-[1.01]">
+                                <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">💰</div>
+                                <div className="relative z-10">
+                                    <div className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-1">월 고정 수입</div>
+                                    <div className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+                                        {formatNumber(monthlySalary, displayMode)}
+                                        <span className="text-lg font-medium text-gray-400 ml-1">만원</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden transition-transform hover:scale-[1.01]">
+                                <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">💸</div>
+                                <div className="relative z-10">
+                                    <div className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-1">월 고정 지출</div>
+                                    <div className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+                                        {formatNumber(totalMonthly, displayMode)}
+                                        <span className="text-lg font-medium text-gray-400 ml-1">만원</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 2. 예산 운용 게이지 */}
+                        <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-lg border border-gray-100 dark:border-gray-700">
+                            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+                                <div>
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">투자/저축 가능 예산</h3>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                                        고정 지출을 제외하고 자유롭게 운용할 수 있는 금액입니다.
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400">
+                                        {formatNumber(maxSectorMonthlyContrib, displayMode)}
+                                        <span className="text-xl text-gray-400 ml-1">만원</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Progress Bar Container */}
+                            <div className="relative h-8 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden mb-3">
+                                <div 
+                                    className={`absolute top-0 left-0 h-full transition-all duration-700 ease-out flex items-center justify-end pr-3 ${isOverBudget ? 'bg-gradient-to-r from-red-400 to-red-500' : 'bg-gradient-to-r from-blue-400 to-indigo-500'}`}
+                                    style={{ width: `${Math.min(Math.max(usagePercent, 5), 100)}%` }}
+                                >
+                                    {usagePercent > 10 && <span className="text-xs font-bold text-white shadow-sm">{usagePercent.toFixed(0)}%</span>}
+                                </div>
+                            </div>
+
+                            <div className="flex justify-between items-start text-sm font-medium">
+                                <div className="flex flex-col">
+                                    <span className="text-gray-500 dark:text-gray-400 mb-1">현재 배정됨</span>
+                                    <span className="text-gray-900 dark:text-white font-bold">{formatNumber(totalSectorMonthlyContrib, displayMode)}만원</span>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                    <span className={isOverBudget ? "text-red-500 mb-1" : "text-gray-500 dark:text-gray-400 mb-1"}>
+                                        {isOverBudget ? "초과 금액" : "남은 금액"}
+                                    </span>
+                                    <span className={`font-bold ${isOverBudget ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                                        {isOverBudget ? `+${formatNumber(totalSectorMonthlyContrib - maxSectorMonthlyContrib, displayMode)}` : formatNumber(maxSectorMonthlyContrib - totalSectorMonthlyContrib, displayMode)}만원
+                                    </span>
+                                </div>
+                            </div>
+
+                            {isOverBudget && (
+                                <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 rounded-2xl flex items-start gap-3 animate-pulse">
+                                    <span className="text-xl">⚠️</span>
+                                    <div>
+                                        <p className="font-bold text-red-700 dark:text-red-300 text-sm">예산이 초과되었습니다!</p>
+                                        <p className="text-xs text-red-600 dark:text-red-400 mt-1">월납입액을 줄이거나, 수입 외 다른 출처(상여금 등)를 활용하세요.</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Settings Grid */}
+                            <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div>
+                                    <label className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                                        <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                        월급(수입) 입금 계좌
+                                    </label>
+                                    <div className="relative group">
+                                        <select 
+                                            className="w-full appearance-none bg-gray-50 dark:bg-gray-700/50 hover:bg-white dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white rounded-xl px-4 py-3.5 pr-10 focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-bold transition-all cursor-pointer"
+                                            value={mainCashFlowAccount} 
+                                            onChange={e => setMainCashFlowAccount(e.target.value)}
+                                        >
+                                            {Object.values(assets).flat().filter(item => item.name !== '새 항목').map((asset, idx) => (<option key={idx} value={asset.name}>{asset.name}</option>))}
+                                        </select>
+                                        <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-gray-500 group-hover:text-indigo-500 transition-colors">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                        잔여액 자동저축 계좌
+                                    </label>
+                                    <div className="relative group">
+                                        <select 
+                                            className="w-full appearance-none bg-gray-50 dark:bg-gray-700/50 hover:bg-white dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white rounded-xl px-4 py-3.5 pr-10 focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-bold transition-all cursor-pointer"
+                                            value={residualAccount} 
+                                            onChange={e => setResidualAccount(e.target.value)}
+                                        >
+                                            {Object.values(assets).flat().filter(item => item.name !== '새 항목').map((asset, idx) => (<option key={idx} value={asset.name}>{asset.name}</option>))}
+                                        </select>
+                                        <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-gray-500 group-hover:text-emerald-500 transition-colors">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 3. 현금 흐름 상세 (영수증 스타일) */}
+                        <div className="bg-gray-50 dark:bg-gray-800/50 rounded-3xl p-6 sm:p-8 border border-gray-200 dark:border-gray-700 relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-700 dark:via-gray-600 dark:to-gray-700 opacity-50"></div>
+                            
+                            <h4 className="text-base font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+                                <span>🧾</span> 월간 자금 흐름 리포트
+                            </h4>
+
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-500 dark:text-gray-400">월 고정 수입</span>
+                                    <span className="font-bold text-blue-600 dark:text-blue-400">+{formatNumber(monthlySalary, displayMode)}만원</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-500 dark:text-gray-400">월 고정 지출</span>
+                                    <span className="font-bold text-red-500">-{formatNumber(totalMonthly, displayMode)}만원</span>
+                                </div>
+                                
+                                <div className="border-b border-dashed border-gray-300 dark:border-gray-600 my-4"></div>
+
+                                <div className="space-y-2">
+                                    {autoDepositBreakdown.map((item, index) => (
+                                        <div key={index} className="flex justify-between items-center text-sm">
+                                            <span className="text-gray-600 dark:text-gray-300 flex items-center gap-2">
+                                                <span className="text-xs w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">{sectorInfo[item.sector]?.icon}</span>
+                                                {item.name}
+                                            </span>
+                                            <span className="font-medium text-gray-900 dark:text-gray-200">-{formatNumber(item.amount, displayMode)}만원</span>
+                                        </div>
+                                    ))}
+                                    {autoDepositBreakdown.length === 0 && (
+                                        <div className="text-center text-xs text-gray-400 py-2 italic">설정된 월납입 내역이 없습니다.</div>
+                                    )}
+                                </div>
+
+                                <div className="border-b border-gray-300 dark:border-gray-600 my-4"></div>
+
+                                <div className="flex justify-between items-center">
+                                    <span className="text-base font-bold text-gray-900 dark:text-white">최종 잔여액</span>
+                                    <div className="text-right">
+                                        <span className={`text-xl font-extrabold ${autoDepositAmount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
+                                            {autoDepositAmount > 0 ? '+' : ''}{formatNumber(autoDepositAmount, displayMode)}만원
+                                        </span>
+                                        <div className="text-[10px] text-gray-400 mt-1">
+                                            ➜ {residualAccount}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    {totalSectorMonthlyContrib > maxSectorMonthlyContrib && (<div className="bg-red-100 dark:bg-red-900/40 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded my-4">⚠️ 월납입 한도를 초과했습니다 ({formatNumber(totalSectorMonthlyContrib - maxSectorMonthlyContrib, displayMode)}만원 초과). 월수입외 납입을 이용하거나 월납입을 줄여주세요.</div>)}
-                    <div className="bg-white dark:bg-gray-900 rounded-lg p-4 my-4"><h4 className="text-sm font-medium text-gray-700 dark:text-white mb-3">💡 잔여액 계산식</h4><div className="text-sm space-y-2"><div className="flex justify-between text-gray-600 dark:text-gray-300"><span>월수입</span><span className="font-medium text-blue-600 dark:text-blue-400">+{formatNumber(monthlySalary, displayMode)}만원</span></div><div className="flex justify-between text-gray-600 dark:text-gray-300"><span>월별 지출</span><span className="font-medium text-red-600 dark:text-red-400">-{formatNumber(totalMonthlyExpense, displayMode)}만원</span></div><hr className="border-gray-200 dark:border-gray-700" /><div className="flex justify-between font-medium text-gray-700 dark:text-white"><span>월납입 가능액</span><span className="text-green-600 dark:text-green-400">{formatNumber(maxSectorMonthlyContrib, displayMode)}만원</span></div><div className="text-xs text-gray-500 dark:text-gray-400 mt-2">현재 월납입 설정:</div>{autoDepositBreakdown.map((item, index) => (<div key={index} className="flex justify-between text-xs text-gray-600 dark:text-gray-300"><span className={`text-${sectorInfo[item.sector]?.color || 'gray'}-600 dark:text-${sectorInfo[item.sector]?.color || 'gray'}-400`}>{sectorInfo[item.sector]?.icon} {item.name}</span><span className="font-medium">-{formatNumber(item.amount, displayMode)}만원</span></div>))}<hr className="border-gray-200 dark:border-gray-700" /><div className="flex justify-between font-bold text-gray-800 dark:text-white"><span>잔여액</span><span className="text-green-600 dark:text-green-400">{formatNumber(autoDepositAmount, displayMode)}만원</span></div></div></div>
-                    <div className="flex flex-col sm:flex-row items-center justify-between bg-white dark:bg-gray-900 rounded-lg p-4 gap-4 mt-4"><div className="text-center sm:text-left"><div className="text-sm text-gray-600 dark:text-white">잔여액</div><div className="text-2xl font-bold text-green-600 dark:text-green-400">{formatNumber(autoDepositAmount, displayMode)}만원</div><div className="text-xs text-gray-500 dark:text-gray-400">월납입 가능액 {formatNumber(maxSectorMonthlyContrib, displayMode)}만원 - 월납입 사용액 {formatNumber(totalSectorMonthlyContrib, displayMode)}만원</div></div>
-                    <div className="flex flex-col sm:flex-row items-center gap-4">
-                        <div><label className="block text-sm text-gray-600 dark:text-gray-400 text-center sm:text-left mb-1">월 고정 수입 입금 계좌</label><select className="border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2" value={mainCashFlowAccount} onChange={e => setMainCashFlowAccount(e.target.value)}>{Object.values(assets).flat().filter(item => item.name !== '새 항목').map((asset, idx) => (<option key={idx} value={asset.name}>{asset.name}</option>))}</select></div>
-                        <div><label className="block text-sm text-gray-600 dark:text-gray-400 text-center sm:text-left mb-1">잔여액 입금 계좌</label><select className="border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2" value={residualAccount} onChange={e => setResidualAccount(e.target.value)}>{Object.values(assets).flat().filter(item => item.name !== '새 항목').map((asset, idx) => (<option key={idx} value={asset.name}>{asset.name}</option>))}</select></div>
-                    </div></div>
-                </div>
-            );
+                );
+            };
 
             const renderMemoPanel = () => {
                 // 하위 호환성: 문자열이면 배열로 변환하여 처리
@@ -5491,18 +5651,11 @@
                                                             </div>
                                                         )}
                                                     </div>
-                                                    <button onClick={() => fetchFromCloud(verifiedEmail, isPro, false, true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-sm">🔄 클라우드 동기화</button>
+                                                <button onClick={() => setIsSettingsModalOpen(true)} className="w-full text-left px-3 py-2 rounded bg-gray-100 dark:bg-gray-700 text-blue-600 dark:text-blue-400 font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">⚙️ 앱 설정</button>
                                                     <button onClick={() => setIsSuggestionModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-sm">💡 기능 제안</button>
-                                                    <button onClick={handleLogout} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-red-500 text-sm">🚪 로그아웃</button>
                                                 </>
                                             )}
                                             <div className="border-t dark:border-gray-700 my-1"></div>
-                                            <button onClick={handleDarkModeToggle} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 flex items-center">
-                                                {!isPro && (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-2 text-gray-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg>
-                                                )}
-                                                {darkMode ? '☀️ 라이트모드' : '🌙 다크모드'}
-                                            </button>
                                             <button onClick={saveToPDF} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">📄 PDF 저장</button>
                                             <button onClick={() => setIsAIModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-indigo-600 font-bold">🤖 AI 자산 분석</button>
                                             <button onClick={saveAsDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">⭐ 기본값 저장</button>
