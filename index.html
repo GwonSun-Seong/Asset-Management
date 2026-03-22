@@ -28,6 +28,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="config.js"></script>
     <script type="text/babel" src="modals.js"></script>
+    <script type="text/babel" src="game.js"></script>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.css"/>
     <script src="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.js.iife.js"></script>
@@ -1312,6 +1313,8 @@
             
             const [isDiffModalOpen, setIsDiffModalOpen] = useState(false); // [추가] Diff 모달 상태
             const [diffData, setDiffData] = useState(null); // [추가] Diff 데이터
+            const [isGameModalOpen, setIsGameModalOpen] = useState(false); // [추가] 미니게임 모달 상태
+            const [activeBanner, setActiveBanner] = useState('ai'); // [추가] 사이드바 배너 탭 상태
 
             const isLocal = useMemo(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1', []);
 
@@ -4287,18 +4290,18 @@
                         
                         {/* [추가] 고정 위치 툴팁 (Option 4) - 차트 내부 좌측 상단 고정 */}
                         {historyChartInfo && (
-                            <div className="absolute top-4 left-16 z-10 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm p-3 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 pointer-events-none transition-opacity duration-200 min-w-[180px]">
-                                <div className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 pb-1">
+                            <div className="fixed bottom-0 left-0 w-full p-5 rounded-t-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.15)] border-t border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur-md z-[100] pointer-events-none animate-in slide-in-from-bottom-2 sm:absolute sm:bottom-auto sm:top-4 sm:left-16 sm:w-auto sm:min-w-[180px] sm:rounded-xl sm:shadow-lg sm:border sm:border-t-gray-200 sm:z-10 sm:p-3 sm:animate-none">
+                                <div className="text-sm sm:text-xs font-bold text-gray-500 dark:text-gray-400 mb-3 sm:mb-2 flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 pb-2 sm:pb-1">
                                     <span>📅</span> {historyChartInfo.title}
                                 </div>
-                                <div className="space-y-1.5">
+                                <div className="space-y-2 sm:space-y-1.5 max-h-[30vh] sm:max-h-none overflow-y-auto custom-scrollbar">
                                     {historyChartInfo.items.map((item, idx) => (
-                                        <div key={idx} className="flex items-center justify-between text-xs">
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></span>
-                                                <span className="text-gray-700 dark:text-gray-300 font-medium truncate max-w-[100px]">{item.label}</span>
+                                        <div key={idx} className="flex items-center justify-between text-sm sm:text-xs">
+                                            <div className="flex items-center gap-2 sm:gap-1.5">
+                                                <span className="w-2.5 h-2.5 sm:w-2 sm:h-2 flex-shrink-0 rounded-full" style={{ backgroundColor: item.color }}></span>
+                                                <span className="text-gray-700 dark:text-gray-300 font-medium truncate sm:max-w-[100px]">{item.label}</span>
                                             </div>
-                                            <span className="font-bold text-gray-900 dark:text-white tabular-nums">{item.value}</span>
+                                            <span className="font-bold text-gray-900 dark:text-white tabular-nums pl-4">{item.value}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -4307,37 +4310,75 @@
                         
                         {/* [추가] 히스토리 포인트 팝오버 */}
                         {historyPopover && (
-                            <div 
-                                className="absolute z-20 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 w-56 animate-in zoom-in-95 duration-200"
-                                style={{ left: historyPopover.x, top: historyPopover.y + 10, transform: historyPopover.x > 300 ? 'translateX(-100%)' : 'none' }}
-                            >
-                                <div className="flex justify-between items-start mb-3 pb-2 border-b dark:border-gray-700">
-                                    <div>
-                                        <div className="text-xs font-bold text-gray-500 dark:text-gray-400">{historyPopover.date}</div>
-                                        <div className="text-gray-900 dark:text-white font-bold text-lg">{formatNumber(historyPopover.netWorth, displayMode)}만원</div>
+                            <>
+                                {/* PC용 플로팅 팝오버 */}
+                                <div 
+                                    className="hidden sm:block absolute z-20 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 w-56 animate-in zoom-in-95 duration-200"
+                                    style={{ left: historyPopover.x, top: historyPopover.y + 10, transform: historyPopover.x > 300 ? 'translateX(-100%)' : 'none' }}
+                                >
+                                    <div className="flex justify-between items-start mb-3 pb-2 border-b dark:border-gray-700">
+                                        <div>
+                                            <div className="text-xs font-bold text-gray-500 dark:text-gray-400">{historyPopover.date}</div>
+                                            <div className="text-gray-900 dark:text-white font-bold text-lg">{formatNumber(historyPopover.netWorth, displayMode)}만원</div>
+                                        </div>
+                                        <button onClick={() => setHistoryPopover(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
                                     </div>
-                                    <button onClick={() => setHistoryPopover(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
-                                </div>
-                                <div className="space-y-1">
-                                    <button onClick={() => { loadHistorySnapshot(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
-                                        <span>📂</span> 데이터 불러오기
-                                    </button>
-                                    <button onClick={() => { 
-                                        const memo = prompt('메모를 입력하세요:', historyPopover.memo || '');
-                                        if (memo !== null) { updateHistoryMemo(historyPopover.index, memo); setHistoryPopover(null); }
-                                    }} className="w-full text-left px-3 py-2 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
-                                        <span>📝</span> {historyPopover.memo ? '메모 수정' : '메모 남기기'}
-                                    </button>
-                                    <button onClick={() => { deleteHistoryPoint(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left px-3 py-2 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
-                                        <span>🗑️</span> 기록 삭제
-                                    </button>
-                                </div>
-                                {historyPopover.memo && (
-                                    <div className="mt-3 pt-2 border-t dark:border-gray-700 text-xs text-gray-600 dark:text-gray-300 italic bg-gray-50 dark:bg-gray-900/50 p-2 rounded">
-                                        "{historyPopover.memo}"
+                                    <div className="space-y-1">
+                                        <button onClick={() => { loadHistorySnapshot(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
+                                            <span>📂</span> 데이터 불러오기
+                                        </button>
+                                        <button onClick={() => { 
+                                            const memo = prompt('메모를 입력하세요:', historyPopover.memo || '');
+                                            if (memo !== null) { updateHistoryMemo(historyPopover.index, memo); setHistoryPopover(null); }
+                                        }} className="w-full text-left px-3 py-2 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
+                                            <span>📝</span> {historyPopover.memo ? '메모 수정' : '메모 남기기'}
+                                        </button>
+                                        <button onClick={() => { deleteHistoryPoint(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left px-3 py-2 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
+                                            <span>🗑️</span> 기록 삭제
+                                        </button>
                                     </div>
+                                    {historyPopover.memo && (
+                                        <div className="mt-3 pt-2 border-t dark:border-gray-700 text-xs text-gray-600 dark:text-gray-300 italic bg-gray-50 dark:bg-gray-900/50 p-2 rounded">
+                                            "{historyPopover.memo}"
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 모바일용 하단 시트 (Portal 사용) */}
+                                {ReactDOM.createPortal(
+                                    <div className="sm:hidden fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setHistoryPopover(null)}>
+                                        <div className="bg-white dark:bg-gray-800 w-full rounded-t-2xl p-6 shadow-2xl animate-in slide-in-from-bottom-4 duration-300" onClick={e => e.stopPropagation()}>
+                                            <div className="flex justify-between items-start mb-5 pb-4 border-b dark:border-gray-700">
+                                                <div>
+                                                    <div className="text-sm font-bold text-gray-500 dark:text-gray-400">{historyPopover.date}</div>
+                                                    <div className="text-gray-900 dark:text-white font-extrabold text-2xl mt-1">{formatNumber(historyPopover.netWorth, displayMode)}만원</div>
+                                                </div>
+                                                <button onClick={() => setHistoryPopover(null)} className="p-2 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500">✕</button>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <button onClick={() => { loadHistorySnapshot(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-xl flex items-center gap-3 transition-colors">
+                                                    <span className="text-xl">📂</span> 데이터 불러오기
+                                                </button>
+                                                <button onClick={() => { 
+                                                    const memo = prompt('메모를 입력하세요:', historyPopover.memo || '');
+                                                    if (memo !== null) { updateHistoryMemo(historyPopover.index, memo); setHistoryPopover(null); }
+                                                }} className="w-full text-left p-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 text-sm font-bold rounded-xl flex items-center gap-3 transition-colors">
+                                                    <span className="text-xl">📝</span> {historyPopover.memo ? '메모 수정' : '메모 남기기'}
+                                                </button>
+                                                <button onClick={() => { deleteHistoryPoint(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-bold rounded-xl flex items-center gap-3 transition-colors">
+                                                    <span className="text-xl">🗑️</span> 기록 삭제
+                                                </button>
+                                            </div>
+                                            {historyPopover.memo && (
+                                                <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl text-sm text-gray-700 dark:text-gray-300 italic border border-gray-100 dark:border-gray-600">
+                                                    "{historyPopover.memo}"
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>,
+                                    document.body
                                 )}
-                            </div>
+                            </>
                         )}
                     </div>
                 </>
@@ -4378,7 +4419,12 @@
                         <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-lg border border-gray-100 dark:border-gray-700">
                             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
                                 <div>
-                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">투자/저축 가능 예산</h3>
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2 flex flex-wrap items-center gap-2">
+                                        투자/저축 가능 예산
+                                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 rounded-full border border-emerald-100 dark:border-emerald-800 mt-1 sm:mt-0">
+                                            수입 대비 총 저축률 {monthlySalary > 0 ? ((totalSectorMonthlyContrib + autoDepositAmount) / monthlySalary * 100).toFixed(1) : 0}%
+                                        </span>
+                                    </h3>
                                     <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
                                         고정 지출을 제외하고 자유롭게 운용할 수 있는 금액입니다.
                                     </p>
@@ -4478,11 +4524,33 @@
                             <div className="space-y-3">
                                 <div className="flex justify-between items-center text-sm">
                                     <span className="text-gray-500 dark:text-gray-400">월 고정 수입</span>
-                                    <span className="font-bold text-blue-600 dark:text-blue-400">+{formatNumber(monthlySalary, displayMode)}만원</span>
+                                    <span className="font-bold text-blue-600 dark:text-blue-400">
+                                        +{formatNumber(monthlySalary, displayMode)}만원
+                                        <span className="text-xs font-normal text-gray-400 ml-1">(100%)</span>
+                                    </span>
                                 </div>
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-gray-500 dark:text-gray-400">월 고정 지출</span>
-                                    <span className="font-bold text-red-500">-{formatNumber(totalMonthly, displayMode)}만원</span>
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-gray-500 dark:text-gray-400">월 고정 지출</span>
+                                        <span className="font-bold text-red-500">
+                                            -{formatNumber(totalMonthly, displayMode)}만원
+                                            <span className="text-xs font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (totalMonthly / monthlySalary * 100).toFixed(1) : 0}%)</span>
+                                        </span>
+                                    </div>
+                                    {/* 개별 소비 내역 표시 */}
+                                    {monthlyExpenses.length > 0 && (
+                                        <div className="space-y-1.5 pl-3 border-l-2 border-red-100 dark:border-red-900/30">
+                                            {monthlyExpenses.map((exp, idx) => (
+                                                <div key={idx} className="flex justify-between items-center text-xs">
+                                                    <span className="text-gray-500 dark:text-gray-400">{exp.name}</span>
+                                                    <span className="text-red-400">
+                                                        -{formatNumber(exp.amount, displayMode)}만원
+                                                        <span className="text-[10px] text-gray-400 ml-1">({monthlySalary > 0 ? (exp.amount / monthlySalary * 100).toFixed(1) : 0}%)</span>
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 
                                 <div className="border-b border-dashed border-gray-300 dark:border-gray-600 my-4"></div>
@@ -4494,7 +4562,10 @@
                                                 <span className="text-xs w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">{sectorInfo[item.sector]?.icon}</span>
                                                 {item.name}
                                             </span>
-                                            <span className="font-medium text-gray-900 dark:text-gray-200">-{formatNumber(item.amount, displayMode)}만원</span>
+                                            <span className="font-medium text-gray-900 dark:text-gray-200">
+                                                -{formatNumber(item.amount, displayMode)}만원
+                                                <span className="text-[10px] font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (item.amount / monthlySalary * 100).toFixed(1) : 0}%)</span>
+                                            </span>
                                         </div>
                                     ))}
                                     {autoDepositBreakdown.length === 0 && (
@@ -4509,6 +4580,7 @@
                                     <div className="text-right">
                                         <span className={`text-xl font-extrabold ${autoDepositAmount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
                                             {autoDepositAmount > 0 ? '+' : ''}{formatNumber(autoDepositAmount, displayMode)}만원
+                                            <span className="text-xs font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (autoDepositAmount / monthlySalary * 100).toFixed(1) : 0}%)</span>
                                         </span>
                                         <div className="text-[10px] text-gray-400 mt-1">
                                             ➜ {residualAccount}
@@ -5798,20 +5870,61 @@
                             </div>
                             <MarketDataWidget darkMode={darkMode} />
                             
-                            <div className="mt-4 p-4 bg-gradient-to-br from-indigo-600 to-violet-600 dark:from-indigo-900 dark:to-violet-950 rounded-xl shadow-lg text-white relative overflow-hidden group cursor-pointer transition-transform hover:scale-[1.02]" onClick={() => setIsAIModalOpen(true)}>
-                                <div className="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-white opacity-10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
-                                <div className="relative z-10">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <span className="text-2xl">🤖</span>
-                                        <h3 className="font-bold text-lg">AI 자산 분석</h3>
+                            {/* [추가] 배너 스와이프 영역 (AI 분석 / 가챠 게임) */}
+                            <div className="mt-4 relative group">
+                                {activeBanner === 'ai' ? (
+                                    <div className="p-4 bg-gradient-to-br from-indigo-600 to-violet-600 dark:from-indigo-900 dark:to-violet-950 rounded-xl shadow-lg text-white relative overflow-hidden cursor-pointer transition-transform hover:scale-[1.02]" onClick={() => setIsAIModalOpen(true)}>
+                                        <div className="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-white opacity-10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
+                                        <div className="relative z-10 pb-2">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="text-2xl">🤖</span>
+                                                <h3 className="font-bold text-lg">AI 자산 분석</h3>
+                                            </div>
+                                            <p className="text-indigo-100 text-xs leading-relaxed mb-3">
+                                                현재 포트폴리오를 분석하고<br/>맞춤형 조언을 받아보세요.
+                                            </p>
+                                            <button className="w-full py-2 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold transition-colors border border-white/10">
+                                                분석 시작하기 →
+                                            </button>
+                                        </div>
                                     </div>
-                                    <p className="text-indigo-100 text-xs leading-relaxed mb-3">
-                                        현재 포트폴리오를 분석하고<br/>맞춤형 조언을 받아보세요.
-                                    </p>
-                                    <button className="w-full py-2 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold transition-colors border border-white/10">
-                                        분석 시작하기 →
-                                    </button>
+                                ) : (
+                                    <div className="p-4 bg-gradient-to-br from-fuchsia-500 to-purple-600 dark:from-fuchsia-900 dark:to-purple-950 rounded-xl shadow-lg text-white relative overflow-hidden cursor-pointer transition-transform hover:scale-[1.02]" onClick={() => setIsGameModalOpen(true)}>
+                                        <div className="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-white opacity-10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
+                                        <div className="relative z-10 pb-2">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="text-2xl">🎰</span>
+                                                <h3 className="font-bold text-lg">내 노후 뽑기</h3>
+                                            </div>
+                                            <p className="text-fuchsia-100 text-xs leading-relaxed mb-3">
+                                                내 저축률로 돌려보는<br/>65세 인생 가챠
+                                            </p>
+                                            <button className="w-full py-2 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold transition-colors border border-white/10">
+                                                가챠 돌리기 →
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 하단 인디케이터 (점) */}
+                                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-10 pointer-events-none">
+                                    <div className={`w-1.5 h-1.5 rounded-full transition-colors ${activeBanner === 'ai' ? 'bg-white' : 'bg-white/40'}`}></div>
+                                    <div className={`w-1.5 h-1.5 rounded-full transition-colors ${activeBanner === 'game' ? 'bg-white' : 'bg-white/40'}`}></div>
                                 </div>
+
+                                {/* 좌우 컨트롤 화살표 */}
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); setActiveBanner(prev => prev === 'ai' ? 'game' : 'ai'); }}
+                                    className="absolute top-1/2 -left-3 -translate-y-1/2 p-1.5 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full shadow-md border border-gray-200 dark:border-gray-700 hover:text-blue-600 dark:hover:text-blue-400 z-20 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7" /></svg>
+                                </button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); setActiveBanner(prev => prev === 'ai' ? 'game' : 'ai'); }}
+                                    className="absolute top-1/2 -right-3 -translate-y-1/2 p-1.5 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full shadow-md border border-gray-200 dark:border-gray-700 hover:text-blue-600 dark:hover:text-blue-400 z-20 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7" /></svg>
+                                </button>
                             </div>
                             </div>
                         </aside>
@@ -6159,6 +6272,11 @@
                         currentData={diffData?.currentData}
                         proposalData={diffData?.proposalData}
                         onConfirm={handleConfirmDiff}
+                    />}
+                    {window.RetirementGachaModal && <window.RetirementGachaModal 
+                        isOpen={isGameModalOpen}
+                        onClose={() => setIsGameModalOpen(false)}
+                        savingsRate={monthlySalary > 0 ? ((totalSectorMonthlyContrib + autoDepositAmount) / monthlySalary * 100) : 0}
                     />}
                     </div>
             );

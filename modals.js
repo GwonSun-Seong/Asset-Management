@@ -1047,7 +1047,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                     <div className="space-y-3 pt-2 border-t dark:border-gray-700">
                         <div>
                             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">AI 페르소나 (자산 관리사 성격)</label>
-                            <div className="flex gap-2">
+                            <div className="flex flex-col sm:flex-row gap-2">
                                 <input 
                                     type="text" 
                                     className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
@@ -1092,17 +1092,17 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                         
                         <div className="space-y-4 pb-4">
                             {messages.map((msg, idx) => (
-                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                     <div className={`max-w-[90%] rounded-2xl p-4 ${
                                         msg.role === 'user' 
                                             ? 'bg-blue-600 text-white rounded-tr-none' 
                                             : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-tl-none border dark:border-gray-600'
                                     }`}>
                                         {msg.role === 'user' ? (
-                                            <div className="whitespace-pre-wrap">{msg.text}</div>
+                                            <div className="whitespace-pre-wrap break-words">{msg.text}</div>
                                         ) : (
                                             <div className="prose dark:prose-invert prose-sm max-w-none">
-                                                <div className="whitespace-pre-wrap leading-relaxed">
+                                                <div className="whitespace-pre-wrap leading-relaxed break-words">
                                                     {msg.text.replace(/---JSON_START---[\s\S]*?---JSON_END---/g, '').split('\n').map((line, i) => {
                                                         if (line.startsWith('#')) return <h4 key={i} className="text-base font-bold mt-2 mb-1 text-indigo-600 dark:text-indigo-400">{line.replace(/^#+\s/, '')}</h4>;
                                                         const parts = line.split(/(\*\*.*?\*\*)/g);
