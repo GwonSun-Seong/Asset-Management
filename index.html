@@ -4737,7 +4737,7 @@
                             {ReactDOM.createPortal(
                                 <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-10" onClick={() => setIsMemoExpanded(false)}>
                                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full h-full max-w-5xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
-                                        <MemoContent isExpanded={true} />
+                                        {MemoContent({ isExpanded: true })}
                                     </div>
                                 </div>,
                                 document.body
@@ -4746,7 +4746,7 @@
                     );
                 }
 
-                return <MemoContent isExpanded={false} />;
+                return MemoContent({ isExpanded: false });
             };
 
             const renderRebalancePanel = () => {
