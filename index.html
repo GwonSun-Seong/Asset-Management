@@ -282,7 +282,8 @@
             monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
             onOpenDataManage,
             salaryDay, setSalaryDay,
-            saveToPDF, saveCurrentAsset, saveScenario, displayMode
+            saveToPDF, saveCurrentAsset, saveScenario, displayMode,
+            autoUpdateBaseDate, setAutoUpdateBaseDate
         }) => {
             const TEXTS = window.TEXTS || {};
 
@@ -315,7 +316,18 @@
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">계산 시작일 (기준일)</label>
-                            <input type="date" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={baseDate} onChange={(e) => setBaseDate(e.target.value)} />
+                            <div className="flex items-center gap-2">
+                                <input type="date" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={baseDate} onChange={(e) => setBaseDate(e.target.value)} />
+                                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap" title="활성화 시 앱을 열 때마다 기준일이 오늘 날짜로 자동 갱신됩니다.">
+                                    <input 
+                                        type="checkbox" 
+                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                        checked={autoUpdateBaseDate}
+                                        onChange={(e) => setAutoUpdateBaseDate(e.target.checked)}
+                                    />
+                                    자동 갱신
+                                </label>
+                            </div>
                         </div>
                         <div className="pt-4 border-t dark:border-gray-700">
                             <h3 className="text-sm font-bold text-gray-700 dark:text-white mb-2">{TEXTS.settings?.dataManagement || "데이터 관리"}</h3>
@@ -2067,6 +2079,18 @@
             }, [userSecretKey]);
 
         useEffect(() => {
+            // This effect runs only once after the initial data (local or cloud) has been loaded and set.
+            if (isInitialized && appData?.autoUpdateBaseDate) {
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                if (appData.baseDate !== todayStr) {
+                    setBaseDate(todayStr);
+                    addToast('기준일이 오늘 날짜로 자동 갱신되었습니다.', 'info');
+                }
+            }
+        }, [isInitialized, appData?.autoUpdateBaseDate, verifiedEmail]);
+
+        useEffect(() => {
             const handleKeyDown = (e) => {
                 const isSave = ((e.ctrlKey || e.metaKey) && e.key === 's') || (e.altKey && e.key === 's');
                 if (isSave) {
@@ -2194,7 +2218,8 @@
                 incomeEvents = [],
                 expenseEvents = [],
                 salaryDay = 25,
-                baseDate = localDateStr // [수정] UTC 대신 로컬 시간 사용
+                baseDate = localDateStr, // [수정] UTC 대신 로컬 시간 사용
+                autoUpdateBaseDate = false
             } = appData || {};
 
             // ===== Setter 함수들 =====
@@ -2229,6 +2254,7 @@
             const setMemo = React.useCallback((value) => setAppData(prev => ({ ...prev, memo: value })), [setAppData]);
             const setSalaryDay = React.useCallback((value) => setAppData(prev => ({ ...prev, salaryDay: Math.min(31, Math.max(1, Number(value))) })), [setAppData]);
             const setBaseDate = React.useCallback((value) => setAppData(prev => ({ ...prev, baseDate: value })), [setAppData]); // [변경] setBaseMonth -> setBaseDate
+            const setAutoUpdateBaseDate = React.useCallback((value) => setAppData(prev => ({ ...prev, autoUpdateBaseDate: value })), [setAppData]);
 
             const handleDarkModeToggle = () => {
                 if (!isPro) {
@@ -6009,6 +6035,8 @@
         setTargetAmount={setTargetAmount}
         calculateGoalSeek={calculateGoalSeek}
         goalSeekResult={goalSeekResult}
+        autoUpdateBaseDate={autoUpdateBaseDate}
+        setAutoUpdateBaseDate={setAutoUpdateBaseDate}
         inflationRate={inflationRate}
         setInflationRate={setInflationRate}
         saveScenario={saveScenario}
