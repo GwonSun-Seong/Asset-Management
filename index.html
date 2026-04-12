@@ -969,8 +969,12 @@
                 <input type={inputType} value={isMasked ? '***' : localValue} onChange={(e) => { if(!isMasked) setLocalValue(e.target.value); }} onBlur={handleBlur} className={className} placeholder={placeholder} style={style} step="any" {...props}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') e.target.blur();
-                        if (!isEditing && ['+', '-', '*', '/'].includes(e.key)) {
-                            e.preventDefault(); setIsEditing(true); setLocalValue(prev => String(prev) + e.key);
+                        if (['+', '-', '*', '/'].includes(e.key)) {
+                            if (!hasOperators) {
+                                e.preventDefault();
+                                setIsEditing(true);
+                                setLocalValue(prev => String(prev) + e.key);
+                            }
                         }
                         // [추가] 화살표 키보드 동작 커스텀 (1단위 증감 보장 및 즉시 반영)
                         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2117,12 +2121,16 @@
                     setIsPasswordPromptOpen(false); setIsQuickPanelOpen(false);
                     setIsGuideOpen(false);
                 }
-                if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey && canUndo) { 
+                
+                const isUndo = (e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.key.toLowerCase() === 'z') && !e.shiftKey;
+                const isRedo = (e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || e.key.toLowerCase() === 'y' || ((e.code === 'KeyZ' || e.key.toLowerCase() === 'z') && e.shiftKey));
+
+                if (isUndo && canUndo) { 
                     e.preventDefault(); 
                     undo(); 
                     addToast('실행 취소되었습니다.', 'info');
                 }
-                if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z')) && canRedo) { 
+                if (isRedo && canRedo) { 
                     e.preventDefault(); 
                     redo(); 
                     addToast('다시 실행되었습니다.', 'info');
@@ -5083,7 +5091,7 @@
                                                         {isLoan ? (
                                                             <>
                                                                 <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">이자율</label><div className="relative"><input type="number" step="0.1" value={asset.rate} onChange={(e) => updateAsset(sectorKey, idx, 'rate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
-                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">월 상환액</label><CalculatorInput value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" displayMode={displayMode} /></div>
+                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">월 상환액 (원금+이자)</label><CalculatorInput value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" displayMode={displayMode} /></div>
                                                                 <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">만기 (개월)</label><input type="number" value={asset.maturityMonth ?? 12} onChange={(e) => updateAsset(sectorKey, idx, 'maturityMonth', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" /></div>
                                                                 <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">대출 시작월</label><input type="month" value={asset.loanStartDate ? asset.loanStartDate.slice(0, 7) : ''} onChange={(e) => updateAsset(sectorKey, idx, 'loanStartDate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" /></div>
                                                                 <div>
