@@ -547,7 +547,7 @@ window.IconPickerModal = ({ isOpen, onClose, onSelect, currentIcon }) => {
     );
 };
 
-window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initialMode = 'export' }) => {
+window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initialMode = 'export', isExportOnly = false, customTitle = "💾 데이터 관리", customDescription }) => {
     const [mode, setMode] = useState(initialMode);
     const [format, setFormat] = useState('json'); // 'json' | 'csv'
     const [inputValue, setInputValue] = useState('');
@@ -680,15 +680,17 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
                 <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">💾 데이터 관리</h3>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">{customTitle}</h3>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
                 </div>
                 <div className="p-6">
                     {/* 모드 선택 탭 */}
-                    <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl mb-6">
-                        <button onClick={() => setMode('export')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === 'export' ? 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>내보내기</button>
-                        <button onClick={() => setMode('import')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === 'import' ? 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>불러오기</button>
-                    </div>
+                    {!isExportOnly && (
+                        <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl mb-6">
+                            <button onClick={() => setMode('export')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === 'export' ? 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>내보내기</button>
+                            <button onClick={() => setMode('import')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === 'import' ? 'bg-white dark:bg-gray-600 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>불러오기</button>
+                        </div>
+                    )}
 
                     {/* 포맷 선택 버튼 그룹 */}
                     <div className="flex gap-2 mb-4">
@@ -709,9 +711,11 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
                     {mode === 'export' ? (
                         <div className="space-y-4">
                             <p className="text-sm text-gray-600 dark:text-gray-300">
-                                {format === 'json' 
-                                    ? '모든 데이터(설정, 시나리오, 히스토리 포함)를 압축된 코드로 변환했습니다.' 
-                                    : '현재 데이터를 엑셀에서 열 수 있는 CSV 형식으로 변환했습니다.'}
+                                {customDescription ? (typeof customDescription === 'function' ? customDescription(format) : customDescription) : (
+                                    format === 'json' 
+                                        ? '모든 데이터(설정, 시나리오, 히스토리 포함)를 압축된 코드로 변환했습니다.' 
+                                        : '현재 데이터를 엑셀에서 열 수 있는 CSV 형식으로 변환했습니다.'
+                                )}
                                 <br/>아래 내용을 복사하거나 파일로 저장하세요.
                             </p>
                             <div className="relative">

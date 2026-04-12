@@ -45,7 +45,8 @@ const generateMockHistory = () => {
         history.push({
             date: dateStr,
             netWorth: Math.floor(currentNetWorth),
-            time: "09:00:00"
+            time: "09:00:00",
+            grossWorth: Math.floor(currentNetWorth) // 데모 데이터의 경우 부채가 없는 것으로 가정
         });
     }
     return history;

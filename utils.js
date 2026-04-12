@@ -81,10 +81,12 @@ const getSectorTotals = (assetData, total) => {
     if (!assetData || typeof assetData !== 'object') return totals;
 
     Object.keys(assetData).forEach(sector => {
-        if (sector === 'loan') return; // 대출은 비율/차트 계산에서 제외
         if (Array.isArray(assetData[sector])) {
             const sectorTotal = assetData[sector].reduce((sum, asset) => sum + (asset.amount || 0), 0);
-            totals[sector] = { amount: sectorTotal, percentage: total > 0 ? (sectorTotal / total * 100) : 0 };
+            totals[sector] = { 
+                amount: sectorTotal, 
+                percentage: (sector !== 'loan' && total > 0) ? (sectorTotal / total * 100) : 0 
+            };
         }
     });
     return totals;
@@ -477,13 +479,12 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         const netAssets = _internalCalculateTotal(currentAssets);
         const grossAssets = Object.keys(currentAssets).filter(k=>k!=='loan').reduce((s,k)=> s + (currentAssets[k]||[]).reduce((sum,a)=>sum+(a.amount||0),0),0);
         const loanSum = (currentAssets['loan']||[]).reduce((s,a)=> s+(a.amount||0), 0);
-        const totalAssets = grossAssets + loanSum;
+        const totalAssets = grossAssets; // '총자산'은 자산의 총합이므로 grossAssets와 동일하게 맞춤 (자산+부채는 회계적으로 무의미)
 
         const sectorTotals = {};
         Object.keys(currentAssets).forEach(sector => {
-            if (sector === 'loan') return;
             const sectorSum = (currentAssets[sector]||[]).reduce((sum, asset) => sum + (asset.amount || 0), 0);
-            sectorTotals[sector] = { amount: sectorSum, percentage: grossAssets > 0 ? (sectorSum / grossAssets * 100) : 0 };
+            sectorTotals[sector] = { amount: sectorSum, percentage: (sector !== 'loan' && grossAssets > 0) ? (sectorSum / grossAssets * 100) : 0 };
         });
 
         const itemTotals = {};
@@ -1032,12 +1033,12 @@ const calculateGoalReachMonth = (appData, targetAmount) => {
 
     for (let i = 1; i < projections.length; i++) {
         const p = projections[i];
-        if (p.total <= lastNetWorth) stagnationCount++;
+        if (p.net <= lastNetWorth) stagnationCount++;
         else stagnationCount = 0;
-        lastNetWorth = p.total;
+        lastNetWorth = p.net; // 목표 달성은 순자산(net) 기준
 
         if (stagnationCount >= 3) return { error: true, message: '자산 정체/감소로 인해 목표 달성이 불가능합니다.' };
-        if (p.total >= targetAmount) return { success: true, month: p.month };
+        if (p.net >= targetAmount) return { success: true, month: p.month };
     }
     return { error: true, message: '현재 조건으로는 50년 내 목표 달성이 어렵습니다.' };
 };
