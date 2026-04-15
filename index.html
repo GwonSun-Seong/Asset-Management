@@ -1442,25 +1442,25 @@
 
                         if (savedData) {
                             let parsedData = JSON.parse(savedData);
-                            parsedData = window.migrateToPhases(parsedData); // [추가] 마이그레이션 강제 처리
                             mergedData = {
                                 ...baseData,
                                 ...parsedData,
+                                assets: { ...baseData.assets, ...(parsedData.assets || {}) },
                                 rebalancingAlerts: { ...baseData.rebalancingAlerts, ...parsedData.rebalancingAlerts },
                             };
                             if (mergedData.memo === undefined) mergedData.memo = baseData.memo;
 
                             // 마이그레이션: ID, 대출 시작일, 다크모드 필드 보강
-                            Object.keys(parsedData.phases?.[0]?.settings?.assets || {}).forEach(sector => {
-                                (parsedData.phases[0].settings.assets[sector] || []).forEach(a => { 
+                            Object.keys(parsedData.assets || {}).forEach(sector => {
+                                (parsedData.assets[sector] || []).forEach(a => { 
                                     if (!a.id) a.id = Date.now() + Math.random();
                                     if (sector === 'loan' && !a.loanStartDate) a.loanStartDate = parsedData.baseMonth || baseData.baseMonth;
                                 });
                             });
 
                             // 마이그레이션: 자산별 수수료/세금 필드 기본값(0)
-                            Object.keys(parsedData.phases?.[0]?.settings?.assets || {}).forEach(sector => {
-                                (parsedData.phases[0].settings.assets[sector] || []).forEach(a => { if (a.feeRate === undefined) a.feeRate = 0; });
+                            Object.keys(parsedData.assets || {}).forEach(sector => {
+                                (parsedData.assets[sector] || []).forEach(a => { if (a.feeRate === undefined) a.feeRate = 0; });
                             });
                             setAppData(mergedData); // [수정] parsedData 대신 mergedData 사용
                             setOriginalUserData(parsedData); // [추가]
@@ -2242,7 +2242,8 @@
 
             // ===== Setter 함수들 =====
             const updatePhaseSettings = React.useCallback((field, valueOrUpdater) => {
-                setAppData(prev => {
+                setAppData(prevRaw => {
+                    const prev = window.migrateToPhases(prevRaw);
                     const newPhases = [...(prev.phases || [])];
                     const targetPhase = newPhases[editingPhaseIndex] || newPhases[0];
                     if (!targetPhase) return prev;
@@ -2504,20 +2505,17 @@
                 const { proposalData } = diffData;
                 const { rebalancingTargets, monthlyContrib } = proposalData;
 
-                const newPhases = [...(appData.phases || [])];
-                const targetPhase = newPhases[editingPhaseIndex] || newPhases[0] || window.publicDefaultData.phases[0];
-                if (!targetPhase) return;
-
-                let newSettings = { ...targetPhase.settings };
+                let newSettings = editingPhaseIndex === 0 ? { ...appData } : { ...appData?.phases?.[editingPhaseIndex - 1]?.settings };
                 
                 if (rebalancingTargets) {
-                    newSettings.rebalancingTargets = { ...newSettings.rebalancingTargets, ...rebalancingTargets };
+                    newSettings.rebalancingTargets = { ...(newSettings.rebalancingTargets || {}), ...rebalancingTargets };
                 }
 
                 if (monthlyContrib) {
-                    const newAssets = { ...newSettings.assets };
+                    const newAssets = JSON.parse(JSON.stringify(newSettings.assets || {}));
                     Object.keys(newAssets).forEach(sector => {
-                        newAssets[sector] = newAssets[sector].map(asset => {
+                        if (!Array.isArray(newAssets[sector])) newAssets[sector] = [];
+                        newAssets[sector] = (newAssets[sector] || []).map(asset => {
                             if (monthlyContrib[asset.name] !== undefined) {
                                 return { ...asset, monthlyContrib: monthlyContrib[asset.name] };
                             }
@@ -2527,12 +2525,18 @@
                     newSettings.assets = newAssets;
                 }
 
-                newPhases[editingPhaseIndex] = { ...targetPhase, settings: newSettings };
-                const newData = { ...appData, phases: newPhases };
+                let newData;
+                if (editingPhaseIndex === 0) {
+                    newData = { ...appData, ...newSettings };
+                } else {
+                    const newPhases = [...(appData.phases || [])];
+                    newPhases[editingPhaseIndex - 1] = { ...newPhases[editingPhaseIndex - 1], settings: newSettings };
+                    newData = { ...appData, phases: newPhases };
+                }
 
                 if (action === 'apply') {
                     setAppData(newData);
-                    addToast('AI 제안이 현재 페이즈 설정에 적용되었습니다.', 'success');
+                    addToast('AI 제안이 현재 페이즈에 적용되었습니다.', 'success');
                 } else if (action === 'scenario') {
                     const name = prompt('새 시나리오 이름을 입력하세요:', 'AI 추천 시나리오');
                     if (name) {
@@ -2600,7 +2604,7 @@
                 if (confirm(`"${scenario.name}" 시나리오를 불러오시겠습니까?`)) {
                     // [추가] 불러오기 전 현재 데이터 백업 확인
                     if (confirm('현재 데이터를 기본값으로 백업하시겠습니까?\n(백업하지 않으면 현재 작업 내용이 덮어쓰여집니다)')) {
-                        localStorage.setItem('assetDashboardCustomDefault', JSON.stringify(appData));
+                        localStorage.setItem('assetDashboardCustomDefault', JSON.stringify(migratedAppData));
                         addToast('현재 데이터가 기본값으로 백업되었습니다.', 'success');
                     }
 
@@ -2778,22 +2782,21 @@
                 }
                 
                 const months = projectionMonths;
-                // [수정] 인플레이션 보정 및 이벤트 배열 안전성 확보 (undefined 방지)
                 const safeAppData = {
                     ...appData,
                     incomeEvents: Array.isArray(appData.incomeEvents) ? appData.incomeEvents : [],
                     expenseEvents: Array.isArray(appData.expenseEvents) ? appData.expenseEvents : [],
                 };
 
-                const localTotalMonthlyExpense = (appData.monthlyExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+                const localTotalMonthlyExpense = (currentPhaseSettings.monthlyExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
                 
                 // [추가] 예산 초과 검증 변수 계산
-                const localMonthlySalary = Number(appData.monthlySalary || 0);
+                const localMonthlySalary = Number(currentPhaseSettings.monthlySalary || 0);
                 const localMaxContrib = Math.max(0, localMonthlySalary - localTotalMonthlyExpense);
                 let localTotalContrib = 0;
                 
                 // [수정] 예산 초과 검증 시에도 납입 출처 확인 (이체는 제외)
-                Object.entries(appData.assets).forEach(([sector, arr]) => {
+                Object.entries(currentPhaseSettings.assets || {}).forEach(([sector, arr]) => {
                     if (Array.isArray(arr)) {
                         arr.forEach(a => {
                             let include = true;
@@ -2814,9 +2817,9 @@
                 let totalInvestedPrincipal = 0;
                 const sectorSums = {};
                 
-                Object.keys(appData.assets).forEach(sector => {
+                Object.keys(currentPhaseSettings.assets || {}).forEach(sector => {
                     if (!sectorSums[sector]) sectorSums[sector] = 0;
-                    (appData.assets[sector] || []).forEach(asset => {
+                    (currentPhaseSettings.assets[sector] || []).forEach(asset => {
                         const amt = Number(asset.amount || 0);
                         if (sector === 'loan') {
                             currentTotal -= amt;
@@ -2835,7 +2838,7 @@
                 let runwayMonths = 0;
                 let debtFreeMonth = -1;
                 const maxSimMonths = 1200;
-                const simAssets = JSON.parse(JSON.stringify(appData.assets));
+                const simAssets = JSON.parse(JSON.stringify(currentPhaseSettings.assets || {}));
                 
                 // [수정] 초기 자산이 0 이하인 경우 생존 기간 0으로 처리
                 if (currentTotal <= 0) {
@@ -2844,7 +2847,7 @@
                     // [Refactor] Find Main Account in Simulation Data
                     let simMainAccount = null;
                     for (const s in simAssets) {
-                        const found = simAssets[s].find(a => a.name === appData.mainCashFlowAccount);
+                        const found = simAssets[s].find(a => a.name === currentPhaseSettings.mainCashFlowAccount);
                         if (found) { simMainAccount = found; break; }
                     }
                     if (!simMainAccount) {
@@ -2954,25 +2957,25 @@
                 }
 
                 // 3. FIRE Indicators (Reverse Engineered)
-                const loanInterestInitial = (appData.assets.loan || []).reduce((sum, l) => sum + (Number(l.amount || 0) * Number(l.rate || 0) / 1200), 0);
+                const loanInterestInitial = (currentPhaseSettings.assets?.loan || []).reduce((sum, l) => sum + (Number(l.amount || 0) * Number(l.rate || 0) / 1200), 0);
                 const annualFixedExp = (localTotalMonthlyExpense + loanInterestInitial) * 12;
                 const annualFixedExpPostDebt = localTotalMonthlyExpense * 12;
 
                 const swr4PercentCapital = annualFixedExpPostDebt * 25; // 4% Rule Reference
 
                 // 4. Soft Rebalancing Engine (Pro-rata)
-                const disposableIncome = Math.max(0, (appData.monthlySalary || 0) - localTotalMonthlyExpense);
-                const targetMonths = appData.rebalanceMonths || 12;
+                const disposableIncome = Math.max(0, (currentPhaseSettings.monthlySalary || 0) - localTotalMonthlyExpense);
+                const targetMonths = currentPhaseSettings.rebalanceMonths || 12;
                 const futureValue = currentTotal + (disposableIncome * targetMonths);
                 const sectorGaps = {};
                 let totalGap = 0;
                 const validSectors = Object.keys(sectorInfo).filter(k => k !== 'loan');
                 const itemRecs = {};
-                const rebalancingGlobal = appData.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
+                const rebalancingGlobal = currentPhaseSettings.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
                 
                 validSectors.forEach(sector => {
-                    const targetPct = (appData.rebalancingTargets && appData.rebalancingTargets[sector] !== undefined) 
-                        ? appData.rebalancingTargets[sector] 
+                    const targetPct = (currentPhaseSettings.rebalancingTargets && currentPhaseSettings.rebalancingTargets[sector] !== undefined) 
+                        ? currentPhaseSettings.rebalancingTargets[sector] 
                         : Math.round(100 / validSectors.length);
                     const targetBalance = futureValue * (targetPct / 100);
                     const currentBalance = sectorSums[sector] || 0;
@@ -2994,15 +2997,15 @@
 
                 // [추가] 항목별 리밸런싱 추천 계산
                 validSectors.forEach(sector => {
-                    const sectorAssets = appData.assets[sector] || [];
+                    const sectorAssets = currentPhaseSettings.assets?.[sector] || [];
                     if (sectorAssets.length === 0) return;
                     
                     const sectorMonthlyContrib = sectorRecs[sector] || 0;
-                    const sectorTargetPct = (appData.rebalancingTargets && appData.rebalancingTargets[sector] !== undefined) ? appData.rebalancingTargets[sector] : Math.round(100 / validSectors.length);
+                    const sectorTargetPct = (currentPhaseSettings.rebalancingTargets && currentPhaseSettings.rebalancingTargets[sector] !== undefined) ? currentPhaseSettings.rebalancingTargets[sector] : Math.round(100 / validSectors.length);
                     const sectorFutureValue = futureValue * (sectorTargetPct / 100);
                     
                     let totalItemWeight = 0;
-                    const currentItemTargets = appData.itemTargets || {};
+                    const currentItemTargets = currentPhaseSettings.itemTargets || {};
                     sectorAssets.forEach(a => { totalItemWeight += (currentItemTargets[a.id] ?? Math.round(100/sectorAssets.length)); });
                     
                     let totalItemGap = 0;
@@ -3022,7 +3025,7 @@
                     });
                 });
 
-                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate, baseDate }, months);
+                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate }, months);
 
                 // [추가] 월납입 한도 초과 시 경고 목록에 추가 (플로팅 버튼 트리거용)
                 if (localTotalContrib > localMaxContrib) {
@@ -3050,8 +3053,8 @@
                 const realValue = newProjectedGross / Math.pow(1 + inflationRate / 100, months / 12);
 
                 return {
-                    initial: appData.assets,
-                    projected: finalProjection ? finalProjection.assets : appData.assets,
+                    initial: currentPhaseSettings.assets || {},
+                    projected: finalProjection ? finalProjection.assets : (currentPhaseSettings.assets || {}),
                     currentTotal: newCurrentTotal,
                     currentNet: newCurrentNet,
                     currentGross: newCurrentGross,
@@ -3076,7 +3079,7 @@
                         itemRecs
                     }
                 };
-            }, [appData, inflationRate, projectionMonths, baseMonth]);
+            }, [appData, editingPhaseIndex, inflationRate, projectionMonths]);
 
 
             const { currentGrossTotal, projectedGrossTotal, currentSectorTotals, projectedSectorTotals } = useMemo(() => {
@@ -3095,14 +3098,14 @@
 
             // ===== 리밸런싱 경고 함수 (목표 비중 기준 편차) =====
             const getRebalanceStatus = (key, percentage, isItem = false, itemId = null, sectorKey = null) => {
-                const globalSettings = appData.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
+                const globalSettings = rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
                 const thresholds = isItem ? globalSettings.item : globalSettings.sector;
                 
                 let target;
                 if (isItem && sectorKey) {
                     const assetsInSector = assets[sectorKey] || [];
-                    const totalWeight = assetsInSector.reduce((sum, a) => sum + (appData.itemTargets?.[a.id] ?? Math.round(100/assetsInSector.length)), 0);
-                    const rawTarget = appData.itemTargets?.[itemId] ?? Math.round(100/assetsInSector.length);
+                    const totalWeight = assetsInSector.reduce((sum, a) => sum + (itemTargets?.[a.id] ?? Math.round(100/assetsInSector.length)), 0);
+                    const rawTarget = itemTargets?.[itemId] ?? Math.round(100/assetsInSector.length);
                     target = totalWeight === 0 ? 0 : (rawTarget / totalWeight) * 100;
                 } else {
                     target = rebalancingTargets[key] ?? (100 / Object.keys(sectorInfo).length);
@@ -5284,7 +5287,10 @@
             };
 
             const renderPhasePanel = () => {
-                const phasesList = appData?.phases || [];
+                const phasesList = [
+                    { id: 'root', name: '기본 페이즈 (초기 상태)', startMonth: 0 },
+                    ...(appData?.phases || [])
+                ];
                 
                 return (
                 <div className="space-y-6 mb-8">
@@ -5310,16 +5316,32 @@
                                 const month = Number(prompt("몇 개월 후부터 적용할 새로운 계획(페이즈)인가요?\n(예: 36 입력 시 3년 뒤부터 이 설정 적용)", "36"));
                                 if (isNaN(month) || month <= 0) return;
                                 
-                                const prevPhase = [...phasesList].reverse().find(p => p.startMonth <= month) || phasesList[0] || window.publicDefaultData.phases[0];
+                                const allPhases = [{ startMonth: 0, settings: appData }, ...(appData?.phases || [])];
+                                const prevPhase = [...allPhases].reverse().find(p => p.startMonth <= month) || allPhases[0];
+                                
+                                // 설정값만 안전하게 추출하여 복사
+                                const newSettings = {
+                                    monthlySalary: prevPhase.settings.monthlySalary,
+                                    salaryDay: prevPhase.settings.salaryDay,
+                                    assets: prevPhase.settings.assets,
+                                    monthlyExpenses: prevPhase.settings.monthlyExpenses,
+                                    mainCashFlowAccount: prevPhase.settings.mainCashFlowAccount,
+                                    residualAccount: prevPhase.settings.residualAccount,
+                                    rebalanceMonths: prevPhase.settings.rebalanceMonths,
+                                    rebalancingTargets: prevPhase.settings.rebalancingTargets,
+                                    itemTargets: prevPhase.settings.itemTargets,
+                                    rebalancingGlobal: prevPhase.settings.rebalancingGlobal
+                                };
+
                                 const newPhase = {
                                     id: 'p_' + Date.now(),
                                     name: `${month}개월 후 계획`,
                                     startMonth: month,
-                                    settings: JSON.parse(JSON.stringify(prevPhase.settings))
+                                    settings: JSON.parse(JSON.stringify(newSettings))
                                 };
                                 
                                 setAppData(prev => {
-                                    const newPhases = [...(prev?.phases || []), newPhase].sort((a, b) => a.startMonth - b.startMonth);
+                                    const newPhases = [...(prev.phases || []), newPhase].sort((a, b) => a.startMonth - b.startMonth);
                                     return { ...prev, phases: newPhases };
                                 });
                                 addToast(`${month}개월 후 페이즈가 정상적으로 추가되었습니다.`, 'success');
@@ -5361,7 +5383,7 @@
                                                 <button onClick={() => {
                                                     if (confirm('이 페이즈를 삭제하시겠습니까? (삭제 시 이전 페이즈 설정이 계속 적용됩니다)')) {
                                                         setAppData(prev => {
-                                                            const newPhases = (prev?.phases || []).filter((_, i) => i !== idx);
+                                                            const newPhases = (prev.phases || []).filter((_, i) => i !== (idx - 1));
                                                             return { ...prev, phases: newPhases };
                                                         });
                                                         if (editingPhaseIndex === idx) setEditingPhaseIndex(0);
@@ -5885,7 +5907,7 @@
                         <div className="bg-indigo-600 text-white px-4 py-2.5 text-sm font-bold flex justify-between items-center z-[70] shadow-md sticky top-0">
                             <div className="flex items-center gap-2">
                                 <span className="animate-pulse">⏳</span>
-                                <span>[{appData.phases[editingPhaseIndex].startMonth}개월 후] '{appData.phases[editingPhaseIndex].name}' 편집 중</span>
+                                <span>[{appData.phases[editingPhaseIndex - 1].startMonth}개월 후] '{appData.phases[editingPhaseIndex - 1].name}' 편집 중</span>
                             </div>
                             <button onClick={() => setEditingPhaseIndex(0)} className="bg-white text-indigo-600 px-3 py-1 rounded-md shadow text-xs hover:bg-gray-100 active:scale-95 transition-transform">
                                 편집 종료 (현재로 복귀)
@@ -6268,7 +6290,7 @@
                                                 {editingPhaseIndex > 0 && (
                                                     <div className="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 p-4 rounded-xl text-xs mb-6 shadow-sm flex items-start gap-3">
                                                         <span className="text-xl leading-none">💡</span>
-                                                        <span className="leading-relaxed"><b>미래 페이즈 안내:</b> 현재 편집 중인 자산 목록은 {appData.phases[editingPhaseIndex].startMonth}개월 후부터 적용됩니다. 기존부터 계속 유지된 계좌의 '현재 잔액'은 시뮬레이션 엔진이 누적 계산한 결과가 우선 반영되며, 이 시점에 새롭게 추가한 자산이나 대출만 입력하신 잔액으로 시작됩니다.</span>
+                                                        <span className="leading-relaxed"><b>미래 페이즈 안내:</b> 현재 편집 중인 자산 목록은 {appData.phases[editingPhaseIndex - 1].startMonth}개월 후부터 적용됩니다. 기존부터 계속 유지된 계좌의 '현재 잔액'은 시뮬레이션 엔진이 누적 계산한 결과가 우선 반영되며, 이 시점에 새롭게 추가한 자산이나 대출만 입력하신 잔액으로 시작됩니다.</span>
                                                     </div>
                                                 )}
                                                 {renderAssetsPanel()}
@@ -6494,9 +6516,9 @@
                     {window.AIAnalysisModal && <window.AIAnalysisModal 
                         isOpen={isAIModalOpen} 
                         onClose={() => setIsAIModalOpen(false)} 
-                        appData={{
-                            ...appData,
-                            ...(appData?.phases?.[editingPhaseIndex]?.settings || appData?.phases?.[0]?.settings || {})
+                        appData={{ // Pass the flattened settings of the current phase
+                            ...(appData || {}),
+                            ...(editingPhaseIndex === 0 ? {} : (appData?.phases?.[editingPhaseIndex - 1]?.settings || {}))
                         }} 
                         calculation={calculation} 
                         assetHistory={assetHistory}
@@ -6523,9 +6545,9 @@
                     {window.DiffModal && <window.DiffModal 
                         isOpen={isDiffModalOpen}
                         onClose={() => setIsDiffModalOpen(false)}
-                        currentData={{
+                        currentData={{ // Pass the flattened settings of the current phase
                             ...diffData?.currentData,
-                            ...(diffData?.currentData?.phases?.[editingPhaseIndex]?.settings || diffData?.currentData?.phases?.[0]?.settings || {})
+                            ...(editingPhaseIndex === 0 ? {} : (diffData?.currentData?.phases?.[editingPhaseIndex - 1]?.settings || {})),
                         }}
                         proposalData={diffData?.proposalData}
                         onConfirm={handleConfirmDiff}

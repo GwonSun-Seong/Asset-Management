@@ -94,15 +94,30 @@ const getSectorTotals = (assetData, total) => {
 
 // 월별 투영 계산 함수
 const calculateMonthlyProjection = (initialData, monthsToProject) => {
-    // [수정] 페이즈 호환성 마이그레이션 적용 및 깊은 복사
-    const data = migrateToPhases(typeof structuredClone === 'function' ? structuredClone(initialData) : JSON.parse(JSON.stringify(initialData)));
-    if (!data || !data.phases) return { projections: [], warnings: [] };
+    const data = typeof structuredClone === 'function' ? structuredClone(initialData) : JSON.parse(JSON.stringify(initialData));
+    if (!data) return { projections: [], warnings: [] };
 
     const warnings = [];
     const monthlyProjections = [];
 
-    // [수정] 페이즈 타임라인 정렬
-    const phases = [...data.phases].sort((a, b) => a.startMonth - b.startMonth);
+    // [수정] 강제 마이그레이션 없이 루트 데이터를 기본(0개월) 페이즈로 동적 구성
+    const rootSettings = {
+        monthlySalary: data.monthlySalary || 0,
+        salaryDay: data.salaryDay || 25,
+        monthlyExpenses: data.monthlyExpenses || [],
+        mainCashFlowAccount: data.mainCashFlowAccount || '생활비통장',
+        residualAccount: data.residualAccount || '비상금통장',
+        rebalanceMonths: data.rebalanceMonths || 12,
+        rebalancingTargets: data.rebalancingTargets || {},
+        itemTargets: data.itemTargets || {},
+        rebalancingGlobal: data.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } },
+        assets: data.assets || {}
+    };
+
+    const phases = [
+        { id: 'root', startMonth: 0, name: '기본 계획', settings: rootSettings },
+        ...(Array.isArray(data.phases) ? data.phases : [])
+    ].sort((a, b) => a.startMonth - b.startMonth);
 
     const {
         baseDate
@@ -570,37 +585,6 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     return { projections: monthlyProjections, warnings };
 };
 
-// [추가] 하위 호환성을 위한 데이터 마이그레이션 (Phases 구조로 변환)
-const migrateToPhases = (appData) => {
-    if (!appData) return appData;
-    if (appData.phases && Array.isArray(appData.phases) && appData.phases.length > 0) {
-        return appData;
-    }
-
-    const legacySettings = {
-        monthlySalary: appData.monthlySalary || 0,
-        salaryDay: appData.salaryDay || 25,
-        assets: appData.assets || { deposit: [], savings: [], investment: [], pension: [], realestate: [], car: [], loan: [], misc: [] },
-        monthlyExpenses: appData.monthlyExpenses || [],
-        rebalancingTargets: appData.rebalancingTargets || {},
-        itemTargets: appData.itemTargets || {},
-        mainCashFlowAccount: appData.mainCashFlowAccount || '생활비통장',
-        residualAccount: appData.residualAccount || '비상금통장',
-        rebalanceMonths: appData.rebalanceMonths || 12,
-        rebalancingGlobal: appData.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } }
-    };
-
-    return {
-        ...appData,
-        phases: [{
-            id: 'p0',
-            name: '기본 페이즈 (초기 상태)',
-            startMonth: 0,
-            settings: legacySettings
-        }]
-    };
-};
-
 // [추가] 재시도 로직을 포함한 타임아웃 헬퍼 함수
 const withRetry = async (fn, maxAttempts = 3, timeoutMs = 12000, delayMs = 2000, onRetry) => {
     let lastError;
@@ -784,23 +768,21 @@ const validateSupabaseConfig = () => {
 };
 
 const generateCSV = (appData) => {
-    const data = migrateToPhases(appData);
-    const settings = data.phases[0].settings; // Export initial phase primarily
-    const assets = settings.assets || {};
-    const expenses = settings.monthlyExpenses || [];
-    const incomeEvents = data.incomeEvents || [];
-    const expenseEvents = data.expenseEvents || [];
-    const timelineEvents = data.timelineEvents || [];
+    const assets = appData.assets || {};
+    const expenses = appData.monthlyExpenses || [];
+    const incomeEvents = appData.incomeEvents || [];
+    const expenseEvents = appData.expenseEvents || [];
+    const timelineEvents = appData.timelineEvents || [];
 
     let csv = '\ufeff'; // BOM for Excel
 
     // Section 1: Basic Info
     csv += '## 기본 정보\n';
     csv += '항목,값\n';
-    csv += `월 고정 수입,${settings.monthlySalary || 0}\n`;
-    csv += `고정 수입일,${settings.salaryDay || 25}\n`;
-    csv += `기준일,${data.baseDate || ''}\n`;
-    csv += `목표 금액,${data.targetAmount || 0}\n`;
+    csv += `월 고정 수입,${appData.monthlySalary || 0}\n`;
+    csv += `고정 수입일,${appData.salaryDay || 25}\n`;
+    csv += `기준일,${appData.baseDate || ''}\n`;
+    csv += `목표 금액,${appData.targetAmount || 0}\n`;
     csv += '\n';
 
     // Section 2: Assets
@@ -858,7 +840,7 @@ const generateCSV = (appData) => {
     // Section 5: Rebalancing Targets (Sector)
     csv += '## 리밸런싱 목표(섹터)\n';
     csv += '섹터,비중\n';
-    const rebTargets = settings.rebalancingTargets || {};
+    const rebTargets = appData.rebalancingTargets || {};
     Object.keys(rebTargets).forEach(k => {
         csv += `${k},${rebTargets[k]}\n`;
     });
@@ -867,7 +849,7 @@ const generateCSV = (appData) => {
     // Section 6: Rebalancing Targets (Item)
     csv += '## 리밸런싱 목표(항목)\n';
     csv += '항목ID,비중\n';
-    const itemTargets = settings.itemTargets || {};
+    const itemTargets = appData.itemTargets || {};
     Object.keys(itemTargets).forEach(k => {
         csv += `${k},${itemTargets[k]}\n`;
     });
@@ -876,7 +858,7 @@ const generateCSV = (appData) => {
     // Section 7: Memo
     csv += '## 메모\n';
     csv += 'ID,제목,내용,고정됨,생성일,수정일\n';
-    const memoData = data.memo;
+    const memoData = appData.memo;
     const memos = Array.isArray(memoData) 
         ? memoData 
         : (typeof memoData === 'string' && memoData.trim() ? [{ id: 'default', title: '기본 메모', content: memoData, isPinned: false, createdAt: '', updatedAt: '' }] : []);
@@ -1027,7 +1009,7 @@ const parseCSV = (text) => {
         throw new Error('유효한 CSV 형식이 아닙니다. (섹션 헤더를 찾을 수 없습니다)');
     }
 
-    return migrateToPhases(result);
+    return result;
 };
 
 // [추가] 데이터 압축 (Base64)
@@ -1354,7 +1336,6 @@ window.formatNumber = formatNumber;
 window.formatPercent = formatPercent;
 window.calculateGrossTotal = calculateGrossTotal;
 window.getSectorTotals = getSectorTotals;
-window.migrateToPhases = migrateToPhases;
 window.calculateMonthlyProjection = calculateMonthlyProjection;
 window.calculateLoanPayment = calculateLoanPayment;
 window.getMonthDiff = getMonthDiff;

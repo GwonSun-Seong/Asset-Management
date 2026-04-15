@@ -61,6 +61,38 @@ const publicDefaultData = {
     goalMode: 'period', // 'period' 또는 'target'
     displayMode: 'amount', // displayMode 기본값
     darkMode: false, // 다크 모드 상태
+    rebalancingMode: 'simple', // 'simple' | 'advanced'
+    assets: {
+        deposit: [
+            { id: 'def-dep-1', name: '비상금통장', amount: 100, rate: 2.0, feeRate: 0, monthlyContrib: 5, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+            { id: 'def-dep-2', name: '생활비통장', amount: 450, rate: 2.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+        ],
+        savings: [
+            { id: 'def-sav-1', name: '청년도약계좌', amount: 400, rate: 6.0, feeRate: 0, monthlyContrib: 30, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+            { id: 'def-sav-2', name: '청약저축', amount: 100, rate: 6.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+        ],
+        investment: [
+            { id: 'def-inv-1', name: '직접투자계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+            { id: 'def-inv-2', name: 'ISA계좌', amount: 250, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+            { id: 'def-inv-3', name: '금투자', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 5, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+            { id: 'def-inv-4', name: '비트코인', amount: 50, rate: 12.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+        ],
+        pension: [
+            { id: 'def-pen-1', name: '연금저축', amount: 100, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+        ],
+        realestate: [
+            { id: 'def-re-1', name: '아파트', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+        ],
+        car: [],
+        loan: [{ id: 'def-loan-1', name: '신용대출', amount: 500, rate: 3.0, monthlyContrib: 40, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, repaymentMethod: '원리금균등', repaymentAccount: '생활비통장', maturityMonth: 10, loanStartDate: getLocalToday().slice(0,7), memo: '' }],
+        misc: [{ id: 'def-misc-1', name: '기타자산', amount: 0, rate: 2.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }]
+    },
+    monthlyExpenses: [
+        { name: '생활비', amount: 80, day: 15 },
+        { name: '월세', amount: 40, day: 25 }
+    ],
+    rebalancingTargets: { deposit: 10, savings: 15, investment: 55, pension: 20, realestate: 0, car: 0, misc: 0 },
+    mainCashFlowAccount: '생활비통장',
     baseDate: getLocalToday(), // baseMonth -> baseDate (YYYY-MM-DD)
     autoUpdateBaseDate: false,
     memo: '', // 메모 기능
@@ -78,49 +110,6 @@ const publicDefaultData = {
         }
     ],
     incomeEvents: [],
-    // [추가] 페이즈 설정 (데이터 구조 리팩토링)
-    phases: [
-        {
-            id: 'p0',
-            name: '초기 계획',
-            startMonth: 0,
-            settings: {
-                monthlySalary: 250,
-                salaryDay: 25,
-                mainCashFlowAccount: '생활비통장',
-                residualAccount: '비상금통장',
-                rebalanceMonths: 12,
-                rebalancingGlobal: { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } },
-                rebalancingTargets: { deposit: 10, savings: 15, investment: 55, pension: 20, realestate: 0, car: 0, misc: 0 },
-                itemTargets: {},
-                monthlyExpenses: [
-                    { name: '생활비', amount: 80, day: 15 },
-                    { name: '월세', amount: 40, day: 25 }
-                ],
-                assets: {
-                    deposit: [
-                        { id: 'def-dep-1', name: '비상금통장', amount: 100, rate: 2.0, feeRate: 0, monthlyContrib: 5, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-                        { id: 'def-dep-2', name: '생활비통장', amount: 450, rate: 2.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
-                    ],
-                    savings: [
-                        { id: 'def-sav-1', name: '청년도약계좌', amount: 400, rate: 6.0, feeRate: 0, monthlyContrib: 30, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-                        { id: 'def-sav-2', name: '청약저축', amount: 100, rate: 6.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
-                    ],
-                    investment: [
-                        { id: 'def-inv-1', name: '직접투자계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-                        { id: 'def-inv-2', name: 'ISA계좌', amount: 250, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-                        { id: 'def-inv-3', name: '금투자', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 5, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-                        { id: 'def-inv-4', name: '비트코인', amount: 50, rate: 12.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
-                    ],
-                    pension: [{ id: 'def-pen-1', name: '연금저축', amount: 100, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
-                    realestate: [{ id: 'def-re-1', name: '아파트', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
-                    car: [],
-                    loan: [{ id: 'def-loan-1', name: '신용대출', amount: 500, rate: 3.0, monthlyContrib: 40, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, repaymentMethod: '원리금균등', repaymentAccount: '생활비통장', maturityMonth: 10, loanStartDate: getLocalToday().slice(0,7), memo: '' }],
-                    misc: [{ id: 'def-misc-1', name: '기타자산', amount: 0, rate: 2.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }]
-                }
-            }
-        }
-    ],
     // 기본 시나리오 3종 세트
     scenarios: [
         {
@@ -129,26 +118,19 @@ const publicDefaultData = {
             createdAt: getPastDate(50), // 히스토리 시작 시점(50일 전)과 동기화
             data: {
                 baseDate: getPastDate(50), // 시뮬레이션 기준일도 과거로 설정
-                phases: [{
-                    id: 'sc1_p0',
-                    name: '초기 계획',
-                    startMonth: 0,
-                    settings: {
-                        monthlySalary: 450, // 히스토리를 이기기 위해 고소득/고투자 설정
-                        salaryDay: 25,
-                        monthlyExpenses: [{ name: '생활비', amount: 100, day: 15 }],
-                        rebalancingTargets: { deposit: 5, savings: 0, investment: 95, pension: 0, realestate: 0, car: 0, misc: 0 },
-                        assets: {
-                            deposit: [{ id: 'sc1_d1', name: 'CMA', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
-                            savings: [],
-                            investment: [
-                                { id: 'sc1_i1', name: '나스닥 3배 레버리지', amount: 800, rate: 25.0, feeRate: 0, monthlyContrib: 250, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-                                { id: 'sc1_i2', name: '비트코인', amount: 400, rate: 40.0, feeRate: 0, monthlyContrib: 100, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
-                            ],
-                            pension: [], realestate: [], car: [], loan: [], misc: []
-                        }
-                    }
-                }]
+                monthlySalary: 450, // 히스토리를 이기기 위해 고소득/고투자 설정
+                salaryDay: 25,
+                monthlyExpenses: [{ name: '생활비', amount: 100, day: 15 }],
+                rebalancingTargets: { deposit: 5, savings: 0, investment: 95, pension: 0, realestate: 0, car: 0, misc: 0 },
+                assets: {
+                    deposit: [{ id: 'sc1_d1', name: 'CMA', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
+                    savings: [],
+                    investment: [
+                        { id: 'sc1_i1', name: '나스닥 3배 레버리지', amount: 800, rate: 25.0, feeRate: 0, monthlyContrib: 250, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+                        { id: 'sc1_i2', name: '비트코인', amount: 400, rate: 40.0, feeRate: 0, monthlyContrib: 100, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+                    ],
+                    pension: [], realestate: [], car: [], loan: [], misc: []
+                }
             }
         },
         {
@@ -157,25 +139,18 @@ const publicDefaultData = {
             createdAt: getPastDate(50), // 히스토리 시작 시점(50일 전)과 동기화
             data: {
                 baseDate: getPastDate(50), // 시뮬레이션 기준일도 과거로 설정
-                phases: [{
-                    id: 'sc2_p0',
-                    name: '초기 계획',
-                    startMonth: 0,
-                    settings: {
-                        monthlySalary: 300,
-                        salaryDay: 25,
-                        monthlyExpenses: [{ name: '생활비', amount: 100, day: 15 }],
-                        rebalancingTargets: { deposit: 20, savings: 80, investment: 0, pension: 0, realestate: 0, car: 0, misc: 0 },
-                        assets: {
-                            deposit: [{ id: 'sc2_d1', name: '파킹통장', amount: 250, rate: 3.0, feeRate: 0, monthlyContrib: 50, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
-                            savings: [
-                                { id: 'sc2_s1', name: '정기예금', amount: 1000, rate: 4.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-                                { id: 'sc2_s2', name: '적금', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 150, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
-                            ],
-                            investment: [], pension: [], realestate: [], car: [], loan: [], misc: []
-                        }
-                    }
-                }]
+                monthlySalary: 300,
+                salaryDay: 25,
+                monthlyExpenses: [{ name: '생활비', amount: 100, day: 15 }],
+                rebalancingTargets: { deposit: 20, savings: 80, investment: 0, pension: 0, realestate: 0, car: 0, misc: 0 },
+                assets: {
+                    deposit: [{ id: 'sc2_d1', name: '파킹통장', amount: 250, rate: 3.0, feeRate: 0, monthlyContrib: 50, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
+                    savings: [
+                        { id: 'sc2_s1', name: '정기예금', amount: 1000, rate: 4.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
+                        { id: 'sc2_s2', name: '적금', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 150, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+                    ],
+                    investment: [], pension: [], realestate: [], car: [], loan: [], misc: []
+                }
             }
         },
         {
@@ -184,21 +159,14 @@ const publicDefaultData = {
             createdAt: getPastDate(50), // 히스토리 시작 시점(50일 전)과 동기화
             data: {
                 baseDate: getPastDate(50), // 시뮬레이션 기준일도 과거로 설정
-                phases: [{
-                    id: 'sc3_p0',
-                    name: '초기 계획',
-                    startMonth: 0,
-                    settings: {
-                        monthlySalary: 200, // 저소득 설정
-                        salaryDay: 25,
-                        monthlyExpenses: [{ name: '최소생계비', amount: 150, day: 15 }], // 고비용 설정
-                        rebalancingTargets: { deposit: 100, savings: 0, investment: 0, pension: 0, realestate: 0, car: 0, misc: 0 },
-                        assets: {
-                            deposit: [{ id: 'sc3_d1', name: '비상금', amount: 1250, rate: 2.0, feeRate: 0, monthlyContrib: 50, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
-                            savings: [], investment: [], pension: [], realestate: [], car: [], loan: [], misc: []
-                        }
-                    }
-                }]
+                monthlySalary: 200, // 저소득 설정
+                salaryDay: 25,
+                monthlyExpenses: [{ name: '최소생계비', amount: 150, day: 15 }], // 고비용 설정
+                rebalancingTargets: { deposit: 100, savings: 0, investment: 0, pension: 0, realestate: 0, car: 0, misc: 0 },
+                assets: {
+                    deposit: [{ id: 'sc3_d1', name: '비상금', amount: 1250, rate: 2.0, feeRate: 0, monthlyContrib: 50, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }],
+                    savings: [], investment: [], pension: [], realestate: [], car: [], loan: [], misc: []
+                }
             }
         }
     ]
