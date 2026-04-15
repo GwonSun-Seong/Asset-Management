@@ -94,58 +94,32 @@ const getSectorTotals = (assetData, total) => {
 
 // 월별 투영 계산 함수
 const calculateMonthlyProjection = (initialData, monthsToProject) => {
-    if (!initialData) return { projections: [], warnings: [] };
+    // [수정] 페이즈 호환성 마이그레이션 적용 및 깊은 복사
+    const data = migrateToPhases(typeof structuredClone === 'function' ? structuredClone(initialData) : JSON.parse(JSON.stringify(initialData)));
+    if (!data || !data.phases) return { projections: [], warnings: [] };
 
-    // [최적화] structuredClone을 사용하여 더 빠른 깊은 복사 수행 (지원되지 않는 환경 대비 fallback 유지)
-    const data = typeof structuredClone === 'function' ? structuredClone(initialData) : JSON.parse(JSON.stringify(initialData));
     const warnings = [];
     const monthlyProjections = [];
 
+    // [수정] 페이즈 타임라인 정렬
+    const phases = [...data.phases].sort((a, b) => a.startMonth - b.startMonth);
+
     const {
-        monthlySalary = 0, assets = {}, monthlyExpenses = [],
-        mainCashFlowAccount, baseDate, // [변경] baseMonth -> baseDate
-        salaryDay = 25, // [기본값 변경]
+        baseDate
     } = data;
 
-    // [개선] 시뮬레이션 엔진 내부에서도 배열 무결성 보장
-    const safeMonthlyExpenses = Array.isArray(monthlyExpenses) ? monthlyExpenses : [];
     const safeIncomeEvents = Array.isArray(data.incomeEvents) ? data.incomeEvents : [];
     const safeExpenseEvents = Array.isArray(data.expenseEvents) ? data.expenseEvents : [];
     const safeTimelineEvents = Array.isArray(data.timelineEvents) ? data.timelineEvents : [];
 
-    // 월 가용 현금 계산 (월급 - 고정 지출)
-    // [수정] 월별 지출은 시뮬레이션 루프 내에서 일자별로 판단하므로 여기서는 단순 합계만 계산하지 않음
-    // const totalMonthlyExpense = safeMonthlyExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-    // const monthlyAvailableCash = monthlySalary - totalMonthlyExpense;
-    // -> 루프 내부에서 계산
-
+    let currentPhaseId = null;
     let currentAssets = {};
-    Object.keys(assets).forEach(sector => {
-        if (Array.isArray(assets[sector])) {
-            currentAssets[sector] = assets[sector].map(asset => {
-                const newAsset = { ...asset, _sector: sector }; // [수정] 로직 내에서 섹터 구분을 위해 태그 추가
-                // [호환성] 기존 데이터의 추가납입액(extraContrib)이 있다면 월납입액으로 통합
-                if (newAsset.extraContrib > 0) {
-                    newAsset.monthlyContrib = (newAsset.monthlyContrib || 0) + newAsset.extraContrib;
-                    delete newAsset.extraContrib;
-                }
-                // [호환성] 납입 출처가 없으면 기본값 설정
-                if (!newAsset.monthlyContributionFrom) {
-                    newAsset.monthlyContributionFrom = MONTHLY_INCOME_SOURCE;
-                }
-                return newAsset;
-            });
-        } else {
-            currentAssets[sector] = [];
-        }
-    });
-
-    // [최적화] 루프 진입 전 필요한 계좌 참조 및 이벤트 인덱스 미리 계산
-    const allAccountsFlat = Object.values(currentAssets).flat();
-    const cashFlowAccount = allAccountsFlat.find(d => d.name === mainCashFlowAccount);
+    let monthlySalary = 0;
+    let salaryDay = 25;
+    let safeMonthlyExpenses = [];
+    let mainCashFlowAccount = '';
+    let allAccountsFlat = [];
     
-    // [수정] 날짜 기반 인덱스 계산
-    // baseDate가 없으면 오늘 날짜 기준
     let baseYear, baseMonthIdx, baseDay;
     if (baseDate && /^\d{4}-\d{2}-\d{2}$/.test(baseDate)) {
         const parts = baseDate.split('-').map(Number);
@@ -170,14 +144,6 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     const incomeEventsWithIndices = precalculateEventIndices(safeIncomeEvents);
     const expenseEventsWithIndices = precalculateEventIndices(safeExpenseEvents);
 
-    // 대출 상환 계좌 미리 매핑
-    if (currentAssets.loan) {
-        currentAssets.loan.forEach(loan => {
-            loan._repaymentAccountRef = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
-        });
-    }
-
-    // [최적화] 루프 외부로 이동하여 불필요한 함수 재선언 방지
     const _internalCalculateTotal = (assetData) => {
         let sum = 0;
         Object.keys(assetData).forEach(sector => {
@@ -188,6 +154,64 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     };
 
     for (let month = 0; month <= monthsToProject; month++) {
+        // [추가] 페이즈 스위칭 (실시간 환경 변화 적용)
+        const activePhase = phases.slice().reverse().find(p => p.startMonth <= month) || phases[0];
+        
+        if (activePhase && activePhase.id !== currentPhaseId) {
+            const newSettings = activePhase.settings;
+            monthlySalary = newSettings.monthlySalary || 0;
+            salaryDay = newSettings.salaryDay || 25;
+            safeMonthlyExpenses = newSettings.monthlyExpenses || [];
+            mainCashFlowAccount = newSettings.mainCashFlowAccount;
+            
+            const nextAssets = {};
+            let liquidatedAmount = 0;
+            
+            Object.keys(newSettings.assets || {}).forEach(sector => {
+                nextAssets[sector] = newSettings.assets[sector].map(newAsset => {
+                    const existingAsset = currentAssets[sector]?.find(a => String(a.id) === String(newAsset.id));
+                    return {
+                        ...newAsset,
+                        _sector: sector,
+                        // 잔액을 이어받거나, 미래 시점에서 새로 추가된 자산이면 설정된 잔액을 시작점으로 함
+                        amount: existingAsset ? existingAsset.amount : (newAsset.amount || 0),
+                        monthlyContributionFrom: newAsset.monthlyContributionFrom || MONTHLY_INCOME_SOURCE,
+                        monthlyContrib: (newAsset.monthlyContrib || 0) + (newAsset.extraContrib || 0)
+                    };
+                });
+            });
+            
+            // 이전 페이즈에 존재했다가 현재 페이즈에서 삭제된 자산/대출 정산
+            Object.keys(currentAssets).forEach(sector => {
+                currentAssets[sector].forEach(oldAsset => {
+                    const stillExists = nextAssets[sector]?.some(a => String(a.id) === String(oldAsset.id));
+                    if (!stillExists) {
+                        if (sector === 'loan') liquidatedAmount -= oldAsset.amount;
+                        else liquidatedAmount += oldAsset.amount;
+                    }
+                });
+            });
+            
+            currentAssets = nextAssets;
+            allAccountsFlat = Object.values(currentAssets).flat();
+            
+            if (liquidatedAmount !== 0) {
+                const mainAcc = allAccountsFlat.find(a => a.name === mainCashFlowAccount);
+                if (mainAcc) mainAcc.amount += liquidatedAmount;
+                warnings.push({ month, type: 'phase', message: `[${activePhase.name} 전환] 제외된 자산/부채 정산금 ${liquidatedAmount.toFixed(1)}만원이 주 계좌로 흡수되었습니다.` });
+            }
+            
+            if (currentAssets.loan) {
+                currentAssets.loan.forEach(loan => {
+                    loan._repaymentAccountRef = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
+                });
+            }
+            
+            currentPhaseId = activePhase.id;
+        }
+        
+        const cashFlowAccount = allAccountsFlat.find(d => d.name === mainCashFlowAccount);
+
         // 현재 시뮬레이션 달의 정보 계산
         // month 0: 초기 상태 (baseDate 시점)
         // month 1: baseDate가 속한 달의 말일 (첫 달의 잔여 기간 시뮬레이션)
@@ -546,57 +570,35 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     return { projections: monthlyProjections, warnings };
 };
 
-// [추가] 타임라인 페이즈 기반 시뮬레이션 총괄 함수
-const calculatePhaseProjection = (appData, totalMonthsToProject) => {
-    if (!appData || !appData.phases) {
-        // 구버전 데이터 호환: phases가 없으면 단일 페이즈로 간주하고 기존 함수 호출
-        return calculateMonthlyProjection(appData, totalMonthsToProject);
+// [추가] 하위 호환성을 위한 데이터 마이그레이션 (Phases 구조로 변환)
+const migrateToPhases = (appData) => {
+    if (!appData) return appData;
+    if (appData.phases && Array.isArray(appData.phases) && appData.phases.length > 0) {
+        return appData;
     }
 
-    let finalProjections = [];
-    let finalWarnings = [];
-    let lastPhaseEndState = null; // 이전 페이즈의 마지막 자산 상태
+    const legacySettings = {
+        monthlySalary: appData.monthlySalary || 0,
+        salaryDay: appData.salaryDay || 25,
+        assets: appData.assets || { deposit: [], savings: [], investment: [], pension: [], realestate: [], car: [], loan: [], misc: [] },
+        monthlyExpenses: appData.monthlyExpenses || [],
+        rebalancingTargets: appData.rebalancingTargets || {},
+        itemTargets: appData.itemTargets || {},
+        mainCashFlowAccount: appData.mainCashFlowAccount || '생활비통장',
+        residualAccount: appData.residualAccount || '비상금통장',
+        rebalanceMonths: appData.rebalanceMonths || 12,
+        rebalancingGlobal: appData.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } }
+    };
 
-    const sortedPhases = [...appData.phases].sort((a, b) => a.startMonth - b.startMonth);
-
-    for (let i = 0; i < sortedPhases.length; i++) {
-        const phase = sortedPhases[i];
-        const nextPhase = sortedPhases[i + 1];
-
-        const phaseStartMonth = phase.startMonth;
-        // 다음 페이즈가 없으면 전체 시뮬레이션 기간까지, 있으면 다음 페이즈 시작 전까지
-        const phaseEndMonth = nextPhase ? nextPhase.startMonth - 1 : totalMonthsToProject;
-
-        if (phaseStartMonth > totalMonthsToProject) continue;
-
-        let phaseInitialData = { ...phase.settings };
-        if (lastPhaseEndState) {
-            // 이전 페이즈의 최종 자산 상태를 현재 페이즈의 시작 자산으로 설정
-            phaseInitialData.assets = lastPhaseEndState.assets;
-            // 시뮬레이션 기준일도 페이즈 시작 시점으로 조정
-            const newBaseDate = new Date(sortedPhases[0].settings.baseDate);
-            newBaseDate.setMonth(newBaseDate.getMonth() + phaseStartMonth);
-            phaseInitialData.baseDate = `${newBaseDate.getFullYear()}-${String(newBaseDate.getMonth() + 1).padStart(2, '0')}-${String(newBaseDate.getDate()).padStart(2, '0')}`;
-        }
-
-        const monthsForThisPhase = Math.min(phaseEndMonth, totalMonthsToProject) - phaseStartMonth;
-        if (monthsForThisPhase < 0) continue;
-
-        const result = calculateMonthlyProjection(phaseInitialData, monthsForThisPhase);
-
-        // 월 인덱스를 전체 타임라인 기준으로 조정
-        const adjustedProjections = result.projections.map(p => ({ ...p, month: p.month + phaseStartMonth }));
-        const adjustedWarnings = result.warnings.map(w => ({ ...w, month: w.month + phaseStartMonth }));
-
-        // 첫 페이즈가 아니면 중복되는 시작점(month 0)을 제거하고 병합
-        finalProjections.push(...(lastPhaseEndState ? adjustedProjections.slice(1) : adjustedProjections));
-        finalWarnings.push(...adjustedWarnings);
-
-        if (result.projections.length > 0) {
-            lastPhaseEndState = result.projections[result.projections.length - 1];
-        }
-    }
-    return { projections: finalProjections, warnings: finalWarnings };
+    return {
+        ...appData,
+        phases: [{
+            id: 'p0',
+            name: '기본 페이즈 (초기 상태)',
+            startMonth: 0,
+            settings: legacySettings
+        }]
+    };
 };
 
 // [추가] 재시도 로직을 포함한 타임아웃 헬퍼 함수
@@ -782,21 +784,23 @@ const validateSupabaseConfig = () => {
 };
 
 const generateCSV = (appData) => {
-    const assets = appData.assets || {};
-    const expenses = appData.monthlyExpenses || [];
-    const incomeEvents = appData.incomeEvents || [];
-    const expenseEvents = appData.expenseEvents || [];
-    const timelineEvents = appData.timelineEvents || [];
+    const data = migrateToPhases(appData);
+    const settings = data.phases[0].settings; // Export initial phase primarily
+    const assets = settings.assets || {};
+    const expenses = settings.monthlyExpenses || [];
+    const incomeEvents = data.incomeEvents || [];
+    const expenseEvents = data.expenseEvents || [];
+    const timelineEvents = data.timelineEvents || [];
 
     let csv = '\ufeff'; // BOM for Excel
 
     // Section 1: Basic Info
     csv += '## 기본 정보\n';
     csv += '항목,값\n';
-    csv += `월 고정 수입,${appData.monthlySalary || 0}\n`;
-    csv += `고정 수입일,${appData.salaryDay || 25}\n`;
-    csv += `기준일,${appData.baseDate || ''}\n`;
-    csv += `목표 금액,${appData.targetAmount || 0}\n`;
+    csv += `월 고정 수입,${settings.monthlySalary || 0}\n`;
+    csv += `고정 수입일,${settings.salaryDay || 25}\n`;
+    csv += `기준일,${data.baseDate || ''}\n`;
+    csv += `목표 금액,${data.targetAmount || 0}\n`;
     csv += '\n';
 
     // Section 2: Assets
@@ -854,7 +858,7 @@ const generateCSV = (appData) => {
     // Section 5: Rebalancing Targets (Sector)
     csv += '## 리밸런싱 목표(섹터)\n';
     csv += '섹터,비중\n';
-    const rebTargets = appData.rebalancingTargets || {};
+    const rebTargets = settings.rebalancingTargets || {};
     Object.keys(rebTargets).forEach(k => {
         csv += `${k},${rebTargets[k]}\n`;
     });
@@ -863,7 +867,7 @@ const generateCSV = (appData) => {
     // Section 6: Rebalancing Targets (Item)
     csv += '## 리밸런싱 목표(항목)\n';
     csv += '항목ID,비중\n';
-    const itemTargets = appData.itemTargets || {};
+    const itemTargets = settings.itemTargets || {};
     Object.keys(itemTargets).forEach(k => {
         csv += `${k},${itemTargets[k]}\n`;
     });
@@ -872,7 +876,7 @@ const generateCSV = (appData) => {
     // Section 7: Memo
     csv += '## 메모\n';
     csv += 'ID,제목,내용,고정됨,생성일,수정일\n';
-    const memoData = appData.memo;
+    const memoData = data.memo;
     const memos = Array.isArray(memoData) 
         ? memoData 
         : (typeof memoData === 'string' && memoData.trim() ? [{ id: 'default', title: '기본 메모', content: memoData, isPinned: false, createdAt: '', updatedAt: '' }] : []);
@@ -1023,7 +1027,7 @@ const parseCSV = (text) => {
         throw new Error('유효한 CSV 형식이 아닙니다. (섹션 헤더를 찾을 수 없습니다)');
     }
 
-    return result;
+    return migrateToPhases(result);
 };
 
 // [추가] 데이터 압축 (Base64)
@@ -1350,7 +1354,7 @@ window.formatNumber = formatNumber;
 window.formatPercent = formatPercent;
 window.calculateGrossTotal = calculateGrossTotal;
 window.getSectorTotals = getSectorTotals;
-window.calculatePhaseProjection = calculatePhaseProjection; // [추가]
+window.migrateToPhases = migrateToPhases;
 window.calculateMonthlyProjection = calculateMonthlyProjection;
 window.calculateLoanPayment = calculateLoanPayment;
 window.getMonthDiff = getMonthDiff;
