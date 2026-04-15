@@ -2504,17 +2504,18 @@
                 const { proposalData } = diffData;
                 const { rebalancingTargets, monthlyContrib } = proposalData;
 
-                // 새로운 데이터 생성
-                const newData = { ...appData };
+                const newPhases = [...(appData.phases || [])];
+                const targetPhase = newPhases[editingPhaseIndex] || newPhases[0] || window.publicDefaultData.phases[0];
+                if (!targetPhase) return;
+
+                let newSettings = { ...targetPhase.settings };
                 
-                // 1. 리밸런싱 타겟 적용
                 if (rebalancingTargets) {
-                    newData.rebalancingTargets = { ...newData.rebalancingTargets, ...rebalancingTargets };
+                    newSettings.rebalancingTargets = { ...newSettings.rebalancingTargets, ...rebalancingTargets };
                 }
 
-                // 2. 월 납입금 적용
                 if (monthlyContrib) {
-                    const newAssets = { ...newData.assets };
+                    const newAssets = { ...newSettings.assets };
                     Object.keys(newAssets).forEach(sector => {
                         newAssets[sector] = newAssets[sector].map(asset => {
                             if (monthlyContrib[asset.name] !== undefined) {
@@ -2523,8 +2524,11 @@
                             return asset;
                         });
                     });
-                    newData.assets = newAssets;
+                    newSettings.assets = newAssets;
                 }
+
+                newPhases[editingPhaseIndex] = { ...targetPhase, settings: newSettings };
+                const newData = { ...appData, phases: newPhases };
 
                 if (action === 'apply') {
                     setAppData(newData);
@@ -5279,7 +5283,10 @@
                 );
             };
 
-            const renderPhasePanel = () => (
+            const renderPhasePanel = () => {
+                const phasesList = appData?.phases || [];
+                
+                return (
                 <div className="space-y-6 mb-8">
                     {/* Summary Card */}
                     <div className="bg-gradient-to-r from-blue-600 to-indigo-700 dark:from-blue-900 dark:to-indigo-900 rounded-2xl shadow-lg p-6 text-white flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -5290,7 +5297,7 @@
                             <p className="text-blue-100 text-sm mt-1 leading-relaxed">N개월 후 특정 시점부터 변경되는 수입, 지출, 포트폴리오 비중을 자유롭게 설정하세요.</p>
                         </div>
                         <div className="text-right w-full sm:w-auto">
-                            <div className="text-3xl font-bold">{appData.phases?.length || 1}개</div>
+                            <div className="text-3xl font-bold">{phasesList.length || 1}개</div>
                             <div className="text-blue-100 text-sm">페이즈 운영 중</div>
                         </div>
                     </div>
@@ -5303,7 +5310,7 @@
                                 const month = Number(prompt("몇 개월 후부터 적용할 새로운 계획(페이즈)인가요?\n(예: 36 입력 시 3년 뒤부터 이 설정 적용)", "36"));
                                 if (isNaN(month) || month <= 0) return;
                                 
-                                const prevPhase = [...appData.phases].reverse().find(p => p.startMonth <= month) || appData.phases[0];
+                                const prevPhase = [...phasesList].reverse().find(p => p.startMonth <= month) || phasesList[0] || window.publicDefaultData.phases[0];
                                 const newPhase = {
                                     id: 'p_' + Date.now(),
                                     name: `${month}개월 후 계획`,
@@ -5312,7 +5319,7 @@
                                 };
                                 
                                 setAppData(prev => {
-                                    const newPhases = [...prev.phases, newPhase].sort((a, b) => a.startMonth - b.startMonth);
+                                    const newPhases = [...(prev?.phases || []), newPhase].sort((a, b) => a.startMonth - b.startMonth);
                                     return { ...prev, phases: newPhases };
                                 });
                                 addToast(`${month}개월 후 페이즈가 정상적으로 추가되었습니다.`, 'success');
@@ -5323,7 +5330,7 @@
                         </div>
                         
                         <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                            {appData.phases.map((phase, idx) => (
+                            {phasesList.map((phase, idx) => (
                                 <div key={phase.id} className={`p-4 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors ${editingPhaseIndex === idx ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}>
                                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                                         <div className="flex items-center gap-4">
@@ -5354,7 +5361,7 @@
                                                 <button onClick={() => {
                                                     if (confirm('이 페이즈를 삭제하시겠습니까? (삭제 시 이전 페이즈 설정이 계속 적용됩니다)')) {
                                                         setAppData(prev => {
-                                                            const newPhases = prev.phases.filter((_, i) => i !== idx);
+                                                            const newPhases = (prev?.phases || []).filter((_, i) => i !== idx);
                                                             return { ...prev, phases: newPhases };
                                                         });
                                                         if (editingPhaseIndex === idx) setEditingPhaseIndex(0);
@@ -5371,7 +5378,8 @@
                         </div>
                     </div>
                 </div>
-            );
+                );
+            };
 
             const renderEventsPanel = () => {
                 const totalIncome = incomeEvents.reduce((sum, e) => sum + Number(e.amount||0), 0);
@@ -6486,7 +6494,10 @@
                     {window.AIAnalysisModal && <window.AIAnalysisModal 
                         isOpen={isAIModalOpen} 
                         onClose={() => setIsAIModalOpen(false)} 
-                        appData={appData} 
+                        appData={{
+                            ...appData,
+                            ...(appData?.phases?.[editingPhaseIndex]?.settings || appData?.phases?.[0]?.settings || {})
+                        }} 
                         calculation={calculation} 
                         assetHistory={assetHistory}
                         onApplyProposal={handleApplyAIProposal}
@@ -6512,7 +6523,10 @@
                     {window.DiffModal && <window.DiffModal 
                         isOpen={isDiffModalOpen}
                         onClose={() => setIsDiffModalOpen(false)}
-                        currentData={diffData?.currentData}
+                        currentData={{
+                            ...diffData?.currentData,
+                            ...(diffData?.currentData?.phases?.[editingPhaseIndex]?.settings || diffData?.currentData?.phases?.[0]?.settings || {})
+                        }}
                         proposalData={diffData?.proposalData}
                         onConfirm={handleConfirmDiff}
                     />}
