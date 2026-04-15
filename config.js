@@ -70,7 +70,7 @@ window.navLabels = {
     rebalance: { title: "리밸런싱", icon: "⚠️" },
     assets: { title: "자산 상세입력", icon: "🏦" },
     expenses: { title: "지출 관리", icon: "💸" },
-    events: { title: "이벤트 관리", icon: "🎉" },
+    events: { title: "타임라인 & 이벤트", icon: "🎉" },
     'detail-analysis': { title: "상세 분석", icon: "🔍" },
     'capital-income': { title: "자본소득 분석", icon: "💹" },
     assumptions: { title: "가정 사항", icon: "💡" }
@@ -88,7 +88,7 @@ window.TEXTS = {
         rebalance: "리밸런싱 설정",
         assets: "자산 상세 입력",
         expenses: "월별 지출 관리",
-        events: "이벤트 관리",
+        events: "타임라인 & 이벤트",
         detailAnalysis: "상세 분석",
         capitalIncome: "자본소득 흐름 분석",
         assumptions: "계산 가정사항"

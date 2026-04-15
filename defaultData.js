@@ -53,35 +53,32 @@ const generateMockHistory = () => {
 };
 
 // 공개용 기본값 (제3자 공개 시 사용)
-const publicDefaultData = {
+const defaultPhaseSettings = {
     projectionMonths: 12,
     monthlySalary: 250,
     salaryDay: 25,
     targetAmount: 10000, // 목표 자산 금액 (만원)
     goalMode: 'period', // 'period' 또는 'target'
-    displayMode: 'amount', // displayMode 기본값
-    darkMode: false, // 다크 모드 상태
-    rebalancingMode: 'simple', // 'simple' | 'advanced'
     assets: {
         deposit: [
-            { id: 'def-dep-1', name: '비상금통장', amount: 100, rate: 2.0, feeRate: 0, monthlyContrib: 5, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-            { id: 'def-dep-2', name: '생활비통장', amount: 450, rate: 2.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+            { id: 'def-dep-1', name: '비상금통장', amount: 100, rate: 2.0, feeRate: 0, monthlyContrib: 5, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '🏦' },
+            { id: 'def-dep-2', name: '생활비통장', amount: 450, rate: 2.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '🏦' }
         ],
         savings: [
-            { id: 'def-sav-1', name: '청년도약계좌', amount: 400, rate: 6.0, feeRate: 0, monthlyContrib: 30, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-            { id: 'def-sav-2', name: '청약저축', amount: 100, rate: 6.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+            { id: 'def-sav-1', name: '청년도약계좌', amount: 400, rate: 6.0, feeRate: 0, monthlyContrib: 30, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '💰' },
+            { id: 'def-sav-2', name: '청약저축', amount: 100, rate: 6.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '💰' }
         ],
         investment: [
-            { id: 'def-inv-1', name: '직접투자계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-            { id: 'def-inv-2', name: 'ISA계좌', amount: 250, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-            { id: 'def-inv-3', name: '금투자', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 5, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' },
-            { id: 'def-inv-4', name: '비트코인', amount: 50, rate: 12.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+            { id: 'def-inv-1', name: '직접투자계좌', amount: 500, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '📈' },
+            { id: 'def-inv-2', name: 'ISA계좌', amount: 250, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '📈' },
+            { id: 'def-inv-3', name: '금투자', amount: 50, rate: 3.0, feeRate: 0, monthlyContrib: 5, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '📈' },
+            { id: 'def-inv-4', name: '비트코인', amount: 50, rate: 12.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '📈' }
         ],
         pension: [
-            { id: 'def-pen-1', name: '연금저축', amount: 100, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+            { id: 'def-pen-1', name: '연금저축', amount: 100, rate: 10.0, feeRate: 0, monthlyContrib: 10, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '🏛️' }
         ],
         realestate: [
-            { id: 'def-re-1', name: '아파트', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+            { id: 'def-re-1', name: '아파트', amount: 0, rate: 5.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '🏠' }
         ],
         car: [],
         loan: [
@@ -96,17 +93,19 @@ const publicDefaultData = {
                 repaymentAccount: '생활비통장',
                 maturityMonth: 10,
                 loanStartDate: getLocalToday().slice(0,7),
-                memo: ''
+                memo: '',
+                icon: '💳'
             }
         ],
         misc: [
-            { id: 'def-misc-1', name: '기타자산', amount: 0, rate: 2.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '' }
+            { id: 'def-misc-1', name: '기타자산', amount: 0, rate: 2.0, feeRate: 0, monthlyContrib: 0, monthlyContributionFrom: DEFAULT_INCOME_SOURCE, memo: '', icon: '📦' }
         ]
     },
     monthlyExpenses: [
         { name: '생활비', amount: 80, day: 15 }, // 지출일 추가
         { name: '월세', amount: 40, day: 25 }
     ],
+    incomeEvents: [],
     expenseEvents: [
         {
             name: '휴대폰 할부',
@@ -118,21 +117,30 @@ const publicDefaultData = {
             targetAsset: 1
         }
     ],
-    rebalancingAlerts: {
-        deposit: { warning: 5, danger: 10 },
-        savings: { warning: 5, danger: 10 },
-        investment: { warning: 5, danger: 10 },
-        pension: { warning: 5, danger: 10 },
-        realestate: { warning: 5, danger: 10 },
-        car: { warning: 5, danger: 10 },
-        misc: { warning: 5, danger: 10 }
-    },
-    simpleThresholds: { warning: 5, danger: 10 },
     rebalancingTargets: { deposit: 10, savings: 15, investment: 55, pension: 20, realestate: 0, car: 0, misc: 0 },
+    itemTargets: {},
     baseDate: getLocalToday(), // baseMonth -> baseDate (YYYY-MM-DD)
+    autoUpdateBaseDate: false,
     mainCashFlowAccount: '생활비통장',
+    residualAccount: '비상금통장',
+    rebalanceMonths: 12,
+    rebalancingGlobal: { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } },
+    memo: [{ id: 'default', title: '기본 메모', content: '' }],
+};
+
+const publicDefaultData = {
+    displayMode: 'amount', // displayMode 기본값
+    darkMode: false, // 다크 모드 상태
+    rebalancingMode: 'simple', // 'simple' | 'advanced'
+    phases: [
+        {
+            id: 'phase-0',
+            startMonth: 0,
+            name: '초기 계획',
+            settings: defaultPhaseSettings
+        }
+    ],
     history: generateMockHistory(), // 초기 히스토리 데이터
-    memo: '', // 메모 기능
     // 기본 시나리오 3종 세트
     scenarios: [
         {

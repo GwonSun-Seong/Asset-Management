@@ -1136,6 +1136,83 @@
             );
         });
 
+        const PhaseManagementPanel = ({ phases, editingIndex, setEditingIndex, addPhase, updatePhase, deletePhase, projectionMonths }) => {
+            const colorName = 'purple';
+
+            return (
+                <div className="space-y-6">
+                    <div className={`bg-gradient-to-r from-purple-500 to-indigo-600 dark:from-purple-900 dark:to-indigo-900 rounded-2xl shadow-lg p-6 text-white flex flex-col sm:flex-row justify-between items-center gap-4`}>
+                        <div>
+                            <h3 className="text-lg font-bold flex items-center gap-2">
+                                <span className="text-2xl">🗓️</span> 타임라인 페이즈 관리
+                            </h3>
+                            <p className="text-white/80 text-sm mt-1">미래 특정 시점부터 적용될 새로운 자산 계획을 단계별로 설정하세요.</p>
+                        </div>
+                        <div className="text-right">
+                            <div className="text-3xl font-bold">{phases.length}개</div>
+                            <div className="text-white/80 text-sm">페이즈</div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+                            <span className="text-sm font-bold text-gray-500 dark:text-gray-400">페이즈 목록</span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500">현재 예상 기간: {projectionMonths}개월</span>
+                                <button onClick={() => addPhase(projectionMonths)} className={`text-sm font-bold text-${colorName}-500 hover:text-${colorName}-600 flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-${colorName}-50 dark:hover:bg-${colorName}-900/20 transition-colors`}>
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
+                                    이 시점에 새 페이즈 추가
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                            {phases.map((phase, index) => (
+                                <div key={phase.id} className={`p-4 transition-colors ${editingIndex === index ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'}`}>
+                                    <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                                        <div className="flex items-center gap-3 flex-1">
+                                            <span className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-bold ${editingIndex === index ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                                                {index + 1}
+                                            </span>
+                                            <div>
+                                                <input 
+                                                    type="text" 
+                                                    value={phase.name} 
+                                                    onChange={(e) => updatePhase(index, 'name', e.target.value)}
+                                                    className="font-bold text-gray-900 dark:text-white bg-transparent border-b-2 border-transparent focus:border-blue-500 focus:outline-none"
+                                                    disabled={editingIndex !== index}
+                                                />
+                                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                    {phase.startMonth === 0 ? '현재부터' : `${phase.startMonth}개월 후부터 적용`}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 self-end sm:self-center">
+                                            {editingIndex === index ? (
+                                                <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/50 px-3 py-1.5 rounded-full">
+                                                    ✏️ 편집 중
+                                                </span>
+                                            ) : (
+                                                <button onClick={() => setEditingIndex(index)} className="px-3 py-1.5 text-xs font-bold text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                                                    편집
+                                                </button>
+                                            )}
+                                            {phase.startMonth > 0 && (
+                                                <button onClick={() => deletePhase(index)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="삭제">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const SavedScenariosCarousel = ({ scenarios, onLoad, onDelete, onExport, referenceScenarios, onToggleReference, onUpdateReferenceColor, isPro, onOpenProModal }) => {
             const [currentIndex, setCurrentIndex] = useState(0);
             
@@ -1225,7 +1302,8 @@
             const { 
                 formatNumber, formatPercent, calculateGrossTotal, getSectorTotals, 
                 calculateMonthlyProjection, withRetry, encryptData, decryptData, 
-                getRGB, createGradient, calculateGoalReachMonth, normalizeTargets 
+                getRGB, createGradient, calculateGoalReachMonth, normalizeTargets,
+                calculatePhaseProjection // [추가]
             } = window;
 
             // ===== 모든 상태를 먼저 선언 =====
@@ -1233,6 +1311,7 @@
             const [darkMode, setDarkMode] = useState(() => localStorage.getItem('assetDashboardDarkMode') === 'true');
             const [inflationRate, setInflationRate] = useState(2.5);
             const [scenarios, setScenarios] = useState([]);
+            const [editingPhaseIndex, setEditingPhaseIndex] = useState(0); // [추가]
             const [originalUserData, setOriginalUserData] = useState(null); // [추가] 원본 데이터 캐시
             const [isDemoMode, setIsDemoMode] = useState(false); // [추가] 데모 모드 상태
             const [isPro, setIsPro] = useState(false); // [추가] 유료 이용자 여부
@@ -1435,34 +1514,45 @@
                         const initialHistory = savedHistory ? JSON.parse(savedHistory) : (baseData.history || []);
                         const initialReferences = savedReferences ? JSON.parse(savedReferences) : [];
                         
-                        setScenarios(initialScenarios);
-                        setAssetHistory(initialHistory);
-                        setReferenceScenarios(initialReferences);
-
-                if (savedData) {
+                        if (savedData) {
                             const parsedData = JSON.parse(savedData);
-                            mergedData = {
-                                ...baseData,
-                                ...parsedData,
-                                assets: { ...baseData.assets, ...parsedData.assets }, 
-                                rebalancingAlerts: { ...baseData.rebalancingAlerts, ...parsedData.rebalancingAlerts },
-                            };
-                            if (mergedData.memo === undefined) mergedData.memo = baseData.memo;
+
+                            // [추가] 데이터 구조 마이그레이션 (구버전 -> 페이즈 구조)
+                            if (!parsedData.phases) {
+                                addToast('데이터 구조를 최신 버전으로 업데이트합니다.', 'info');
+                                mergedData = {
+                                    // 글로벌 설정은 유지
+                                    displayMode: parsedData.displayMode || baseData.displayMode,
+                                    darkMode: parsedData.darkMode || baseData.darkMode,
+                                    rebalancingMode: parsedData.rebalancingMode || baseData.rebalancingMode,
+                                    // 나머지 데이터를 첫 번째 페이즈의 settings로 이동
+                                    phases: [{ id: 'phase-0', startMonth: 0, name: '초기 계획', settings: parsedData }]
+                                };
+                            } else {
+                                mergedData = parsedData;
+                            }
 
                             // 마이그레이션: ID, 대출 시작일, 다크모드 필드 보강
-                            Object.keys(parsedData.assets||{}).forEach(sector=>{
-                                (parsedData.assets[sector]||[]).forEach(a=>{ 
+                            // [수정] 페이즈 구조에 맞게 마이그레이션 로직 수정
+                            (mergedData.phases || []).forEach(phase => {
+                                Object.keys(phase.settings.assets || {}).forEach(sector => {
+                                    (phase.settings.assets[sector] || []).forEach(a => {
                                     if (!a.id) a.id = Date.now() + Math.random();
                                     if (sector === 'loan' && !a.loanStartDate) a.loanStartDate = parsedData.baseMonth || baseData.baseMonth;
                                 });
                             });
+                            });
 
                             // 마이그레이션: 자산별 수수료/세금 필드 기본값(0)
-                            Object.keys(parsedData.assets||{}).forEach(sector=>{
-                                (parsedData.assets[sector]||[]).forEach(a=>{ if (a.feeRate === undefined) a.feeRate = 0; });
+                            (mergedData.phases || []).forEach(phase => {
+                                Object.keys(phase.settings.assets || {}).forEach(sector => {
+                                    (phase.settings.assets[sector] || []).forEach(a => { if (a.feeRate === undefined) a.feeRate = 0; });
+                                });
                             });
-                            setAppData(mergedData); // [수정] parsedData 대신 mergedData 사용
-                            setOriginalUserData(parsedData); // [추가]
+                            resetAppData(mergedData);
+                            setScenarios(initialScenarios);
+                            setAssetHistory(initialHistory);
+                            setReferenceScenarios(initialReferences);
                             lastSavedDataRef.current = JSON.stringify({ appData: mergedData, scenarios: initialScenarios, assetHistory: initialHistory, referenceScenarios: initialReferences });
                         } else {
                             setAppData(baseData);
@@ -1473,6 +1563,9 @@
                         console.error("로컬 데이터 로드 오류 (초기화 진행):", error);
                         // [수정] 데이터 손상 시 로컬스토리지 초기화하여 무한 로딩/에러 방지
                         localStorage.removeItem('assetDashboardDataV3');
+                        setScenarios(baseData.scenarios || []);
+                        setAssetHistory(baseData.history || []);
+                        setReferenceScenarios([]);
                         setAppData(baseData);
                         lastSavedDataRef.current = JSON.stringify(baseData);
                     }
@@ -2101,71 +2194,69 @@
             }
         }, [isInitialized, appData?.autoUpdateBaseDate, verifiedEmail]);
 
-        useEffect(() => {
-            const handleKeyDown = (e) => {
-                const isSave = ((e.ctrlKey || e.metaKey) && e.key === 's') || (e.altKey && e.key === 's');
-                if (isSave) {
-                    e.preventDefault();
-                    const currentData = appDataRef.current;
-                    if (currentData) {
-                        localStorage.setItem('assetDashboardDataV3', JSON.stringify(currentData));
-                        saveToCloud({ appData: currentData, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios }, true);
-                        setShowSaveToast(true);
-                        setTimeout(() => setShowSaveToast(false), 2000);
-                    }
-                }
-                if (e.key === 'Escape') {
-                    setIsDataManageModalOpen(false);
-                    setIsPrivacyModalOpen(false); setIsSuggestionModalOpen(false);
-                    setIsProModalOpen(false); setIsEncryptionModalOpen(false);
-                    setIsPasswordPromptOpen(false); setIsQuickPanelOpen(false);
-                    setIsGuideOpen(false);
-                }
-                
-                const isUndo = (e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.key.toLowerCase() === 'z') && !e.shiftKey;
-                const isRedo = (e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || e.key.toLowerCase() === 'y' || ((e.code === 'KeyZ' || e.key.toLowerCase() === 'z') && e.shiftKey));
-
-                if (isUndo && canUndo) { 
-                    e.preventDefault(); 
-                    undo(); 
-                    addToast('실행 취소되었습니다.', 'info');
-                }
-                if (isRedo && canRedo) { 
-                    e.preventDefault(); 
-                    redo(); 
-                    addToast('다시 실행되었습니다.', 'info');
-                }
-            };
-            window.addEventListener('keydown', handleKeyDown);
-            return () => window.removeEventListener('keydown', handleKeyDown);
-        
-        }, [canUndo, canRedo, undo, redo, saveToCloud, scenarios, assetHistory]);
-
-
             useEffect(() => {
                 if (!isInitialized) return;
+
+                const handleKeyDown = (e) => {
+                    const isSave = ((e.ctrlKey || e.metaKey) && e.key === 's') || (e.altKey && e.key === 's');
+                    if (isSave) {
+                        e.preventDefault();
+                        const currentData = appDataRef.current;
+                        if (currentData) {
+                            localStorage.setItem('assetDashboardDataV3', JSON.stringify(currentData));
+                            saveToCloud({ appData: currentData, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios }, true);
+                            setShowSaveToast(true);
+                            setTimeout(() => setShowSaveToast(false), 2000);
+                        }
+                    }
+                    if (e.key === 'Escape') {
+                        setIsDataManageModalOpen(false);
+                        setIsPrivacyModalOpen(false); setIsSuggestionModalOpen(false);
+                        setIsProModalOpen(false); setIsEncryptionModalOpen(false);
+                        setIsPasswordPromptOpen(false); setIsQuickPanelOpen(false);
+                        setIsGuideOpen(false);
+                        setEditingPhaseIndex(0); // [추가] ESC로 페이즈 편집 모드 종료
+                    }
+                    
+                    const isUndo = (e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.key.toLowerCase() === 'z') && !e.shiftKey;
+                    const isRedo = (e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || e.key.toLowerCase() === 'y' || ((e.code === 'KeyZ' || e.key.toLowerCase() === 'z') && e.shiftKey));
+
+                    if (isUndo && canUndo) { 
+                        e.preventDefault(); 
+                        undo(); 
+                        addToast('실행 취소되었습니다.', 'info');
+                    }
+                    if (isRedo && canRedo) { 
+                        e.preventDefault(); 
+                        redo(); 
+                        addToast('다시 실행되었습니다.', 'info');
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            
+            }, [canUndo, canRedo, undo, redo, saveToCloud, scenarios, assetHistory, isInitialized]);
+
+            useEffect(() => {
+                if (!isInitialized || !appData) return;
 
                 try {
                     const fullState = { appData, scenarios, assetHistory, referenceScenarios };
                     const fullStateStr = JSON.stringify(fullState);
 
                     // 1. 각 항목별 로컬 스토리지 저장
-                    if (appData) localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
+                    localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
                     localStorage.setItem('assetDashboardScenarios', JSON.stringify(scenarios));
                     localStorage.setItem('assetDashboardHistory', JSON.stringify(assetHistory));
                     localStorage.setItem('assetDashboardReferenceScenarios', JSON.stringify(referenceScenarios));
 
                     // 2. 로컬 수정 여부 판단 (마지막 동기화 시점과 비교)
-                    // lastSavedDataRef는 클라우드에서 불러오거나 클라우드에 저장 성공했을 때만 갱신됨
                     if (fullStateStr !== lastSavedDataRef.current) {
-                        // 데이터가 변경되었다면 로컬 타임스탬프를 현재 시간으로 갱신
-                        // 이렇게 해야 로그인 시 "기기의 데이터가 더 최신입니다" 팝업이 정상적으로 뜸
                         const now = new Date().toISOString();
                         localStorage.setItem('assetDashboardLastUpdate', now);
                     }
                 } catch (e) {
                     console.error("Local Storage Save Failed:", e);
-                    // 저장 실패 시 앱이 멈추지 않도록 예외 처리 (필요 시 토스트 메시지 추가 가능)
                 }
             }, [appData, scenarios, assetHistory, referenceScenarios, isInitialized]);
 
@@ -2216,6 +2307,44 @@
                 }
             };
 
+            // [추가] 페이즈 추가 함수
+            const addPhase = (startMonth) => {
+                if (startMonth <= 0) return addToast('새 페이즈는 현재 이후 시점에만 추가할 수 있습니다.', 'error');
+                if (appData.phases.some(p => p.startMonth === startMonth)) return addToast('이미 해당 시점에 페이즈가 존재합니다.', 'error');
+
+                const prevPhaseIndex = appData.phases.findLastIndex(p => p.startMonth < startMonth);
+                const prevPhase = appData.phases[prevPhaseIndex];
+
+                const newPhase = {
+                    id: 'phase-' + Date.now(),
+                    startMonth: startMonth,
+                    name: `${startMonth}개월 후 계획`,
+                    settings: JSON.parse(JSON.stringify(prevPhase.settings)) // 이전 페이즈 설정을 깊은 복사
+                };
+                
+                const newPhases = [...appData.phases, newPhase].sort((a, b) => a.startMonth - b.startMonth);
+                const newIndex = newPhases.findIndex(p => p.id === newPhase.id);
+                
+                setAppData(prev => ({ ...prev, phases: newPhases }));
+                setEditingPhaseIndex(newIndex);
+            };
+
+            const updatePhase = React.useCallback((index, field, value) => {
+                setAppData(prev => {
+                    if (!prev || !prev.phases) return prev;
+                    const newPhases = [...prev.phases];
+                    newPhases[index] = { ...newPhases[index], [field]: value };
+                    return { ...prev, phases: newPhases };
+                });
+            }, [setAppData]);
+
+            const deletePhase = React.useCallback((index) => {
+                if (index === 0) return addToast('기본 페이즈는 삭제할 수 없습니다.', 'error');
+                if (!confirm('이 페이즈를 삭제하시겠습니까?')) return;
+                setAppData(prev => ({ ...prev, phases: prev.phases.filter((_, i) => i !== index) }));
+                setEditingPhaseIndex(prev => Math.max(0, prev >= index ? prev - 1 : prev));
+            }, [setAppData, addToast]);
+
             const now = new Date();
             const localDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             const localMonthStr = localDateStr.slice(0, 7);
@@ -2223,56 +2352,48 @@
             // ===== 기본값 설정 (appData가 없을 때도 안전하게) =====
             const {
                 projectionMonths = 12, monthlySalary = 280, assets = {}, monthlyExpenses = [],
-                targetAmount = 10000, 
-                goalMode = 'period', displayMode = 'amount',
-                rebalancingAlerts = {}, baseMonth = localMonthStr, // [수정] UTC 대신 로컬 시간 사용
-                rebalanceMonths = 12, // [추가] 리밸런싱 목표 기간
-                mainCashFlowAccount = '생활비통장',
-                residualAccount = '생활비통장', // [추가] 잔여액 저축 계좌
-                rebalancingTargets = {},
-                memo = '', // [추가]
-                itemTargets = {}, // [추가] 항목별 목표 비중
-                // [Refactor] Safe defaults during destructuring
-                incomeEvents = [],
-                expenseEvents = [],
-                salaryDay = 25,
-                baseDate = localDateStr, // [수정] UTC 대신 로컬 시간 사용
-                autoUpdateBaseDate = false
-            } = appData || {};
+                targetAmount = 10000, goalMode = 'period',
+                baseMonth = localMonthStr, mainCashFlowAccount = '생활비통장',
+                residualAccount = '생활비통장', rebalancingTargets = {},
+                memo = '', itemTargets = {}, incomeEvents = [],
+                expenseEvents = [], salaryDay = 25, baseDate = localDateStr,
+                autoUpdateBaseDate = false, rebalanceMonths = 12
+            } = appData?.phases?.[editingPhaseIndex]?.settings || {};
+
+            const { displayMode = 'amount' } = appData || {};
 
             // ===== Setter 함수들 =====
-            const setProjectionMonths = React.useCallback((value) => setAppData(prev => ({ ...prev, projectionMonths: Math.max(0, typeof value === 'function' ? value(prev.projectionMonths) : value) })), [setAppData]);
-            const setMonthlySalary = React.useCallback((value) => setAppData(prev => ({ ...prev, monthlySalary: value })), [setAppData]);
-            const setAssets = React.useCallback((value) => setAppData(prev => ({ ...prev, assets: typeof value === 'function' ? value(prev.assets) : value })), [setAppData]);
-            const setMonthlyExpenses = React.useCallback((value) => setAppData(prev => ({ 
-                ...prev, 
-                monthlyExpenses: typeof value === 'function' ? value(Array.isArray(prev.monthlyExpenses) ? prev.monthlyExpenses : []) : value 
-            })), [setAppData]);
+            const updatePhaseSettings = React.useCallback((updateFn) => {
+                setAppData(prev => {
+                    if (!prev || !prev.phases) return prev;
+                    const newPhases = [...prev.phases];
+                    const targetPhase = newPhases[editingPhaseIndex];
+                    if (!targetPhase) return prev;
+                    newPhases[editingPhaseIndex] = { ...targetPhase, settings: updateFn(targetPhase.settings) };
+                    return { ...prev, phases: newPhases };
+                });
+            }, [setAppData, editingPhaseIndex]);
 
-            const setMainCashFlowAccount = React.useCallback((value) => setAppData(prev => ({ ...prev, mainCashFlowAccount: value })), [setAppData]);
-            const setResidualAccount = React.useCallback((value) => setAppData(prev => ({ ...prev, residualAccount: value })), [setAppData]);
-            const setIncomeEvents = React.useCallback((value) => setAppData(prev => ({ 
-                ...prev, 
-                incomeEvents: typeof value === 'function' ? value(Array.isArray(prev.incomeEvents) ? prev.incomeEvents : []) : value 
-            })), [setAppData]);
-            const setExpenseEvents = React.useCallback((value) => setAppData(prev => ({ 
-                ...prev, 
-                expenseEvents: typeof value === 'function' ? value(Array.isArray(prev.expenseEvents) ? prev.expenseEvents : []) : value 
-            })), [setAppData]);
-            
-            const setTargetAmount = React.useCallback((value) => setAppData(prev => ({ ...prev, targetAmount: value })), [setAppData]);
-            const setGoalMode = React.useCallback((value) => setAppData(prev => ({ ...prev, goalMode: value })), [setAppData]);
+            const setProjectionMonths = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, projectionMonths: Math.max(0, typeof value === 'function' ? value(s.projectionMonths) : value) })), [updatePhaseSettings]);
+            const setMonthlySalary = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, monthlySalary: value })), [updatePhaseSettings]);
+            const setAssets = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, assets: typeof value === 'function' ? value(s.assets) : value })), [updatePhaseSettings]);
+            const setMonthlyExpenses = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, monthlyExpenses: typeof value === 'function' ? value(Array.isArray(s.monthlyExpenses) ? s.monthlyExpenses : []) : value })), [updatePhaseSettings]);
+            const setMainCashFlowAccount = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, mainCashFlowAccount: value })), [updatePhaseSettings]);
+            const setResidualAccount = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, residualAccount: value })), [updatePhaseSettings]);
+            const setIncomeEvents = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, incomeEvents: typeof value === 'function' ? value(Array.isArray(s.incomeEvents) ? s.incomeEvents : []) : value })), [updatePhaseSettings]);
+            const setExpenseEvents = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, expenseEvents: typeof value === 'function' ? value(Array.isArray(s.expenseEvents) ? s.expenseEvents : []) : value })), [updatePhaseSettings]);
+            const setTargetAmount = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, targetAmount: value })), [updatePhaseSettings]);
+            const setGoalMode = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, goalMode: value })), [updatePhaseSettings]);
+            const setRebalanceMonths = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, rebalanceMonths: Math.max(1, value) })), [updatePhaseSettings]);
+            const setRebalancingTargets = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, rebalancingTargets: typeof value === 'function' ? value(s.rebalancingTargets) : value })), [updatePhaseSettings]);
+            const setItemTargets = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, itemTargets: typeof value === 'function' ? value(s.itemTargets) : value })), [updatePhaseSettings]);
+            const setRebalancingGlobal = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, rebalancingGlobal: typeof value === 'function' ? value(s.rebalancingGlobal) : value })), [updatePhaseSettings]);
+            const setMemo = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, memo: value })), [updatePhaseSettings]);
+            const setSalaryDay = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, salaryDay: Math.min(31, Math.max(1, Number(value))) })), [updatePhaseSettings]);
+            const setBaseDate = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, baseDate: value })), [updatePhaseSettings]);
+            const setAutoUpdateBaseDate = React.useCallback((value) => updatePhaseSettings(s => ({ ...s, autoUpdateBaseDate: value })), [updatePhaseSettings]);
+
             const setDisplayMode = React.useCallback((value) => setAppData(prev => ({ ...prev, displayMode: value })), [setAppData]); 
-            const setRebalanceMonths = React.useCallback((value) => setAppData(prev => ({ ...prev, rebalanceMonths: Math.max(1, value) })), [setAppData]);
-            const setRebalancingAlerts = React.useCallback((value) => setAppData(prev => ({ ...prev, rebalancingAlerts: typeof value === 'function' ? value(prev.rebalancingAlerts) : value })), [setAppData]);
-            const setBaseMonth = React.useCallback((value) => setAppData(prev => ({ ...prev, baseMonth: value })), [setAppData]);
-            const setRebalancingTargets = React.useCallback((value) => setAppData(prev => ({ ...prev, rebalancingTargets: typeof value === 'function' ? value(prev.rebalancingTargets) : value })), [setAppData]);
-            const setItemTargets = React.useCallback((value) => setAppData(prev => ({ ...prev, itemTargets: typeof value === 'function' ? value(prev.itemTargets) : value })), [setAppData]);
-            const setRebalancingGlobal = React.useCallback((value) => setAppData(prev => ({ ...prev, rebalancingGlobal: typeof value === 'function' ? value(prev.rebalancingGlobal) : value })), [setAppData]);
-            const setMemo = React.useCallback((value) => setAppData(prev => ({ ...prev, memo: value })), [setAppData]);
-            const setSalaryDay = React.useCallback((value) => setAppData(prev => ({ ...prev, salaryDay: Math.min(31, Math.max(1, Number(value))) })), [setAppData]);
-            const setBaseDate = React.useCallback((value) => setAppData(prev => ({ ...prev, baseDate: value })), [setAppData]); // [변경] setBaseMonth -> setBaseDate
-            const setAutoUpdateBaseDate = React.useCallback((value) => setAppData(prev => ({ ...prev, autoUpdateBaseDate: value })), [setAppData]);
 
             const handleDarkModeToggle = () => {
                 if (!isPro) {
@@ -2534,14 +2655,14 @@
             };
 
             const cycleDisplayMode = () => {
-                if (!isDemoMode && appData?.displayMode === 'amount') setAppData(prev => ({ ...prev, displayMode: 'percent' }));
-                else if (!isDemoMode && appData?.displayMode === 'percent') { resetAppData(window.publicDefaultData || {}); setIsDemoMode(true); }
+                if (!isDemoMode && displayMode === 'amount') setDisplayMode('percent');
+                else if (!isDemoMode && displayMode === 'percent') { resetAppData(window.publicDefaultData || {}); setIsDemoMode(true); setEditingPhaseIndex(0); }
                 else { resetAppData({...originalUserData, displayMode: 'amount'}); setIsDemoMode(false); }
             };
 
             const titleText = isDemoMode
                 ? <span className="text-sm text-red-500">(데모 모드)</span>
-                : appData?.displayMode === 'percent'
+                : displayMode === 'percent'
                     ? <span className="text-sm text-blue-500">(프라이빗 모드)</span> : null;
 
             // ===== 개선된 PDF 저장 함수 (html2canvas + jsPDF) =====
@@ -2576,7 +2697,7 @@
                     const newScenario = {
                         id: Date.now(),
                         name: name.trim(),
-                        data: { ...appData },
+                        data: { ...appData.phases[editingPhaseIndex].settings }, // 현재 페이즈의 설정을 시나리오로 저장
                         createdAt: new Date().toISOString()
                     };
                     setScenarios(prev => [...prev, newScenario]);
@@ -2588,23 +2709,22 @@
                 if (confirm(`"${scenario.name}" 시나리오를 불러오시겠습니까?`)) {
                     // [추가] 불러오기 전 현재 데이터 백업 확인
                     if (confirm('현재 데이터를 기본값으로 백업하시겠습니까?\n(백업하지 않으면 현재 작업 내용이 덮어쓰여집니다)')) {
-                        localStorage.setItem('assetDashboardCustomDefault', JSON.stringify(appData));
+                        localStorage.setItem('assetDashboardCustomDefault', JSON.stringify(appData.phases[editingPhaseIndex].settings));
                         addToast('현재 데이터가 기본값으로 백업되었습니다.', 'success');
                     }
 
                     // [수정] 시나리오 데이터 병합 로직 개선 (누락된 필드 보완)
-                    const base = JSON.parse(JSON.stringify(window.publicDefaultData || {}));
+                    const base = JSON.parse(JSON.stringify(window.defaultPhaseSettings || {}));
                     const loaded = scenario.data || {};
                     
                     const mergedData = {
                         ...base,
                         ...loaded,
                         assets: { ...base.assets, ...(loaded.assets || {}) },
-                        monthlyExpenses: Array.isArray(loaded.monthlyExpenses) ? loaded.monthlyExpenses : base.monthlyExpenses,
-                        incomeEvents: Array.isArray(loaded.incomeEvents) ? loaded.incomeEvents : base.incomeEvents,
-                        expenseEvents: Array.isArray(loaded.expenseEvents) ? loaded.expenseEvents : base.expenseEvents,
                     };
-                    resetAppData(mergedData);
+                    // [수정] 페이즈 0에 덮어쓰고 해당 페이즈로 이동
+                    updatePhase(0, 'settings', mergedData);
+                    setEditingPhaseIndex(0);
                 }
             };
 
@@ -2675,7 +2795,7 @@
             const autoDepositAmount = Math.max(0, maxSectorMonthlyContrib - totalSectorMonthlyContrib);
 
             const calculateGoalSeek = () => {
-                if (!targetAmount || targetAmount <= 0) {
+                if (!appData || !targetAmount || targetAmount <= 0) {
                     addToast('유효한 목표 금액을 입력해주세요.', 'error');
                     return;
                 }
@@ -2736,45 +2856,34 @@
             const handlePanelDrop = React.useCallback((e, targetId) => {
                 e.preventDefault();
                 if (!draggedPanelId || draggedPanelId === targetId) return;
-
                 setLayoutOrder(prev => {
                     const oldIndex = prev.indexOf(draggedPanelId);
                     const newIndex = prev.indexOf(targetId);
                     if (oldIndex === -1 || newIndex === -1) return prev;
                     const newOrder = [...prev];
-                    newOrder.splice(oldIndex, 1);
-                    newOrder.splice(newIndex, 0, draggedPanelId);
+                    const [removed] = newOrder.splice(oldIndex, 1);
+                    newOrder.splice(newIndex, 0, removed);
                     return newOrder;
                 });
                 setDraggedPanelId(null);
             }, [draggedPanelId]);
 
             const calculation = useMemo(() => {
-                if (!appData || !appData.assets || typeof appData.assets !== 'object') {
+                if (!appData || !appData.phases) {
                     return {
-                        initial: {},
-                        projected: {},
-                        currentTotal: 0,
-                        projectedTotal: 0,
-                        growth: 0,
-                        grand: 0,
-                        realValue: 0,
-                        monthlyProjections: [],
-                        warnings: [],
-                        fireMetrics: null,
-                        rebalanceInfo: null
+                        initial: {}, projected: {}, currentTotal: 0, projectedTotal: 0,
+                        growth: 0, grand: 0, realValue: 0, monthlyProjections: [],
+                        warnings: [], fireMetrics: null, rebalanceInfo: null
                     };
                 }
                 
-                const months = projectionMonths;
-                // [수정] 인플레이션 보정 및 이벤트 배열 안전성 확보 (undefined 방지)
-                const safeAppData = {
-                    ...appData,
-                    incomeEvents: Array.isArray(appData.incomeEvents) ? appData.incomeEvents : [],
-                    expenseEvents: Array.isArray(appData.expenseEvents) ? appData.expenseEvents : [],
-                };
+                const currentPhaseSettings = appData.phases[editingPhaseIndex]?.settings || {};
+                const months = currentPhaseSettings.projectionMonths || 12;
+                
+                const { projections: monthlyProjections, warnings } = calculatePhaseProjection(appData, months);
 
-                const localTotalMonthlyExpense = (appData.monthlyExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+                const firstPhaseSettings = appData.phases[0]?.settings || {};
+                const localTotalMonthlyExpense = (firstPhaseSettings.monthlyExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
                 
                 // [추가] 예산 초과 검증 변수 계산
                 const localMonthlySalary = Number(appData.monthlySalary || 0);
@@ -2782,7 +2891,7 @@
                 let localTotalContrib = 0;
                 
                 // [수정] 예산 초과 검증 시에도 납입 출처 확인 (이체는 제외)
-                Object.entries(appData.assets).forEach(([sector, arr]) => {
+                Object.entries(firstPhaseSettings.assets || {}).forEach(([sector, arr]) => {
                     if (Array.isArray(arr)) {
                         arr.forEach(a => {
                             let include = true;
@@ -2803,9 +2912,9 @@
                 let totalInvestedPrincipal = 0;
                 const sectorSums = {};
                 
-                Object.keys(appData.assets).forEach(sector => {
+                Object.keys(firstPhaseSettings.assets || {}).forEach(sector => {
                     if (!sectorSums[sector]) sectorSums[sector] = 0;
-                    (appData.assets[sector] || []).forEach(asset => {
+                    (firstPhaseSettings.assets[sector] || []).forEach(asset => {
                         const amt = Number(asset.amount || 0);
                         if (sector === 'loan') {
                             currentTotal -= amt;
@@ -2824,7 +2933,7 @@
                 let runwayMonths = 0;
                 let debtFreeMonth = -1;
                 const maxSimMonths = 1200;
-                const simAssets = JSON.parse(JSON.stringify(appData.assets));
+                const simAssets = JSON.parse(JSON.stringify(firstPhaseSettings.assets || {}));
                 
                 // [수정] 초기 자산이 0 이하인 경우 생존 기간 0으로 처리
                 if (currentTotal <= 0) {
@@ -2833,7 +2942,7 @@
                     // [Refactor] Find Main Account in Simulation Data
                     let simMainAccount = null;
                     for (const s in simAssets) {
-                        const found = simAssets[s].find(a => a.name === appData.mainCashFlowAccount);
+                        const found = simAssets[s].find(a => a.name === firstPhaseSettings.mainCashFlowAccount);
                         if (found) { simMainAccount = found; break; }
                     }
                     if (!simMainAccount) {
@@ -2880,15 +2989,15 @@
                         // 3. Net Flow (Salary = 0 for Survival Mode)
                         let eventFlow = 0;
                         const checkEvent = (e) => {
-                            if (!e.startMonth || typeof e.startMonth !== 'string' || !e.endMonth || typeof e.endMonth !== 'string') return false;
-                            const [bY, bM] = baseDate.split('-').map(Number); // [수정] baseDate 사용
+                            if (!e.startMonth || typeof e.startMonth !== 'string' || !e.endMonth || typeof e.endMonth !== 'string') return false; // [수정] baseDate 사용
+                            const [bY, bM] = firstPhaseSettings.baseDate.split('-').map(Number);
                             const [sY, sM] = e.startMonth.split('-').map(Number);
                             const [eY, eM] = e.endMonth.split('-').map(Number);
                             const cur = bY * 12 + bM + m - 1;
                             return cur >= (sY * 12 + sM) && cur <= (eY * 12 + eM);
                         };
-                        safeAppData.incomeEvents.forEach(e => { if (checkEvent(e)) eventFlow += Number(e.amount || 0); });
-                        safeAppData.expenseEvents.forEach(e => { if (checkEvent(e)) eventFlow -= Number(e.amount || 0); });
+                        (firstPhaseSettings.incomeEvents || []).forEach(e => { if (checkEvent(e)) eventFlow += Number(e.amount || 0); });
+                        (firstPhaseSettings.expenseEvents || []).forEach(e => { if (checkEvent(e)) eventFlow -= Number(e.amount || 0); });
 
                         const netFlow = eventFlow - currentMonthlyExpense - totalLoanRepayment;
 
@@ -2943,25 +3052,25 @@
                 }
 
                 // 3. FIRE Indicators (Reverse Engineered)
-                const loanInterestInitial = (appData.assets.loan || []).reduce((sum, l) => sum + (Number(l.amount || 0) * Number(l.rate || 0) / 1200), 0);
+                const loanInterestInitial = (firstPhaseSettings.assets.loan || []).reduce((sum, l) => sum + (Number(l.amount || 0) * Number(l.rate || 0) / 1200), 0);
                 const annualFixedExp = (localTotalMonthlyExpense + loanInterestInitial) * 12;
                 const annualFixedExpPostDebt = localTotalMonthlyExpense * 12;
 
                 const swr4PercentCapital = annualFixedExpPostDebt * 25; // 4% Rule Reference
 
                 // 4. Soft Rebalancing Engine (Pro-rata)
-                const disposableIncome = Math.max(0, (appData.monthlySalary || 0) - localTotalMonthlyExpense);
-                const targetMonths = appData.rebalanceMonths || 12;
+                const disposableIncome = Math.max(0, (firstPhaseSettings.monthlySalary || 0) - localTotalMonthlyExpense);
+                const targetMonths = firstPhaseSettings.rebalanceMonths || 12;
                 const futureValue = currentTotal + (disposableIncome * targetMonths);
                 const sectorGaps = {};
                 let totalGap = 0;
                 const validSectors = Object.keys(sectorInfo).filter(k => k !== 'loan');
                 const itemRecs = {};
-                const rebalancingGlobal = appData.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
+                const rebalancingGlobal = firstPhaseSettings.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
                 
                 validSectors.forEach(sector => {
-                    const targetPct = (appData.rebalancingTargets && appData.rebalancingTargets[sector] !== undefined) 
-                        ? appData.rebalancingTargets[sector] 
+                    const targetPct = (firstPhaseSettings.rebalancingTargets && firstPhaseSettings.rebalancingTargets[sector] !== undefined) 
+                        ? firstPhaseSettings.rebalancingTargets[sector] 
                         : Math.round(100 / validSectors.length);
                     const targetBalance = futureValue * (targetPct / 100);
                     const currentBalance = sectorSums[sector] || 0;
@@ -2983,15 +3092,15 @@
 
                 // [추가] 항목별 리밸런싱 추천 계산
                 validSectors.forEach(sector => {
-                    const sectorAssets = appData.assets[sector] || [];
+                    const sectorAssets = firstPhaseSettings.assets[sector] || [];
                     if (sectorAssets.length === 0) return;
                     
                     const sectorMonthlyContrib = sectorRecs[sector] || 0;
-                    const sectorTargetPct = (appData.rebalancingTargets && appData.rebalancingTargets[sector] !== undefined) ? appData.rebalancingTargets[sector] : Math.round(100 / validSectors.length);
+                    const sectorTargetPct = (firstPhaseSettings.rebalancingTargets && firstPhaseSettings.rebalancingTargets[sector] !== undefined) ? firstPhaseSettings.rebalancingTargets[sector] : Math.round(100 / validSectors.length);
                     const sectorFutureValue = futureValue * (sectorTargetPct / 100);
                     
                     let totalItemWeight = 0;
-                    const currentItemTargets = appData.itemTargets || {};
+                    const currentItemTargets = firstPhaseSettings.itemTargets || {};
                     sectorAssets.forEach(a => { totalItemWeight += (currentItemTargets[a.id] ?? Math.round(100/sectorAssets.length)); });
                     
                     let totalItemGap = 0;
@@ -3011,17 +3120,6 @@
                     });
                 });
 
-                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate, baseDate }, months);
-
-                // [추가] 월납입 한도 초과 시 경고 목록에 추가 (플로팅 버튼 트리거용)
-                if (localTotalContrib > localMaxContrib) {
-                    warnings.unshift({
-                        month: '설정',
-                        type: 'budget',
-                        message: `월납입 한도 초과! ${window.formatNumber(localTotalContrib - localMaxContrib)}만원이 부족합니다. (가용: ${window.formatNumber(localMaxContrib)}만원)`
-                    });
-                }
-
                 if (!monthlyProjections || monthlyProjections.length === 0) {
                     return { error: true, warnings: warnings };
                 }
@@ -3031,7 +3129,7 @@
                 const newCurrentNet = initialProjection.net || 0;
                 const newCurrentGross = initialProjection.gross || 0;
 
-                const finalProjection = monthlyProjections[monthlyProjections.length - 1];
+                const finalProjection = monthlyProjections.find(p => p.month === months) || monthlyProjections[monthlyProjections.length - 1];
                 const newProjectedTotal = finalProjection ? finalProjection.total : newCurrentTotal;
                 const newProjectedNet = finalProjection ? finalProjection.net : newCurrentNet;
                 const newProjectedGross = finalProjection ? finalProjection.gross : newCurrentGross;
@@ -3039,7 +3137,7 @@
                 const realValue = newProjectedGross / Math.pow(1 + inflationRate / 100, months / 12);
 
                 return {
-                    initial: appData.assets,
+                    initial: firstPhaseSettings.assets,
                     projected: finalProjection ? finalProjection.assets : appData.assets,
                     currentTotal: newCurrentTotal,
                     currentNet: newCurrentNet,
@@ -3065,7 +3163,7 @@
                         itemRecs
                     }
                 };
-            }, [appData, inflationRate, projectionMonths, baseMonth]);
+            }, [appData, inflationRate, editingPhaseIndex]);
 
 
             const { currentGrossTotal, projectedGrossTotal, currentSectorTotals, projectedSectorTotals } = useMemo(() => {
@@ -3084,14 +3182,14 @@
 
             // ===== 리밸런싱 경고 함수 (목표 비중 기준 편차) =====
             const getRebalanceStatus = (key, percentage, isItem = false, itemId = null, sectorKey = null) => {
-                const globalSettings = appData.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
+                const globalSettings = (appData?.phases?.[editingPhaseIndex]?.settings?.rebalancingGlobal) || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
                 const thresholds = isItem ? globalSettings.item : globalSettings.sector;
                 
                 let target;
                 if (isItem && sectorKey) {
                     const assetsInSector = assets[sectorKey] || [];
-                    const totalWeight = assetsInSector.reduce((sum, a) => sum + (appData.itemTargets?.[a.id] ?? Math.round(100/assetsInSector.length)), 0);
-                    const rawTarget = appData.itemTargets?.[itemId] ?? Math.round(100/assetsInSector.length);
+                    const totalWeight = assetsInSector.reduce((sum, a) => sum + (itemTargets?.[a.id] ?? Math.round(100/assetsInSector.length)), 0);
+                    const rawTarget = itemTargets?.[itemId] ?? Math.round(100/assetsInSector.length);
                     target = totalWeight === 0 ? 0 : (rawTarget / totalWeight) * 100;
                 } else {
                     target = rebalancingTargets[key] ?? (100 / Object.keys(sectorInfo).length);
@@ -3248,7 +3346,7 @@
                                 onClick: (evt, elements) => {
                                     if (currentDrillDown) {
                                         setCurrentDrillDown(null);
-                                    } else if (elements && elements.length > 0) {
+                                    } else if (elements && elements.length > 0 && filteredKeys[elements[0].index]) {
                                         const index = elements[0].index;
                                         setCurrentDrillDown(filteredKeys[index]);
                                     }
@@ -3324,7 +3422,7 @@
                                 onClick: (evt, elements) => {
                                     if (projectedDrillDown) {
                                         setProjectedDrillDown(null);
-                                    } else if (elements && elements.length > 0) {
+                                    } else if (elements && elements.length > 0 && projectedKeys[elements[0].index]) {
                                         const index = elements[0].index;
                                         setProjectedDrillDown(projectedKeys[index]);
                                     }
@@ -3423,7 +3521,7 @@
             const historyProjectionData = useMemo(() => {
                 if (!showProjectionInHistory) return null;
                 return {
-                    projections: calculation.monthlyProjections,
+                    projections: calculatePhaseProjection(appData, 120).projections, // 항상 10년치 예상
                     baseDate: baseDate
                 };
             }, [showProjectionInHistory, calculation.monthlyProjections, baseDate]);
@@ -4655,7 +4753,7 @@
             };
 
             const renderMemoPanel = () => {
-                // 하위 호환성: 문자열이면 배열로 변환하여 처리
+                // [수정] 페이즈 기반 데이터 접근
                 const rawMemo = memo;
                 const memos = Array.isArray(rawMemo) 
                     ? rawMemo 
@@ -4737,7 +4835,7 @@
                                 <button onClick={() => setIsMemoGridView(!isMemoGridView)} className={`p-1 rounded ${isMemoGridView ? 'text-blue-600 bg-blue-100 dark:bg-blue-900/50' : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'}`} title="모아보기">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
                                 </button>
-                                
+
                                 {!isMemoGridView && (
                                     <button onClick={handleAddMemo} className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded" title="새 메모 추가">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
@@ -4748,7 +4846,7 @@
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                     </button>
                                 )}
-                                
+
                                 <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1"></div>
                                 
                                 <button onClick={() => setIsMemoExpanded(!isMemoExpanded)} className={`p-1 rounded hidden sm:block ${isMemoExpanded ? 'text-blue-600 bg-blue-100 dark:bg-blue-900/50' : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'}`} title={isMemoExpanded ? "원래 크기로" : "크게 보기"}>
@@ -4810,8 +4908,8 @@
 
             const renderRebalancePanel = () => {
                 const validSectors = Object.keys(sectorInfo).filter(k=>k!=='loan');
-                const defaultPct = Math.round(100 / validSectors.length);
-                const rebalancingGlobal = appData.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
+                const defaultPct = Math.round(100 / validSectors.length); // [수정] 페이즈 기반 데이터 접근
+                const rebalancingGlobal = (appData?.phases?.[editingPhaseIndex]?.settings?.rebalancingGlobal) || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
                 const currentItemTargets = appData.itemTargets || {};
                 
                 const totalTarget = validSectors.reduce((sum, key) => { 
@@ -5014,7 +5112,7 @@
                                                 <p className="text-xs sm:text-sm text-white/90 font-medium mt-0.5">
                                                     총 {formatNumber(currentSectorTotals[sectorKey]?.amount || 0)}만원 ({formatPercent(currentSectorTotals[sectorKey]?.percentage || 0)}%)
                                                 </p>
-                                                {!isLoan && calculation.rebalanceInfo?.recs[sectorKey] > 0 && (
+                                                {!isLoan && editingPhaseIndex === 0 && calculation.rebalanceInfo?.recs[sectorKey] > 0 && (
                                                     <div className="mt-1 inline-block bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold border border-white/10">
                                                         권장 납입: {formatNumber(calculation.rebalanceInfo.recs[sectorKey])}만원
                                                     </div>
@@ -5790,10 +5888,19 @@
                                     <h1 id="app-title" className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white cursor-pointer" onClick={cycleDisplayMode} title="클릭하여 사용자/프라이빗/데모 모드 전환">
                                         자산 플래너 {titleText}
                                     </h1>
+                                    {editingPhaseIndex > 0 && appData.phases[editingPhaseIndex] && (
+                                        <div className="hidden sm:flex items-center gap-2 ml-4 px-3 py-1.5 bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 rounded-full text-xs font-bold">
+                                            <span>⏳</span>
+                                            <span>{appData.phases[editingPhaseIndex].startMonth}개월 후 계획 편집 중</span>
+                                            <button onClick={() => setEditingPhaseIndex(0)} className="ml-1 text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 dark:hover:text-yellow-200 font-black text-base leading-none" title="편집 종료">
+                                                &times;
+                                            </button>
+                                        </div>
+                                    )}
                                     <span 
                                         onClick={handleLocalTestToggle}
                                         className={`px-2 py-0.5 text-[10px] font-bold rounded-full transition-all border ${
-                                            isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800' :
+                                            isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800' : 
                                             isPro ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800' : 
                                             'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-600'
                                         } ${isLocal ? 'cursor-pointer hover:ring-2 ring-offset-1 ring-indigo-500' : ''}`}
@@ -5804,17 +5911,6 @@
                                 </div>
                                 <div id="header-actions" className="hidden sm:flex items-center gap-2 sm:gap-4"> 
                                     <button onClick={saveToPDF} className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">📄 PDF 저장</button>
-                                    <button onClick={saveAsDefault} className="inline-flex items-center px-3 py-2 border border-blue-300 dark:border-blue-800 text-sm leading-4 font-medium rounded-md text-blue-700 dark:text-blue-400 bg-white dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">⭐ 기본값 저장</button>
-                                    <button onClick={loadCustomDefault} className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">↩️ 기본값 불러오기</button>
-                                    {/* [이동] 실행 취소/다시 실행 버튼 (우측으로 이동) */}
-                                    <div className="flex items-center bg-white dark:bg-gray-700 rounded-md border border-gray-300 dark:border-gray-600">
-                                        <button onClick={() => { undo(); addToast('실행 취소되었습니다.', 'info'); }} disabled={!canUndo} className="px-3 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed border-r border-gray-300 dark:border-gray-600" title="실행 취소 (Ctrl+Z)">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
-                                        </button>
-                                        <button onClick={() => { redo(); addToast('다시 실행되었습니다.', 'info'); }} disabled={!canRedo} className="px-3 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed" title="다시 실행 (Ctrl+Y)">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" /></svg>
-                                        </button>
-                                    </div>
                                 </div>
                                 <div className="sm:hidden relative">
                                     <details className="relative">
@@ -5854,9 +5950,6 @@
                                             )}
                                             <div className="border-t dark:border-gray-700 my-1"></div>
                                             <button onClick={saveToPDF} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">📄 PDF 저장</button>
-                                            <button onClick={() => setIsAIModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-indigo-600 font-bold">🤖 AI 자산 분석</button>
-                                            <button onClick={saveAsDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">⭐ 기본값 저장</button>
-                                            <button onClick={loadCustomDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">↩️ 기본값 불러오기</button>
                                         </div>
                                     </details>
                                 </div>
@@ -6155,8 +6248,19 @@
                                         );
                                     case 'events':
                                         return (
-                                            <PanelWrapper key={panelId} {...panelProps} title="🎉 이벤트 관리">
-                                                {renderEventsPanel()}
+                                            <PanelWrapper key={panelId} {...panelProps} title="🎉 타임라인 & 이벤트">
+                                                <div className="space-y-8">
+                                                    <PhaseManagementPanel 
+                                                        phases={appData.phases || []}
+                                                        editingIndex={editingPhaseIndex}
+                                                        setEditingIndex={setEditingPhaseIndex}
+                                                        addPhase={addPhase}
+                                                        updatePhase={updatePhase}
+                                                        deletePhase={deletePhase}
+                                                        projectionMonths={projectionMonths}
+                                                    />
+                                                    {renderEventsPanel()}
+                                                </div>
                                             </PanelWrapper>
                                         );
                                     case 'detail-analysis':
