@@ -3098,7 +3098,16 @@
 
             // ===== 리밸런싱 경고 함수 (목표 비중 기준 편차) =====
             const getRebalanceStatus = (key, percentage, isItem = false, itemId = null, sectorKey = null) => {
-                const globalSettings = rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
+                // [수정] 과거 데이터(legacy) 구조 호환성 처리 추가 (undefined crash 방지)
+                const rawGlobal = rebalancingGlobal || {};
+                const isLegacy = rawGlobal.warning !== undefined && !rawGlobal.sector;
+                const globalSettings = isLegacy ? 
+                    { sector: { warning: rawGlobal.warning || 5, danger: rawGlobal.danger || 10 }, item: { warning: rawGlobal.warning || 5, danger: rawGlobal.danger || 10 } } :
+                    {
+                        sector: { warning: 5, danger: 10, ...(rawGlobal.sector || {}) },
+                        item: { warning: 5, danger: 10, ...(rawGlobal.item || {}) }
+                    };
+
                 const thresholds = isItem ? globalSettings.item : globalSettings.sector;
                 
                 let target;
@@ -4825,8 +4834,17 @@
             const renderRebalancePanel = () => {
                 const validSectors = Object.keys(sectorInfo).filter(k=>k!=='loan');
                 const defaultPct = Math.round(100 / validSectors.length);
-                const rebalancingGlobal = appData.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
-                const currentItemTargets = appData.itemTargets || {};
+                
+                // [수정] 페이즈와 연동되도록 구조 분해된 변수 사용 및 레거시 데이터 호환
+                const rawGlobal = rebalancingGlobal || {};
+                const isLegacyGlobal = rawGlobal.warning !== undefined && !rawGlobal.sector;
+                const safeGlobal = isLegacyGlobal ? 
+                    { sector: { warning: rawGlobal.warning || 5, danger: rawGlobal.danger || 10 }, item: { warning: rawGlobal.warning || 5, danger: rawGlobal.danger || 10 } } :
+                    {
+                        sector: { warning: 5, danger: 10, ...(rawGlobal.sector || {}) },
+                        item: { warning: 5, danger: 10, ...(rawGlobal.item || {}) }
+                    };
+                const currentItemTargets = itemTargets || {};
                 
                 const totalTarget = validSectors.reduce((sum, key) => { 
                     const value = rebalancingTargets[key];
@@ -4859,11 +4877,11 @@
                                     <div className="flex gap-4">
                                         <div className="flex-1">
                                             <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">경고 임계값 ±%</label>
-                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingGlobal.sector?.warning ?? 5} onChange={(e) => updateGlobalSetting('sector', 'warning', e.target.value)} />
+                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={safeGlobal.sector.warning} onChange={(e) => updateGlobalSetting('sector', 'warning', e.target.value)} />
                                         </div>
                                         <div className="flex-1">
                                             <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">위험 임계값 ±%</label>
-                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingGlobal.sector?.danger ?? 10} onChange={(e) => updateGlobalSetting('sector', 'danger', e.target.value)} />
+                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={safeGlobal.sector.danger} onChange={(e) => updateGlobalSetting('sector', 'danger', e.target.value)} />
                                         </div>
                                     </div>
                                 </div>
@@ -4872,11 +4890,11 @@
                                     <div className="flex gap-4">
                                         <div className="flex-1">
                                             <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">경고 임계값 ±%</label>
-                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingGlobal.item?.warning ?? 5} onChange={(e) => updateGlobalSetting('item', 'warning', e.target.value)} />
+                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={safeGlobal.item.warning} onChange={(e) => updateGlobalSetting('item', 'warning', e.target.value)} />
                                         </div>
                                         <div className="flex-1">
                                             <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">위험 임계값 ±%</label>
-                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingGlobal.item?.danger ?? 10} onChange={(e) => updateGlobalSetting('item', 'danger', e.target.value)} />
+                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={safeGlobal.item.danger} onChange={(e) => updateGlobalSetting('item', 'danger', e.target.value)} />
                                         </div>
                                     </div>
                                 </div>
