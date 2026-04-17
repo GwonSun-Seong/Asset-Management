@@ -217,7 +217,7 @@
                 <div className="md:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-xl shadow-lg p-6">
                     <div>
                         <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">
-                            {isEditing ? `🚀 ${editingPhase.startMonth}개월 후 자산 상태 (가상)` : (TEXTS.summary?.currentTotal || "현재 총자산")}
+                            {isEditing ? `🚀 ${editingPhase.displayLabel} 자산 상태 (가상)` : (TEXTS.summary?.currentTotal || "현재 총자산")}
                         </h2>
                         <div className="flex items-end gap-2">
                             <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(calculation.currentGross, displayMode)}만원</p>
@@ -2579,9 +2579,17 @@
     // ===== 타임라인 페이즈 관리 함수 =====
     const startEditingPhase = (index) => {
         const phase = appData.futurePhases[index];
+        // 절대 연/월인 경우 기준일 대비 개월 수 계산
+        let targetMonth = phase.startMonth;
+        if (phase.startDate) {
+            const baseMonthYYYYMM = appData.baseDate ? appData.baseDate.slice(0, 7) : new Date().toISOString().slice(0, 7);
+            targetMonth = window.getMonthDiff(baseMonthYYYYMM, phase.startDate);
+        }
+        if (targetMonth < 0) targetMonth = 0;
+
         // 해당 시점의 시뮬레이션 결과값 추출
-        const result = calculateMonthlyProjection(appData, phase.startMonth);
-        const projectedState = result.projections[phase.startMonth]?.assets || appData.assets;
+        const result = calculateMonthlyProjection(appData, targetMonth);
+        const projectedState = result.projections[targetMonth]?.assets || appData.assets;
 
         // 편집용 임시 상태로 덮어쓰기
         const editingData = {
@@ -2621,7 +2629,7 @@
                 });
             });
         }
-        setEditingPhase({ index, originalAppData: appData, startMonth: phase.startMonth, pureProjectedState: projectedState });
+        setEditingPhase({ index, originalAppData: appData, startMonth: targetMonth, pureProjectedState: projectedState, displayLabel: phase.startDate || `${phase.startMonth}개월 후` });
         
         // 다시 열 때 오버라이드 된 잔액이 있다면 복구
         if (phase.data.assets) {
@@ -2669,7 +2677,7 @@
 
         setAppData({ ...original, futurePhases: newPhases });
         setEditingPhase(null);
-        addToast(`페이즈(${editingPhase.startMonth}개월 후) 설정이 저장되었습니다.`, 'success');
+        addToast(`분기점(${editingPhase.displayLabel}) 설정이 저장되었습니다.`, 'success');
     };
 
     const cancelEditingPhase = () => {
@@ -2680,19 +2688,24 @@
     };
 
     const addPhase = () => {
-        const monthsStr = prompt('몇 개월 후부터 적용할 미래 분기인가요?\n(예: 12 입력 시 12개월 차부터 설정 반영)');
-        if (!monthsStr) return;
-        const months = parseInt(monthsStr, 10);
-        if (isNaN(months) || months <= 0) {
-            return addToast('올바른 개월 수를 입력해주세요.', 'error');
+        const defaultDate = new Date();
+        defaultDate.setMonth(defaultDate.getMonth() + 12); // 기본 1년 뒤 추천
+        const defaultDateStr = `${defaultDate.getFullYear()}-${String(defaultDate.getMonth() + 1).padStart(2, '0')}`;
+        
+        const dateStr = prompt('분기점이 시작될 연/월을 입력하세요.\n(형식: YYYY-MM)', defaultDateStr);
+        if (!dateStr) return;
+        
+        if (!/^\d{4}-\d{2}$/.test(dateStr)) {
+            return addToast('YYYY-MM 형식으로 정확히 입력해주세요. (예: 2026-05)', 'error');
         }
+
         setAppData(prev => {
             const currentPhases = prev.futurePhases || [];
-            if (currentPhases.find(p => p.startMonth === months)) {
+            if (currentPhases.find(p => p.startDate === dateStr || p.startMonth === dateStr)) {
                 addToast('이미 해당 월에 분기점이 존재합니다.', 'error');
                 return prev;
             }
-            return { ...prev, futurePhases: [...currentPhases, { startMonth: months, data: {} }] };
+            return { ...prev, futurePhases: [...currentPhases, { startDate: dateStr, startMonth: 0, data: {} }] };
         });
     };
 
@@ -5551,7 +5564,11 @@
                 const totalIncome = incomeEvents.reduce((sum, e) => sum + Number(e.amount||0), 0);
                 const totalExpense = expenseEvents.reduce((sum, e) => sum + Number(e.amount||0), 0);
                 const phases = appData.futurePhases || [];
-                const sortedPhases = [...phases].sort((a, b) => a.startMonth - b.startMonth);
+                const sortedPhases = [...phases].sort((a, b) => {
+                    const valA = a.startDate || String(a.startMonth).padStart(5, '0');
+                    const valB = b.startDate || String(b.startMonth).padStart(5, '0');
+                    return valA > valB ? 1 : (valA < valB ? -1 : 0);
+                });
 
                 return (
                     <div className="space-y-8">
@@ -5586,14 +5603,16 @@
                                                 <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-lg">0</div>
                                                 <div>
                                                     <div className="font-bold text-gray-900 dark:text-white">기본 계획 (현재 상태)</div>
-                                                    <div className="text-xs text-gray-500 mt-0.5">현재 ~ {sortedPhases.length > 0 ? `${sortedPhases[0].startMonth}개월 직전` : '계속'}</div>
+                                                    <div className="text-xs text-gray-500 mt-0.5">현재 ~ {sortedPhases.length > 0 ? `${sortedPhases[0].startDate || sortedPhases[0].startMonth + '개월 후'} 직전` : '계속'}</div>
                                                 </div>
                                             </div>
                                         </div>
 
                                         {sortedPhases.map((phase, i) => {
-                                            const originalIndex = phases.findIndex(p => p.startMonth === phase.startMonth);
+                                            const originalIndex = phases.findIndex(p => (p.startDate === phase.startDate && p.startMonth === phase.startMonth));
                                             const nextPhase = sortedPhases[i+1];
+                                            const displayLabel = phase.startDate ? phase.startDate : `${phase.startMonth}개월 후`;
+                                            const nextDisplayLabel = nextPhase ? (nextPhase.startDate ? nextPhase.startDate : `${nextPhase.startMonth}개월 후`) : null;
                                             return (
                                                 <div key={i} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-xl border border-indigo-100 dark:border-indigo-900/50 shadow-sm relative group gap-4">
                                                     <div className="absolute -top-3 left-6 w-0.5 h-3 bg-gray-200 dark:bg-gray-600 hidden sm:block"></div>
@@ -5604,14 +5623,14 @@
                                                                 type="text" 
                                                                 value={phase.name || ''} 
                                                                 onChange={(e) => updatePhaseName(originalIndex, e.target.value)}
-                                                                placeholder={`분기점 (${phase.startMonth}개월 후)`}
+                                                                placeholder={`분기점 (${displayLabel})`}
                                                                 className="w-full bg-transparent border-b border-transparent focus:border-indigo-500 text-gray-900 dark:text-white font-bold focus:outline-none transition-colors placeholder-gray-400"
                                                             />
-                                                            <div className="text-xs text-gray-500 mt-1">적용: {phase.startMonth}개월 후 ~ {nextPhase ? `${nextPhase.startMonth}개월 직전` : '계속'}</div>
+                                                            <div className="text-xs text-gray-500 mt-1">적용: {displayLabel} ~ {nextDisplayLabel ? `${nextDisplayLabel} 직전` : '계속'}</div>
                                                         </div>
                                                     </div>
                                                     <div className="flex items-center gap-2 w-full sm:w-auto justify-end mt-2 sm:mt-0">
-                                                        <button onClick={() => startEditingPhase(originalIndex)} disabled={editingPhase !== null} className="flex-1 sm:flex-none px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">미래 시점 편집</button>
+                                                        <button onClick={() => startEditingPhase(originalIndex)} disabled={editingPhase !== null} className="flex-1 sm:flex-none px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">상세 편집</button>
                                                         <button onClick={() => removePhase(originalIndex)} disabled={editingPhase !== null} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50" title="삭제">
                                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                                         </button>
@@ -6120,9 +6139,9 @@
                         <div className="fixed top-0 left-0 w-full z-[9999] bg-indigo-600 text-white px-4 py-3 flex flex-col sm:flex-row justify-center items-center gap-2 sm:gap-6 shadow-xl animate-in slide-in-from-top">
                             <div className="flex items-center gap-2">
                                 <span className="text-xl animate-pulse">⏳</span>
-                                <span className="font-bold">미래 시점 편집 중 (기준: {editingPhase.startMonth}개월 후 - {appData.futurePhases[editingPhase.index]?.name || '새 분기'})</span>
+                                <span className="font-bold">미래 시점 편집 중 (기준: {editingPhase.displayLabel} - {appData.futurePhases[editingPhase.index]?.name || '새 분기'})</span>
                             </div>
-                            <span className="text-xs text-indigo-200 hidden sm:inline">이 모드에서 수정한 설정은 {editingPhase.startMonth}개월 차부터 적용됩니다. (다른 기능은 숨김 처리됨)</span>
+                            <span className="text-xs text-indigo-200 hidden sm:inline">이 모드에서 수정한 설정은 해당 시점부터 적용됩니다. (다른 기능은 숨김 처리됨)</span>
                             <div className="flex gap-2">
                                 <button onClick={cancelEditingPhase} className="px-4 py-1.5 bg-indigo-500 hover:bg-indigo-400 text-white border border-indigo-400 rounded-full text-sm font-bold shadow-md transition-all">
                                     취소

@@ -109,7 +109,18 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
     // [추가] 타임라인 페이즈 데이터 로드 및 정렬
     const futurePhases = Array.isArray(data.futurePhases) ? data.futurePhases : [];
-    const sortedPhases = [...futurePhases].sort((a, b) => a.startMonth - b.startMonth);
+    
+    // [수정] 절대 연/월(startDate) 기반 지원 및 동적 개월 수(startMonth) 변환
+    const baseMonthYYYYMM = baseDate ? baseDate.slice(0, 7) : new Date().toISOString().slice(0, 7);
+    const mappedPhases = futurePhases.map(p => {
+        let startIdx = p.startMonth; // 기존 하위 호환 (상대 개월 수)
+        if (p.startDate) {
+            startIdx = getMonthDiff(baseMonthYYYYMM, p.startDate);
+        }
+        return { ...p, _calcStartMonth: startIdx };
+    });
+    
+    const sortedPhases = [...mappedPhases].sort((a, b) => a._calcStartMonth - b._calcStartMonth);
     let currentPhaseIndex = 0;
 
     // [변경] 시뮬레이션 내부 가변 설정 변수화 (페이즈 도달 시 덮어쓰기 위함)
@@ -207,7 +218,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         const startDayOfLoop = (month === 1) ? baseDay : 1;
 
         // [추가] 타임라인 페이즈 교체 로직
-        while (currentPhaseIndex < sortedPhases.length && month === sortedPhases[currentPhaseIndex].startMonth && month > 0) {
+        while (currentPhaseIndex < sortedPhases.length && month === sortedPhases[currentPhaseIndex]._calcStartMonth && month > 0) {
             const phaseData = sortedPhases[currentPhaseIndex].data;
             if (phaseData) {
                 if (phaseData.monthlySalary !== undefined) currentMonthlySalary = phaseData.monthlySalary;
