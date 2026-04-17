@@ -187,13 +187,14 @@
     <script type="text/babel">
             const { useState, useMemo, useEffect, useRef } = React;
 
-        const AssetSummaryCard = ({ calculation, projectionMonths, baseMonth, baseDate, displayMode }) => {
+        const AssetSummaryCard = ({ calculation, projectionMonths, baseMonth, baseDate, displayMode, editingPhase }) => {
             const formatNumber = window.formatNumber || ((n) => Number(n || 0).toLocaleString());
             const formatPercent = window.formatPercent || ((n) => (Number(n || 0)).toFixed(1));
             const TEXTS = window.TEXTS || {};
             const lastProj = calculation.monthlyProjections && calculation.monthlyProjections[projectionMonths - 1];
             // modals.js에서 로드된 TooltipGuide 사용
             const TooltipGuide = window.TooltipGuide || (() => null);
+            const isEditing = editingPhase !== null; // [추가] 편집 모드 여부 확인
             let compLabel = "";
             let compVal = 0;
             let compPct = 0;
@@ -215,13 +216,16 @@
             return (
                 <div className="md:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-xl shadow-lg p-6">
                     <div>
-                        <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">{TEXTS.summary?.currentTotal || "현재 총자산"}</h2>
+                        <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">
+                            {isEditing ? `🚀 ${editingPhase.startMonth}개월 후 자산 상태 (가상)` : (TEXTS.summary?.currentTotal || "현재 총자산")}
+                        </h2>
                         <div className="flex items-end gap-2">
                             <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(calculation.currentGross, displayMode)}만원</p>
                             <span className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">(순자산 {formatNumber(calculation.currentNet, displayMode)}만원)</span>
                         </div>
                     </div>
-                    <div className="mt-6"> 
+                    {!isEditing && (
+                        <div className="mt-6"> 
                         <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">{projectionMonths}{TEXTS.summary?.projectedTotal || "개월 후 예상"} <span className="text-gray-400 text-sm">({(() => { 
                             try { 
                                 const [y,m]= (baseDate || baseMonth || '').split('-').map(Number); 
@@ -274,6 +278,7 @@
                             </div>
                         )}
                     </div>
+                    )}
                 </div>
             );
         };
@@ -283,9 +288,11 @@
             onOpenDataManage,
             salaryDay, setSalaryDay,
             saveToPDF, saveCurrentAsset, saveScenario, displayMode,
-            autoUpdateBaseDate, setAutoUpdateBaseDate
+                autoUpdateBaseDate, setAutoUpdateBaseDate,
+                editingPhase // [추가]
         }) => {
             const TEXTS = window.TEXTS || {};
+            const isEditing = editingPhase !== null; // [추가] 편집 모드 여부 확인
 
             return (
                 <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6"> 
@@ -314,7 +321,10 @@
                                 </select>
                             </div>
                         </div>
-                        <div>
+                        
+                        {!isEditing && (
+                            <>
+                                <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-white mb-1">계산 시작일 (기준일)</label>
                             <div className="flex items-center gap-2">
                                 <input type="date" className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value={baseDate} onChange={(e) => setBaseDate(e.target.value)} />
@@ -329,20 +339,22 @@
                                 </label>
                             </div>
                         </div>
-                        <div className="pt-4 border-t dark:border-gray-700">
+                                <div className="pt-4 border-t dark:border-gray-700">
                             <h3 className="text-sm font-bold text-gray-700 dark:text-white mb-2">{TEXTS.settings?.dataManagement || "데이터 관리"}</h3>
                             <div className="flex flex-col gap-2">
                                 <button onClick={onOpenDataManage} className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 shadow-sm transition-all">
                                     <span>💾</span> 데이터 내보내기 / 불러오기
                                 </button>
-                                <button onClick={saveCurrentAsset} className="flex items-center justify-center gap-2 px-3 py-2 bg-indigo-500 text-white text-sm font-semibold rounded-lg hover:bg-indigo-600 shadow-sm hover:shadow-md transition-all mt-2">
+                                <button onClick={saveCurrentAsset} className="flex items-center justify-center gap-2 px-3 py-2 text-white text-sm font-semibold rounded-lg shadow-sm transition-all mt-2 bg-indigo-500 hover:bg-indigo-600 hover:shadow-md">
                                     <span>💾</span> {TEXTS.settings?.saveHistory || "히스토리 저장"}
                                 </button>
-                                <button onClick={saveScenario} className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-600 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 shadow-sm hover:shadow-md transition-all mt-2">
+                                <button onClick={saveScenario} className="flex items-center justify-center gap-2 px-3 py-2 text-white text-sm font-semibold rounded-lg shadow-sm transition-all mt-2 bg-gray-600 hover:bg-gray-700 hover:shadow-md">
                                     <span>💾</span> 시나리오 저장
                                 </button>
                             </div>
                         </div>
+                            </>
+                        )}
                     </div>
                 </div>
             );
@@ -442,10 +454,10 @@
 
         const SummaryPanel = (props) => {
             return (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 transition-colors">
+                <div className={`grid grid-cols-1 ${props.editingPhase !== null ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-6 transition-colors`}>
                     <AssetSummaryCard {...props} />
                     <CoreSettingsCard {...props} />
-                    <GoalSettingsCard {...props} />
+                    {props.editingPhase === null && <GoalSettingsCard {...props} />}
                 </div>
             );
         };
@@ -1253,6 +1265,8 @@
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
             const [lastSyncTime, setLastSyncTime] = useState(null); // [추가] 마지막 동기화 시간
             const [analysisMode, setAnalysisMode] = useState('growth'); // [추가] 상세 분석 모드 ('growth' | 'income')
+            const [editingPhase, setEditingPhase] = useState(null); // [추가] 페이즈 편집 상태 추적
+            const editingPhaseRef = useRef(null); // [보안] 단축키 강제 저장을 위한 실시간 상태 추적 Ref
             
             // [추가] 의견 보내기 버튼 표시 여부 상태
             const [showSuggestionButton, setShowSuggestionButton] = useState(() => localStorage.getItem('assetShowSuggestionButton') !== 'false');
@@ -2081,6 +2095,7 @@
             appDataRef.current = appData; 
             scenariosRef.current = scenarios;
             assetHistoryRef.current = assetHistory;
+            editingPhaseRef.current = editingPhase; // [보안] 렌더링마다 최신 편집 상태 동기화
         }, [appData, scenarios, assetHistory]);
 
             useEffect(() => {
@@ -2107,9 +2122,24 @@
                 if (isSave) {
                     e.preventDefault();
                     const currentData = appDataRef.current;
+                    const currentEditingPhase = editingPhaseRef.current; // [보안] 최신 상태 참조
                     if (currentData) {
-                        localStorage.setItem('assetDashboardDataV3', JSON.stringify(currentData));
-                        saveToCloud({ appData: currentData, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios }, true);
+                        const trueAppData = currentEditingPhase !== null ? (() => {
+                            const updatedPhaseData = {
+                                monthlySalary: currentData.monthlySalary,
+                                monthlyExpenses: currentData.monthlyExpenses,
+                                salaryDay: currentData.salaryDay,
+                                mainCashFlowAccount: currentData.mainCashFlowAccount,
+                                assets: currentData.assets
+                            };
+                            const original = currentEditingPhase.originalAppData;
+                            const newPhases = [...(original.futurePhases || [])];
+                            newPhases[currentEditingPhase.index] = { ...newPhases[currentEditingPhase.index], data: updatedPhaseData };
+                            return { ...original, futurePhases: newPhases };
+                        })() : currentData;
+
+                        localStorage.setItem('assetDashboardDataV3', JSON.stringify(trueAppData));
+                        saveToCloud({ appData: trueAppData, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios }, true);
                         setShowSaveToast(true);
                         setTimeout(() => setShowSaveToast(false), 2000);
                     }
@@ -2146,11 +2176,27 @@
                 if (!isInitialized) return;
 
                 try {
-                    const fullState = { appData, scenarios, assetHistory, referenceScenarios };
+                    // [수정] 미래 시점 편집 중일 때도 저장을 차단하지 않고, 
+                    // 현재 편집 중인 페이즈 데이터를 원본 배열에 알맞게 조립하여 저장하도록 구성
+                    const trueAppData = editingPhase !== null ? (() => {
+                        const updatedPhaseData = {
+                            monthlySalary: appData.monthlySalary,
+                            monthlyExpenses: appData.monthlyExpenses,
+                            salaryDay: appData.salaryDay,
+                            mainCashFlowAccount: appData.mainCashFlowAccount,
+                            assets: appData.assets
+                        };
+                        const original = editingPhase.originalAppData;
+                        const newPhases = [...(original.futurePhases || [])];
+                        newPhases[editingPhase.index] = { ...newPhases[editingPhase.index], data: updatedPhaseData };
+                        return { ...original, futurePhases: newPhases };
+                    })() : appData;
+
+                    const fullState = { appData: trueAppData, scenarios, assetHistory, referenceScenarios };
                     const fullStateStr = JSON.stringify(fullState);
 
                     // 1. 각 항목별 로컬 스토리지 저장
-                    if (appData) localStorage.setItem('assetDashboardDataV3', JSON.stringify(appData));
+                    if (trueAppData) localStorage.setItem('assetDashboardDataV3', JSON.stringify(trueAppData));
                     localStorage.setItem('assetDashboardScenarios', JSON.stringify(scenarios));
                     localStorage.setItem('assetDashboardHistory', JSON.stringify(assetHistory));
                     localStorage.setItem('assetDashboardReferenceScenarios', JSON.stringify(referenceScenarios));
@@ -2167,7 +2213,7 @@
                     console.error("Local Storage Save Failed:", e);
                     // 저장 실패 시 앱이 멈추지 않도록 예외 처리 (필요 시 토스트 메시지 추가 가능)
                 }
-            }, [appData, scenarios, assetHistory, referenceScenarios, isInitialized]);
+            }, [appData, scenarios, assetHistory, referenceScenarios, isInitialized, editingPhase]);
 
             const saveCurrentAsset = () => {
                 try {
@@ -2361,10 +2407,24 @@
                 if (!appData || !isInitialized || isFetchingRef.current || !isCloudLoaded) return;
                 const AUTO_SYNC_DELAY = 2000;
                 const timer = setTimeout(() => {
-                    saveToCloud({ appData, scenarios, assetHistory, referenceScenarios });
+                    const trueAppData = editingPhase !== null ? (() => {
+                        const updatedPhaseData = {
+                            monthlySalary: appData.monthlySalary,
+                            monthlyExpenses: appData.monthlyExpenses,
+                            salaryDay: appData.salaryDay,
+                            mainCashFlowAccount: appData.mainCashFlowAccount,
+                            assets: appData.assets
+                        };
+                        const original = editingPhase.originalAppData;
+                        const newPhases = [...(original.futurePhases || [])];
+                        newPhases[editingPhase.index] = { ...newPhases[editingPhase.index], data: updatedPhaseData };
+                        return { ...original, futurePhases: newPhases };
+                    })() : appData;
+
+                    saveToCloud({ appData: trueAppData, scenarios, assetHistory, referenceScenarios });
                 }, AUTO_SYNC_DELAY);
                 return () => clearTimeout(timer);
-            }, [appData, scenarios, assetHistory, referenceScenarios, isInitialized, isCloudLoaded, saveToCloud]);
+            }, [appData, scenarios, assetHistory, referenceScenarios, isInitialized, isCloudLoaded, saveToCloud, editingPhase]);
 
             const handleEncryptionSelect = (mode) => {
                 setEncryptionMode(mode);
@@ -2479,6 +2539,99 @@
                     addToast('기본값 로드 중 오류가 발생했습니다.', 'error');
                 }
             };
+
+    // ===== 타임라인 페이즈 관리 함수 =====
+    const startEditingPhase = (index) => {
+        const phase = appData.futurePhases[index];
+        // 해당 시점의 시뮬레이션 결과값 추출
+        const result = calculateMonthlyProjection(appData, phase.startMonth);
+        const projectedState = result.projections[phase.startMonth]?.assets || appData.assets;
+
+        // 편집용 임시 상태로 덮어쓰기
+        const editingData = {
+            ...appData,
+            monthlySalary: phase.data.monthlySalary ?? appData.monthlySalary,
+            monthlyExpenses: phase.data.monthlyExpenses ?? appData.monthlyExpenses,
+            salaryDay: phase.data.salaryDay ?? appData.salaryDay,
+            mainCashFlowAccount: phase.data.mainCashFlowAccount ?? appData.mainCashFlowAccount,
+            assets: JSON.parse(JSON.stringify(projectedState)) // Deep copy
+        };
+
+        if (phase.data.assets) {
+            Object.keys(phase.data.assets).forEach(sector => {
+                if (!editingData.assets[sector]) editingData.assets[sector] = [];
+                phase.data.assets[sector].forEach(pAsset => {
+                    const ex = editingData.assets[sector].find(a => a.id === pAsset.id);
+                    if (ex) {
+                        if (pAsset.rate !== undefined) ex.rate = pAsset.rate;
+                        if (pAsset.feeRate !== undefined) ex.feeRate = pAsset.feeRate;
+                        if (pAsset.monthlyContrib !== undefined) ex.monthlyContrib = pAsset.monthlyContrib;
+                        if (pAsset.monthlyContributionFrom !== undefined) ex.monthlyContributionFrom = pAsset.monthlyContributionFrom;
+                        if (pAsset.maturityMonth !== undefined) ex.maturityMonth = pAsset.maturityMonth;
+                        if (pAsset.repaymentMethod !== undefined) ex.repaymentMethod = pAsset.repaymentMethod;
+                        if (pAsset.repaymentAccount !== undefined) ex.repaymentAccount = pAsset.repaymentAccount;
+                    } else {
+                        editingData.assets[sector].push(pAsset);
+                    }
+                });
+            });
+        }
+        setEditingPhase({ index, originalAppData: appData, startMonth: phase.startMonth });
+        setAppData(editingData); // 앱 전체가 페이즈 데이터 바라보게 됨
+    };
+
+    const saveAndExitPhase = () => {
+        if (!editingPhase) return;
+        const updatedPhaseData = {
+            monthlySalary: appData.monthlySalary,
+            monthlyExpenses: appData.monthlyExpenses,
+            salaryDay: appData.salaryDay,
+            mainCashFlowAccount: appData.mainCashFlowAccount,
+            assets: appData.assets // 편집된 자산 설정 보존
+        };
+
+        const original = editingPhase.originalAppData;
+        const newPhases = [...(original.futurePhases || [])];
+        newPhases[editingPhase.index] = { ...newPhases[editingPhase.index], data: updatedPhaseData };
+
+        setAppData({ ...original, futurePhases: newPhases });
+        setEditingPhase(null);
+        addToast(`페이즈(${editingPhase.startMonth}개월 후) 설정이 저장되었습니다.`, 'success');
+    };
+
+    const cancelEditingPhase = () => {
+        if (!editingPhase) return;
+        setAppData(editingPhase.originalAppData); // 임시 편집 상태를 버리고 원본으로 복구
+        setEditingPhase(null);
+        addToast('미래 시점 편집이 취소되었습니다.', 'info');
+    };
+
+    const addPhase = () => {
+        const monthsStr = prompt('몇 개월 후부터 적용할 미래 분기인가요?\n(예: 12 입력 시 12개월 차부터 설정 반영)');
+        if (!monthsStr) return;
+        const months = parseInt(monthsStr, 10);
+        if (isNaN(months) || months <= 0) {
+            return addToast('올바른 개월 수를 입력해주세요.', 'error');
+        }
+        setAppData(prev => {
+            const currentPhases = prev.futurePhases || [];
+            if (currentPhases.find(p => p.startMonth === months)) {
+                addToast('이미 해당 월에 분기점이 존재합니다.', 'error');
+                return prev;
+            }
+            return { ...prev, futurePhases: [...currentPhases, { startMonth: months, data: {} }] };
+        });
+    };
+
+    const removePhase = (index) => {
+        if (confirm('이 분기점 설정을 삭제하시겠습니까?')) {
+            setAppData(prev => {
+                const newPhases = [...(prev.futurePhases || [])];
+                newPhases.splice(index, 1);
+                return { ...prev, futurePhases: newPhases };
+            });
+        }
+    };
 
             // [추가] AI 제안 적용 핸들러
             const handleApplyAIProposal = (proposal) => {
@@ -3957,6 +4110,14 @@
             }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo, scenarioSortOrder, historyViewMode]);
 
             const addAsset = (sector) => {
+                // [보안/개선] 미래 시점 편집 중일 경우, 새 대출의 시작일을 해당 페이즈 시작월로 똑똑하게 자동 맞춤
+                let defaultLoanStart = baseDate ? baseDate.slice(0, 7) : getLocalToday().slice(0, 7);
+                if (editingPhase !== null) {
+                    const d = new Date(baseDate);
+                    d.setMonth(d.getMonth() + editingPhase.startMonth);
+                    defaultLoanStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                }
+
                 setAssets(prev => ({
                 ...prev,
                 [sector]: [...(prev[sector] || []), {
@@ -3971,7 +4132,7 @@
                     repaymentMethod: '원리금균등', // 상환방식
                     repaymentAccount: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '',
                     maturityMonth: 36,
-                    loanStartDate: baseMonth
+                    loanStartDate: defaultLoanStart // [적용] 보정된 날짜 적용
                 }]
                 }));
                 setPanelCollapseState(prev => ({ ...prev, assets: false })); // [추가] 패널 자동 펼치기
@@ -5275,9 +5436,60 @@
             const renderEventsPanel = () => {
                 const totalIncome = incomeEvents.reduce((sum, e) => sum + Number(e.amount||0), 0);
                 const totalExpense = expenseEvents.reduce((sum, e) => sum + Number(e.amount||0), 0);
+                const phases = appData.futurePhases || [];
+                const sortedPhases = [...phases].sort((a, b) => a.startMonth - b.startMonth);
 
                 return (
                     <div className="space-y-8">
+                        {/* 페이즈 관리 섹션 */}
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                            <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg">🗓️</span>
+                                    <span className="font-bold text-gray-800 dark:text-white">타임라인 분기점 설계</span>
+                                    <window.TooltipGuide tip="특정 시점부터 적용될 새로운 자산 운용/수입/지출 계획을 설계할 수 있습니다." />
+                                </div>
+                                <button onClick={addPhase} className="text-sm font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors">
+                                    + 새 분기 추가
+                                </button>
+                            </div>
+                            <div className="p-4">
+                                <div className="flex flex-col gap-3 relative">
+                                    {/* 현재 상태 */}
+                                    <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">0</div>
+                                            <div>
+                                                <div className="font-bold text-gray-900 dark:text-white">현재 상태 (기본 계획)</div>
+                                                <div className="text-xs text-gray-500">현재 ~ {sortedPhases.length > 0 ? `${sortedPhases[0].startMonth}개월 직전` : '계속'}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {sortedPhases.map((phase, i) => {
+                                        const originalIndex = phases.findIndex(p => p.startMonth === phase.startMonth);
+                                        const nextPhase = sortedPhases[i+1];
+                                        return (
+                                            <div key={i} className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-xl border border-indigo-100 dark:border-indigo-900/50 shadow-sm relative group">
+                                                <div className="absolute -top-3 left-6 w-0.5 h-3 bg-gray-200 dark:bg-gray-600"></div>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">{i+1}</div>
+                                                    <div>
+                                                        <div className="font-bold text-gray-900 dark:text-white">분기점: {phase.startMonth}개월 후</div>
+                                                        <div className="text-xs text-gray-500">적용: {phase.startMonth}개월 ~ {nextPhase ? `${nextPhase.startMonth}개월 직전` : '계속'}</div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={() => startEditingPhase(originalIndex)} disabled={editingPhase !== null} className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-xs font-bold transition-colors disabled:opacity-50">미래 시점 편집</button>
+                                                    <button onClick={() => removePhase(originalIndex)} disabled={editingPhase !== null} className="px-3 py-1.5 bg-red-50 text-red-500 hover:bg-red-100 rounded text-xs font-bold transition-colors disabled:opacity-50">삭제</button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
                         <EventSection 
                             title="수입 이벤트" 
                             total={totalIncome} 
@@ -5770,7 +5982,32 @@
                     </button>
                 </div>
                 :
-                    <div className="relative min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors pb-20 sm:pb-0">
+                <div className={`relative min-h-screen transition-colors duration-700 pb-20 sm:pb-0 ${editingPhase !== null ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-gray-50 dark:bg-gray-900'}`}>
+                    {/* 부드러운 시뮬레이션 모드 배경 효과 */}
+                    {editingPhase !== null && (
+                        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-indigo-400/10 dark:bg-indigo-600/20 blur-[100px] rounded-full mix-blend-multiply dark:mix-blend-screen animate-[pulse_4s_ease-in-out_infinite]"></div>
+                        </div>
+                    )}
+                    <div className="relative z-10">
+                    {/* [추가] 타임라인 페이즈 편집 배너 */}
+                    {editingPhase !== null && (
+                        <div className="fixed top-0 left-0 w-full z-[9999] bg-indigo-600 text-white px-4 py-3 flex flex-col sm:flex-row justify-center items-center gap-2 sm:gap-6 shadow-xl animate-in slide-in-from-top">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xl animate-pulse">⏳</span>
+                                <span className="font-bold">미래 시점 편집 중 (기준: {editingPhase.startMonth}개월 후)</span>
+                            </div>
+                            <span className="text-xs text-indigo-200 hidden sm:inline">이 모드에서 수정한 설정은 {editingPhase.startMonth}개월 차부터 적용됩니다. (다른 기능은 숨김 처리됨)</span>
+                            <div className="flex gap-2">
+                                <button onClick={cancelEditingPhase} className="px-4 py-1.5 bg-indigo-500 hover:bg-indigo-400 text-white border border-indigo-400 rounded-full text-sm font-bold shadow-md transition-all">
+                                    취소
+                                </button>
+                                <button onClick={saveAndExitPhase} className="px-5 py-1.5 bg-white text-indigo-600 rounded-full text-sm font-bold shadow-md hover:bg-indigo-50 hover:scale-105 transition-all">
+                                    💾 저장 후 닫기
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     {activeNotice && (
                         <div className="bg-indigo-600 text-white px-4 py-2 text-sm font-medium text-center relative animate-in slide-in-from-top duration-500">
                             <span className="mr-2">📢</span> {activeNotice}
@@ -5803,7 +6040,7 @@
                                     </span>
                                 </div>
                                 <div id="header-actions" className="hidden sm:flex items-center gap-2 sm:gap-4"> 
-                                    <button onClick={saveToPDF} className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">📄 PDF 저장</button>
+                                    <button onClick={saveToPDF} disabled={editingPhase !== null} className={`inline-flex items-center px-3 py-2 border text-sm leading-4 font-medium rounded-md transition-colors ${editingPhase !== null ? 'border-gray-200 text-gray-400 bg-gray-50 dark:bg-gray-800 dark:border-gray-700 cursor-not-allowed' : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>📄 PDF 저장</button>
                                     <button onClick={saveAsDefault} className="inline-flex items-center px-3 py-2 border border-blue-300 dark:border-blue-800 text-sm leading-4 font-medium rounded-md text-blue-700 dark:text-blue-400 bg-white dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">⭐ 기본값 저장</button>
                                     <button onClick={loadCustomDefault} className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">↩️ 기본값 불러오기</button>
                                     {/* [이동] 실행 취소/다시 실행 버튼 (우측으로 이동) */}
@@ -5853,7 +6090,7 @@
                                                 </>
                                             )}
                                             <div className="border-t dark:border-gray-700 my-1"></div>
-                                            <button onClick={saveToPDF} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">📄 PDF 저장</button>
+                                            <button onClick={saveToPDF} disabled={editingPhase !== null} className={`w-full text-left px-3 py-2 rounded transition-colors ${editingPhase !== null ? 'text-gray-400 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200'}`}>📄 PDF 저장</button>
                                             <button onClick={() => setIsAIModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-indigo-600 font-bold">🤖 AI 자산 분석</button>
                                             <button onClick={saveAsDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">⭐ 기본값 저장</button>
                                             <button onClick={loadCustomDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">↩️ 기본값 불러오기</button>
@@ -6051,8 +6288,13 @@
                             </div>
                         </aside>
 
-                        <div id="main-dashboard-panel" className="flex-1 space-y-8 min-w-0">
+                        <div id="main-dashboard-panel" className={`flex-1 space-y-8 min-w-0 transition-all duration-700 relative z-10 ${editingPhase !== null ? 'p-4 sm:p-6 rounded-2xl bg-white/40 dark:bg-gray-800/40 backdrop-blur-md ring-4 ring-indigo-500/30 shadow-[0_0_30px_rgba(99,102,241,0.15)]' : ''}`}>
                             {layoutOrder.map((panelId, index) => {
+                                // [추가] 편집 모드 중에는 집중을 위해 무관한 패널 숨김 처리
+                                if (editingPhase !== null) {
+                                    if (!['summary', 'budget', 'assets', 'expenses'].includes(panelId)) return null;
+                                }
+
                                 const panelProps = { 
                                     key: panelId,
                                     id: panelId,
@@ -6093,6 +6335,7 @@
         setInflationRate={setInflationRate}
         saveScenario={saveScenario}
         onOpenAI={() => setIsAIModalOpen(true)}
+        editingPhase={editingPhase}
     />
     {calculation.warnings && calculation.warnings.length > 0 && (
         <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded shadow-sm">
@@ -6188,14 +6431,15 @@
 
                         {/* ===== 모바일 버튼 ===== */}
                         <div className="sm:hidden flex flex-col gap-2">
-                            <button onClick={saveToPDF} className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium">
+                            <button onClick={saveToPDF} disabled={editingPhase !== null} className={`w-full py-3 rounded-lg font-medium transition-colors ${editingPhase !== null ? 'bg-blue-300 text-white/70 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
                                 📄 PDF로 저장
                             </button>
-                            <button onClick={saveScenario} className="w-full bg-gray-600 text-white py-3 rounded-lg font-medium">
+                            <button onClick={saveScenario} disabled={editingPhase !== null} className={`w-full py-3 rounded-lg font-medium transition-colors ${editingPhase !== null ? 'bg-gray-400 text-white/70 cursor-not-allowed' : 'bg-gray-600 text-white'}`}>
                                 💾 시나리오 저장
                             </button>
                         </div>
                     </div>
+                    </div> {/* End of relative z-10 */}
                     {/* ===== 블로그 배너 ===== */}
                     {!isPro && (
                         <a href="https://blog.naver.com/zocdoc" target="_blank" rel="noopener noreferrer" title="블로그 방문하기" className="hidden sm:block fixed bottom-5 right-5 z-50 p-3 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:shadow-xl transition-all transform hover:scale-110">
