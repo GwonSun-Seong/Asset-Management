@@ -2868,7 +2868,7 @@
                 if (!assets || typeof assets !== 'object') return 0;
                 let sum = 0;
                 // [개선] 실제 현재 날짜가 아닌 '시뮬레이션 기준일(baseDate) + 미래 페이즈 개월 수'를 기준으로 판단
-                const [bY, bM] = (appData.baseDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
+                const [bY, bM] = (appData?.baseDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
                 let effectiveYear = bY;
                 let effectiveMonth = bM;
                 if (editingPhase !== null) {
@@ -3345,7 +3345,7 @@
             const getAutoDepositBreakdown = () => {
                 const breakdown = [];
                 // [개선] 실제 현재 날짜가 아닌 '시뮬레이션 기준일(baseDate) + 미래 페이즈 개월 수'를 기준으로 판단
-                const [bY, bM] = (appData.baseDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
+                const [bY, bM] = (appData?.baseDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
                 let effectiveYear = bY;
                 let effectiveMonth = bM;
                 if (editingPhase !== null) {
