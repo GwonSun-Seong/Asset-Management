@@ -1517,11 +1517,8 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
 
                                 let capIncome = 0;
                                 Object.keys(assets).forEach(k => {
-                                    if (k === 'loan') {
-                                        // 대출 이자는 마이너스 자본소득
-                                        (assets[k] || []).forEach(a => capIncome -= (Number(a.amount||0) * (Number(a.rate||0)/100/12)));
-                                    } else {
-                                        // 자산 수익은 플러스 자본소득 (세전 기준)
+                                    if (k !== 'loan') {
+                                        // 자산 수익은 자본소득 (세전 기준)
                                         (assets[k] || []).forEach(a => capIncome += (Number(a.amount||0) * (Number(a.rate||0)/100/12)));
                                     }
                                 });

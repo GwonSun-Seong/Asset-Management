@@ -2557,6 +2557,15 @@
             assets: JSON.parse(JSON.stringify(projectedState)) // Deep copy
         };
 
+                    // [수정] 분기 시점의 예상 금액을 소수점 둘째 자리에서 반올림
+                    Object.keys(editingData.assets).forEach(sector => {
+                        editingData.assets[sector].forEach(asset => {
+                            if (asset.amount !== undefined) {
+                                asset.amount = Math.round(asset.amount * 100) / 100;
+                            }
+                        });
+                    });
+
         if (phase.data.assets) {
             Object.keys(phase.data.assets).forEach(sector => {
                 if (!editingData.assets[sector]) editingData.assets[sector] = [];
@@ -5530,9 +5539,9 @@
                 const capitalIncomeData = {};
                 
                 Object.keys(sectorInfo).forEach(sectorKey => {
+                    if (sectorKey === 'loan') return; // 대출은 자본소득 분석에서 제외
                     const items = assets[sectorKey] || [];
                     const sectorItems = items.map(asset => {
-                        const isLoan = sectorKey === 'loan';
                         const amount = Number(asset.amount || 0);
                         const rate = Number(asset.rate || 0);
                         const feeRate = Number(asset.feeRate || 0);
@@ -5540,18 +5549,10 @@
                         // 월 이자율/수익률
                         const monthlyRate = rate / 100 / 12;
                         
-                        // 세전 수익 (대출은 이자 비용으로 처리)
+                        // 세전 수익
                         let monthlyGross = amount * monthlyRate;
-                        let monthlyFee = 0;
-                        let monthlyNet = 0;
-                        
-                        if (isLoan) {
-                            monthlyGross = -Math.abs(monthlyGross); // 비용은 음수
-                            monthlyNet = monthlyGross; // 대출은 수수료 로직 제외 (utils.js 로직 따름)
-                        } else {
-                            monthlyFee = monthlyGross * (feeRate / 100);
-                            monthlyNet = monthlyGross - monthlyFee;
-                        }
+                        let monthlyFee = monthlyGross * (feeRate / 100);
+                        let monthlyNet = monthlyGross - monthlyFee;
                         
                         totalCapitalGrossIncome += monthlyGross;
                         totalCapitalTax += monthlyFee;
@@ -5886,7 +5887,6 @@
                                         const sectorGross = items.reduce((s, i) => s + i.monthlyGross, 0);
                                         const sectorFee = items.reduce((s, i) => s + i.monthlyFee, 0);
                                         const sectorNet = items.reduce((s, i) => s + i.monthlyNet, 0);
-                                        const isLoan = sectorKey === 'loan';
 
                                         return (
                                             <React.Fragment key={sectorKey}>
