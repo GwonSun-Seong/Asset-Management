@@ -2125,12 +2125,24 @@
                     const currentEditingPhase = editingPhaseRef.current; // [보안] 최신 상태 참조
                     if (currentData) {
                         const trueAppData = currentEditingPhase !== null ? (() => {
+                            const assetsToSave = JSON.parse(JSON.stringify(currentData.assets));
+                            const pureProjectedAssets = currentEditingPhase.pureProjectedState;
+                            Object.keys(assetsToSave).forEach(sector => {
+                                assetsToSave[sector].forEach(asset => {
+                                    const pureAsset = pureProjectedAssets[sector]?.find(a => a.id === asset.id);
+                                    if (pureAsset && Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.001) {
+                                        asset.isAmountOverridden = true;
+                                    } else if (pureAsset) {
+                                        asset.isAmountOverridden = false;
+                                    }
+                                });
+                            });
                             const updatedPhaseData = {
                                 monthlySalary: currentData.monthlySalary,
                                 monthlyExpenses: currentData.monthlyExpenses,
                                 salaryDay: currentData.salaryDay,
                                 mainCashFlowAccount: currentData.mainCashFlowAccount,
-                                assets: currentData.assets
+                                assets: assetsToSave
                             };
                             const original = currentEditingPhase.originalAppData;
                             const newPhases = [...(original.futurePhases || [])];
@@ -2179,12 +2191,24 @@
                     // [수정] 미래 시점 편집 중일 때도 저장을 차단하지 않고, 
                     // 현재 편집 중인 페이즈 데이터를 원본 배열에 알맞게 조립하여 저장하도록 구성
                     const trueAppData = editingPhase !== null ? (() => {
+                        const assetsToSave = JSON.parse(JSON.stringify(appData.assets));
+                        const pureProjectedAssets = editingPhase.pureProjectedState;
+                        Object.keys(assetsToSave).forEach(sector => {
+                            assetsToSave[sector].forEach(asset => {
+                                const pureAsset = pureProjectedAssets[sector]?.find(a => a.id === asset.id);
+                                if (pureAsset && Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.001) {
+                                    asset.isAmountOverridden = true;
+                                } else if (pureAsset) {
+                                    asset.isAmountOverridden = false;
+                                }
+                            });
+                        });
                         const updatedPhaseData = {
                             monthlySalary: appData.monthlySalary,
                             monthlyExpenses: appData.monthlyExpenses,
                             salaryDay: appData.salaryDay,
                             mainCashFlowAccount: appData.mainCashFlowAccount,
-                            assets: appData.assets
+                            assets: assetsToSave
                         };
                         const original = editingPhase.originalAppData;
                         const newPhases = [...(original.futurePhases || [])];
@@ -2408,12 +2432,24 @@
                 const AUTO_SYNC_DELAY = 2000;
                 const timer = setTimeout(() => {
                     const trueAppData = editingPhase !== null ? (() => {
+                        const assetsToSave = JSON.parse(JSON.stringify(appData.assets));
+                        const pureProjectedAssets = editingPhase.pureProjectedState;
+                        Object.keys(assetsToSave).forEach(sector => {
+                            assetsToSave[sector].forEach(asset => {
+                                const pureAsset = pureProjectedAssets[sector]?.find(a => a.id === asset.id);
+                                if (pureAsset && Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.001) {
+                                    asset.isAmountOverridden = true;
+                                } else if (pureAsset) {
+                                    asset.isAmountOverridden = false;
+                                }
+                            });
+                        });
                         const updatedPhaseData = {
                             monthlySalary: appData.monthlySalary,
                             monthlyExpenses: appData.monthlyExpenses,
                             salaryDay: appData.salaryDay,
                             mainCashFlowAccount: appData.mainCashFlowAccount,
-                            assets: appData.assets
+                            assets: assetsToSave
                         };
                         const original = editingPhase.originalAppData;
                         const newPhases = [...(original.futurePhases || [])];
@@ -2585,18 +2621,46 @@
                 });
             });
         }
-        setEditingPhase({ index, originalAppData: appData, startMonth: phase.startMonth });
+        setEditingPhase({ index, originalAppData: appData, startMonth: phase.startMonth, pureProjectedState: projectedState });
+        
+        // 다시 열 때 오버라이드 된 잔액이 있다면 복구
+        if (phase.data.assets) {
+            Object.keys(phase.data.assets).forEach(sector => {
+                phase.data.assets[sector].forEach(pAsset => {
+                    const ex = editingData.assets[sector].find(a => a.id === pAsset.id);
+                    if (ex && pAsset.isAmountOverridden && pAsset.amount !== undefined) {
+                        ex.amount = pAsset.amount;
+                        ex.isAmountOverridden = true;
+                    }
+                });
+            });
+        }
         setAppData(editingData); // 앱 전체가 페이즈 데이터 바라보게 됨
     };
 
     const saveAndExitPhase = () => {
         if (!editingPhase) return;
+
+        const assetsToSave = JSON.parse(JSON.stringify(appData.assets));
+        const pureProjectedAssets = editingPhase.pureProjectedState;
+        
+        Object.keys(assetsToSave).forEach(sector => {
+            assetsToSave[sector].forEach(asset => {
+                const pureAsset = pureProjectedAssets[sector]?.find(a => a.id === asset.id);
+                if (pureAsset && Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.001) {
+                    asset.isAmountOverridden = true;
+                } else if (pureAsset) {
+                    asset.isAmountOverridden = false;
+                }
+            });
+        });
+
         const updatedPhaseData = {
             monthlySalary: appData.monthlySalary,
             monthlyExpenses: appData.monthlyExpenses,
             salaryDay: appData.salaryDay,
             mainCashFlowAccount: appData.mainCashFlowAccount,
-            assets: appData.assets // 편집된 자산 설정 보존
+            assets: assetsToSave // 편집된 자산 설정 보존 (오버라이드 플래그 포함)
         };
 
         const original = editingPhase.originalAppData;

@@ -246,6 +246,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                                 if (pAsset.repaymentMethod !== undefined) existingAsset.repaymentMethod = pAsset.repaymentMethod;
                                 if (pAsset.repaymentAccount !== undefined) existingAsset.repaymentAccount = pAsset.repaymentAccount;
                                 if (pAsset.loanStartDate !== undefined) existingAsset.loanStartDate = pAsset.loanStartDate; // [추가] 대출 시작일 변경 반영
+                                if (pAsset.isAmountOverridden && pAsset.amount !== undefined) existingAsset.amount = pAsset.amount; // [개선] 명시적 잔액 오버라이드 적용
                             } else {
                                 // 해당 페이즈부터 새롭게 시작되는 자산 추가
                                 currentAssets[sector].push({ ...pAsset, _sector: sector });
