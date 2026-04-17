@@ -110,15 +110,14 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     // [추가] 타임라인 페이즈 데이터 로드 및 정렬
     const futurePhases = Array.isArray(data.futurePhases) ? data.futurePhases : [];
     
-    // [수정] 절대 연/월(startDate) 기반 지원 및 동적 개월 수(startMonth) 변환
+    // [수정] 절대 연/월(startDate) 기반 동적 개월 수 계산 (구버전 startMonth 호환성 제거)
     const baseMonthYYYYMM = baseDate ? baseDate.slice(0, 7) : new Date().toISOString().slice(0, 7);
-    const mappedPhases = futurePhases.map(p => {
-        let startIdx = p.startMonth; // 기존 하위 호환 (상대 개월 수)
-        if (p.startDate) {
-            startIdx = getMonthDiff(baseMonthYYYYMM, p.startDate);
-        }
-        return { ...p, _calcStartMonth: startIdx };
-    });
+    const mappedPhases = futurePhases
+        .filter(p => p.startDate) // startDate가 없는 과거 데이터 필터링
+        .map(p => ({
+            ...p,
+            _calcStartMonth: getMonthDiff(baseMonthYYYYMM, p.startDate)
+        }));
     
     const sortedPhases = [...mappedPhases].sort((a, b) => a._calcStartMonth - b._calcStartMonth);
     let currentPhaseIndex = 0;

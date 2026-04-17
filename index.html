@@ -2579,17 +2579,19 @@
     // ===== 타임라인 페이즈 관리 함수 =====
     const startEditingPhase = (index) => {
         const phase = appData.futurePhases[index];
-        // 절대 연/월인 경우 기준일 대비 개월 수 계산
-        let targetMonth = phase.startMonth;
-        if (phase.startDate) {
-            const baseMonthYYYYMM = appData.baseDate ? appData.baseDate.slice(0, 7) : new Date().toISOString().slice(0, 7);
-            targetMonth = window.getMonthDiff(baseMonthYYYYMM, phase.startDate);
-        }
+        // 절대 연/월 기준일 대비 개월 수 계산
+        const baseMonthYYYYMM = appData.baseDate ? appData.baseDate.slice(0, 7) : new Date().toISOString().slice(0, 7);
+        let targetMonth = window.getMonthDiff(baseMonthYYYYMM, phase.startDate);
         if (targetMonth < 0) targetMonth = 0;
 
         // 해당 시점의 시뮬레이션 결과값 추출
-        const result = calculateMonthlyProjection(appData, targetMonth);
-        const projectedState = result.projections[targetMonth]?.assets || appData.assets;
+        // [Fix] 현재 편집하려는 분기점 자신의 과거 데이터가 시뮬레이션에 개입하여 오버라이드 판단 기준(pureProjectedState)이 오염되는 현상(저장 시 잔액 증발 버그) 방지
+        const pureAppData = {
+            ...appData,
+            futurePhases: (appData.futurePhases || []).map((p, i) => i === index ? { ...p, data: {} } : p)
+        };
+        const result = calculateMonthlyProjection(pureAppData, targetMonth);
+        const projectedState = result.projections[targetMonth]?.assets || pureAppData.assets;
 
         // 편집용 임시 상태로 덮어쓰기
         const editingData = {
@@ -2629,7 +2631,7 @@
                 });
             });
         }
-        setEditingPhase({ index, originalAppData: appData, startMonth: targetMonth, pureProjectedState: projectedState, displayLabel: phase.startDate || `${phase.startMonth}개월 후` });
+        setEditingPhase({ index, originalAppData: appData, startMonth: targetMonth, pureProjectedState: projectedState, displayLabel: phase.startDate });
         
         // 다시 열 때 오버라이드 된 잔액이 있다면 복구
         if (phase.data.assets) {
@@ -2701,11 +2703,11 @@
 
         setAppData(prev => {
             const currentPhases = prev.futurePhases || [];
-            if (currentPhases.find(p => p.startDate === dateStr || p.startMonth === dateStr)) {
+            if (currentPhases.find(p => p.startDate === dateStr)) {
                 addToast('이미 해당 월에 분기점이 존재합니다.', 'error');
                 return prev;
             }
-            return { ...prev, futurePhases: [...currentPhases, { startDate: dateStr, startMonth: 0, data: {} }] };
+            return { ...prev, futurePhases: [...currentPhases, { startDate: dateStr, data: {} }] };
         });
     };
 
@@ -5564,11 +5566,9 @@
                 const totalIncome = incomeEvents.reduce((sum, e) => sum + Number(e.amount||0), 0);
                 const totalExpense = expenseEvents.reduce((sum, e) => sum + Number(e.amount||0), 0);
                 const phases = appData.futurePhases || [];
-                const sortedPhases = [...phases].sort((a, b) => {
-                    const valA = a.startDate || String(a.startMonth).padStart(5, '0');
-                    const valB = b.startDate || String(b.startMonth).padStart(5, '0');
-                    return valA > valB ? 1 : (valA < valB ? -1 : 0);
-                });
+                const sortedPhases = [...phases].filter(p => p.startDate).sort((a, b) => 
+                    a.startDate > b.startDate ? 1 : (a.startDate < b.startDate ? -1 : 0)
+                );
 
                 return (
                     <div className="space-y-8">
@@ -5603,16 +5603,16 @@
                                                 <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-lg">0</div>
                                                 <div>
                                                     <div className="font-bold text-gray-900 dark:text-white">기본 계획 (현재 상태)</div>
-                                                    <div className="text-xs text-gray-500 mt-0.5">현재 ~ {sortedPhases.length > 0 ? `${sortedPhases[0].startDate || sortedPhases[0].startMonth + '개월 후'} 직전` : '계속'}</div>
+                                                    <div className="text-xs text-gray-500 mt-0.5">현재 ~ {sortedPhases.length > 0 ? `${sortedPhases[0].startDate} 직전` : '계속'}</div>
                                                 </div>
                                             </div>
                                         </div>
 
                                         {sortedPhases.map((phase, i) => {
-                                            const originalIndex = phases.findIndex(p => (p.startDate === phase.startDate && p.startMonth === phase.startMonth));
+                                            const originalIndex = phases.findIndex(p => p.startDate === phase.startDate);
                                             const nextPhase = sortedPhases[i+1];
-                                            const displayLabel = phase.startDate ? phase.startDate : `${phase.startMonth}개월 후`;
-                                            const nextDisplayLabel = nextPhase ? (nextPhase.startDate ? nextPhase.startDate : `${nextPhase.startMonth}개월 후`) : null;
+                                            const displayLabel = phase.startDate;
+                                            const nextDisplayLabel = nextPhase ? nextPhase.startDate : null;
                                             return (
                                                 <div key={i} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-xl border border-indigo-100 dark:border-indigo-900/50 shadow-sm relative group gap-4">
                                                     <div className="absolute -top-3 left-6 w-0.5 h-3 bg-gray-200 dark:bg-gray-600 hidden sm:block"></div>
