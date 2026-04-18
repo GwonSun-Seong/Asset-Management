@@ -322,20 +322,12 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             });
 
             // 3. 현금 흐름 및 납입 처리
-            // [수정] 월급 및 지출의 일자별 적용
-            let currentMonthSalary = 0;
-            const effectiveSalaryDay = Math.min(currentSalaryDay, daysInSimMonth); 
-            if (effectiveSalaryDay >= startDayOfLoop) {
-                currentMonthSalary = currentMonthlySalary;
-            }
+            // [Fix] 첫 달 시뮬레이션 시 날짜 기준으로 수입/지출을 필터링하면 예산 불균형(잔여액 폭발)이 발생하므로 항상 월 단위 전체 처리
+            let currentMonthSalary = currentMonthlySalary;
 
             let currentMonthExpenseTotal = 0;
             currentSafeMonthlyExpenses.forEach(exp => {
-                const expDay = exp.day || 30; // 기본값 말일
-                const effectiveExpDay = Math.min(expDay, daysInSimMonth); // [추가] 지출일 말일 보정
-                if (effectiveExpDay >= startDayOfLoop) {
-                    currentMonthExpenseTotal += (exp.amount || 0);
-                }
+                currentMonthExpenseTotal += (exp.amount || 0);
             });
 
             let cashInHand = currentMonthSalary - currentMonthExpenseTotal;
@@ -368,9 +360,10 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 if (loanMonthAtSimMonth <= 0 || loan.amount <= 0) return;
                 
                 // 상환일 체크
-                const repaymentDay = loan.repaymentDay || currentSalaryDay || 25;
-                const effectiveRepaymentDay = Math.min(repaymentDay, daysInSimMonth);
-                const isRepaymentDayPassed = effectiveRepaymentDay < startDayOfLoop;
+                // 예산 완결성을 위해 상환 스킵 방지
+                const isRepaymentDayPassed = false; 
+                // 예산 완결성을 위해 상환 스킵 방지
+                const isRepaymentDayPassed = false; 
 
                 // 'salary' 인 경우에만 처리
                 if (loan.repaymentAccount === 'salary') {
