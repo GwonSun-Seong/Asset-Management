@@ -116,7 +116,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         .filter(p => p.startDate) // startDate가 없는 과거 데이터 필터링
         .map(p => ({
             ...p,
-            _calcStartMonth: getMonthDiff(baseMonthYYYYMM, p.startDate)
+            // [Fix] 시뮬레이션 엔진에서 분기점(Phase)이 한 달 일찍 적용되어 예산을 꼬이게 만드는 치명적 버그 수정
+            _calcStartMonth: getMonthDiff(baseMonthYYYYMM, p.startDate) + 1
         }))
         .filter(p => p._calcStartMonth > 0); // [Fix] 과거이거나 이번 달인 분기점은 사전에 차단하여 무한 대기 병목 해결
     
@@ -363,37 +364,51 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 const simStartToLoanStart = getMonthDiff(loan.loanStartDate || `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`, `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`);
                 const loanMonthAtSimMonth = month + simStartToLoanStart;
 
-                // 대출 기간 체크 (시작월 다음 달부터 상환)
-                if (loanMonthAtSimMonth <= 0 || loan.amount <= 0 || (loan.maturityMonth !== undefined && loanMonthAtSimMonth > loan.maturityMonth)) return;
+                // [수정] 대출 상환 만기 이후에도 잔액이 남았으면 계속 이자를 부과
+                if (loanMonthAtSimMonth <= 0 || loan.amount <= 0) return;
                 
                 // 상환일 체크
                 const repaymentDay = loan.repaymentDay || currentSalaryDay || 25;
                 const effectiveRepaymentDay = Math.min(repaymentDay, daysInSimMonth);
-                if (effectiveRepaymentDay < startDayOfLoop) return;
+                const isRepaymentDayPassed = effectiveRepaymentDay < startDayOfLoop;
 
                 // 'salary' 인 경우에만 처리
                 if (loan.repaymentAccount === 'salary') {
                     const monthlyRate = (loan.rate / 100) / 12;
                     const interestForMonth = loan.amount * monthlyRate;
 
-                    // 1. 이자 가산
+                    // 1. 이자 가산 (상환일이 지나서 상환을 못 하더라도 이자는 발생)
                     loan.amount += interestForMonth;
 
-                    // 2. 상환액 계산
-                    const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
-                    const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
-                    let totalScheduledPayment = (loan.monthlyContrib > 0) ? loan.monthlyContrib : paymentInfo.payment;
+                    let totalScheduledPayment = 0;
+                    let isMaturityPayment = false;
 
-                    // 3. 상환 (현금 보유액에서 차감)
+                    if (!isRepaymentDayPassed) {
+                        // 2. 상환액 계산
+                        const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
+                        const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
+                        
+                        totalScheduledPayment = (loan.monthlyContrib > 0 && loanMonthAtSimMonth <= loan.maturityMonth) ? loan.monthlyContrib : paymentInfo.payment;
+
+                        // [수정] 만기가 지났는데 잔액이 남은 경우 (만기일시 제외) -> 전액 상환 강제 요구
+                        if (loanMonthAtSimMonth > loan.maturityMonth && loan.repaymentMethod !== '만기일시') {
+                            totalScheduledPayment = loan.amount;
+                        }
+
+                        // 만기일시 상환의 만기달(또는 지연된) 원금 상환 예약
+                        if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth >= loan.maturityMonth && loan.amount > 0) {
+                            isMaturityPayment = true;
+                        }
+                    }
+
+                    // 3. 상환 실행 (현금 보유액에서 차감)
                     if (totalScheduledPayment > 0) {
-                        // [Fix] 대출 잔액보다 더 많이 갚는 오류 방지 (잔액 한도 내 상환)
                         const actualPayment = Math.min(totalScheduledPayment, loan.amount);
                         cashInHand -= actualPayment;
                         loan.amount -= actualPayment;
                     }
 
-                    // 만기일시 상환의 만기달 원금 상환
-                    if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth === loan.maturityMonth && loan.amount > 0) {
+                    if (isMaturityPayment) {
                         const finalPrincipal = loan.amount;
                         cashInHand -= finalPrincipal;
                         loan.amount -= finalPrincipal;
@@ -409,7 +424,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             });
 
             if (cashInHand < 0) {
-                warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'cashflow', message: `월급 기반 월납입액이 월 가용 현금을 초과합니다. (${Math.abs(cashInHand).toFixed(2)}만원 부족)` });
+                warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'cashflow', message: `월급 기반 월납입/대출상환이 가용 현금을 초과하여 자산에서 출금됩니다. (${Math.abs(cashInHand).toFixed(2)}만원 부족)` });
             }
 
             // [개선] 출금 계좌 계층 구조 (Withdrawal Hierarchy) 적용
@@ -429,7 +444,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     const hierarchy = ['investment', 'savings', 'misc', 'pension', 'deposit'];
                     for (const sector of hierarchy) {
                         (currentAssets[sector] || []).forEach(asset => {
-                            if (asset.name === mainCashFlowAccount) return;
+                            if (asset.name === currentMainCashFlowAccount) return; // [수정] 올바른 변수명 참조
                             const withdraw = Math.min(asset.amount, deficit);
                             asset.amount -= withdraw;
                             deficit -= withdraw;
@@ -437,44 +452,61 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                         if (deficit <= 0) break;
                     }
                 }
+                
+                // [Fix] 모든 자산을 다 털어도 deficit이 남았다면, 잔여액 계좌를 마이너스로 만들어서 초과 부채(연체/오버드래프트) 상태를 수학적으로 유지
+                if (deficit > 0) {
+                    const residualTarget = Object.values(currentAssets).flat().find(d => d.name === currentResidualAccount) || cashFlowAccount;
+                    if (residualTarget) {
+                        residualTarget.amount -= deficit;
+                    }
+                }
             }
 
-            // 3b. 대출 상환 (계좌이체 기반) (Fix #1, #3)
+            // 3b. 대출 상환 (계좌이체 기반)
             (currentAssets.loan || []).forEach((loan) => {
                 if (loan._processedThisMonth) return; // 이미 처리된 대출 스킵
 
                 const simStartToLoanStart = getMonthDiff(loan.loanStartDate || `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`, `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`);
                 const loanMonthAtSimMonth = month + simStartToLoanStart;
 
-                if (loanMonthAtSimMonth <= 0 || loan.amount <= 0 || (loan.maturityMonth !== undefined && loanMonthAtSimMonth > loan.maturityMonth)) return;
+                if (loanMonthAtSimMonth <= 0 || loan.amount <= 0) return;
 
-                // [추가] 대출 상환일 체크 (첫 달 시뮬레이션 시 이미 상환일이 지났으면 스킵)
+                let repaymentAccount = loan._repaymentAccountRef;
+                if (!repaymentAccount && !loan._missingAccountWarned) {
+                    warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 상환계좌(${loan.repaymentAccount})가 없거나 삭제되어 대출 이자만 누적됩니다.` });
+                    loan._missingAccountWarned = true;
+                }
+
                 const repaymentDay = loan.repaymentDay || currentSalaryDay || 25;
                 const effectiveRepaymentDay = Math.min(repaymentDay, daysInSimMonth);
-                if (effectiveRepaymentDay < startDayOfLoop) return;
-
-                const repaymentAccount = loan._repaymentAccountRef;
-                if (!repaymentAccount) {
-                    warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}]의 상환계좌(${loan.repaymentAccount})를 찾을 수 없습니다.` });
-                    return;
-                }
+                const isRepaymentDayPassed = effectiveRepaymentDay < startDayOfLoop;
 
                 const monthlyRate = (loan.rate / 100) / 12;
                 const interestForMonth = loan.amount * monthlyRate;
 
-                // 1. 이자 가산 (회계적 정밀도: 원금에 이자를 먼저 더함)
+                // 1. 이자 가산
                 loan.amount += interestForMonth;
 
-                // 2. 상환액 계산 (가산 전 원금 기준)
-                const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
-                const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
+                let totalScheduledPayment = 0;
+                let isMaturityPayment = false;
 
-                // [수정] 사용자 입력 상환액이 있으면 우선 사용, 없으면 자동 계산값 사용 (중복 합산 방지)
-                let totalScheduledPayment = (loan.monthlyContrib > 0) ? loan.monthlyContrib : paymentInfo.payment;
+                if (!isRepaymentDayPassed && repaymentAccount) {
+                    // 2. 상환액 계산 (가산 전 원금 기준)
+                    const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
+                    const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
 
-                if (totalScheduledPayment > 0) {
-                    // [Fix] 계좌 잔액과 대출 잔액 중 작은 금액만큼만 상환 (과다 납부 방지)
-                    // [수정] 상환 계좌가 대출(마이너스 통장 등)인 경우 잔액 체크 없이 부채 증가, 자산인 경우 잔액 체크 후 차감
+                    totalScheduledPayment = (loan.monthlyContrib > 0 && loanMonthAtSimMonth <= loan.maturityMonth) ? loan.monthlyContrib : paymentInfo.payment;
+                    
+                    if (loanMonthAtSimMonth > loan.maturityMonth && loan.repaymentMethod !== '만기일시') {
+                        totalScheduledPayment = loan.amount;
+                    }
+
+                    if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth >= loan.maturityMonth && loan.amount > 0) {
+                        isMaturityPayment = true;
+                    }
+                }
+
+                if (totalScheduledPayment > 0 && repaymentAccount) {
                     const isSourceLoan = repaymentAccount._sector === 'loan';
                     const actualRepayment = isSourceLoan 
                         ? Math.min(totalScheduledPayment, loan.amount) 
@@ -483,16 +515,15 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     if (isSourceLoan) repaymentAccount.amount += actualRepayment;
                     else repaymentAccount.amount -= actualRepayment;
 
-                    // 3. 상환액 전체 차감 (이자 가산이 선행되었으므로 원리금 전체를 차감)
+                    // 3. 상환액 전체 차감
                     loan.amount -= actualRepayment;
 
                     if (actualRepayment < totalScheduledPayment) {
-                        warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 상환액 ${totalScheduledPayment.toFixed(2)}만원 중 ${actualRepayment.toFixed(2)}만원만 상환되었습니다.` });
+                        warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 잔액 부족으로 상환액 ${totalScheduledPayment.toFixed(2)}만원 중 ${actualRepayment.toFixed(2)}만원만 상환되었습니다.` });
                     }
                 }
 
-                // 만기일시 상환의 만기달 원금 상환 처리
-                if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth === loan.maturityMonth && loan.amount > 0) {
+                if (isMaturityPayment && repaymentAccount) {
                     const finalPrincipal = loan.amount;
                     const isSourceLoan = repaymentAccount._sector === 'loan';
                     const actualFinalRepayment = isSourceLoan ? finalPrincipal : Math.min(finalPrincipal, repaymentAccount.amount);
@@ -509,8 +540,11 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 // 부동 소수점 오차 보정 및 0원 처리
                 loan.amount = Math.round(loan.amount * 10000) / 10000;
                 if (loan.amount < 0.01) loan.amount = 0;
-                repaymentAccount.amount = Math.round(repaymentAccount.amount * 10000) / 10000;
                 loan.amount = Math.max(0, loan.amount);
+                
+                if (repaymentAccount) {
+                    repaymentAccount.amount = Math.round(repaymentAccount.amount * 10000) / 10000;
+                }
             });
 
             // 3c. 월수입 외 다른 통장에서의 납입 (계좌이체)
