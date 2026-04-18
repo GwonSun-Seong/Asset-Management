@@ -591,6 +591,7 @@
             if (JSON.stringify(currentAppData.monthlyExpenses) !== JSON.stringify(original.monthlyExpenses)) updatedPhaseData.monthlyExpenses = currentAppData.monthlyExpenses;
             if (currentAppData.salaryDay !== original.salaryDay) updatedPhaseData.salaryDay = currentAppData.salaryDay;
             if (currentAppData.mainCashFlowAccount !== original.mainCashFlowAccount) updatedPhaseData.mainCashFlowAccount = currentAppData.mainCashFlowAccount;
+            if (currentAppData.residualAccount !== original.residualAccount) updatedPhaseData.residualAccount = currentAppData.residualAccount;
             if (Object.keys(modifiedAssetsToSave).length > 0) updatedPhaseData.assets = modifiedAssetsToSave;
 
             const newPhases = [...(original.futurePhases || [])];
@@ -2591,6 +2592,7 @@
             monthlyExpenses: phase.data.monthlyExpenses ?? appData.monthlyExpenses,
             salaryDay: phase.data.salaryDay ?? appData.salaryDay,
             mainCashFlowAccount: phase.data.mainCashFlowAccount ?? appData.mainCashFlowAccount,
+            residualAccount: phase.data.residualAccount ?? appData.residualAccount,
             assets: JSON.parse(JSON.stringify(projectedState)) // Deep copy
         };
 
@@ -2609,6 +2611,9 @@
                 phase.data.assets[sector].forEach(pAsset => {
                     const ex = editingData.assets[sector].find(a => a.id === pAsset.id);
                     if (ex) {
+                        if (pAsset.name !== undefined) ex.name = pAsset.name;
+                        if (pAsset.icon !== undefined) ex.icon = pAsset.icon;
+                        if (pAsset.memo !== undefined) ex.memo = pAsset.memo;
                         if (pAsset.rate !== undefined) ex.rate = pAsset.rate;
                         if (pAsset.feeRate !== undefined) ex.feeRate = pAsset.feeRate;
                         if (pAsset.monthlyContrib !== undefined) ex.monthlyContrib = pAsset.monthlyContrib;
@@ -2616,6 +2621,7 @@
                         if (pAsset.maturityMonth !== undefined) ex.maturityMonth = pAsset.maturityMonth;
                         if (pAsset.repaymentMethod !== undefined) ex.repaymentMethod = pAsset.repaymentMethod;
                         if (pAsset.repaymentAccount !== undefined) ex.repaymentAccount = pAsset.repaymentAccount;
+                        if (pAsset.loanStartDate !== undefined) ex.loanStartDate = pAsset.loanStartDate;
                     } else {
                         editingData.assets[sector].push(pAsset);
                     }

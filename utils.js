@@ -103,7 +103,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
     const {
         monthlySalary = 0, assets = {}, monthlyExpenses = [],
-        mainCashFlowAccount, baseDate, // [변경] baseMonth -> baseDate
+        mainCashFlowAccount, residualAccount, baseDate, // [변경] baseMonth -> baseDate
         salaryDay = 25, // [기본값 변경]
     } = data;
 
@@ -128,6 +128,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     let currentSafeMonthlyExpenses = Array.isArray(monthlyExpenses) ? monthlyExpenses : [];
     let currentSalaryDay = salaryDay;
     let currentMainCashFlowAccount = mainCashFlowAccount;
+    let currentResidualAccount = residualAccount || mainCashFlowAccount;
 
     // [개선] 시뮬레이션 엔진 내부에서도 배열 무결성 보장
     const safeIncomeEvents = Array.isArray(data.incomeEvents) ? data.incomeEvents : [];
@@ -227,6 +228,9 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 if (phaseData.mainCashFlowAccount !== undefined) {
                     currentMainCashFlowAccount = phaseData.mainCashFlowAccount;
                     cashFlowAccount = Object.values(currentAssets).flat().find(d => d.name === currentMainCashFlowAccount);
+                }
+                if (phaseData.residualAccount !== undefined) {
+                    currentResidualAccount = phaseData.residualAccount;
                 }
                 
                 if (phaseData.assets) {
@@ -411,7 +415,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             // [개선] 출금 계좌 계층 구조 (Withdrawal Hierarchy) 적용
             let deficit = -cashInHand;
             if (cashInHand >= 0) {
-                if (cashFlowAccount) cashFlowAccount.amount += cashInHand;
+                const residualTarget = Object.values(currentAssets).flat().find(d => d.name === currentResidualAccount) || cashFlowAccount;
+                if (residualTarget) residualTarget.amount += cashInHand;
             } else {
                 // 1. 주 계좌에서 먼저 차감
                 if (cashFlowAccount) {
