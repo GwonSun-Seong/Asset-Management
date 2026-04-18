@@ -236,43 +236,39 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 
                 if (phaseData.assets) {
                     // [보안] 미래 분기 편집 시 삭제된 자산(계좌 해지, 대출 완납 등)을 시뮬레이션에서도 완벽히 필터링 (유령 자산 방지)
-                    Object.keys(currentAssets).forEach(sector => {
-                        const phaseSectorAssets = phaseData.assets[sector] || [];
-                        currentAssets[sector] = currentAssets[sector].filter(existing => 
-                            phaseSectorAssets.some(p => p.id === existing.id)
-                        );
-                    });
-
+                    // [Fix] phaseData.assets에 해당 섹터가 명시적으로 존재하는 경우에만 필터링을 수행하여 타 섹터 자산이 무고하게 삭제되는 버그 해결
+                    // [Rework] 분기점 데이터 적용 로직을 재구성하여 안정성 강화.
+                    // phaseData에 명시된 섹터만 수정하여, 다른 섹터(예: 연금)의 자산이 의도치 않게 삭제되는 문제를 원천 차단합니다.
                     Object.keys(phaseData.assets).forEach(sector => {
                         const phaseSectorAssets = phaseData.assets[sector] || [];
-                        if (!currentAssets[sector]) currentAssets[sector] = [];
+                        const originalSectorAssets = currentAssets[sector] || [];
                         
-                        phaseSectorAssets.forEach(pAsset => {
-                            const existingAsset = currentAssets[sector].find(a => a.id === pAsset.id);
+                        // phaseData를 기준으로 새로운 자산 목록을 생성 (추가, 수정, 삭제 처리)
+                        const newSectorAssets = phaseSectorAssets.map(pAsset => {
+                            const existingAsset = originalSectorAssets.find(a => a.id === pAsset.id);
                             if (existingAsset) {
-                                // 설정값만 덮어쓰고 amount 누적액은 보존
-                                if (pAsset.name !== undefined) existingAsset.name = pAsset.name; // [추가] 이름 변경 반영
-                                if (pAsset.icon !== undefined) existingAsset.icon = pAsset.icon; // [추가] 아이콘 변경 반영
-                                if (pAsset.memo !== undefined) existingAsset.memo = pAsset.memo; // [추가] 메모 변경 반영
-                                if (pAsset.rate !== undefined) existingAsset.rate = pAsset.rate;
-                                if (pAsset.feeRate !== undefined) existingAsset.feeRate = pAsset.feeRate;
-                                if (pAsset.monthlyContrib !== undefined) existingAsset.monthlyContrib = pAsset.monthlyContrib;
-                                if (pAsset.monthlyContributionFrom !== undefined) existingAsset.monthlyContributionFrom = pAsset.monthlyContributionFrom;
-                                if (pAsset.maturityMonth !== undefined) existingAsset.maturityMonth = pAsset.maturityMonth;
-                                if (pAsset.repaymentMethod !== undefined) existingAsset.repaymentMethod = pAsset.repaymentMethod;
-                                if (pAsset.repaymentAccount !== undefined) existingAsset.repaymentAccount = pAsset.repaymentAccount;
-                                if (pAsset.loanStartDate !== undefined) existingAsset.loanStartDate = pAsset.loanStartDate; // [추가] 대출 시작일 변경 반영
-                                if (pAsset.isAmountOverridden && pAsset.amount !== undefined) existingAsset.amount = pAsset.amount; // [개선] 명시적 잔액 오버라이드 적용
+                                // 기존 자산: 설정값은 덮어쓰되, 금액(amount)은 보존하는 것을 원칙으로 함
+                                const updatedAsset = { ...existingAsset, ...pAsset };
+                                if (!pAsset.isAmountOverridden) {
+                                    updatedAsset.amount = existingAsset.amount;
+                                }
+                                return updatedAsset;
                             } else {
-                                // 해당 페이즈부터 새롭게 시작되는 자산 추가
-                                currentAssets[sector].push({ ...pAsset, _sector: sector });
+                                // 신규 자산: phaseData에 있는 그대로 추가
+                                return { ...pAsset, _sector: sector };
                             }
                         });
+
+                        currentAssets[sector] = newSectorAssets;
                     });
                     
                     const newAllFlat = Object.values(currentAssets).flat();
                     cashFlowAccount = newAllFlat.find(d => d.name === currentMainCashFlowAccount);
-                    if (currentAssets.loan) currentAssets.loan.forEach(loan => { loan._repaymentAccountRef = newAllFlat.find(a => a.name === loan.repaymentAccount); });
+                    if (currentAssets.loan) {
+                        currentAssets.loan.forEach(loan => { 
+                            loan._repaymentAccountRef = newAllFlat.find(a => a.name === loan.repaymentAccount); 
+                        });
+                    }
                 }
             }
             currentPhaseIndex++;
