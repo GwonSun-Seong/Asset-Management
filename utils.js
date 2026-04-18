@@ -364,7 +364,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 const loanMonthAtSimMonth = month + simStartToLoanStart;
 
                 // 대출 기간 체크 (시작월 다음 달부터 상환)
-                if (loanMonthAtSimMonth <= 1 || loan.amount <= 0 || (loan.maturityMonth !== undefined && loanMonthAtSimMonth > loan.maturityMonth + 1)) return;
+                if (loanMonthAtSimMonth <= 0 || loan.amount <= 0 || (loan.maturityMonth !== undefined && loanMonthAtSimMonth > loan.maturityMonth)) return;
                 
                 // 상환일 체크
                 const repaymentDay = loan.repaymentDay || currentSalaryDay || 25;
@@ -380,7 +380,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     loan.amount += interestForMonth;
 
                     // 2. 상환액 계산
-                    const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 2);
+                    const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
                     const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
                     let totalScheduledPayment = (loan.monthlyContrib > 0) ? loan.monthlyContrib : paymentInfo.payment;
 
@@ -393,7 +393,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     }
 
                     // 만기일시 상환의 만기달 원금 상환
-                    if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth === loan.maturityMonth + 1 && loan.amount > 0) {
+                    if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth === loan.maturityMonth && loan.amount > 0) {
                         const finalPrincipal = loan.amount;
                         cashInHand -= finalPrincipal;
                         loan.amount -= finalPrincipal;
@@ -446,7 +446,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 const simStartToLoanStart = getMonthDiff(loan.loanStartDate || `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`, `${baseYear}-${String(baseMonthIdx+1).padStart(2,'0')}`);
                 const loanMonthAtSimMonth = month + simStartToLoanStart;
 
-                if (loanMonthAtSimMonth <= 1 || loan.amount <= 0 || (loan.maturityMonth !== undefined && loanMonthAtSimMonth > loan.maturityMonth + 1)) return;
+                if (loanMonthAtSimMonth <= 0 || loan.amount <= 0 || (loan.maturityMonth !== undefined && loanMonthAtSimMonth > loan.maturityMonth)) return;
 
                 // [추가] 대출 상환일 체크 (첫 달 시뮬레이션 시 이미 상환일이 지났으면 스킵)
                 const repaymentDay = loan.repaymentDay || currentSalaryDay || 25;
@@ -466,7 +466,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 loan.amount += interestForMonth;
 
                 // 2. 상환액 계산 (가산 전 원금 기준)
-                const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 2);
+                const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
                 const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
 
                 // [수정] 사용자 입력 상환액이 있으면 우선 사용, 없으면 자동 계산값 사용 (중복 합산 방지)
@@ -492,7 +492,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 }
 
                 // 만기일시 상환의 만기달 원금 상환 처리
-                if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth === loan.maturityMonth + 1 && loan.amount > 0) {
+                if (loan.repaymentMethod === '만기일시' && loanMonthAtSimMonth === loan.maturityMonth && loan.amount > 0) {
                     const finalPrincipal = loan.amount;
                     const isSourceLoan = repaymentAccount._sector === 'loan';
                     const actualFinalRepayment = isSourceLoan ? finalPrincipal : Math.min(finalPrincipal, repaymentAccount.amount);
