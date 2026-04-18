@@ -362,8 +362,6 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 // 상환일 체크
                 // 예산 완결성을 위해 상환 스킵 방지
                 const isRepaymentDayPassed = false; 
-                // 예산 완결성을 위해 상환 스킵 방지
-                const isRepaymentDayPassed = false; 
 
                 // 'salary' 인 경우에만 처리
                 if (loan.repaymentAccount === 'salary') {
@@ -469,10 +467,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 상환계좌(${loan.repaymentAccount})가 없거나 삭제되어 대출 이자만 누적됩니다.` });
                     loan._missingAccountWarned = true;
                 }
-
-                const repaymentDay = loan.repaymentDay || currentSalaryDay || 25;
-                const effectiveRepaymentDay = Math.min(repaymentDay, daysInSimMonth);
-                const isRepaymentDayPassed = effectiveRepaymentDay < startDayOfLoop;
+                // 예산 완결성을 위해 상환 스킵 방지
+                const isRepaymentDayPassed = false; 
 
                 const monthlyRate = (loan.rate / 100) / 12;
                 const interestForMonth = loan.amount * monthlyRate;
