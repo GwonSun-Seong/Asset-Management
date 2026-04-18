@@ -117,7 +117,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         .map(p => ({
             ...p,
             _calcStartMonth: getMonthDiff(baseMonthYYYYMM, p.startDate)
-        }));
+        }))
+        .filter(p => p._calcStartMonth > 0); // [Fix] 과거이거나 이번 달인 분기점은 사전에 차단하여 무한 대기 병목 해결
     
     const sortedPhases = [...mappedPhases].sort((a, b) => a._calcStartMonth - b._calcStartMonth);
     let currentPhaseIndex = 0;

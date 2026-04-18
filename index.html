@@ -542,6 +542,66 @@
             return { state: present, setState: set, undo, redo, canUndo: past.length > 0, canRedo: future.length > 0, reset };
         };
 
+        // [Fix] 페이즈(미래 시점) 편집 데이터 병합 헬퍼 함수 (중복 로직 통합 및 스마트 오버라이드 추출)
+        const getPhaseMergedAppData = (currentAppData, currentEditingPhase) => {
+            if (!currentEditingPhase) return currentAppData;
+
+            const original = currentEditingPhase.originalAppData;
+            const pureProjectedAssets = currentEditingPhase.pureProjectedState;
+            const currentAssets = currentAppData.assets;
+            const modifiedAssetsToSave = {};
+
+            Object.keys(currentAssets).forEach(sector => {
+                const sectorAssets = currentAssets[sector] || [];
+                const pureSectorAssets = pureProjectedAssets[sector] || [];
+                const phaseSectorAssets = [];
+
+                sectorAssets.forEach(asset => {
+                    const pureAsset = pureSectorAssets.find(a => a.id === asset.id);
+                    if (!pureAsset) {
+                        // 미래 시점에 새롭게 추가된 자산은 통째로 저장
+                        phaseSectorAssets.push({ ...asset });
+                    } else {
+                        // 기존에 있던 자산은 사용자가 "의도적으로 바꾼 속성"만 골라서 저장 (스마트 오버라이드)
+                        const diff = {};
+                        let hasChanges = false;
+                        
+                        const checkAndAdd = (key) => { if (asset[key] !== pureAsset[key]) { diff[key] = asset[key]; hasChanges = true; } };
+
+                        if (Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.001) {
+                            diff.amount = asset.amount;
+                            diff.isAmountOverridden = true;
+                            hasChanges = true;
+                        } else {
+                            diff.isAmountOverridden = false;
+                        }
+
+                        ['name', 'icon', 'memo', 'rate', 'feeRate', 'monthlyContrib', 'monthlyContributionFrom', 'maturityMonth', 'repaymentMethod', 'repaymentAccount', 'loanStartDate'].forEach(checkAndAdd);
+
+                        if (hasChanges) {
+                            phaseSectorAssets.push({ id: asset.id, ...diff });
+                        }
+                    }
+                });
+                if (phaseSectorAssets.length > 0) modifiedAssetsToSave[sector] = phaseSectorAssets;
+            });
+
+            const updatedPhaseData = {};
+            if (currentAppData.monthlySalary !== original.monthlySalary) updatedPhaseData.monthlySalary = currentAppData.monthlySalary;
+            if (JSON.stringify(currentAppData.monthlyExpenses) !== JSON.stringify(original.monthlyExpenses)) updatedPhaseData.monthlyExpenses = currentAppData.monthlyExpenses;
+            if (currentAppData.salaryDay !== original.salaryDay) updatedPhaseData.salaryDay = currentAppData.salaryDay;
+            if (currentAppData.mainCashFlowAccount !== original.mainCashFlowAccount) updatedPhaseData.mainCashFlowAccount = currentAppData.mainCashFlowAccount;
+            if (Object.keys(modifiedAssetsToSave).length > 0) updatedPhaseData.assets = modifiedAssetsToSave;
+
+            const newPhases = [...(original.futurePhases || [])];
+            newPhases[currentEditingPhase.index] = { 
+                ...newPhases[currentEditingPhase.index], 
+                data: updatedPhaseData 
+            };
+
+            return { ...original, futurePhases: newPhases };
+        };
+
         const PanelWrapper = ({ id, title, moveUp, moveDown, isFirst, isLast, isCollapsed, onToggle, children, className = "bg-white dark:bg-gray-900 rounded-lg shadow" }) => {
             return (
                 <div id={id}>
@@ -1352,6 +1412,9 @@
             const [isGameModalOpen, setIsGameModalOpen] = useState(false); // [추가] 미니게임 모달 상태
             const [activeBanner, setActiveBanner] = useState('ai'); // [추가] 사이드바 배너 탭 상태
             const [scenarioToExport, setScenarioToExport] = useState(null); // [추가] 내보낼 시나리오 상태
+            const [activeAssetTab, setActiveAssetTab] = useState('cash'); // [추가] 자산 상세 탭 상태
+            const [assetTouchStart, setAssetTouchStart] = useState({ x: null, y: null }); // [추가] 자산 탭 스와이프 상태
+            const [assetTouchEnd, setAssetTouchEnd] = useState({ x: null, y: null }); // [추가] 자산 탭 스와이프 상태
 
             const isLocal = useMemo(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1', []);
 
@@ -2124,31 +2187,7 @@
                     const currentData = appDataRef.current;
                     const currentEditingPhase = editingPhaseRef.current; // [보안] 최신 상태 참조
                     if (currentData) {
-                        const trueAppData = currentEditingPhase !== null ? (() => {
-                            const assetsToSave = JSON.parse(JSON.stringify(currentData.assets));
-                            const pureProjectedAssets = currentEditingPhase.pureProjectedState;
-                            Object.keys(assetsToSave).forEach(sector => {
-                                assetsToSave[sector].forEach(asset => {
-                                    const pureAsset = pureProjectedAssets[sector]?.find(a => a.id === asset.id);
-                                    if (pureAsset && Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.001) {
-                                        asset.isAmountOverridden = true;
-                                    } else if (pureAsset) {
-                                        asset.isAmountOverridden = false;
-                                    }
-                                });
-                            });
-                            const updatedPhaseData = {
-                                monthlySalary: currentData.monthlySalary,
-                                monthlyExpenses: currentData.monthlyExpenses,
-                                salaryDay: currentData.salaryDay,
-                                mainCashFlowAccount: currentData.mainCashFlowAccount,
-                                assets: assetsToSave
-                            };
-                            const original = currentEditingPhase.originalAppData;
-                            const newPhases = [...(original.futurePhases || [])];
-                            newPhases[currentEditingPhase.index] = { ...newPhases[currentEditingPhase.index], data: updatedPhaseData };
-                            return { ...original, futurePhases: newPhases };
-                        })() : currentData;
+                        const trueAppData = getPhaseMergedAppData(currentData, currentEditingPhase);
 
                         localStorage.setItem('assetDashboardDataV3', JSON.stringify(trueAppData));
                         saveToCloud({ appData: trueAppData, scenarios: scenariosRef.current, assetHistory: assetHistoryRef.current, referenceScenarios: referenceScenarios }, true);
@@ -2190,31 +2229,7 @@
                 try {
                     // [수정] 미래 시점 편집 중일 때도 저장을 차단하지 않고, 
                     // 현재 편집 중인 페이즈 데이터를 원본 배열에 알맞게 조립하여 저장하도록 구성
-                    const trueAppData = editingPhase !== null ? (() => {
-                        const assetsToSave = JSON.parse(JSON.stringify(appData.assets));
-                        const pureProjectedAssets = editingPhase.pureProjectedState;
-                        Object.keys(assetsToSave).forEach(sector => {
-                            assetsToSave[sector].forEach(asset => {
-                                const pureAsset = pureProjectedAssets[sector]?.find(a => a.id === asset.id);
-                                if (pureAsset && Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.001) {
-                                    asset.isAmountOverridden = true;
-                                } else if (pureAsset) {
-                                    asset.isAmountOverridden = false;
-                                }
-                            });
-                        });
-                        const updatedPhaseData = {
-                            monthlySalary: appData.monthlySalary,
-                            monthlyExpenses: appData.monthlyExpenses,
-                            salaryDay: appData.salaryDay,
-                            mainCashFlowAccount: appData.mainCashFlowAccount,
-                            assets: assetsToSave
-                        };
-                        const original = editingPhase.originalAppData;
-                        const newPhases = [...(original.futurePhases || [])];
-                        newPhases[editingPhase.index] = { ...newPhases[editingPhase.index], data: updatedPhaseData };
-                        return { ...original, futurePhases: newPhases };
-                    })() : appData;
+                    const trueAppData = getPhaseMergedAppData(appData, editingPhase);
 
                     const fullState = { appData: trueAppData, scenarios, assetHistory, referenceScenarios };
                     const fullStateStr = JSON.stringify(fullState);
@@ -2431,31 +2446,7 @@
                 if (!appData || !isInitialized || isFetchingRef.current || !isCloudLoaded) return;
                 const AUTO_SYNC_DELAY = 2000;
                 const timer = setTimeout(() => {
-                    const trueAppData = editingPhase !== null ? (() => {
-                        const assetsToSave = JSON.parse(JSON.stringify(appData.assets));
-                        const pureProjectedAssets = editingPhase.pureProjectedState;
-                        Object.keys(assetsToSave).forEach(sector => {
-                            assetsToSave[sector].forEach(asset => {
-                                const pureAsset = pureProjectedAssets[sector]?.find(a => a.id === asset.id);
-                                if (pureAsset && Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.001) {
-                                    asset.isAmountOverridden = true;
-                                } else if (pureAsset) {
-                                    asset.isAmountOverridden = false;
-                                }
-                            });
-                        });
-                        const updatedPhaseData = {
-                            monthlySalary: appData.monthlySalary,
-                            monthlyExpenses: appData.monthlyExpenses,
-                            salaryDay: appData.salaryDay,
-                            mainCashFlowAccount: appData.mainCashFlowAccount,
-                            assets: assetsToSave
-                        };
-                        const original = editingPhase.originalAppData;
-                        const newPhases = [...(original.futurePhases || [])];
-                        newPhases[editingPhase.index] = { ...newPhases[editingPhase.index], data: updatedPhaseData };
-                        return { ...original, futurePhases: newPhases };
-                    })() : appData;
+                    const trueAppData = getPhaseMergedAppData(appData, editingPhase);
 
                     saveToCloud({ appData: trueAppData, scenarios, assetHistory, referenceScenarios });
                 }, AUTO_SYNC_DELAY);
@@ -2650,34 +2641,9 @@
 
     const saveAndExitPhase = () => {
         if (!editingPhase) return;
-
-        const assetsToSave = JSON.parse(JSON.stringify(appData.assets));
-        const pureProjectedAssets = editingPhase.pureProjectedState;
         
-        Object.keys(assetsToSave).forEach(sector => {
-            assetsToSave[sector].forEach(asset => {
-                const pureAsset = pureProjectedAssets[sector]?.find(a => a.id === asset.id);
-                if (pureAsset && Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.001) {
-                    asset.isAmountOverridden = true;
-                } else if (pureAsset) {
-                    asset.isAmountOverridden = false;
-                }
-            });
-        });
-
-        const updatedPhaseData = {
-            monthlySalary: appData.monthlySalary,
-            monthlyExpenses: appData.monthlyExpenses,
-            salaryDay: appData.salaryDay,
-            mainCashFlowAccount: appData.mainCashFlowAccount,
-            assets: assetsToSave // 편집된 자산 설정 보존 (오버라이드 플래그 포함)
-        };
-
-        const original = editingPhase.originalAppData;
-        const newPhases = [...(original.futurePhases || [])];
-        newPhases[editingPhase.index] = { ...newPhases[editingPhase.index], data: updatedPhaseData };
-
-        setAppData({ ...original, futurePhases: newPhases });
+        const trueAppData = getPhaseMergedAppData(appData, editingPhase);
+        setAppData(trueAppData);
         setEditingPhase(null);
         addToast(`분기점(${editingPhase.displayLabel}) 설정이 저장되었습니다.`, 'success');
     };
@@ -5263,10 +5229,82 @@
                 );
             };
 
-            const renderAssetsPanel = () => (
-                <div className="space-y-8"> 
+            const renderAssetsPanel = () => {
+                const ASSET_TABS = [
+                    { id: 'cash', label: '💵 현금/저축', sectors: ['deposit', 'savings'] },
+                    { id: 'invest', label: '📈 투자/연금', sectors: ['investment', 'pension'] },
+                    { id: 'real', label: '🏠 실물자산', sectors: ['realestate', 'car'] },
+                    { id: 'debt', label: '💳 부채/기타', sectors: ['loan', 'misc'] }
+                ];
+                const currentTabIndex = ASSET_TABS.findIndex(t => t.id === activeAssetTab) !== -1 ? ASSET_TABS.findIndex(t => t.id === activeAssetTab) : 0;
+                const currentTab = ASSET_TABS[currentTabIndex];
+                const visibleSectors = currentTab.sectors;
+
+                // [추가] 좌우 탭 전환 로직
+                const handlePrevTab = () => { if (currentTabIndex > 0) setActiveAssetTab(ASSET_TABS[currentTabIndex - 1].id); };
+                const handleNextTab = () => { if (currentTabIndex < ASSET_TABS.length - 1) setActiveAssetTab(ASSET_TABS[currentTabIndex + 1].id); };
+
+                // [추가] 모바일 스와이프 제스처 핸들러
+                const onTouchStart = (e) => {
+                    // [Fix] 입력창이나 버튼 등 상호작용 요소에서 스와이프 시 탭 전환 방지
+                    const tagName = e.target.tagName.toLowerCase();
+                    if (tagName === 'input' || tagName === 'select' || tagName === 'button') {
+                        return setAssetTouchStart({ x: null, y: null });
+                    }
+                    setAssetTouchEnd({ x: null, y: null });
+                    setAssetTouchStart({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
+                };
+                const onTouchMove = (e) => {
+                    setAssetTouchEnd({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
+                };
+                const onTouchEnd = () => {
+                    if (!assetTouchStart.x || !assetTouchEnd.x) return;
+                    const dx = assetTouchStart.x - assetTouchEnd.x;
+                    const dy = assetTouchStart.y - assetTouchEnd.y;
+                    // 가로 스와이프 감지 (상하 스크롤과 구분하기 위해 X이동이 Y이동보다 크고 최소 50px 이상 이동)
+                    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+                        if (dx > 0) handleNextTab(); // 왼쪽 스와이프 (다음 탭)
+                        else handlePrevTab(); // 오른쪽 스와이프 (이전 탭)
+                    }
+                };
+
+                return (
+                <div className="space-y-6"> 
+                    {/* 탭 내비게이션 */}
+                    <div className="flex items-center gap-2">
+                        <button onClick={handlePrevTab} disabled={currentTabIndex <= 0} className="hidden sm:flex p-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors shadow-sm" title="이전 탭">
+                            <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
+                        </button>
+                        
+                        <div className="flex overflow-x-auto custom-scrollbar gap-2 p-1.5 bg-gray-100 dark:bg-gray-800/80 rounded-xl flex-1">
+                            {ASSET_TABS.map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveAssetTab(tab.id)}
+                                    className={`flex-1 min-w-[110px] py-2.5 px-3 rounded-lg transition-all whitespace-nowrap ${
+                                        activeAssetTab === tab.id
+                                            ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-md border border-gray-200 dark:border-gray-600 text-base font-extrabold'
+                                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/50 text-sm font-bold'
+                                    }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <button onClick={handleNextTab} disabled={currentTabIndex >= ASSET_TABS.length - 1} className="hidden sm:flex p-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors shadow-sm" title="다음 탭">
+                            <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                    </div>
+                    
+                    <div 
+                        className="space-y-8 animate-in fade-in duration-300"
+                        onTouchStart={onTouchStart}
+                        onTouchMove={onTouchMove}
+                        onTouchEnd={onTouchEnd}
+                    >
                     {assetSectorOrder.map((sectorKey, index) => {
-                        if (!sectorInfo[sectorKey]) return null;
+                        if (!sectorInfo[sectorKey] || !visibleSectors.includes(sectorKey)) return null;
 
                         const isLoan = sectorKey === 'loan';
                         
@@ -5312,10 +5350,6 @@
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2 self-end sm:self-auto">
-                                            <div className="flex bg-black/20 rounded-lg p-1 mr-2 backdrop-blur-sm">
-                                                <button onClick={(e) => { e.stopPropagation(); moveAssetSector(sectorKey, -1); }} disabled={index === 0} className="p-1.5 hover:bg-white/20 rounded-md disabled:opacity-30 transition-colors"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg></button>
-                                                <button onClick={(e) => { e.stopPropagation(); moveAssetSector(sectorKey, 1); }} disabled={index === assetSectorOrder.length - 1} className="p-1.5 hover:bg-white/20 rounded-md disabled:opacity-30 transition-colors"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg></button>
-                                            </div>
                                             <button onClick={() => addAsset(sectorKey)} className={`bg-white text-${sectorColor}-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-${sectorColor}-50 transition-all shadow-lg hover:shadow-xl flex items-center gap-1.5 active:scale-95`}>
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" /></svg>
                                                 추가
@@ -5460,8 +5494,10 @@
                                 </div>
                             );
                     })}
+                    </div>
                 </div>
             );
+            };
 
             const renderExpensesPanel = () => {
                 const totalMonthly = monthlyExpenses.reduce((sum, e) => sum + Number(e.amount||0), 0);
