@@ -158,8 +158,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
     });
 
     // [최적화] 루프 진입 전 필요한 계좌 참조 및 이벤트 인덱스 미리 계산
-    const allAccountsFlat = Object.values(currentAssets).flat();
-    let cashFlowAccount = allAccountsFlat.find(d => d.name === currentMainCashFlowAccount);
+    let allAccountsFlat = Object.values(currentAssets).flat();
+    let cashFlowAccount = allAccountsFlat.find(d => d.name === currentMainCashFlowAccount) || currentAssets.deposit?.[0];
     
     // [수정] 날짜 기반 인덱스 계산
     // baseDate가 없으면 오늘 날짜 기준
@@ -186,13 +186,6 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
     const incomeEventsWithIndices = precalculateEventIndices(safeIncomeEvents);
     const expenseEventsWithIndices = precalculateEventIndices(safeExpenseEvents);
-
-    // 대출 상환 계좌 미리 매핑
-    if (currentAssets.loan) {
-        currentAssets.loan.forEach(loan => {
-            loan._repaymentAccountRef = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
-        });
-    }
 
     // [최적화] 루프 외부로 이동하여 불필요한 함수 재선언 방지
     const _internalCalculateTotal = (assetData) => {
@@ -228,7 +221,6 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 if (phaseData.salaryDay !== undefined) currentSalaryDay = phaseData.salaryDay;
                 if (phaseData.mainCashFlowAccount !== undefined) {
                     currentMainCashFlowAccount = phaseData.mainCashFlowAccount;
-                    cashFlowAccount = Object.values(currentAssets).flat().find(d => d.name === currentMainCashFlowAccount);
                 }
                 if (phaseData.residualAccount !== undefined) {
                     currentResidualAccount = phaseData.residualAccount;
@@ -262,14 +254,11 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                         currentAssets[sector] = newSectorAssets;
                     });
                     
-                    const newAllFlat = Object.values(currentAssets).flat();
-                    cashFlowAccount = newAllFlat.find(d => d.name === currentMainCashFlowAccount);
-                    if (currentAssets.loan) {
-                        currentAssets.loan.forEach(loan => { 
-                            loan._repaymentAccountRef = newAllFlat.find(a => a.name === loan.repaymentAccount); 
-                        });
-                    }
                 }
+                
+                // [Fix] 분기점 통과 시 전역 참조 배열을 확실히 덮어씌워 과거 잔액을 참조하던 치명적 버그 원천 해결
+                allAccountsFlat = Object.values(currentAssets).flat();
+                cashFlowAccount = allAccountsFlat.find(d => d.name === currentMainCashFlowAccount) || currentAssets.deposit?.[0];
             }
             currentPhaseIndex++;
         }
@@ -417,7 +406,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             // [개선] 출금 계좌 계층 구조 (Withdrawal Hierarchy) 적용
             let deficit = -cashInHand;
             if (cashInHand >= 0) {
-                const residualTarget = Object.values(currentAssets).flat().find(d => d.name === currentResidualAccount) || cashFlowAccount;
+                const residualTarget = allAccountsFlat.find(d => d.name === currentResidualAccount) || cashFlowAccount;
                 if (residualTarget) residualTarget.amount += cashInHand;
             } else {
                 // 1. 주 계좌에서 먼저 차감
@@ -442,7 +431,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 
                 // [Fix] 모든 자산을 다 털어도 deficit이 남았다면, 잔여액 계좌를 마이너스로 만들어서 초과 부채(연체/오버드래프트) 상태를 수학적으로 유지
                 if (deficit > 0) {
-                    const residualTarget = Object.values(currentAssets).flat().find(d => d.name === currentResidualAccount) || cashFlowAccount;
+                    const residualTarget = allAccountsFlat.find(d => d.name === currentResidualAccount) || cashFlowAccount;
                     if (residualTarget) {
                         residualTarget.amount -= deficit;
                     }
@@ -458,8 +447,10 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
                 if (loanMonthAtSimMonth <= 0 || loan.amount <= 0) return;
 
-                let repaymentAccount = loan._repaymentAccountRef;
-                if (!repaymentAccount && !loan._missingAccountWarned) {
+                // [Fix] 매번 상환 계좌를 직접 조회하여 분기점 통과 후 발생하는 stale reference 버그를 원천 차단
+                const repaymentAccount = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
+                
+                if (!repaymentAccount && loan.repaymentAccount && loan.repaymentAccount !== 'salary' && !loan._missingAccountWarned) {
                     warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 상환계좌(${loan.repaymentAccount})가 없거나 삭제되어 대출 이자만 누적됩니다.` });
                     loan._missingAccountWarned = true;
                 }
@@ -600,8 +591,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             net: netAssets,
             sectorTotals: sectorTotals,
             itemTotals: itemTotals,
-            // 매달 전체 자산 객체를 복사하는 대신, 마지막 달만 복사하도록 최적화
-            assets: month === monthsToProject ? JSON.parse(JSON.stringify(currentAssets, (k, v) => (k === '_repaymentAccountRef' || k === '_sector') ? undefined : v)) : null
+            // 매달 전체 자산 객체를 복사하는 대신, 마지막 달만 복사하도록 최적화 (내부 참조 제거)
+            assets: month === monthsToProject ? JSON.parse(JSON.stringify(currentAssets, (k, v) => (k.startsWith('_')) ? undefined : v)) : null
         });
     }
     return { projections: monthlyProjections, warnings };
