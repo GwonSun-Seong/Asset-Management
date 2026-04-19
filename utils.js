@@ -250,11 +250,14 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                                 // 강제 덮어쓰기 안 함(false)이라고 명시된 특수한 경우가 아니라면, 분기점(pAsset)에 사용자가 입력한 최신 금액을 최우선으로 신뢰하여 반영합니다.
                                 if (pAsset.isAmountOverridden === false) {
                                     updatedAsset.amount = existingAsset.amount;
+                                    updatedAsset._skipGrowthThisMonth = false;
+                                } else {
+                                    updatedAsset._skipGrowthThisMonth = true;
                                 }
                                 return updatedAsset;
                             } else {
                                 // 신규 자산: phaseData에 있는 그대로 추가
-                                return { ...pAsset, _sector: sector };
+                                return { ...pAsset, _sector: sector, _skipGrowthThisMonth: true };
                             }
                         });
 
@@ -288,7 +291,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             Object.keys(currentAssets).forEach(sector => {
                 if (sector === 'loan') return; // 대출은 상환 단계에서 처리
                 currentAssets[sector].forEach(asset => {
-                    if (asset.amount > 0) {
+                    if (asset.amount > 0 && !asset._skipGrowthThisMonth) {
                         const feeRate = (asset.feeRate || 0) / 100;
                         const effectiveRate = (asset.rate / 100) * (1 - feeRate);
                         
@@ -310,7 +313,9 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 const isDateValid = effectiveDay >= startDayOfLoop;
                 if (month >= event.startIdx && month <= event.endIdx && isDateValid) {
                     if (currentAssets[event.targetSector] && currentAssets[event.targetSector][event.targetAsset]) {
-                        currentAssets[event.targetSector][event.targetAsset].amount += event.amount;
+                        if (!currentAssets[event.targetSector][event.targetAsset]._skipGrowthThisMonth) {
+                            currentAssets[event.targetSector][event.targetAsset].amount += event.amount;
+                        }
                     }
                 }
             });
@@ -321,7 +326,9 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 if (month >= event.startIdx && month <= event.endIdx && isDateValid) {
                     const arr = currentAssets[event.targetSector];
                     if (arr && arr[event.targetAsset]) {
-                        arr[event.targetAsset].amount = Math.max(0, arr[event.targetAsset].amount - event.amount);
+                        if (!arr[event.targetAsset]._skipGrowthThisMonth) {
+                            arr[event.targetAsset].amount = Math.max(0, arr[event.targetAsset].amount - event.amount);
+                        }
                     }
                 }
             });
@@ -349,7 +356,9 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     if (asset.monthlyContrib > 0 && source === MONTHLY_INCOME_SOURCE) {
                         const paymentAmount = asset.monthlyContrib;
                         cashInHand -= paymentAmount;
-                        asset.amount += paymentAmount;
+                        if (!asset._skipGrowthThisMonth) {
+                            asset.amount += paymentAmount;
+                        }
                     }
                 });
             });
@@ -374,7 +383,9 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     const interestForMonth = loan.amount * monthlyRate;
 
                     // 1. 이자 가산 (상환일이 지나서 상환을 못 하더라도 이자는 발생)
-                    loan.amount += interestForMonth;
+                    if (!loan._skipGrowthThisMonth) {
+                        loan.amount += interestForMonth;
+                    }
 
                     let totalScheduledPayment = 0;
                     let isMaturityPayment = false;
@@ -382,7 +393,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     if (!isRepaymentDayPassed) {
                         // 2. 상환액 계산
                         const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
-                        const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
+                        const baseAmount = loan._skipGrowthThisMonth ? loan.amount : (loan.amount - interestForMonth);
+                        const paymentInfo = calculateLoanPayment(baseAmount, loan.rate, remainingMonths, loan.repaymentMethod);
                         
                         totalScheduledPayment = (loan.monthlyContrib > 0 && loanMonthAtSimMonth <= loan.maturityMonth) ? loan.monthlyContrib : paymentInfo.payment;
 
@@ -401,13 +413,17 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     if (totalScheduledPayment > 0) {
                         const actualPayment = Math.min(totalScheduledPayment, loan.amount);
                         cashInHand -= actualPayment;
-                        loan.amount -= actualPayment;
+                        if (!loan._skipGrowthThisMonth) {
+                            loan.amount -= actualPayment;
+                        }
                     }
 
                     if (isMaturityPayment) {
                         const finalPrincipal = loan.amount;
                         cashInHand -= finalPrincipal;
-                        loan.amount -= finalPrincipal;
+                        if (!loan._skipGrowthThisMonth) {
+                            loan.amount -= finalPrincipal;
+                        }
                     }
 
                     // 보정
@@ -427,10 +443,12 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             let deficit = -cashInHand;
             if (cashInHand >= 0) {
                 const residualTarget = allAccountsFlat.find(d => d.name === currentResidualAccount) || cashFlowAccount;
-                if (residualTarget) residualTarget.amount += cashInHand;
+                if (residualTarget && !residualTarget._skipGrowthThisMonth) {
+                    residualTarget.amount += cashInHand;
+                }
             } else {
                 // 1. 주 계좌에서 먼저 차감
-                if (cashFlowAccount) {
+                if (cashFlowAccount && !cashFlowAccount._skipGrowthThisMonth) {
                     const withdraw = Math.min(cashFlowAccount.amount, deficit);
                     cashFlowAccount.amount -= withdraw;
                     deficit -= withdraw;
@@ -441,6 +459,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     for (const sector of hierarchy) {
                         (currentAssets[sector] || []).forEach(asset => {
                             if (asset.name === currentMainCashFlowAccount) return; // [수정] 올바른 변수명 참조
+                            if (asset._skipGrowthThisMonth) return;
                             const withdraw = Math.min(asset.amount, deficit);
                             asset.amount -= withdraw;
                             deficit -= withdraw;
@@ -452,7 +471,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 // [Fix] 모든 자산을 다 털어도 deficit이 남았다면, 잔여액 계좌를 마이너스로 만들어서 초과 부채(연체/오버드래프트) 상태를 수학적으로 유지
                 if (deficit > 0) {
                     const residualTarget = allAccountsFlat.find(d => d.name === currentResidualAccount) || cashFlowAccount;
-                    if (residualTarget) {
+                    if (residualTarget && !residualTarget._skipGrowthThisMonth) {
                         residualTarget.amount -= deficit;
                     }
                 }
@@ -481,7 +500,9 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 const interestForMonth = loan.amount * monthlyRate;
 
                 // 1. 이자 가산
-                loan.amount += interestForMonth;
+                if (!loan._skipGrowthThisMonth) {
+                    loan.amount += interestForMonth;
+                }
 
                 let totalScheduledPayment = 0;
                 let isMaturityPayment = false;
@@ -489,7 +510,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 if (!isRepaymentDayPassed && repaymentAccount) {
                     // 2. 상환액 계산 (가산 전 원금 기준)
                     const remainingMonths = Math.max(1, (loan.maturityMonth || 0) - loanMonthAtSimMonth + 1);
-                    const paymentInfo = calculateLoanPayment(loan.amount - interestForMonth, loan.rate, remainingMonths, loan.repaymentMethod);
+                    const baseAmount = loan._skipGrowthThisMonth ? loan.amount : (loan.amount - interestForMonth);
+                    const paymentInfo = calculateLoanPayment(baseAmount, loan.rate, remainingMonths, loan.repaymentMethod);
 
                     totalScheduledPayment = (loan.monthlyContrib > 0 && loanMonthAtSimMonth <= loan.maturityMonth) ? loan.monthlyContrib : paymentInfo.payment;
                     
@@ -508,13 +530,17 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                         ? Math.min(totalScheduledPayment, loan.amount) 
                         : Math.min(totalScheduledPayment, repaymentAccount.amount, loan.amount);
 
-                    if (isSourceLoan) repaymentAccount.amount += actualRepayment;
-                    else repaymentAccount.amount -= actualRepayment;
+                    if (!repaymentAccount._skipGrowthThisMonth) {
+                        if (isSourceLoan) repaymentAccount.amount += actualRepayment;
+                        else repaymentAccount.amount -= actualRepayment;
+                    }
 
                     // 3. 상환액 전체 차감
-                    loan.amount -= actualRepayment;
+                    if (!loan._skipGrowthThisMonth) {
+                        loan.amount -= actualRepayment;
+                    }
 
-                    if (actualRepayment < totalScheduledPayment) {
+                    if (actualRepayment < totalScheduledPayment && !repaymentAccount._skipGrowthThisMonth) {
                         warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 잔액 부족으로 상환액 ${totalScheduledPayment.toFixed(2)}만원 중 ${actualRepayment.toFixed(2)}만원만 상환되었습니다.` });
                     }
                 }
@@ -524,11 +550,16 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     const isSourceLoan = repaymentAccount._sector === 'loan';
                     const actualFinalRepayment = isSourceLoan ? finalPrincipal : Math.min(finalPrincipal, repaymentAccount.amount);
                     
-                    if (isSourceLoan) repaymentAccount.amount += actualFinalRepayment;
-                    else repaymentAccount.amount -= actualFinalRepayment;
+                    if (!repaymentAccount._skipGrowthThisMonth) {
+                        if (isSourceLoan) repaymentAccount.amount += actualFinalRepayment;
+                        else repaymentAccount.amount -= actualFinalRepayment;
+                    }
 
-                    loan.amount -= actualFinalRepayment;
-                    if (actualFinalRepayment < finalPrincipal) {
+                    if (!loan._skipGrowthThisMonth) {
+                        loan.amount -= actualFinalRepayment;
+                    }
+
+                    if (actualFinalRepayment < finalPrincipal && !repaymentAccount._skipGrowthThisMonth) {
                         warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 만기 원금 상환 실패. [${repaymentAccount.name}] 잔액 부족.` });
                     }
                 }
@@ -557,16 +588,20 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                                 ? asset.monthlyContrib 
                                 : Math.min(asset.monthlyContrib, fromAccount.amount);
 
-                            if (isSourceLoan) fromAccount.amount += actualDeduction;
-                            else fromAccount.amount -= actualDeduction;
-
-                            if (sector === 'loan') {
-                                asset.amount = Math.max(0, asset.amount - actualDeduction);
-                            } else {
-                                asset.amount += actualDeduction;
+                            if (!fromAccount._skipGrowthThisMonth) {
+                                if (isSourceLoan) fromAccount.amount += actualDeduction;
+                                else fromAccount.amount -= actualDeduction;
                             }
 
-                            if (actualDeduction < asset.monthlyContrib) {
+                            if (!asset._skipGrowthThisMonth) {
+                                if (sector === 'loan') {
+                                    asset.amount = Math.max(0, asset.amount - actualDeduction);
+                                } else {
+                                    asset.amount += actualDeduction;
+                                }
+                            }
+
+                            if (actualDeduction < asset.monthlyContrib && !fromAccount._skipGrowthThisMonth) {
                                 warnings.push({
                                     month, year: simYear, monthNum: simMonth + 1, type: 'transfer',
                                     message: `[${fromAccount.name}] 잔액 부족으로 [${asset.name}]에 ${asset.monthlyContrib}만원 이체 중 ${actualDeduction.toFixed(2)}만원만 실행되었습니다.`
@@ -585,6 +620,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             Object.keys(currentAssets).forEach(sector => {
                 currentAssets[sector].forEach(asset => {
                     asset.amount = Math.round(asset.amount * 10000) / 10000;
+                    delete asset._skipGrowthThisMonth; // [추가] 다음 달부터는 정상적으로 증식되도록 초기화
                 });
             });
         }
