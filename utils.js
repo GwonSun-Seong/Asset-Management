@@ -240,15 +240,15 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                         
                         // phaseData를 기준으로 새로운 자산 목록을 생성 (추가, 수정, 삭제 처리)
                         const newSectorAssets = phaseSectorAssets.map(pAsset => {
-                            // [Fix] 유령 자산 및 데이터 상속 버그 해결: 페이즈 전환 시 ID 기반의 엄격한 동기화
-                            const existingAsset = originalSectorAssets.find(a => a.id === pAsset.id);
+                            // [개선] 고유 ID가 일치하지 않더라도 이름이 동일하면 같은 자산으로 이어가도록 폴백(Fallback) 로직 추가
+                            const existingAsset = originalSectorAssets.find(a => a.id === pAsset.id || a.name === pAsset.name);
                             if (existingAsset) {
+                                // 기존 자산: 설정값은 덮어쓰되, 금액(amount)은 보존하는 것을 원칙으로 함
                                 const updatedAsset = { ...existingAsset, ...pAsset };
                                 
-                                // [Fix] isAmountOverridden 명시적 확인: true일 경우만 분기점의 스냅샷 금액으로 강제 덮어쓰기
-                                if (pAsset.isAmountOverridden) {
-                                    updatedAsset.amount = pAsset.amount;
-                                } else {
+                                // [Fix] 분기 편집 화면에서 수정한 금액이 메인 시뮬레이션에서 과거 금액으로 롤백되어 증발하는 치명적 버그 완벽 해결
+                                // 강제 덮어쓰기 안 함(false)이라고 명시된 특수한 경우가 아니라면, 분기점(pAsset)에 사용자가 입력한 최신 금액을 최우선으로 신뢰하여 반영합니다.
+                                if (pAsset.isAmountOverridden === false) {
                                     updatedAsset.amount = existingAsset.amount;
                                 }
                                 return updatedAsset;
@@ -273,6 +273,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     const newRes = allAccountsFlat.find(a => a.name === currentResidualAccount);
                     if (oldRes && newRes && oldRes.amount > 0) {
                         newRes.amount += oldRes.amount;
+                        // 소수점 4자리 표준화 규격에 맞추어 보정
                         newRes.amount = Math.round(newRes.amount * 10000) / 10000;
                         oldRes.amount = 0;
                         warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'transfer', message: `잔여액 자동저축 계좌 변경으로 인해 [${oldRes.name}]의 잔액이 ${newRes.name}로 일괄 이체되었습니다.` });
@@ -807,103 +808,111 @@ const validateSupabaseConfig = () => {
 };
 
 const generateCSV = (appData) => {
-    const assets = appData.assets || {};
-    const expenses = appData.monthlyExpenses || [];
-    const incomeEvents = appData.incomeEvents || [];
-    const expenseEvents = appData.expenseEvents || [];
+    if (!appData) return '';
+    const months = appData.projectionMonths || 120;
+    const result = calculateMonthlyProjection(appData, months);
+    if (!result || !result.projections) return '계산 오류';
 
-    let csv = '\ufeff'; // BOM for Excel
+    // [수정] 경고(예산 부족 등) 발생 시점 파악하여 그 전까지만 데이터 필터링
+    let cutoffMonth = months + 1;
+    if (result.warnings && result.warnings.length > 0) {
+        for (const w of result.warnings) {
+            if (w.month === '설정') {
+                cutoffMonth = 0;
+                break;
+            }
+            if (typeof w.month === 'number' && w.month < cutoffMonth) {
+                cutoffMonth = w.month;
+            }
+        }
+    }
 
-    // Section 1: Basic Info
-    csv += '## 기본 정보\n';
-    csv += '항목,값\n';
-    csv += `월 고정 수입,${appData.monthlySalary || 0}\n`;
-    csv += `고정 수입일,${appData.salaryDay || 25}\n`;
-    csv += `기준일,${appData.baseDate || ''}\n`;
-    csv += `목표 금액,${appData.targetAmount || 0}\n`;
-    csv += '\n';
+    const projections = result.projections.filter(p => p.month < cutoffMonth);
 
-    // Section 2: Assets
-    csv += '## 자산 목록\n';
-    csv += '섹터(영문),항목명,현재금액,연수익률(%),수수료율(%),월납입액,납입출처,메모,만기(개월),대출시작일,상환방식,상환계좌,ID\n';
-    Object.keys(assets).forEach(sector => {
-        (assets[sector] || []).forEach(asset => {
-            const row = [
-                sector,
-                `"${asset.name.replace(/"/g, '""')}"`, // Escape quotes
-                asset.amount || 0,
-                asset.rate || 0,
-                asset.feeRate || 0,
-                asset.monthlyContrib || 0,
-                asset.monthlyContributionFrom || MONTHLY_INCOME_SOURCE,
-                `"${(asset.memo || '').replace(/"/g, '""')}"`,
-                asset.maturityMonth || '',
-                asset.loanStartDate || '',
-                asset.repaymentMethod || '',
-                `"${(asset.repaymentAccount || '').replace(/"/g, '""')}"`,
-                asset.id || '' // [추가] ID 보존
-            ];
-            csv += row.join(',') + '\n';
+    const assetHeaders = new Map();
+    const assetMeta = new Map();
+
+    // 자산별 메타데이터(수익률, 수수료) 수집
+    Object.keys(appData.assets || {}).forEach(sector => {
+        (appData.assets[sector] || []).forEach(a => {
+            assetMeta.set(a.id, { rate: a.rate || 0, feeRate: a.feeRate || 0 });
         });
     });
-    csv += '\n';
-
-    // Section 3: Monthly Expenses
-    csv += '## 월 고정 지출\n';
-    csv += '항목명,금액,지출일\n';
-    expenses.forEach(exp => {
-        csv += `"${exp.name.replace(/"/g, '""')}",${exp.amount || 0},${exp.day || ''}\n`;
+    (appData.futurePhases || []).forEach(phase => {
+        if (phase.data && phase.data.assets) {
+            Object.keys(phase.data.assets).forEach(sector => {
+                (phase.data.assets[sector] || []).forEach(a => {
+                    if (!assetMeta.has(a.id)) {
+                        assetMeta.set(a.id, { rate: a.rate || 0, feeRate: a.feeRate || 0 });
+                    }
+                });
+            });
+        }
     });
-    csv += '\n';
 
-    // Section 4: Events
-    csv += '## 이벤트\n';
-    csv += '유형(수입/지출),이름,금액,시작월,종료월,대상섹터,발생일\n';
-    incomeEvents.forEach(e => {
-        csv += `수입,"${e.name.replace(/"/g, '""')}",${e.amount},${e.startMonth},${e.endMonth},${e.targetSector},${e.day||''}\n`;
+    // 시뮬레이션 과정에서 등장하는 모든 자산 컬럼 수집
+    projections.forEach(p => {
+        if (!p.itemTotals) return;
+        Object.keys(p.itemTotals).forEach(sector => {
+            p.itemTotals[sector].forEach(item => {
+                if (!assetHeaders.has(item.id)) {
+                    assetHeaders.set(item.id, { name: item.name, sector });
+                }
+            });
+        });
     });
-    expenseEvents.forEach(e => {
-        csv += `지출,"${e.name.replace(/"/g, '""')}",${e.amount},${e.startMonth},${e.endMonth},${e.targetSector},${e.day||''}\n`;
+
+    const assetKeys = Array.from(assetHeaders.keys());
+    
+    let csv = '\ufeff'; // BOM for Excel
+    
+    // 헤더 행 생성 (수익률, 수수료율 포함)
+    const headers = ['개월차', '연/월', '총자산(부채포함)', '순자산(내돈)'];
+    assetKeys.forEach(id => {
+        const info = assetHeaders.get(id);
+        const meta = assetMeta.get(id) || { rate: 0, feeRate: 0 };
+        const sectorName = window.sectorInfo && window.sectorInfo[info.sector] ? window.sectorInfo[info.sector].name : info.sector;
+        headers.push(`"[${sectorName}] ${info.name} (수익률 ${meta.rate}%, 수수료 ${meta.feeRate}%)"`);
     });
-    csv += '\n';
+    csv += headers.join(',') + '\n';
 
-    // Section 5: Rebalancing Targets (Sector)
-    csv += '## 리밸런싱 목표(섹터)\n';
-    csv += '섹터,비중\n';
-    const rebTargets = appData.rebalancingTargets || {};
-    Object.keys(rebTargets).forEach(k => {
-        csv += `${k},${rebTargets[k]}\n`;
-    });
-    csv += '\n';
+    const baseDate = appData.baseDate || new Date().toISOString().slice(0, 10);
+    const [bY, bM] = baseDate.split('-').map(Number);
 
-    // Section 6: Rebalancing Targets (Item)
-    csv += '## 리밸런싱 목표(항목)\n';
-    csv += '항목ID,비중\n';
-    const itemTargets = appData.itemTargets || {};
-    Object.keys(itemTargets).forEach(k => {
-        csv += `${k},${itemTargets[k]}\n`;
-    });
-    csv += '\n';
-
-    // Section 7: Memo
-    csv += '## 메모\n';
-    csv += 'ID,제목,내용,고정됨,생성일,수정일\n';
-    const memoData = appData.memo;
-    const memos = Array.isArray(memoData) 
-        ? memoData 
-        : (typeof memoData === 'string' && memoData.trim() ? [{ id: 'default', title: '기본 메모', content: memoData, isPinned: false, createdAt: '', updatedAt: '' }] : []);
-
-    memos.forEach(m => {
+    // 데이터 행 생성
+    projections.forEach(p => {
+        const d = new Date(bY, bM - 1 + p.month, 1);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        
         const row = [
-            m.id,
-            `"${(m.title||'').replace(/"/g, '""')}"`,
-            `"${(m.content||'').replace(/"/g, '""')}"`,
-            m.isPinned ? 'true' : 'false',
-            m.createdAt || '',
-            m.updatedAt || ''
+            p.month,
+            dateStr,
+            Math.round(p.gross),
+            Math.round(p.net)
         ];
+        
+        const monthAssetValues = new Map();
+        if (p.itemTotals) {
+            Object.keys(p.itemTotals).forEach(sector => {
+                p.itemTotals[sector].forEach(item => {
+                    monthAssetValues.set(item.id, Math.round(item.amount));
+                });
+            });
+        }
+        
+        assetKeys.forEach(id => {
+            row.push(monthAssetValues.get(id) || 0);
+        });
+        
         csv += row.join(',') + '\n';
     });
+
+    // 경고 메시지로 인한 컷오프 안내
+    if (cutoffMonth <= months && cutoffMonth > 0) {
+        csv += `\n"※ 현금 흐름 문제 등 시뮬레이션 경고 발생으로 인해 ${cutoffMonth}개월차 이후의 데이터는 제외되었습니다."\n`;
+    } else if (cutoffMonth === 0) {
+        csv += `\n"※ 초기 설정 경고 발생으로 인해 시뮬레이션 데이터가 출력되지 않았습니다."\n`;
+    }
 
     return csv;
 };
@@ -1377,3 +1386,32 @@ window.calculateGoalReachMonth = calculateGoalReachMonth;
 window.normalizeTargets = normalizeTargets;
 window.calculateCapitalIncomeFlow = calculateCapitalIncomeFlow;
 window.exportDashboardToPDF = exportDashboardToPDF;
+
+// [추가] Global Deletion Sync: 현재 페이즈(Phase 0)에서 자산 삭제 시 미래 페이즈에서도 연쇄 삭제하여 유령 자산 방지
+const syncPhaseAssetDeletions = (appData, deletedAssetId) => {
+    if (!appData || !appData.futurePhases || !Array.isArray(appData.futurePhases)) return appData;
+    
+    const newPhases = appData.futurePhases.map(phase => {
+        if (!phase.data || !phase.data.assets) return phase;
+        
+        const newAssets = {};
+        let hasChanges = false;
+        
+        Object.keys(phase.data.assets).forEach(sector => {
+            const originalArray = phase.data.assets[sector];
+            if (Array.isArray(originalArray)) {
+                const filteredArray = originalArray.filter(a => a.id !== deletedAssetId);
+                if (filteredArray.length !== originalArray.length) hasChanges = true;
+                newAssets[sector] = filteredArray;
+            } else {
+                newAssets[sector] = originalArray;
+            }
+        });
+        
+        if (hasChanges) return { ...phase, data: { ...phase.data, assets: newAssets } };
+        return phase;
+    });
+    
+    return { ...appData, futurePhases: newPhases };
+};
+window.syncPhaseAssetDeletions = syncPhaseAssetDeletions;

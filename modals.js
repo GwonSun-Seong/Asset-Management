@@ -564,8 +564,8 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
                     } else {
                         setPreviewText('오류: 압축 라이브러리가 로드되지 않았습니다.');
                     }
-                } else {
-                    // CSV 생성 (전체 데이터)
+                } else if (format === 'csv') {
+                    // CSV 생성 (시뮬레이션 데이터 결과)
                     const appData = currentData.appData || {};
                     const csv = window.generateCSV ? window.generateCSV(appData) : 'CSV 생성 함수를 찾을 수 없습니다.';
                     setPreviewText(csv);
@@ -593,6 +593,11 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
     useEffect(() => {
         if (isOpen) updatePreview();
     }, [isOpen, currentData, mode, format]);
+    
+    // 불러오기 모드일 경우 CSV(export 전용) 선택 해제
+    useEffect(() => {
+        if (mode === 'import' && format === 'csv') setFormat('json');
+    }, [mode, format]);
 
     const handleCopy = async () => {
         try {
@@ -618,11 +623,12 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
 
     const handleDownload = () => {
         try {
-            const blob = new Blob([format === 'csv' ? '\ufeff' + previewText : previewText], { type: format === 'csv' ? 'text/csv;charset=utf-8;' : 'text/plain;charset=utf-8;' });
+            const mimeType = format === 'csv' ? 'text/csv;charset=utf-8;' : 'text/plain;charset=utf-8;';
+            const blob = new Blob([format !== 'json' ? '\ufeff' + previewText : previewText], { type: mimeType });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             const dateStr = new Date().toISOString().slice(0, 10);
-            link.download = format === 'csv' ? `asset_data_${dateStr}.csv` : `asset_backup_${dateStr}.txt`;
+            link.download = format === 'csv' ? `asset_projection_${dateStr}.csv` : `asset_backup_${dateStr}.txt`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -700,12 +706,14 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
                         >
                             <span>📦</span>JSON
                         </button>
-                        <button 
-                            onClick={() => setFormat('csv')}
-                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 ${format === 'csv' ? 'bg-green-50 border-green-500 text-green-700 dark:bg-green-900/30 dark:border-green-400 dark:text-green-300' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'}`}
-                        >
-                            <span>📊</span>CSV
-                        </button>
+                        {mode === 'export' && (
+                            <button 
+                                onClick={() => setFormat('csv')}
+                                className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 ${format === 'csv' ? 'bg-green-50 border-green-500 text-green-700 dark:bg-green-900/30 dark:border-green-400 dark:text-green-300' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'}`}
+                            >
+                                <span>📊</span>CSV (시뮬레이션 표)
+                            </button>
+                        )}
                     </div>
 
                     {mode === 'export' ? (
@@ -714,7 +722,7 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
                                 {customDescription ? (typeof customDescription === 'function' ? customDescription(format) : customDescription) : (
                                     format === 'json' 
                                         ? '모든 데이터(설정, 시나리오, 히스토리 포함)를 압축된 코드로 변환했습니다.' 
-                                        : '현재 데이터를 엑셀에서 열 수 있는 CSV 형식으로 변환했습니다.'
+                                        : '현재부터 목표 개월까지의 자산 시뮬레이션 결과를 엑셀에서 열 수 있는 CSV 표 형태로 내보냅니다.'
                                 )}
                                 <br/>아래 내용을 복사하거나 파일로 저장하세요.
                             </p>
