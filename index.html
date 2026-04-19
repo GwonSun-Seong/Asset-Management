@@ -580,10 +580,14 @@
 
                         if (hasChanges) {
                             phaseSectorAssets.push({ id: asset.id, ...diff });
+                        } else {
+                            // [Fix] 분기 편집 시, 수정하지 않은 자산들이 덮어쓰기 과정에서 누락되어 시뮬레이션 통과 시 통째로 증발해 버리는 치명적 버그 해결
+                            phaseSectorAssets.push({ id: asset.id });
                         }
                     }
                 });
-                if (phaseSectorAssets.length > 0) modifiedAssetsToSave[sector] = phaseSectorAssets;
+                // [Fix] 빈 섹터라도 사용자가 명시적으로 모든 항목을 지웠을 경우를 위해 덮어쓰기 객체에 항상 할당
+                modifiedAssetsToSave[sector] = phaseSectorAssets;
             });
 
             const updatedPhaseData = {};
@@ -2885,8 +2889,8 @@
                                 if (asset.loanStartDate) {
                                     const [y, m] = asset.loanStartDate.split('-').map(Number);
                                     const loanStartTotalMonths = y * 12 + m;
-                                    // [수정] 대출 시작월과 같거나 이전이면 예산에 미포함 (다음 달부터 상환)
-                                    if (effectiveTotalMonths <= loanStartTotalMonths) return;
+                                    // [Fix] 예산의 한 달 오차 수정: 대출 시작월(loanStartTotalMonths) 이전 달까지만 예산에서 제외하고, 해당 월부터는 즉시 상환 예산으로 잡히도록 수정 (< 적용)
+                                    if (effectiveTotalMonths < loanStartTotalMonths) return;
                                 }
                             } else {
                                 // [수정] 일반 자산: 납입 출처가 '월 고정수입'이 아니면 예산 합산 제외
@@ -3032,7 +3036,8 @@
                                     
                                     const [y, m] = a.loanStartDate.split('-').map(Number);
                                     const loanStartTotalMonths = y * 12 + m;
-                                    if (effectiveTotalMonths <= loanStartTotalMonths) include = false;
+                                    // [Fix] 예산 오차 수정 (< 적용)
+                                    if (effectiveTotalMonths < loanStartTotalMonths) include = false;
                                 }
                             } else {
                                 const source = a.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE;
@@ -3378,8 +3383,8 @@
                                     if (asset.loanStartDate) {
                                         const [y, m] = asset.loanStartDate.split('-').map(Number);
                                         const loanStartTotalMonths = y * 12 + m;
-                                        // [수정] 대출 시작월과 같거나 이전이면 예산에 미포함 (다음 달부터 상환)
-                                        if (effectiveTotalMonths <= loanStartTotalMonths) isBudget = false;
+                                        // [Fix] 예산 오차 수정 (< 적용)
+                                        if (effectiveTotalMonths < loanStartTotalMonths) isBudget = false;
                                     }
                                 } else {
                                     const source = asset.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE;
@@ -4300,6 +4305,7 @@
 
                 const assetToRemove = currentAssets[sector][index];
                 const assetName = assetToRemove.name; // [추가] 삭제 대상 이름 저장
+                const assetId = assetToRemove.id; // [추가] 글로벌 삭제 동기화를 위한 ID 추출
                 
                 if (assetName === currentMainAccount) {
                     const allAccounts = Object.values(currentAssets).flat();
@@ -4345,7 +4351,13 @@
                         newResidualAccount = firstAvailable ? firstAvailable.name : (prevData.mainCashFlowAccount !== assetName ? prevData.mainCashFlowAccount : '');
                     }
 
-                    return { ...prevData, assets: newAssets, residualAccount: newResidualAccount };
+                    let newData = { ...prevData, assets: newAssets, residualAccount: newResidualAccount };
+                    
+                    // [Fix] Global Deletion Sync 적용: 현재 시점에서 자산 삭제 시 미래 분기점(Phase)에서도 해당 자산 찌꺼기를 일괄 삭제하여 유령 자산 버그 방지
+                    if (window.syncPhaseAssetDeletions) {
+                        newData = window.syncPhaseAssetDeletions(newData, assetId);
+                    }
+                    return newData;
                 });
             }, [setAppData, setMainCashFlowAccount, addToast]);
 

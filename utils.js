@@ -217,6 +217,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         while (currentPhaseIndex < sortedPhases.length && month === sortedPhases[currentPhaseIndex]._calcStartMonth && month > 0) {
             const phaseData = sortedPhases[currentPhaseIndex].data;
             if (phaseData) {
+                let previousResidualAccountName = currentResidualAccount;
+
                 if (phaseData.monthlySalary !== undefined) currentMonthlySalary = phaseData.monthlySalary;
                 if (phaseData.monthlyExpenses !== undefined) currentSafeMonthlyExpenses = Array.isArray(phaseData.monthlyExpenses) ? phaseData.monthlyExpenses : [];
                 if (phaseData.salaryDay !== undefined) currentSalaryDay = phaseData.salaryDay;
@@ -238,15 +240,15 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                         
                         // phaseData를 기준으로 새로운 자산 목록을 생성 (추가, 수정, 삭제 처리)
                         const newSectorAssets = phaseSectorAssets.map(pAsset => {
-                            // [개선] 고유 ID가 일치하지 않더라도 이름이 동일하면 같은 자산으로 이어가도록 폴백(Fallback) 로직 추가
-                            const existingAsset = originalSectorAssets.find(a => a.id === pAsset.id || a.name === pAsset.name);
+                            // [Fix] 유령 자산 및 데이터 상속 버그 해결: 페이즈 전환 시 ID 기반의 엄격한 동기화
+                            const existingAsset = originalSectorAssets.find(a => a.id === pAsset.id);
                             if (existingAsset) {
-                                // 기존 자산: 설정값은 덮어쓰되, 금액(amount)은 보존하는 것을 원칙으로 함
                                 const updatedAsset = { ...existingAsset, ...pAsset };
                                 
-                                // [Fix] 분기 편집 화면에서 수정한 금액이 메인 시뮬레이션에서 과거 금액으로 롤백되어 증발하는 치명적 버그 완벽 해결
-                                // 강제 덮어쓰기 안 함(false)이라고 명시된 특수한 경우가 아니라면, 분기점(pAsset)에 사용자가 입력한 최신 금액을 최우선으로 신뢰하여 반영합니다.
-                                if (pAsset.isAmountOverridden === false) {
+                                // [Fix] isAmountOverridden 명시적 확인: true일 경우만 분기점의 스냅샷 금액으로 강제 덮어쓰기
+                                if (pAsset.isAmountOverridden) {
+                                    updatedAsset.amount = pAsset.amount;
+                                } else {
                                     updatedAsset.amount = existingAsset.amount;
                                 }
                                 return updatedAsset;
@@ -264,6 +266,18 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 // [Fix] 분기점 통과 시 전역 참조 배열을 확실히 덮어씌워 과거 잔액을 참조하던 치명적 버그 원천 해결
                 allAccountsFlat = Object.values(currentAssets).flat();
                 cashFlowAccount = allAccountsFlat.find(d => d.name === currentMainCashFlowAccount) || currentAssets.deposit?.[0];
+                
+                // [Fix] 잔여액 계좌 전환 시 '잔액 고립' 문제 완벽 해결
+                if (previousResidualAccountName && currentResidualAccount && previousResidualAccountName !== currentResidualAccount) {
+                    const oldRes = allAccountsFlat.find(a => a.name === previousResidualAccountName);
+                    const newRes = allAccountsFlat.find(a => a.name === currentResidualAccount);
+                    if (oldRes && newRes && oldRes.amount > 0) {
+                        newRes.amount += oldRes.amount;
+                        newRes.amount = Math.round(newRes.amount * 10000) / 10000;
+                        oldRes.amount = 0;
+                        warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'transfer', message: `잔여액 자동저축 계좌 변경으로 인해 [${oldRes.name}]의 잔액이 ${newRes.name}로 일괄 이체되었습니다.` });
+                    }
+                }
             }
             currentPhaseIndex++;
         }
@@ -563,6 +577,13 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                             fromAccount.amount = Math.round(fromAccount.amount * 10000) / 10000;
                         }
                     }
+                });
+            });
+            
+            // [Fix] 시뮬레이션 과정에서 누적되는 미세한 부동 소수점 오차를 매월 말 일괄 보정 (Rounding Consistency)
+            Object.keys(currentAssets).forEach(sector => {
+                currentAssets[sector].forEach(asset => {
+                    asset.amount = Math.round(asset.amount * 10000) / 10000;
                 });
             });
         }
