@@ -117,7 +117,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         .map(p => ({
             ...p,
             // [Fix] 시뮬레이션 엔진에서 분기점(Phase)이 한 달 일찍 적용되어 예산을 꼬이게 만드는 치명적 버그 수정
-            _calcStartMonth: getMonthDiff(baseMonthYYYYMM, p.startDate) + 1
+            // [Re-Fix] 실제 달력상의 개월 차이와 시뮬레이션 month index를 정확히 일치시키도록 수정
+            _calcStartMonth: getMonthDiff(baseMonthYYYYMM, p.startDate)
         }))
         .filter(p => p._calcStartMonth > 0); // [Fix] 과거이거나 이번 달인 분기점은 사전에 차단하여 무한 대기 병목 해결
     
@@ -237,7 +238,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                         
                         // phaseData를 기준으로 새로운 자산 목록을 생성 (추가, 수정, 삭제 처리)
                         const newSectorAssets = phaseSectorAssets.map(pAsset => {
-                            const existingAsset = originalSectorAssets.find(a => a.id === pAsset.id);
+                            // [개선] 고유 ID가 일치하지 않더라도 이름이 동일하면 같은 자산으로 이어가도록 폴백(Fallback) 로직 추가
+                            const existingAsset = originalSectorAssets.find(a => a.id === pAsset.id || a.name === pAsset.name);
                             if (existingAsset) {
                                 // 기존 자산: 설정값은 덮어쓰되, 금액(amount)은 보존하는 것을 원칙으로 함
                                 const updatedAsset = { ...existingAsset, ...pAsset };
