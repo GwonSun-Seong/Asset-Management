@@ -243,7 +243,10 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                             if (existingAsset) {
                                 // 기존 자산: 설정값은 덮어쓰되, 금액(amount)은 보존하는 것을 원칙으로 함
                                 const updatedAsset = { ...existingAsset, ...pAsset };
-                                if (!pAsset.isAmountOverridden) {
+                                
+                                // [Fix] 분기 편집 화면에서 수정한 금액이 메인 시뮬레이션에서 과거 금액으로 롤백되어 증발하는 치명적 버그 완벽 해결
+                                // 강제 덮어쓰기 안 함(false)이라고 명시된 특수한 경우가 아니라면, 분기점(pAsset)에 사용자가 입력한 최신 금액을 최우선으로 신뢰하여 반영합니다.
+                                if (pAsset.isAmountOverridden === false) {
                                     updatedAsset.amount = existingAsset.amount;
                                 }
                                 return updatedAsset;
