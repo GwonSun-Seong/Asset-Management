@@ -353,8 +353,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 // 예산 완결성을 위해 상환 스킵 방지
                 const isRepaymentDayPassed = false; 
 
-                // 'salary' 인 경우에만 처리
-                if (loan.repaymentAccount === 'salary') {
+                // 'salary' 또는 한글 라벨인 경우에만 처리 (UI 데이터 호환성 폴백)
+                if (loan.repaymentAccount === 'salary' || loan.repaymentAccount === '월급(고정수입)') {
                     const monthlyRate = (loan.rate / 100) / 12;
                     const interestForMonth = loan.amount * monthlyRate;
 
