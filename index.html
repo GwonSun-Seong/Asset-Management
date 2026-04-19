@@ -6080,7 +6080,7 @@
                                 <tbody>
                                     {Object.keys(sectorInfo).map(sectorKey => {
                                         const items = capitalIncomeData[sectorKey];
-                                        if (items.length === 0) return null;
+                                        if (!items || items.length === 0) return null;
                                         
                                         const sectorGross = items.reduce((s, i) => s + i.monthlyGross, 0);
                                         const sectorFee = items.reduce((s, i) => s + i.monthlyFee, 0);

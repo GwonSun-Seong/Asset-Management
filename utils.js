@@ -1130,13 +1130,13 @@ const fetchYahooData = async (symbol) => {
     
     // [수정] 프록시 서버 확장 (배포 환경 호환성 강화)
     const proxies = [
-        // 1. CorsProxy.io: 속도가 빠르고 안정적임
-        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-        // 2. AllOrigins: 배포 환경에서 비교적 차단이 적음 (백업)
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        // 3. CodeTabs: 별도 헤더 없이 잘 동작함
+        // 1. CodeTabs: 현재 야후 파이낸스 차단이 가장 적고 안정적임
         u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-        // 4. ThingProxy: 예비용
+        // 2. CorsProxy.io (백업용)
+        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+        // 3. AllOrigins (백업용)
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+        // 4. ThingProxy (예비용)
         u => `https://thingproxy.freeboard.io/fetch/${u}`
     ];
 
