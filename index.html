@@ -1224,7 +1224,11 @@
 
             if (scenarios.length === 0) return <div className="text-sm text-gray-500">저장된 시나리오가 없습니다.</div>;
 
-            const current = scenarios[currentIndex];
+            // 삭제로 인해 currentIndex가 배열의 범위를 벗어나는 렌더링 타이밍을 방어
+            const safeIndex = currentIndex >= scenarios.length ? Math.max(0, scenarios.length - 1) : currentIndex;
+            const current = scenarios[safeIndex];
+            if (!current) return null;
+
             const currentRef = referenceScenarios.find(r => r.id === current.id);
             const prev = () => setCurrentIndex(p => (p === 0 ? scenarios.length - 1 : p - 1));
             const next = () => setCurrentIndex(p => (p === scenarios.length - 1 ? 0 : p + 1));
