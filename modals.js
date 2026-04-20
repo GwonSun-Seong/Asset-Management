@@ -903,7 +903,28 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                     date: h.date,
                     asset: h.netWorth,
                     memo: h.memo
-                }))
+                })),
+                // [추가] 미래 타임라인 분기점 데이터
+                futurePhases: (appData.futurePhases || []).filter(p => p.startDate).map(p => {
+                    const changes = [];
+                    if (p.data) {
+                        if (p.data.monthlySalary !== undefined) changes.push(`월급 ${p.data.monthlySalary}만원으로 변경`);
+                        if (p.data.monthlyExpenses !== undefined) {
+                            const expTotal = p.data.monthlyExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+                            changes.push(`월 고정지출 총액 ${expTotal}만원으로 변경`);
+                        }
+                        if (p.data.assets) {
+                            Object.keys(p.data.assets).forEach(s => {
+                                p.data.assets[s].forEach(a => {
+                                    if (a.amount !== undefined) changes.push(`[${a.name}] 잔액 ${a.amount}만원으로 설정(강제변경)`);
+                                    if (a.monthlyContrib !== undefined) changes.push(`[${a.name}] 월 납입액 ${a.monthlyContrib}만원으로 변경`);
+                                });
+                            });
+                        }
+                    }
+                    const changesText = changes.length > 0 ? changes.join(', ') : '자산/수입 변경 없음';
+                    return `- ${p.startDate} 분기점 [${p.name}]: ${changesText}`;
+                }).join('\n')
             };
 
             // [수정] 시스템 프롬프트 구성 (초기 컨텍스트)
