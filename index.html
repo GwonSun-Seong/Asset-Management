@@ -1424,6 +1424,7 @@
             const [activeAssetTab, setActiveAssetTab] = useState('cash'); // [추가] 자산 상세 탭 상태
             const [assetTouchStart, setAssetTouchStart] = useState({ x: null, y: null }); // [추가] 자산 탭 스와이프 상태
             const [assetTouchEnd, setAssetTouchEnd] = useState({ x: null, y: null }); // [추가] 자산 탭 스와이프 상태
+            const [stockLinkState, setStockLinkState] = useState(null); // [추가] 종목 연동 모달 대상 자산 {sectorKey, index, asset}
 
             const isLocal = useMemo(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1', []);
 
@@ -2162,6 +2163,67 @@
 
                 return () => supabase.removeChannel(channel);
             }, [supabase]);
+
+            // [추가] 앱 로드 시 및 일정 주기별 연동 주식 데이터 자동 갱신 (시뮬레이션 로직 보존)
+            useEffect(() => {
+                if (!appData || !isInitialized || !isCloudLoaded) return;
+
+                const refreshLinkedStocks = async () => {
+                    const symbolsToFetch = new Set();
+                    let hasLinked = false;
+                    Object.keys(appData.assets).forEach(sector => {
+                        (appData.assets[sector] || []).forEach(a => {
+                            if (a.linkedItems && a.linkedItems.length > 0) {
+                                hasLinked = true;
+                                a.linkedItems.forEach(item => {
+                                    if (item.autoUpdate !== false && item.ticker) symbolsToFetch.add(item.ticker);
+                                });
+                            }
+                        });
+                    });
+                    if (!hasLinked) return;
+                    symbolsToFetch.add('KRW=X'); // 환율 데이터
+                    
+                    const quotes = await window.fetchYahooQuotes(Array.from(symbolsToFetch));
+                    if (Object.keys(quotes).length === 0) return;
+                    const fxRate = quotes['KRW=X']?.price || 1350;
+
+                    setAppData(prev => {
+                        const newData = { ...prev, assets: { ...prev.assets } };
+                        let isChanged = false;
+                        Object.keys(newData.assets).forEach(sector => {
+                            newData.assets[sector] = newData.assets[sector].map(a => {
+                                if (a.linkedItems && a.linkedItems.length > 0) {
+                                    let newLinkedVal = 0;
+                                    const newLinkedItems = a.linkedItems.map(item => {
+                                        const quote = (item.autoUpdate !== false) ? quotes[item.ticker] : null;
+                                        const currentPrice = quote ? quote.price : (item.currentPrice || 0);
+                                        let valKRW = currentPrice * item.shares;
+                                        if ((quote ? quote.currency : item.currency) === 'USD') valKRW *= fxRate;
+                                        newLinkedVal += (valKRW / 10000);
+                                        return { ...item, currentPrice };
+                                    });
+                                    const newAmount = Math.round(((a.baseAmount || 0) + newLinkedVal) * 100) / 100;
+                                    if (Math.abs(newAmount - (a.amount || 0)) > 0.01) {
+                                        isChanged = true;
+                                        return { ...a, amount: newAmount, linkedItems: newLinkedItems };
+                                    }
+                                }
+                                return a;
+                            });
+                        });
+                        if (isChanged) addToast('🔄 종목 연동 계좌의 실시간 자산 평가액이 자동 갱신되었습니다.', 'info');
+                        return isChanged ? newData : prev;
+                    });
+                };
+
+                // 너무 잦은 API 호출 방지를 위해 세션당 1회 또는 10분마다 갱신
+                const lastRefresh = sessionStorage.getItem('lastStockRefreshTimer');
+                if (!lastRefresh || Date.now() - Number(lastRefresh) > 10 * 60 * 1000) {
+                    refreshLinkedStocks();
+                    sessionStorage.setItem('lastStockRefreshTimer', Date.now().toString());
+                }
+            }, [isInitialized, isCloudLoaded]);
 
         useEffect(() => { 
             appDataRef.current = appData; 
@@ -4301,6 +4363,19 @@
                 });
             }, [setAppData]);
 
+            // [추가] 종목 연동 데이터를 저장하는 다중 필드 업데이트
+            const updateAssetWithLinked = (sector, index, updatedFields) => {
+                setAppData(prevData => {
+                    const prevAssets = prevData.assets;
+                    const newSectorAssets = prevAssets[sector].map((a, i) => 
+                        i === index ? { ...a, ...updatedFields } : a
+                    );
+                    return { ...prevData, assets: { ...prevAssets, [sector]: newSectorAssets } };
+                });
+                setStockLinkState(null); // 저장 후 모달 닫기
+                addToast('종목 연동이 적용되었습니다.', 'success');
+            };
+
             const removeAsset = React.useCallback((sector, index) => {
                 const currentData = appDataRef.current;
                 if (!currentData) return;
@@ -5420,11 +5495,15 @@
                                                             <div className="relative">
                                                                 <CalculatorInput 
                                                                     value={asset.amount} 
+                                                                    readOnly={asset.linkedItems?.length > 0}
                                                                     onChange={(e) => updateAsset(sectorKey, idx, 'amount', e.target.value)}
-                                                                    className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg pl-8 pr-4 py-2.5 text-right font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                                                                    className={`w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg pl-8 pr-4 py-2.5 text-right font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all ${asset.linkedItems?.length > 0 ? 'opacity-80' : ''}`}
                                                                     displayMode={displayMode}
                                                                 />
                                                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold">₩</span>
+                                                                {asset.linkedItems?.length > 0 && (
+                                                                    <div className="absolute -top-6 right-0 text-[10px] text-indigo-500 font-bold">🔗 연동됨</div>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -5490,6 +5569,11 @@
                                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">메모</label>
                                                                     <input type="text" placeholder="간단한 메모를 입력하세요" value={asset.memo || ''} onChange={(e) => updateAsset(sectorKey, idx, 'memo', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" />
                                                                 </div>
+                                                                {sectorKey !== 'loan' && (
+                                                                    <div className="col-span-2 sm:col-span-4 lg:col-span-1 flex items-end">
+                                                                        <button onClick={() => setStockLinkState({ sectorKey, index: idx, asset })} className="w-full py-1.5 border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-md text-xs font-bold hover:bg-indigo-100 transition-colors">🔗 종목 연동</button>
+                                                                    </div>
+                                                                )}
                                                             </>
                                                         )}
                                                         <div className="flex justify-end col-span-2 sm:col-span-4 lg:col-span-1">
@@ -6848,6 +6932,14 @@
                         onClose={() => setIsGameModalOpen(false)}
                         savingsRate={monthlySalary > 0 ? ((totalSectorMonthlyContrib + autoDepositAmount) / monthlySalary * 100) : 0}
                     />}
+                    {window.StockLinkModal && stockLinkState && (
+                        <window.StockLinkModal
+                            isOpen={!!stockLinkState}
+                            onClose={() => setStockLinkState(null)}
+                            asset={stockLinkState.asset}
+                            onSave={(updatedData) => updateAssetWithLinked(stockLinkState.sectorKey, stockLinkState.index, updatedData)}
+                        />
+                    )}
                     {scenarioToExport && window.DataExportImportModal && (
                         <window.DataExportImportModal 
                             isOpen={!!scenarioToExport} 
@@ -7138,8 +7230,13 @@
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.2fr_1.2fr_1.8fr_0.5fr_0.5fr_1.2fr_min-content] gap-3 items-center">
                             <input type="text" placeholder="항목명" aria-label="항목명" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.name} onChange={(e) => updateAsset(sectorKey, index, 'name', e.target.value)} />
                             <div>
-                                <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">현재금액</label>
-                                <CalculatorInput aria-label="현재금액" style={amountBgStyle} className="w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} displayMode={displayMode} />
+                                <div className="flex justify-between items-center sm:hidden mb-1">
+                                    <label className="text-xs text-gray-500 dark:text-gray-200">현재금액</label>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <CalculatorInput aria-label="현재금액" readOnly={asset.linkedItems?.length > 0} style={amountBgStyle} className={`w-full border rounded px-2 py-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white ${asset.linkedItems?.length > 0 ? 'opacity-80' : ''}`} value={asset.amount} onChange={(e) => updateAsset(sectorKey, index, 'amount', e.target.value)} displayMode={displayMode} />
+                                    <button onClick={() => setStockLinkState({ sectorKey, index, asset })} className={`p-1.5 rounded flex-shrink-0 ${asset.linkedItems?.length > 0 ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-gray-100 text-gray-400 hover:bg-indigo-50 hover:text-indigo-500'}`} title="실시간 주식/코인 연동">🔗</button>
+                                </div>
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 dark:text-gray-200 sm:hidden">월납입 / 출처</label>

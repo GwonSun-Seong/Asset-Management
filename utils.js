@@ -244,33 +244,36 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     // [Rework] 분기점 데이터 적용 로직을 재구성하여 안정성 강화.
                     // phaseData에 명시된 섹터만 수정하여, 다른 섹터(예: 연금)의 자산이 의도치 않게 삭제되는 문제를 원천 차단합니다.
                     Object.keys(phaseData.assets).forEach(sector => {
-                        const phaseSectorAssets = phaseData.assets[sector] || [];
-                        const originalSectorAssets = currentAssets[sector] || [];
+                        const phaseSectorOverrides = phaseData.assets[sector] || [];
+                        let currentSectorAssets = [...(currentAssets[sector] || [])];
                         
-                        // phaseData를 기준으로 새로운 자산 목록을 생성 (추가, 수정, 삭제 처리)
-                        const newSectorAssets = phaseSectorAssets.map(pAsset => {
-                            // [개선] 고유 ID가 일치하지 않더라도 이름이 동일하면 같은 자산으로 이어가도록 폴백(Fallback) 로직 추가
-                            const existingAsset = originalSectorAssets.find(a => a.id === pAsset.id || a.name === pAsset.name);
-                            if (existingAsset) {
-                                // 기존 자산: 설정값은 덮어쓰되, 금액(amount)은 보존하는 것을 원칙으로 함
-                                const updatedAsset = { ...existingAsset, ...pAsset };
-                                
-                                // [Fix] 분기 편집 화면에서 수정한 금액이 메인 시뮬레이션에서 과거 금액으로 롤백되어 증발하는 치명적 버그 완벽 해결
-                                // 강제 덮어쓰기 안 함(false)이라고 명시된 특수한 경우가 아니라면, 분기점(pAsset)에 사용자가 입력한 최신 금액을 최우선으로 신뢰하여 반영합니다.
-                                if (pAsset.isAmountOverridden === false) {
-                                    updatedAsset.amount = existingAsset.amount;
-                                    updatedAsset._skipGrowthThisMonth = false;
+                        // [Rework] 섹터 전체를 덮어쓰는 대신, 개별 자산별로 병합(Merge)하여 '추후 추가된 자산'이 증발하는 문제 해결
+                        phaseSectorOverrides.forEach(pAsset => {
+                            const existingIdx = currentSectorAssets.findIndex(a => a.id === pAsset.id || a.name === pAsset.name);
+                            
+                            if (existingIdx !== -1) {
+                                if (pAsset.isDeleted) {
+                                    // [추가] 미래 특정 시점에 계좌를 명시적으로 삭제(해지)하는 로직 지원
+                                    currentSectorAssets.splice(existingIdx, 1);
                                 } else {
-                                    updatedAsset._skipGrowthThisMonth = true;
+                                    // 기존 자산: 오버라이드 설정 적용
+                                    const existingAsset = currentSectorAssets[existingIdx];
+                                    const shouldOverrideAmount = pAsset.isAmountOverridden !== false;
+                                    
+                                    currentSectorAssets[existingIdx] = { 
+                                        ...existingAsset, 
+                                        ...pAsset,
+                                        amount: shouldOverrideAmount ? (pAsset.amount ?? existingAsset.amount) : existingAsset.amount,
+                                        _skipGrowthThisMonth: shouldOverrideAmount
+                                    };
                                 }
-                                return updatedAsset;
-                            } else {
-                                // 신규 자산: phaseData에 있는 그대로 추가
-                                return { ...pAsset, _sector: sector, _skipGrowthThisMonth: true };
+                            } else if (pAsset.name) {
+                                // 완전히 새로운 자산 추가: 목록에 추가
+                                currentSectorAssets.push({ ...pAsset, _sector: sector, _skipGrowthThisMonth: true });
                             }
                         });
-
-                        currentAssets[sector] = newSectorAssets;
+                        
+                        currentAssets[sector] = currentSectorAssets;
                     });
                     
                 }
@@ -1168,6 +1171,62 @@ const fetchYahooData = async (symbol) => {
     return null;
 };
 
+// [추가] 실시간 다중 주식/환율 조회 (Yahoo Finance)
+const fetchYahooQuotes = async (symbols) => {
+    if (!symbols || symbols.length === 0) return {};
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols.join(',')}`;
+    const proxies = [
+        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
+    ];
+    
+    for (const proxy of proxies) {
+        try {
+            const res = await fetch(proxy(url));
+            if (!res.ok) continue;
+            const json = await res.json();
+            const results = json?.quoteResponse?.result;
+            if (!results) continue;
+            
+            const map = {};
+            results.forEach(r => {
+                map[r.symbol] = {
+                    price: r.regularMarketPrice,
+                    currency: r.currency,
+                    name: r.shortName || r.longName || r.symbol,
+                    changePct: r.regularMarketChangePercent
+                };
+            });
+            return map;
+        } catch(e) { continue; }
+    }
+    return {};
+};
+
+// [추가] 주식/코인 종목 검색 자동완성
+const fetchYahooSearch = async (query) => {
+    if (!query) return [];
+    const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=5&newsCount=0`;
+    const proxies = [
+        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
+    ];
+    for (const proxy of proxies) {
+        try {
+            const res = await fetch(proxy(url));
+            if (!res.ok) continue;
+            const json = await res.json();
+            const results = json.quotes || [];
+            return results.filter(r => r.isYahooFinance).map(r => ({
+                symbol: r.symbol,
+                name: r.shortname || r.longname,
+                exch: r.exchDisp
+            }));
+        } catch(e) { continue; }
+    }
+    return [];
+};
+
 // [추가] 비트코인 데이터 가져오기 (CoinGecko API)
 const fetchBitcoinData = async () => {
     try {
@@ -1426,6 +1485,8 @@ window.parseCSV = parseCSV;
 window.compressData = compressData;
 window.decompressData = decompressData;
 window.fetchYahooData = fetchYahooData;
+window.fetchYahooQuotes = fetchYahooQuotes;
+window.fetchYahooSearch = fetchYahooSearch;
 window.fetchBitcoinData = fetchBitcoinData;
 window.calculateGoalReachMonth = calculateGoalReachMonth;
 window.normalizeTargets = normalizeTargets;
