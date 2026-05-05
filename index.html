@@ -2655,14 +2655,33 @@
         const result = calculateMonthlyProjection(pureAppData, targetMonth);
         const projectedState = result.projections[targetMonth]?.assets || pureAppData.assets;
 
+        // [Fix] 현재 편집하려는 분기점 이전의 페이즈들로부터 설정(급여, 소비 등)을 상속받음
+        const prevPhases = (appData.futurePhases || [])
+            .filter(p => p.startDate < phase.startDate)
+            .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+        let inheritedSalary = appData.monthlySalary;
+        let inheritedExpenses = appData.monthlyExpenses;
+        let inheritedSalaryDay = appData.salaryDay;
+        let inheritedMainAccount = appData.mainCashFlowAccount;
+        let inheritedResidualAccount = appData.residualAccount;
+
+        prevPhases.forEach(p => {
+            if (p.data.monthlySalary !== undefined) inheritedSalary = p.data.monthlySalary;
+            if (p.data.monthlyExpenses !== undefined) inheritedExpenses = p.data.monthlyExpenses;
+            if (p.data.salaryDay !== undefined) inheritedSalaryDay = p.data.salaryDay;
+            if (p.data.mainCashFlowAccount !== undefined) inheritedMainAccount = p.data.mainCashFlowAccount;
+            if (p.data.residualAccount !== undefined) inheritedResidualAccount = p.data.residualAccount;
+        });
+
         // 편집용 임시 상태로 덮어쓰기
         const editingData = {
             ...appData,
-            monthlySalary: phase.data.monthlySalary ?? appData.monthlySalary,
-            monthlyExpenses: phase.data.monthlyExpenses ?? appData.monthlyExpenses,
-            salaryDay: phase.data.salaryDay ?? appData.salaryDay,
-            mainCashFlowAccount: phase.data.mainCashFlowAccount ?? appData.mainCashFlowAccount,
-            residualAccount: phase.data.residualAccount ?? appData.residualAccount,
+            monthlySalary: phase.data.monthlySalary ?? inheritedSalary,
+            monthlyExpenses: phase.data.monthlyExpenses ?? inheritedExpenses,
+            salaryDay: phase.data.salaryDay ?? inheritedSalaryDay,
+            mainCashFlowAccount: phase.data.mainCashFlowAccount ?? inheritedMainAccount,
+            residualAccount: phase.data.residualAccount ?? inheritedResidualAccount,
             assets: JSON.parse(JSON.stringify(projectedState)) // Deep copy
         };
 
