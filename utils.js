@@ -1181,54 +1181,98 @@ const fetchYahooData = async (symbol) => {
 // [추가] 실시간 다중 주식/환율 조회 (Yahoo Finance)
 const fetchYahooQuotes = async (symbols) => {
     if (!symbols || symbols.length === 0) return {};
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols.join(',')}`;
+    // 중복 제거 및 인코딩
+    const uniqueSymbols = [...new Set(symbols)].map(s => encodeURIComponent(s.trim()));
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${uniqueSymbols.join(',')}`;
+    
     const proxies = [
+        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
         u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
         u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
     ];
     
+    let lastError = null;
     for (const proxy of proxies) {
         try {
-            const res = await fetch(proxy(url));
+            const res = await fetch(proxy(url), {
+                headers: { 'Accept': 'application/json' }
+            });
             if (!res.ok) continue;
+            
             const json = await res.json();
-            const results = json?.quoteResponse?.result;
+            // AllOrigins 등 일부 프록시는 문자열로 반환할 수 있음
+            const data = typeof json === 'string' ? JSON.parse(json) : json;
+            // 프록시에 따라 contents 필드 안에 실제 데이터가 있는 경우 대응
+            const actualData = data.contents ? (typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents) : data;
+            const results = actualData?.quoteResponse?.result;
+            
             if (!results) continue;
             
             const map = {};
             results.forEach(r => {
                 map[r.symbol] = {
-                    price: r.regularMarketPrice,
+                    symbol: r.symbol,
+                    price: r.regularMarketPrice || r.postMarketPrice || r.preMarketPrice,
                     currency: r.currency,
                     name: r.shortName || r.longName || r.symbol,
                     changePct: r.regularMarketChangePercent
                 };
             });
             return map;
-        } catch(e) { continue; }
+        } catch(e) { 
+            lastError = e;
+            continue; 
+        }
     }
-    return {};
+
+    // [Fail-safe] 일괄 조회가 모두 실패하면 중요한 데이터(환율 등)를 위해 개별 조회를 시도
+    console.warn("Batch fetch failed, attempting individual fallbacks...");
+    const fallbackMap = {};
+    for (const symbol of symbols) {
+        try {
+            const single = await fetchYahooData(symbol);
+            if (single) {
+                fallbackMap[symbol] = {
+                    symbol: symbol,
+                    price: single.price,
+                    name: symbol
+                };
+            }
+        } catch(e) {}
+    }
+    return fallbackMap;
 };
 
 // [추가] 주식/코인 종목 검색 자동완성
 const fetchYahooSearch = async (query) => {
     if (!query) return [];
-    const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=5&newsCount=0`;
+    // lang=ko-KR 및 region=KR 추가로 국장 종목 한국어 검색 성능 강화
+    const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0&lang=ko-KR&region=KR`;
+    
     const proxies = [
+        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
         u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
         u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
     ];
+
     for (const proxy of proxies) {
         try {
             const res = await fetch(proxy(url));
             if (!res.ok) continue;
             const json = await res.json();
-            const results = json.quotes || [];
-            return results.filter(r => r.isYahooFinance).map(r => ({
-                symbol: r.symbol,
-                name: r.shortname || r.longname,
-                exch: r.exchDisp
-            }));
+            
+            // 프록시에 따라 데이터 구조가 다를 수 있으므로 보정
+            const data = json.contents ? (typeof json.contents === 'string' ? JSON.parse(json.contents) : json.contents) : json;
+            const results = data.quotes || [];
+            
+            // isYahooFinance 필터가 국장 종목을 누락시키는 경우가 많아 완화함
+            return results
+                .filter(r => r.symbol && (r.quoteType === 'EQUITY' || r.quoteType === 'ETF' || r.quoteType === 'CRYPTOCURRENCY'))
+                .map(r => ({
+                    symbol: r.symbol,
+                    name: r.shortname || r.longname || r.symbol,
+                    exch: r.exchDisp || r.exchange
+                }));
         } catch(e) { continue; }
     }
     return [];

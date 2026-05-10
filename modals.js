@@ -457,257 +457,387 @@ window.MobileQuickMenu = ({ isOpen, onClose, layoutOrder, scenarios, assetHistor
 window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
     const [baseAmount, setBaseAmount] = useState(0);
     const [linkedItems, setLinkedItems] = useState([]);
-    const [fxRate, setFxRate] = useState(1350);
+    const [fxRate, setFxRate] = useState(() => Number(localStorage.getItem('asset_last_usd_krw')) || 1420); // 캐시 우선
+    const [isInitialSyncing, setIsInitialSyncing] = useState(false); // [추가] 초기 동기화와 버튼 로딩 분리
     const [isLoading, setIsLoading] = useState(false);
     
     const [draftTicker, setDraftTicker] = useState('');
-    const [draftName, setDraftName] = useState('');
     const [draftShares, setDraftShares] = useState('');
-    const [draftPrice, setDraftPrice] = useState('');
-    const [draftCurrency, setDraftCurrency] = useState('KRW');
-    const [draftAutoUpdate, setDraftAutoUpdate] = useState(true);
+    const [draftAvgPrice, setDraftAvgPrice] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
 
-    // 컴포넌트 마운트 시 초기값 세팅 및 최신 가격 갱신
     useEffect(() => {
         if (!isOpen || !asset) return;
-        
-        setBaseAmount(asset.baseAmount !== undefined ? asset.baseAmount : asset.amount || 0);
-        setLinkedItems(asset.linkedItems || []);
+        // 데이터 초기화
+        setBaseAmount(asset.baseAmount !== undefined ? asset.baseAmount : (asset.amount || 0));
+        setLinkedItems(Array.isArray(asset.linkedItems) ? asset.linkedItems : []);
         
         const initFetch = async () => {
-            setIsLoading(true);
+            setIsInitialSyncing(true); // [수정] 입력창을 막지 않는 초기 동기화 상태 사용
             try {
-                const symbolsToFetch = new Set(['KRW=X']);
-                (asset.linkedItems || []).forEach(item => {
+                const symbolsToFetch = new Set(['KRW=X', 'USD/KRW']);
+                const currentItems = Array.isArray(asset.linkedItems) ? asset.linkedItems : [];
+                
+                currentItems.forEach(item => {
                     if (item.autoUpdate !== false && item.ticker) {
-                        symbolsToFetch.add(item.ticker);
+                        const t = item.ticker.toUpperCase().trim();
+                        if (/^\d{6}$/.test(t)) {
+                            symbolsToFetch.add(`${t}.KS`);
+                            symbolsToFetch.add(`${t}.KQ`);
+                        } else {
+                            symbolsToFetch.add(t);
+                        }
                     }
                 });
-                
-                const quotes = await window.fetchYahooQuotes(Array.from(symbolsToFetch));
-                if (quotes['KRW=X']) setFxRate(quotes['KRW=X'].price);
-                
-                if (asset.linkedItems && asset.linkedItems.length > 0) {
+
+                let quotes = await window.fetchYahooQuotes(Array.from(symbolsToFetch));
+                const fxRateData = quotes['KRW=X'] || quotes['USD/KRW'] || quotes['USDKRW=X'];
+
+                if (fxRateData?.price) {
+                    const newRate = fxRateData.price;
+                    setFxRate(newRate);
+                    localStorage.setItem('asset_last_usd_krw', newRate.toString());
+                }
+
+                if (currentItems.length > 0) {
                     setLinkedItems(prev => prev.map(item => {
                         if (item.autoUpdate !== false) {
-                            const q = quotes[item.ticker];
-                            if (q) return { ...item, currentPrice: q.price, currency: q.currency };
+                            const t = item.ticker.toUpperCase().trim();
+                            // 정확한 매칭 또는 접미사가 붙은 매칭 확인
+                            const q = quotes[t] || quotes[`${t}.KS`] || quotes[`${t}.KQ`];
+                            if (q?.price) {
+                                return { 
+                                    ...item, 
+                                    currentPrice: q.price, 
+                                    currency: q.currency || item.currency, 
+                                    name: q.name || item.name,
+                                    ticker: q.symbol || item.ticker // 실제 조회된 티커로 업데이트(.KS 등)
+                                };
+                            }
                         }
                         return item;
                     }));
                 }
-            } catch (err) {
-                console.error(err);
-            } finally {
-                setIsLoading(false);
-            }
+            } catch (err) { 
+                console.error("StockLink Init Fetch Error:", err);
+                // 에러 발생 시 사용자 알림 (선택 사항)
+            } finally { setIsInitialSyncing(false); }
         };
         initFetch();
     }, [isOpen, asset]);
 
-    const handleAddStock = async () => {
-        if (!draftName.trim() || !draftShares) return alert('종목명과 수량을 필수로 입력해주세요.');
+    // [추가] 티커 검색 로직 (Debounced)
+    useEffect(() => {
+        if (!draftTicker || draftTicker.length < 2) {
+            setSearchResults([]);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            setIsSearching(true);
+            try {
+                const results = await window.fetchYahooSearch(draftTicker);
+                setSearchResults(results || []);
+            } catch (e) { console.error(e); }
+            finally { setIsSearching(false); }
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [draftTicker]);
+
+    // 실시간 총합, 수익률 및 비중 계산 로직
+    const { totalValueKRW, totalPurchaseKRW, itemsWithMeta } = useMemo(() => {
+        let linkedTotal = 0;
+        let linkedPurchaseTotal = 0;
+        const safeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
+
+        const mapped = linkedItems.map(item => {
+            const curPrice = parseFloat(item.currentPrice) || 0;
+            const avgPrice = parseFloat(item.avgPrice) || curPrice; 
+            const shares = parseFloat(item.shares) || 0;
+            
+            let evalVal = curPrice * shares;
+            let purVal = avgPrice * shares;
+            if (item.currency === 'USD') { 
+                evalVal *= safeFxRate; 
+                purVal *= safeFxRate; 
+            }
+
+            const evalManwon = evalVal / 10000;
+            const purManwon = purVal / 10000;
+            
+            linkedTotal += evalManwon;
+            linkedPurchaseTotal += purManwon;
+            return { ...item, currentPrice: curPrice, avgPrice, shares, valueManwon: evalManwon, purchaseManwon: purManwon };
+        });
+
+        const grandTotal = (Number(baseAmount) || 0) + linkedTotal;
+        const grandPurchase = (Number(baseAmount) || 0) + linkedPurchaseTotal;
+        return {
+            totalValueKRW: grandTotal,
+            totalPurchaseKRW: grandPurchase,
+            itemsWithMeta: mapped.map(item => ({
+                ...item,
+                weight: grandTotal > 0 ? (item.valueManwon / grandTotal) * 100 : 0,
+                profitManwon: item.valueManwon - item.purchaseManwon,
+                profitRate: item.purchaseManwon > 0 ? ((item.valueManwon - item.purchaseManwon) / item.purchaseManwon) * 100 : 0
+            }))
+        };
+    }, [baseAmount, linkedItems, fxRate]);
+
+    const handleAddStock = () => {
+        if (!draftTicker.trim()) return alert('티커를 입력하거나 종목을 선택해주세요.');
+        if (!draftShares) return alert('주식 수를 입력해주세요.');
         const shares = parseFloat(String(draftShares).replace(/,/g, ''));
         if (isNaN(shares) || shares <= 0) return alert('올바른 수량을 입력해주세요.');
 
+        // 1. 즉시 반영을 위한 데이터 구성 (Optimistic Update)
+        const tempId = Date.now() + Math.random();
+        const ticker = draftTicker.trim().toUpperCase();
         
-        let finalPrice = parseFloat(String(draftPrice).replace(/,/g, '')) || 0;
-        let finalCurrency = draftCurrency;
-        let finalTicker = draftTicker.trim().toUpperCase();
+        // [자동 판별] 숫자 6자리면 국장(KRW), 그 외 미장(USD)
+        const isKorean = /^\d{6}$/.test(ticker) || ticker.endsWith('.KS') || ticker.endsWith('.KQ');
+        const detectedCurrency = isKorean ? 'KRW' : 'USD';
 
-        if (draftAutoUpdate) {
-            if (!finalTicker) return alert('자동 갱신을 위해 종목코드(티커/종목번호)를 입력해주세요.');
-            setIsLoading(true);
-            try {
-                let tickersToTry = [finalTicker];
-                if (/^\d{6}$/.test(finalTicker)) {
-                    tickersToTry = [`${finalTicker}.KS`, `${finalTicker}.KQ`];
-                }
-                
-                const quotes = await window.fetchYahooQuotes([...tickersToTry, 'KRW=X']);
-                if (quotes['KRW=X']) setFxRate(quotes['KRW=X'].price);
-                
-                let foundQuote = null;
-                for (const t of tickersToTry) {
-                    if (quotes[t]) {
-                        foundQuote = quotes[t];
-                        finalTicker = t;
-                        break;
-                    }
-                }
+        const finalAvgPrice = parseFloat(String(draftAvgPrice).replace(/,/g, '')) || 0;
+        const finalPrice = finalAvgPrice; // 시세 동기화 전까지 임시 현재가
 
-                if (!foundQuote) {
-                    if (finalPrice > 0) {
-                        alert('API에서 현재 가격을 불러오지 못했습니다. 입력하신 수동 가격으로 고정 추가합니다.');
-                        setDraftAutoUpdate(false);
-                    } else {
-                        throw new Error('종목의 현재가를 불러올 수 없습니다. 종목코드를 확인하거나 수동 단가를 기입하고 [자동 갱신]을 끄세요.');
-                    }
-                } else {
-                    finalPrice = foundQuote.price;
-                    finalCurrency = foundQuote.currency;
-                }
-            } catch (e) {
-                alert(e.message);
-                setIsLoading(false);
-                return;
-            }
-            setIsLoading(false);
-        } else {
-            if (finalPrice <= 0) return alert('자동 갱신을 사용하지 않으려면 매수단가(현재가)를 필수로 입력해야 합니다.');
-        }
-
-        const newItem = {
-            ticker: finalTicker,
-            name: draftName,
-            shares: shares,
-            currentPrice: finalPrice,
-            currency: finalCurrency,
-            autoUpdate: draftAutoUpdate
+        // 2. 리스트에 즉시 추가 (Non-blocking)
+        const newItem = { 
+            id: tempId,
+            ticker: ticker, 
+            name: ticker, // 우선 티커를 이름으로 사용
+            shares, 
+            currentPrice: finalPrice, 
+            avgPrice: finalAvgPrice,
+            currency: detectedCurrency, 
+            autoUpdate: true 
         };
         setLinkedItems(prev => [...prev, newItem]);
-        setDraftTicker('');
-        setDraftName('');
-        setDraftShares('');
-        setDraftPrice('');
-        setDraftAutoUpdate(true);
-    };
 
-    const removeStock = (idx) => {
-        setLinkedItems(prev => prev.filter((_, i) => i !== idx));
-    };
+        // 3. 입력 필드 즉시 초기화
+        setDraftTicker(''); setDraftShares(''); setDraftAvgPrice('');
+        setSearchResults([]);
 
-    const toggleAutoUpdate = (idx) => {
-        setLinkedItems(prev => prev.map((item, i) => 
-            i === idx ? { ...item, autoUpdate: item.autoUpdate === false ? true : false } : item
-        ));
+        // 4. 백그라운드 시세 동기화
+        (async () => {
+            try {
+                let tickersToTry = [ticker];
+                if (/^\d{6}$/.test(ticker)) tickersToTry = [`${ticker}.KS`, `${ticker}.KQ`];
+                const quotes = await window.fetchYahooQuotes([...tickersToTry, 'KRW=X']);
+                const found = tickersToTry.find(t => quotes[t]?.price);
+                
+                if (found) {
+                    const q = quotes[found];
+                    setLinkedItems(prev => prev.map(item => 
+                        item.id === tempId 
+                        ? { ...item, ticker: found, name: q.name || item.name, currentPrice: q.price, currency: q.currency || item.currency }
+                        : item
+                    ));
+                    if (quotes['KRW=X']?.price) {
+                        setFxRate(quotes['KRW=X'].price);
+                        localStorage.setItem('asset_last_usd_krw', quotes['KRW=X'].price.toString());
+                    }
+                }
+            } catch (e) { console.warn("Background fetch failed:", e); }
+        })();
     };
 
     const handleSave = () => {
-        let totalLinkedValueKRW = 0;
-        linkedItems.forEach(item => {
-            let val = item.currentPrice * item.shares;
-            if (item.currency === 'USD') val *= fxRate;
-            totalLinkedValueKRW += (val / 10000); // 만원 단위 변환
-        });
-        
-        // 총액 = 미연동 예수금 + 주식 평가액 합산 (소수점 둘째 자리 반올림)
-        const finalAmount = Math.round((baseAmount + totalLinkedValueKRW) * 100) / 100;
-        
-        onSave({
-            amount: finalAmount,
-            baseAmount: baseAmount,
-            linkedItems: linkedItems
+        // 소수점 2자리 정밀도 유지하며 저장
+        onSave({ 
+            amount: Math.round(totalValueKRW * 100) / 100, 
+            baseAmount: Number(baseAmount) || 0, 
+            linkedItems: linkedItems 
         });
     };
 
     if (!isOpen || !asset) return null;
 
-    let currentTotalLinked = 0;
-    
     return (
-        <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
-                <div className="p-5 border-b dark:border-gray-700 flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-t-2xl">
+        <div className="fixed inset-0 z-[150] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in duration-200 border dark:border-slate-700">
+                {/* 1. Header */}
+                <div className="px-6 py-5 border-b dark:border-slate-700 flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20">
                     <div>
-                        <h3 className="text-lg font-bold text-indigo-900 dark:text-indigo-100 flex items-center gap-2">🔗 실시간 종목 연동</h3>
-                        <p className="text-xs text-indigo-600 dark:text-indigo-300 mt-1">[{asset.name}] 항목의 잔액을 주식 시세와 연동합니다.</p>
+                        <h3 className="text-xl font-black text-indigo-900 dark:text-indigo-100 flex items-center gap-2">🔗 실시간 종목 연동</h3>
+                        <p className="text-xs text-indigo-600 dark:text-indigo-400 font-bold mt-1">대상 자산: {asset.name}</p>
                     </div>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400">✕</button>
+                    <button onClick={onClose} className="p-2 hover:bg-indigo-100 dark:hover:bg-indigo-800 rounded-full text-indigo-400 transition-colors">✕</button>
                 </div>
 
-                <div className="p-5 overflow-y-auto custom-scrollbar flex-1 space-y-6">
-                    <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">미연동 잔액 (예수금 / 현금)</label>
-                        <div className="flex items-center gap-2 relative">
-                            <input type="number" step="any" value={baseAmount} onChange={(e) => setBaseAmount(Number(e.target.value))} className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-right font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 pr-8" />
-                            <span className="absolute right-3 text-gray-400 text-sm">만원</span>
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
+                    {/* 2. Deposit Section */}
+                    <section className="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border dark:border-slate-700 flex items-center justify-between group transition-all hover:border-indigo-300">
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">미연동 잔액 (예수금 / 현금)</label>
+                            <p className="text-xs text-slate-500">주식 평가액에 합산되지 않는 순수 현금 자산</p>
                         </div>
-                    </div>
+                        <div className="flex items-center gap-3 relative">
+                            <input type="number" step="any" value={baseAmount} onChange={(e) => setBaseAmount(parseFloat(e.target.value) || 0)} className="bg-transparent text-right text-3xl font-black text-indigo-600 dark:text-indigo-400 focus:outline-none w-32" />
+                            <span className="text-lg font-bold text-slate-400">만원</span>
+                        </div>
+                    </section>
 
-                    <div>
-                        <div className="flex justify-between items-end mb-2">
-                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400">새 종목 추가 (수동 기입)</label>
-                            <span className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded" title="현재 외국 주식은 달러(USD) 환전만 지원합니다.">적용 환율: 1 USD = {Math.round(fxRate).toLocaleString()} KRW</span>
+                    {/* 3. Input Form */}
+                    <section className="space-y-3">
+                        <div className="flex justify-between items-center px-1">
+                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                ➕ 종목 퀵 등록
+                                {isInitialSyncing && <div className="w-2 h-2 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>}
+                            </h4>
+                            <span className="text-[10px] text-slate-400 font-mono bg-indigo-50 dark:bg-indigo-900/40 px-2 py-0.5 rounded-full border dark:border-indigo-800">환율: ₩{Math.round(fxRate).toLocaleString()}</span>
                         </div>
-                        <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
-                            <div className="grid grid-cols-2 gap-2">
-                                <input type="text" placeholder="종목명 (필수)" value={draftName} onChange={(e) => setDraftName(e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500" />
-                                <input type="text" placeholder="종목코드 (예: AAPL, 005930)" value={draftTicker} onChange={(e) => setDraftTicker(e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500" />
-                            </div>
-                            <div className="grid grid-cols-[1fr_1fr_80px] gap-2">
-                                <input type="number" placeholder="수량 (필수)" value={draftShares} onChange={(e) => setDraftShares(e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500" />
-                                <input type="number" placeholder="단가/현재가" value={draftPrice} onChange={(e) => setDraftPrice(e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500" />
-                                <select value={draftCurrency} onChange={(e) => setDraftCurrency(e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500">
-                                    <option value="KRW">KRW</option>
-                                    <option value="USD">USD</option>
-                                </select>
-                            </div>
-                            <div className="flex justify-between items-center mt-1">
-                                <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300" title="체크 시 API를 통해 실시간 현재가를 불러와 금액을 계산합니다.">
-                                    <input type="checkbox" checked={draftAutoUpdate} onChange={(e) => setDraftAutoUpdate(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" />
-                                    종목코드로 가격 자동 최신화
-                                </label>
-                                <button onClick={handleAddStock} disabled={isLoading} className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition-colors text-xs flex items-center gap-1 shadow-sm disabled:opacity-50">
-                                    {isLoading ? '조회 중...' : '➕ 종목 추가'}
+
+                        <div className="bg-slate-50 dark:bg-slate-900/30 p-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 shadow-sm relative">
+                            <div className="flex flex-wrap items-end gap-3">
+                                {/* 티커 입력 */}
+                                <div className="flex-[2] min-w-[140px] relative">
+                                    <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">Search Ticker</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="삼성전자, TSLA, AAPL..." 
+                                        value={draftTicker} 
+                                        onChange={(e) => setDraftTicker(e.target.value)} 
+                                        className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" 
+                                    />
+                                    {/* 검색 결과 드롭다운 */}
+                                    {(isSearching || searchResults.length > 0) && (
+                                        <div className="absolute top-[105%] left-0 w-full bg-white dark:bg-slate-800 border-2 border-indigo-100 dark:border-slate-700 rounded-xl shadow-2xl z-[160] max-h-60 overflow-y-auto">
+                                            {isSearching ? (
+                                                <div className="p-4 text-xs text-slate-400 flex items-center gap-2 font-bold"><div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> 야후에서 찾는 중...</div>
+                                            ) : (
+                                                searchResults.map(res => (
+                                                    <button 
+                                                        key={res.symbol}
+                                                        onClick={() => { setDraftTicker(res.symbol); setSearchResults([]); }}
+                                                        className="w-full text-left px-4 py-3 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 border-b last:border-0 dark:border-slate-700 transition-colors"
+                                                    >
+                                                        <div className="flex justify-between items-start">
+                                                            <span className="text-sm font-black text-slate-800 dark:text-slate-100">{res.name}</span>
+                                                            <span className="text-[10px] bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono font-bold">{res.symbol}</span>
+                                                        </div>
+                                                        <div className="text-[10px] text-slate-400 mt-0.5 font-medium">{res.exch} · {res.symbol.endsWith('.KS') ? '코스피' : res.symbol.endsWith('.KQ') ? '코스닥' : '해외시장'}</div>
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 주식 수 */}
+                                <div className="w-24">
+                                    <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">주식 수</label>
+                                    <input type="number" placeholder="0" value={draftShares} onChange={(e) => setDraftShares(e.target.value)} className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" />
+                                </div>
+
+                                {/* 매입가 */}
+                                <div className="w-32">
+                                    <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">매입가</label>
+                                    <input type="number" placeholder="단가" value={draftAvgPrice} onChange={(e) => setDraftAvgPrice(e.target.value)} className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" />
+                                </div>
+
+                                <button 
+                                    onClick={handleAddStock} 
+                                    className="bg-indigo-600 text-white font-black rounded-xl px-5 py-2.5 text-sm hover:bg-indigo-700 transition-all shadow-md active:scale-95 flex items-center gap-2"
+                                >
+                                    추가
                                 </button>
                             </div>
                         </div>
-                    </div>
+                    </section>
 
-                    <div className="space-y-2">
-                        {linkedItems.map((item, idx) => {
-                            let val = item.currentPrice * item.shares;
-                            if (item.currency === 'USD') val *= fxRate;
-                            const valManwon = val / 10000;
-                            currentTotalLinked += valManwon;
-                            
-                            return (
-                                <div key={idx} className="flex justify-between items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 rounded-xl shadow-sm">
-                                    <div>
-                                        <div className="font-bold text-gray-900 dark:text-gray-100 text-sm flex items-center gap-1">
-                                            {item.ticker && <span className="text-[10px] bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-500 font-mono">{item.ticker}</span>}
-                                            {item.name}
-                                        </div>
-                                        <div className="text-[10px] text-gray-500 mt-1 flex items-center gap-2">
-                                            <span>
-                                                {item.shares}주 × {item.currency === 'USD' ? '$' : (item.currency === 'KRW' ? '₩' : `${item.currency} `)}{item.currentPrice.toLocaleString()}
-                                            </span>
-                                            <button onClick={() => toggleAutoUpdate(idx)} className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${item.autoUpdate !== false ? 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400 hover:bg-green-100' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`} title="클릭하여 자동 갱신 켜기/끄기">
-                                                {item.autoUpdate !== false ? '🔄 갱신 ON' : '⏸ 갱신 OFF'}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="text-right">
-                                            <div className="font-bold text-indigo-600 dark:text-indigo-400 text-sm">{Math.round(valManwon).toLocaleString()}만원</div>
-                                        </div>
-                                        <button onClick={() => removeStock(idx)} className="p-1.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                        {linkedItems.length === 0 ? (
-                            <div className="text-center text-xs text-gray-400 py-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-dashed dark:border-gray-700">연동된 종목이 없습니다.</div>
-                        ) : (
-                            // [개선] 달러 외 다른 통화가 들어왔을 때 사용자 혼선을 방지하는 안내 문구
-                            <div className="text-center text-[10px] text-gray-400 mt-2">* 해외 종목은 USD(달러) 기준으로만 환율이 자동 계산됩니다.</div>
-                        )}
-                    </div>
+                    {/* 4. Stock List Table */}
+                    <section className="space-y-3">
+                        <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 px-1">📋 연동 종목 리스트</h4>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-separate border-spacing-y-2 min-w-[600px]">
+                                <thead className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4">
+                                    <tr>
+                                        <th className="pb-2 pl-4">종목 정보</th>
+                                        <th className="pb-2">수량 / 매입가</th>
+                                        <th className="pb-2">현재가 / 상태</th>
+                                        <th className="pb-2 text-right">평가손익</th>
+                                        <th className="pb-2 text-right">평가금액 (비중)</th>
+                                        <th className="pb-2 pr-4"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {itemsWithMeta.map((item, idx) => {
+                                        const isProfit = item.profitManwon >= 0;
+                                        const profitColor = isProfit ? 'text-red-500 dark:text-red-400' : 'text-blue-500 dark:text-blue-400';
+                                        
+                                        return (
+                                        <tr key={idx} className="bg-slate-50 dark:bg-slate-900/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10 transition-colors group">
+                                            <td className="py-3 pl-4 rounded-l-2xl">
+                                                <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[120px]" title={item.name}>{item.name}</div>
+                                                <div className="text-[10px] font-black text-indigo-500/70 font-mono">{item.ticker || '수동'}</div>
+                                            </td>
+                                            <td className="py-3">
+                                                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                                                    <span className="font-bold">{item.shares}주</span>
+                                                    <div className="text-[10px] text-slate-400">{item.currency==='USD'?'$':'₩'}{Number(item.avgPrice).toLocaleString()}</div>
+                                                </div>
+                                            </td>
+                                            <td className="py-3">
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{item.currency==='USD'?'$':'₩'}{Number(item.currentPrice).toLocaleString()}</div>
+                                                    <span className={`w-fit text-[8px] font-black px-1.5 py-0.5 rounded ${item.autoUpdate ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30' : 'bg-slate-200 text-slate-500 dark:bg-slate-700'}`}>
+                                                        {item.autoUpdate ? 'LIVE' : 'FIXED'}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="py-3 text-right">
+                                                <div className={`text-xs font-black ${profitColor}`}>
+                                                    {isProfit ? '+' : ''}{Math.round(item.profitManwon).toLocaleString()}만
+                                                </div>
+                                                <div className={`text-[10px] font-bold opacity-80 ${profitColor}`}>
+                                                    {isProfit ? '▲' : '▼'} {Math.abs(item.profitRate).toFixed(2)}%
+                                                </div>
+                                            </td>
+                                            <td className="py-3 text-right">
+                                                <div className="font-black text-indigo-600 dark:text-indigo-400 text-sm">{Math.round(item.valueManwon).toLocaleString()}<span className="text-[10px] font-bold ml-0.5">만</span></div>
+                                                <div className="text-[10px] font-bold text-slate-400">{(item.weight || 0).toFixed(1)}%</div>
+                                            </td>
+                                            <td className="py-3 pr-4 text-right rounded-r-2xl">
+                                                <button onClick={() => setLinkedItems(prev => prev.filter((_, i) => i !== idx))} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );})}
+                                </tbody>
+                            </table>
+                            {linkedItems.length === 0 && (
+                                <div className="text-center py-10 bg-slate-50/50 dark:bg-slate-900/20 rounded-2xl border-2 border-dashed dark:border-slate-700 text-slate-400 text-xs font-bold italic">연동된 종목이 없습니다.</div>
+                            )}
+                        </div>
+                    </section>
                 </div>
 
-                <div className="p-5 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 rounded-b-2xl">
-                    <div className="flex justify-between items-center mb-4">
-                        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">총 자산 평가액</span>
+                {/* 5. Total Summary Footer */}
+                <div className="p-6 bg-slate-50 dark:bg-slate-900/50 border-t dark:border-slate-700">
+                    <div className="flex justify-between items-center mb-6">
+                        <div>
+                            <span className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-2">총 자산 요약</span>
+                            <div className="flex flex-col gap-1">
+                                <p className="text-[10px] text-slate-500 font-bold">
+                                    투자 원금: <span className="dark:text-slate-300">{Math.round(totalPurchaseKRW).toLocaleString()}만원</span>
+                                </p>
+                                <p className="text-[10px] font-black">
+                                    총 수익금: <span className={totalValueKRW >= totalPurchaseKRW ? 'text-red-500' : 'text-blue-500'}>{totalValueKRW >= totalPurchaseKRW ? '+' : ''}{Math.round(totalValueKRW - totalPurchaseKRW).toLocaleString()}만원 ({(((totalValueKRW - totalPurchaseKRW) / (totalPurchaseKRW || 1)) * 100).toFixed(2)}%)</span>
+                                </p>
+                                <p className="text-[10px] text-slate-400 mt-1 italic font-medium">현금 비중 {(totalValueKRW > 0 ? (Number(baseAmount)/totalValueKRW*100) : 0).toFixed(1)}%</p>
+                            </div>
+                        </div>
                         <div className="text-right">
-                            <span className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400">{Math.round(baseAmount + currentTotalLinked).toLocaleString()}만원</span>
-                            <div className="text-[10px] text-gray-500 mt-0.5">예수금 {Math.round(baseAmount).toLocaleString()} + 연동 {Math.round(currentTotalLinked).toLocaleString()}</div>
+                            <span className="text-4xl font-black text-indigo-600 dark:text-indigo-400 tracking-tighter">{Math.round(totalValueKRW).toLocaleString()}</span>
+                            <span className="text-xl font-bold text-slate-400 ml-1">만원</span>
                         </div>
                     </div>
-                    <div className="flex gap-2">
-                        <button onClick={onClose} className="flex-1 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">취소</button>
-                        <button onClick={handleSave} disabled={isLoading} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/30 transition-colors flex justify-center items-center gap-2">
-                            {isLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : '✅ 연동 저장 및 잔액 갱신'}
+                    <div className="flex gap-3">
+                        <button onClick={onClose} className="flex-1 py-4 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-sm hover:bg-slate-300 transition-all">취소</button>
+                        <button onClick={handleSave} disabled={isLoading || isInitialSyncing} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm hover:bg-indigo-700 shadow-xl shadow-indigo-600/30 transition-all flex justify-center items-center gap-2 disabled:opacity-50">
+                            {isLoading || isInitialSyncing ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : '✅ 연동 저장 및 잔액 갱신'}
                         </button>
                     </div>
                 </div>
