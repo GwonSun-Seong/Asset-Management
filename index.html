@@ -1342,11 +1342,11 @@
             const editingPhaseRef = useRef(null); // [보안] 단축키 강제 저장을 위한 실시간 상태 추적 Ref
 
             // [개편] 탭 상태 및 분류 재정의
-            const [activeTab, setActiveTab] = useState('visualization'); // 기본값은 시각화
+            const [activeTab, setActiveTab] = useState('input'); // 기본값은 데이터 입력
             const TAB_MAPPING = {
                 input: ['assets', 'expenses', 'events', 'memo', 'rebalance'], // 입력
                 visualization: ['budget', 'charts', 'history', 'scenario'], // 시각화 (요약은 항상 표시되므로 메뉴에서 제외)
-                analysis: ['detail-analysis', 'capital-income', 'assumptions'] // 분석
+                analysis: ['detail-analysis', 'assumptions'] // 분석
             };
             
             // [추가] 스크롤 스파이 로직: 현재 화면에 보이는 섹션을 감지하여 사이드바에 반영
@@ -4930,7 +4930,7 @@
                                 <div className="relative z-10">
                                     <div className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-1">월 고정 수입</div>
                                     <div className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-                                        {formatNumber(monthlySalary, displayMode)}
+                                        {formatNumber(monthlySalary, displayMode, 1)}
                                         <span className="text-lg font-medium text-gray-400 ml-1">만원</span>
                                     </div>
                                 </div>
@@ -4940,7 +4940,7 @@
                                 <div className="relative z-10">
                                     <div className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-1">월 고정 지출</div>
                                     <div className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-                                        {formatNumber(totalMonthly, displayMode)}
+                                        {formatNumber(totalMonthly, displayMode, 1)}
                                         <span className="text-lg font-medium text-gray-400 ml-1">만원</span>
                                     </div>
                                 </div>
@@ -4963,7 +4963,7 @@
                                 </div>
                                 <div className="text-right">
                                     <div className="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400">
-                                        {formatNumber(maxSectorMonthlyContrib, displayMode)}
+                                        {formatNumber(maxSectorMonthlyContrib, displayMode, 1)}
                                         <span className="text-xl text-gray-400 ml-1">만원</span>
                                     </div>
                                 </div>
@@ -4982,14 +4982,14 @@
                             <div className="flex justify-between items-start text-sm font-medium">
                                 <div className="flex flex-col">
                                     <span className="text-gray-500 dark:text-gray-400 mb-1">현재 배정됨</span>
-                                    <span className="text-gray-900 dark:text-white font-bold">{formatNumber(totalSectorMonthlyContrib, displayMode)}만원</span>
+                                    <span className="text-gray-900 dark:text-white font-bold">{formatNumber(totalSectorMonthlyContrib, displayMode, 1)}만원</span>
                                 </div>
                                 <div className="flex flex-col items-end">
                                     <span className={isOverBudget ? "text-red-500 mb-1" : "text-gray-500 dark:text-gray-400 mb-1"}>
                                         {isOverBudget ? "초과 금액" : "남은 금액"}
                                     </span>
                                     <span className={`font-bold ${isOverBudget ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                                        {isOverBudget ? `+${formatNumber(totalSectorMonthlyContrib - maxSectorMonthlyContrib, displayMode)}` : formatNumber(maxSectorMonthlyContrib - totalSectorMonthlyContrib, displayMode)}만원
+                                        {isOverBudget ? `+${formatNumber(totalSectorMonthlyContrib - maxSectorMonthlyContrib, displayMode, 1)}` : formatNumber(maxSectorMonthlyContrib - totalSectorMonthlyContrib, displayMode, 1)}만원
                                     </span>
                                 </div>
                             </div>
@@ -5057,7 +5057,7 @@
                                 <div className="flex justify-between items-center text-sm">
                                     <span className="text-gray-500 dark:text-gray-400">월 고정 수입</span>
                                     <span className="font-bold text-blue-600 dark:text-blue-400">
-                                        +{formatNumber(monthlySalary, displayMode)}만원
+                                        +{formatNumber(monthlySalary, displayMode, 1)}만원
                                         <span className="text-xs font-normal text-gray-400 ml-1">(100%)</span>
                                     </span>
                                 </div>
@@ -5065,7 +5065,7 @@
                                     <div className="flex justify-between items-center text-sm">
                                         <span className="text-gray-500 dark:text-gray-400">월 고정 지출</span>
                                         <span className="font-bold text-red-500">
-                                            -{formatNumber(totalMonthly, displayMode)}만원
+                                            -{formatNumber(totalMonthly, displayMode, 1)}만원
                                             <span className="text-xs font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (totalMonthly / monthlySalary * 100).toFixed(1) : 0}%)</span>
                                         </span>
                                     </div>
@@ -5076,7 +5076,7 @@
                                                 <div key={idx} className="flex justify-between items-center text-xs">
                                                     <span className="text-gray-500 dark:text-gray-400">{exp.name}</span>
                                                     <span className="text-red-400">
-                                                        -{formatNumber(exp.amount, displayMode)}만원
+                                                        -{formatNumber(exp.amount, displayMode, 1)}만원
                                                         <span className="text-[10px] text-gray-400 ml-1">({monthlySalary > 0 ? (exp.amount / monthlySalary * 100).toFixed(1) : 0}%)</span>
                                                     </span>
                                                 </div>
@@ -5095,7 +5095,7 @@
                                                 {item.name}
                                             </span>
                                             <span className="font-medium text-gray-900 dark:text-gray-200">
-                                                -{formatNumber(item.amount, displayMode)}만원
+                                                -{formatNumber(item.amount, displayMode, 1)}만원
                                                 <span className="text-[10px] font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (item.amount / monthlySalary * 100).toFixed(1) : 0}%)</span>
                                             </span>
                                         </div>
@@ -5111,7 +5111,7 @@
                                     <span className="text-base font-bold text-gray-900 dark:text-white">최종 잔여액</span>
                                     <div className="text-right">
                                         <span className={`text-xl font-extrabold ${autoDepositAmount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
-                                            {autoDepositAmount > 0 ? '+' : ''}{formatNumber(autoDepositAmount, displayMode)}만원
+                                            {autoDepositAmount > 0 ? '+' : ''}{formatNumber(autoDepositAmount, displayMode, 1)}만원
                                             <span className="text-xs font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (autoDepositAmount / monthlySalary * 100).toFixed(1) : 0}%)</span>
                                         </span>
                                         <div className="text-[10px] text-gray-400 mt-1">
@@ -5209,71 +5209,71 @@
 
                 const MemoContent = ({ isExpanded }) => (
                     <div className="flex flex-col h-full w-full">
-                        <div className={`flex items-center justify-between bg-gray-100 dark:bg-gray-800 p-2 ${isExpanded ? 'rounded-t-xl' : 'rounded-t-lg mb-0'} border-b dark:border-gray-700`}>
+                        <div className={`flex flex-wrap sm:flex-nowrap items-center justify-between bg-gray-100 dark:bg-gray-800 p-2 ${isExpanded ? 'rounded-t-xl' : 'rounded-t-lg mb-0'} border-b dark:border-gray-700 gap-y-2`}>
                             {!isMemoGridView ? (
-                                <div className="flex items-center gap-2">
-                                    <button onClick={() => setCurrentMemoIndex(Math.max(0, activeIndex - 1))} disabled={activeIndex === 0} className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30">
+                                <div className="flex items-center gap-1 order-2 sm:order-none">
+                                    <button onClick={() => setCurrentMemoIndex(Math.max(0, activeIndex - 1))} disabled={activeIndex === 0} className="p-0.5 sm:p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
                                     </button>
                                     <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{activeIndex + 1} / {memos.length}</span>
-                                    <button onClick={() => setCurrentMemoIndex(Math.min(memos.length - 1, activeIndex + 1))} disabled={activeIndex === memos.length - 1} className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30">
+                                    <button onClick={() => setCurrentMemoIndex(Math.min(memos.length - 1, activeIndex + 1))} disabled={activeIndex === memos.length - 1} className="p-0.5 sm:p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
                                     </button>
                                 </div>
                             ) : (
-                                <div className="px-2 text-sm font-bold text-gray-600 dark:text-gray-300">
+                                <div className="px-2 text-xs sm:text-sm font-bold text-gray-600 dark:text-gray-300 order-2 sm:order-none">
                                     모아보기 ({memos.length})
                                 </div>
                             )}
 
-                            <div className="flex-1 mx-4 flex items-center justify-center">
+                            <div className="w-full sm:w-auto sm:flex-1 order-1 sm:order-none flex items-center justify-center px-2">
                                 {!isMemoGridView && (
                                     isEditingMemoTitle ? (
                                         <div className="flex items-center gap-2 w-full max-w-[200px]">
-                                            <input type="text" value={tempMemoTitle} onChange={(e) => setTempMemoTitle(e.target.value)} className="w-full px-2 py-1 text-sm text-gray-900 bg-white border border-blue-500 rounded focus:outline-none" autoFocus onKeyDown={(e) => e.key === 'Enter' && saveTitle()} onBlur={saveTitle} />
+                                            <input type="text" value={tempMemoTitle} onChange={(e) => setTempMemoTitle(e.target.value)} className="w-full px-2 py-0.5 sm:py-1 text-sm text-gray-900 bg-white border border-blue-500 rounded focus:outline-none" autoFocus onKeyDown={(e) => e.key === 'Enter' && saveTitle()} onBlur={saveTitle} />
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-2 group cursor-pointer" onClick={startEditingTitle}>
-                                            <span className="font-bold text-gray-700 dark:text-gray-200 text-sm truncate max-w-[150px] sm:max-w-[200px]">{currentMemo.title}</span>
+                                            <span className="font-bold text-gray-700 dark:text-gray-200 text-sm truncate max-w-[120px] sm:max-w-[200px]">{currentMemo.title}</span>
                                             <svg className="w-3 h-3 text-gray-400 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                         </div>
                                     )
                                 )}
                             </div>
 
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 order-3 sm:order-none">
                                 {!isMemoGridView && (
-                                    <div className="flex items-center bg-white dark:bg-gray-700 rounded-lg border dark:border-gray-600 mr-2 px-1">
-                                        <button onClick={() => applyFormat('**', '**')} className="p-1.5 text-xs font-black hover:text-blue-500 transition-colors" title="볼드 (B)">B</button>
-                                        <button onClick={() => applyFormat('__', '__')} className="p-1.5 text-xs font-bold underline hover:text-blue-500 transition-colors" title="밑줄 (U)">U</button>
-                                        <div className="w-px h-3 bg-gray-300 dark:bg-gray-500 mx-1"></div>
+                                    <div className="flex items-center bg-white dark:bg-gray-700 rounded-lg border dark:border-gray-600 sm:mr-2 px-1 scale-90 sm:scale-100 origin-right">
+                                        <button onClick={() => applyFormat('**', '**')} className="p-1 sm:p-1.5 text-xs font-black hover:text-blue-500 transition-colors" title="볼드 (B)">B</button>
+                                        <button onClick={() => applyFormat('__', '__')} className="p-1 sm:p-1.5 text-xs font-bold underline hover:text-blue-500 transition-colors" title="밑줄 (U)">U</button>
+                                        <div className="w-px h-3 bg-gray-300 dark:bg-gray-500 mx-0.5 sm:mx-1"></div>
                                         <button 
                                             onClick={() => setIsMemoPreview(!isMemoPreview)} 
-                                            className={`px-2 py-1 text-[10px] font-bold rounded transition-all ${isMemoPreview ? 'bg-blue-500 text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-600'}`}
+                                            className={`px-1.5 sm:px-2 py-1 text-[9px] sm:text-[10px] font-bold rounded transition-all ${isMemoPreview ? 'bg-blue-500 text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-600'}`}
                                         >
                                             {isMemoPreview ? '편집' : '미리보기'}
                                         </button>
                                     </div>
                                 )}
 
-                                <button onClick={() => setIsMemoGridView(!isMemoGridView)} className={`p-1 rounded ${isMemoGridView ? 'text-blue-600 bg-blue-100 dark:bg-blue-900/50' : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'}`} title="모아보기">
+                                <button onClick={() => setIsMemoGridView(!isMemoGridView)} className={`p-0.5 sm:p-1 rounded ${isMemoGridView ? 'text-blue-600 bg-blue-100 dark:bg-blue-900/50' : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'}`} title="모아보기">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
                                 </button>
                                 
                                 {!isMemoGridView && (
-                                    <button onClick={handleAddMemo} className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded" title="새 메모 추가">
+                                    <button onClick={handleAddMemo} className="p-0.5 sm:p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded" title="새 메모 추가">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
                                     </button>
                                 )}
                                 {!isMemoGridView && (
-                                    <button onClick={handleDeleteMemo} className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded" title="현재 메모 삭제">
+                                    <button onClick={handleDeleteMemo} className="p-0.5 sm:p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded" title="현재 메모 삭제">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                     </button>
                                 )}
                                 
-                                <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                                <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-0.5 sm:mx-1"></div>
                                 
-                                <button onClick={() => setIsMemoExpanded(!isMemoExpanded)} className={`p-1 rounded hidden sm:block ${isMemoExpanded ? 'text-blue-600 bg-blue-100 dark:bg-blue-900/50' : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'}`} title={isMemoExpanded ? "원래 크기로" : "크게 보기"}>
+                                <button onClick={() => setIsMemoExpanded(!isMemoExpanded)} className={`p-0.5 sm:p-1 rounded hidden sm:block ${isMemoExpanded ? 'text-blue-600 bg-blue-100 dark:bg-blue-900/50' : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'}`} title={isMemoExpanded ? "원래 크기로" : "크게 보기"}>
                                     {isMemoExpanded ? (
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 14h6m0 0v6m0-6l-7 7m17-11h-6m0 0V4m0 6l7-7" /></svg>
                                     ) : (
@@ -5583,31 +5583,33 @@
                 return (
                 <div className="space-y-6"> 
                     {/* 탭 내비게이션 */}
-                    <div className="flex items-center gap-2">
-                        <button onClick={handlePrevTab} disabled={currentTabIndex <= 0} className="hidden sm:flex p-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors shadow-sm" title="이전 탭">
-                            <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
-                        </button>
-                        
-                        <div className="flex overflow-x-auto custom-scrollbar gap-2 p-1.5 bg-gray-100 dark:bg-gray-800/80 rounded-xl flex-1">
-                            {ASSET_TABS.map(tab => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveAssetTab(tab.id)}
-                                    className={`flex-1 min-w-[110px] py-2.5 px-3 rounded-lg transition-all whitespace-nowrap ${
-                                        activeAssetTab === tab.id
-                                            ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-md border border-gray-200 dark:border-gray-600 text-base font-extrabold'
-                                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/50 text-sm font-bold'
-                                    }`}
-                                >
-                                    {tab.label}
-                                </button>
-                            ))}
-                        </div>
+                    {!isExporting && (
+                        <div className="flex items-center gap-2">
+                            <button onClick={handlePrevTab} disabled={currentTabIndex <= 0} className="hidden sm:flex p-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors shadow-sm" title="이전 탭">
+                                <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
+                            </button>
+                            
+                            <div className="flex overflow-x-auto custom-scrollbar gap-2 p-1.5 bg-gray-100 dark:bg-gray-800/80 rounded-xl flex-1">
+                                {ASSET_TABS.map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveAssetTab(tab.id)}
+                                        className={`flex-1 min-w-[110px] py-2.5 px-3 rounded-lg transition-all whitespace-nowrap ${
+                                            activeAssetTab === tab.id
+                                                ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-md border border-gray-200 dark:border-gray-600 text-base font-extrabold'
+                                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/50 text-sm font-bold'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
 
-                        <button onClick={handleNextTab} disabled={currentTabIndex >= ASSET_TABS.length - 1} className="hidden sm:flex p-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors shadow-sm" title="다음 탭">
-                            <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" /></svg>
-                        </button>
-                    </div>
+                            <button onClick={handleNextTab} disabled={currentTabIndex >= ASSET_TABS.length - 1} className="hidden sm:flex p-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors shadow-sm" title="다음 탭">
+                                <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                        </div>
+                    )}
                     
                     <div 
                         className="space-y-8 animate-in fade-in duration-300"
@@ -5616,7 +5618,8 @@
                         onTouchEnd={onTouchEnd}
                     >
                     {assetSectorOrder.map((sectorKey, index) => {
-                        if (!sectorInfo[sectorKey] || !visibleSectors.includes(sectorKey)) return null;
+                        if (!sectorInfo[sectorKey]) return null;
+                        if (!isExporting && !visibleSectors.includes(sectorKey)) return null;
 
                         const isLoan = sectorKey === 'loan';
                         
@@ -6064,6 +6067,9 @@
                     capitalIncomeData[sectorKey] = sectorItems;
                 });
 
+                // [수정] 월 수익률이 아닌 '가중평균 연 수익률(세후)'로 계산 (월 수익 / 총자산 * 12개월 * 100)
+                const weightedAnnualYield = (currentGrossTotal > 0) ? (totalCapitalNetIncome / currentGrossTotal) * 12 * 100 : 0;
+
                 const monthlyIncomeWon = totalCapitalNetIncome * 10000;
                 const isPositive = monthlyIncomeWon >= 0;
                 const absMonthlyIncome = Math.abs(monthlyIncomeWon);
@@ -6115,13 +6121,16 @@
 
                 return (
                 <div className="space-y-4">
-                    <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg w-fit mb-4">
-                        <button onClick={() => setAnalysisMode('growth')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${analysisMode === 'growth' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>📊 자산 증감 분석</button>
-                        <button onClick={() => setAnalysisMode('income')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${analysisMode === 'income' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>💰 자본 소득 분석</button>
-                    </div>
+                    {!isExporting && (
+                        <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg w-fit mb-4">
+                            <button onClick={() => setAnalysisMode('growth')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${analysisMode === 'growth' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>📊 자산 증감 분석</button>
+                            <button onClick={() => setAnalysisMode('income')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${analysisMode === 'income' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>💰 자본 소득 분석</button>
+                        </div>
+                    )}
 
-                    {analysisMode === 'growth' ? (
-                    <>
+                    {(analysisMode === 'growth' || isExporting) && (
+                    <div className={isExporting ? "mb-10" : ""}>
+                        {isExporting && <h4 className="text-lg font-bold mb-4 flex items-center gap-2"><span className="text-xl">📊</span> 자산 증감 분석</h4>}
                     <div className="sm:hidden space-y-4">
                         {Object.keys(sectorInfo).map(sectorKey => {
                             const current = currentSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
@@ -6335,9 +6344,12 @@
                         </tbody>
                     </table>
                 </div>
-                    </>
-                    ) : (
-                    <>
+                    </div>
+                    )}
+
+                    {(analysisMode === 'income' || isExporting) && (
+                    <div className={isExporting ? "mt-10" : ""}>
+                        {isExporting && <h4 className="text-lg font-bold mb-4 flex items-center gap-2 border-t pt-10"><span className="text-xl">💰</span> 자본 소득 분석</h4>}
                         {/* 자본 소득 요약 카드 */}
                         <div className="mb-6">
                             <div className="space-y-4">
@@ -6347,7 +6359,10 @@
                                         <div className="relative">
                                             <h4 className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-2">예상 월 자본 소득 (세후)</h4>
                                             <div className="flex items-baseline gap-1 mb-4">
-                                                <span className={`text-3xl font-black tracking-tight ${totalCapitalNetIncome >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-600'}`}>{totalCapitalNetIncome > 0 ? '+' : ''}{formatNumber(totalCapitalNetIncome, displayMode, 1)}</span>
+                                                <span className={`text-3xl font-black tracking-tight ${totalCapitalNetIncome >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-600'}`}>
+                                                    {totalCapitalNetIncome > 0 ? '+' : ''}{formatNumber(totalCapitalNetIncome, displayMode, 1)}
+                                                    <span className="text-sm ml-1.5 opacity-60 font-bold" title="세후 가중평균 연 수익률">({weightedAnnualYield.toFixed(2)}%)</span>
+                                                </span>
                                                 <span className="text-lg font-bold text-slate-400">만원</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[11px] font-bold bg-gray-50 dark:bg-slate-900/50 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
@@ -6484,7 +6499,7 @@
                                 </tbody>
                             </table>
                         </div>
-                    </>
+                    </div>
                     )}
                 </div>
             )};
@@ -6917,7 +6932,13 @@
                         </aside>
 
                         <div id="main-dashboard-panel" className={`flex-1 space-y-8 min-w-0 transition-all duration-700 relative z-10 ${editingPhase !== null ? 'p-4 sm:p-6 rounded-2xl bg-white/40 dark:bg-gray-800/40 backdrop-blur-md ring-4 ring-indigo-500/30 shadow-[0_0_30px_rgba(99,102,241,0.15)]' : ''}`}>
-                            {layoutOrder.map((panelId, index) => {
+                            {/* [개선] PDF 내보내기 시에는 사용자의 커스텀 순서가 아닌 표준 보고서 순서(입력->시각화->분석)로 출력 */}
+                            {(isExporting ? [
+                                'summary', 
+                                ...TAB_MAPPING.input, 
+                                ...TAB_MAPPING.visualization, 
+                                ...TAB_MAPPING.analysis
+                            ] : layoutOrder).map((panelId, index) => {
                                 // [추가] 편집 모드 중에는 집중을 위해 무관한 패널 숨김 처리
                                 if (editingPhase !== null) {
                                     if (!['summary', 'budget', 'assets', 'expenses'].includes(panelId)) return null;

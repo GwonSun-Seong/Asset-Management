@@ -1409,7 +1409,7 @@ const exportDashboardToPDF = async (addToast, darkMode, fileName) => {
         clone = element.cloneNode(true);
         clone.id = 'dashboard-clone-for-pdf';
         Object.assign(clone.style, {
-            position: 'absolute',
+            position: 'fixed', // Use fixed to ensure it's not affected by scroll position
             top: '-9999px',
             left: '0',
             width: `${element.offsetWidth}px`,

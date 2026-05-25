@@ -197,8 +197,8 @@ const publicDefaultData = {
 
 // 기본 레이아웃 순서 정의
 const DEFAULT_LAYOUT_ORDER = [
-    'summary', 'scenario', 'charts', 'history', 'budget', 'memo', 
-    'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'
+    'summary', 'assets', 'expenses', 'events', 'memo', 'rebalance', 
+    'budget', 'charts', 'history', 'scenario', 'detail-analysis', 'assumptions'
 ];
 
 // 기본 자산 섹터 순서 정의
