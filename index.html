@@ -24,7 +24,7 @@
     </script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="config.js"></script>
     <script type="text/babel" src="modals.js"></script>
@@ -6361,7 +6361,7 @@
                                             <div className="flex items-baseline gap-1 mb-4">
                                                 <span className={`text-3xl font-black tracking-tight ${totalCapitalNetIncome >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-600'}`}>
                                                     {totalCapitalNetIncome > 0 ? '+' : ''}{formatNumber(totalCapitalNetIncome, displayMode, 1)}
-                                                    <span className="text-sm ml-1.5 opacity-60 font-bold" title="세후 가중평균 연 수익률">({weightedAnnualYield.toFixed(2)}%)</span>
+                                                    <span className="text-sm ml-1.5 opacity-60 font-bold" title="세후 가중평균 연 수익률">({formatNumber(weightedAnnualYield, displayMode, 2)}%)</span>
                                                 </span>
                                                 <span className="text-lg font-bold text-slate-400">만원</span>
                                             </div>
