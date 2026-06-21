@@ -1134,148 +1134,140 @@ const decompressData = (base64String) => {
     }
 };
 
-// [추가] 야후 파이낸스 데이터 가져오기 (CORS 프록시 사용)
-const fetchYahooData = async (symbol) => {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1mo&interval=1d`;
-    
-    // [수정] 프록시 서버 확장 (배포 환경 호환성 강화)
+// [추가] CORS 프록시 경쟁 호출 유틸리티 (성능 및 안정성 대폭 개선)
+const fetchWithProxyRace = async (targetUrl, responseType = 'json', timeoutMs = 5000) => {
     const proxies = [
-        // 1. CodeTabs: 현재 야후 파이낸스 차단이 가장 적고 안정적임
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-        // 2. CorsProxy.io (백업용)
         u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-        // 3. AllOrigins (백업용)
         u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        // 4. ThingProxy (예비용)
-        u => `https://thingproxy.freeboard.io/fetch/${u}`
+        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`
     ];
 
-    for (const proxy of proxies) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    const promises = proxies.map(async (proxyFn) => {
+        const url = proxyFn(targetUrl);
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP error ${response.status} from proxy`);
+        
+        const text = await response.text();
+        if (!text || text.trim() === '') throw new Error("Empty response from proxy");
+        
+        let data;
         try {
-            const response = await fetch(proxy(url));
-            if (!response.ok) continue;
-            
-            const json = await response.json();
-            const result = json?.chart?.result?.[0];
-            if (!result) continue;
-
-            const quotes = result.indicators.quote[0];
-            const prices = quotes.close.filter(p => typeof p === 'number'); // null 필터링 강화
-            
-            if (prices.length === 0) continue;
-
-            const currentPrice = prices[prices.length - 1];
-            const prevPrice = prices[prices.length - 2] || currentPrice;
-            const changePct = prevPrice !== 0 ? ((currentPrice - prevPrice) / prevPrice * 100) : 0;
-            
-            return { price: currentPrice, change: changePct, data: prices, isLive: true };
+            data = JSON.parse(text);
         } catch (e) {
-            console.warn(`Proxy failed for ${symbol}`, e);
-            continue;
+            if (responseType === 'text') return text;
+            throw e;
         }
+
+        if (data && data.contents) {
+            try {
+                data = typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents;
+            } catch (e) {
+                if (responseType === 'text') return data.contents;
+                throw e;
+            }
+        }
+        return data;
+    });
+
+    try {
+        const fastestData = await Promise.any(promises);
+        clearTimeout(timeoutId);
+        return fastestData;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        console.error("All proxies failed for URL:", targetUrl, err);
+        throw err;
     }
-    console.warn(`All proxies failed for ${symbol}`);
-    return null;
+};
+
+// [추가] 야후 파이낸스 데이터 가져오기 (CORS 프록시 경쟁 호출 사용)
+const fetchYahooData = async (symbol) => {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1mo&interval=1d`;
+    try {
+        const json = await fetchWithProxyRace(url);
+        const result = json?.chart?.result?.[0];
+        if (!result) return null;
+
+        const quotes = result.indicators.quote[0];
+        const prices = quotes.close.filter(p => typeof p === 'number');
+        
+        if (prices.length === 0) return null;
+
+        const currentPrice = prices[prices.length - 1];
+        const prevPrice = prices[prices.length - 2] || currentPrice;
+        const changePct = prevPrice !== 0 ? ((currentPrice - prevPrice) / prevPrice * 100) : 0;
+        
+        return { price: currentPrice, change: changePct, data: prices, isLive: true };
+    } catch (e) {
+        console.warn(`All proxies failed in fetchYahooData for ${symbol}`, e);
+        return null;
+    }
 };
 
 // [추가] 실시간 다중 주식/환율 조회 (Yahoo Finance)
 const fetchYahooQuotes = async (symbols) => {
     if (!symbols || symbols.length === 0) return {};
-    // 중복 제거 및 인코딩
     const uniqueSymbols = [...new Set(symbols)].map(s => encodeURIComponent(s.trim()));
     const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${uniqueSymbols.join(',')}`;
     
-    const proxies = [
-        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
-    ];
-    
-    let lastError = null;
-    for (const proxy of proxies) {
-        try {
-            const res = await fetch(proxy(url), {
-                headers: { 'Accept': 'application/json' }
-            });
-            if (!res.ok) continue;
-            
-            const json = await res.json();
-            // AllOrigins 등 일부 프록시는 문자열로 반환할 수 있음
-            const data = typeof json === 'string' ? JSON.parse(json) : json;
-            // 프록시에 따라 contents 필드 안에 실제 데이터가 있는 경우 대응
-            const actualData = data.contents ? (typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents) : data;
-            const results = actualData?.quoteResponse?.result;
-            
-            if (!results) continue;
-            
-            const map = {};
-            results.forEach(r => {
-                map[r.symbol] = {
-                    symbol: r.symbol,
-                    price: r.regularMarketPrice || r.postMarketPrice || r.preMarketPrice,
-                    currency: r.currency,
-                    name: r.shortName || r.longName || r.symbol,
-                    changePct: r.regularMarketChangePercent
-                };
-            });
-            return map;
-        } catch(e) { 
-            lastError = e;
-            continue; 
+    try {
+        const json = await fetchWithProxyRace(url);
+        const results = json?.quoteResponse?.result;
+        if (!results) throw new Error("No result in quoteResponse");
+        
+        const map = {};
+        results.forEach(r => {
+            map[r.symbol] = {
+                symbol: r.symbol,
+                price: r.regularMarketPrice || r.postMarketPrice || r.preMarketPrice,
+                currency: r.currency,
+                name: r.shortName || r.longName || r.symbol,
+                changePct: r.regularMarketChangePercent
+            };
+        });
+        return map;
+    } catch(e) { 
+        console.warn("Batch fetch with proxy race failed, attempting individual fallbacks...", e);
+        const fallbackMap = {};
+        for (const symbol of symbols) {
+            try {
+                const single = await fetchYahooData(symbol);
+                if (single) {
+                    fallbackMap[symbol] = {
+                        symbol: symbol,
+                        price: single.price,
+                        name: symbol
+                    };
+                }
+            } catch(err) {}
         }
+        return fallbackMap;
     }
-
-    // [Fail-safe] 일괄 조회가 모두 실패하면 중요한 데이터(환율 등)를 위해 개별 조회를 시도
-    console.warn("Batch fetch failed, attempting individual fallbacks...");
-    const fallbackMap = {};
-    for (const symbol of symbols) {
-        try {
-            const single = await fetchYahooData(symbol);
-            if (single) {
-                fallbackMap[symbol] = {
-                    symbol: symbol,
-                    price: single.price,
-                    name: symbol
-                };
-            }
-        } catch(e) {}
-    }
-    return fallbackMap;
 };
 
 // [추가] 주식/코인 종목 검색 자동완성
 const fetchYahooSearch = async (query) => {
     if (!query) return [];
-    // lang=ko-KR 및 region=KR 추가로 국장 종목 한국어 검색 성능 강화
     const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0&lang=ko-KR&region=KR`;
     
-    const proxies = [
-        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
-    ];
-
-    for (const proxy of proxies) {
-        try {
-            const res = await fetch(proxy(url));
-            if (!res.ok) continue;
-            const json = await res.json();
-            
-            // 프록시에 따라 데이터 구조가 다를 수 있으므로 보정
-            const data = json.contents ? (typeof json.contents === 'string' ? JSON.parse(json.contents) : json.contents) : json;
-            const results = data.quotes || [];
-            
-            // isYahooFinance 필터가 국장 종목을 누락시키는 경우가 많아 완화함
-            return results
-                .filter(r => r.symbol && (r.quoteType === 'EQUITY' || r.quoteType === 'ETF' || r.quoteType === 'CRYPTOCURRENCY'))
-                .map(r => ({
-                    symbol: r.symbol,
-                    name: r.shortname || r.longname || r.symbol,
-                    exch: r.exchDisp || r.exchange
-                }));
-        } catch(e) { continue; }
+    try {
+        const json = await fetchWithProxyRace(url);
+        const results = json.quotes || [];
+        return results
+            .filter(r => r.symbol && (r.quoteType === 'EQUITY' || r.quoteType === 'ETF' || r.quoteType === 'CRYPTOCURRENCY'))
+            .map(r => ({
+                symbol: r.symbol,
+                name: r.shortname || r.longname || r.symbol,
+                exchDisp: r.exchDisp,
+                typeDisp: r.typeDisp
+            }));
+    } catch (e) {
+        console.warn("fetchYahooSearch failed", e);
+        return [];
     }
-    return [];
 };
 
 // [추가] 비트코인 데이터 가져오기 (CoinGecko API)

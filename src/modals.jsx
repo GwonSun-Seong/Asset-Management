@@ -461,6 +461,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
     const [fxRate, setFxRate] = useState(() => Number(localStorage.getItem('asset_last_usd_krw')) || 1420); // 캐시 우선
     const [isInitialSyncing, setIsInitialSyncing] = useState(false); // [추가] 초기 동기화와 버튼 로딩 분리
     const [isLoading, setIsLoading] = useState(false);
+    const [editingCell, setEditingCell] = useState(null); // [추가] { index, field } 인라인 편집 셀 추적
     
     const [draftTicker, setDraftTicker] = useState('');
     const [draftShares, setDraftShares] = useState('');
@@ -477,6 +478,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         const initFetch = async () => {
             setIsInitialSyncing(true); // [수정] 입력창을 막지 않는 초기 동기화 상태 사용
             try {
+                /*
                 const symbolsToFetch = new Set(['KRW=X', 'USD/KRW']);
                 const currentItems = Array.isArray(asset.linkedItems) ? asset.linkedItems : [];
                 
@@ -512,7 +514,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                     ...item, 
                                     currentPrice: q.price, 
                                     currency: q.currency || item.currency, 
-                                    name: q.name || item.name,
+                                    name: (q.name && q.name !== q.symbol && !q.name.endsWith('.KS') && !q.name.endsWith('.KQ')) ? q.name : item.name,
                                     ticker: q.symbol || item.ticker // 실제 조회된 티커로 업데이트(.KS 등)
                                 };
                             }
@@ -520,6 +522,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                         return item;
                     }));
                 }
+                */
             } catch (err) { 
                 console.error("StockLink Init Fetch Error:", err);
                 // 에러 발생 시 사용자 알림 (선택 사항)
@@ -631,7 +634,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                     const q = quotes[found];
                     setLinkedItems(prev => prev.map(item => 
                         item.id === tempId 
-                        ? { ...item, ticker: found, name: q.name || item.name, currentPrice: q.price, currency: q.currency || item.currency }
+                        ? { ...item, ticker: found, name: (q.name && q.name !== q.symbol && !q.name.endsWith('.KS') && !q.name.endsWith('.KQ')) ? q.name : item.name, currentPrice: q.price, currency: q.currency || item.currency }
                         : item
                     ));
                     if (quotes['KRW=X']?.price) {
@@ -656,7 +659,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
     return (
         <div className="fixed inset-0 z-[150] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in duration-200 border dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-6xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in duration-200 border dark:border-slate-700">
                 {/* 1. Header */}
                 <div className="px-6 py-5 border-b dark:border-slate-700 flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20">
                     <div>
@@ -679,7 +682,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                         </div>
                     </section>
 
-                    {/* 3. Input Form */}
+                    {/* 3. Input Form (임시 주석 처리 - 스크린샷 연동만 허용)
                     <section className="space-y-3">
                         <div className="flex justify-between items-center px-1">
                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -691,7 +694,6 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
                         <div className="bg-slate-50 dark:bg-slate-900/30 p-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 shadow-sm relative">
                             <div className="flex flex-wrap items-end gap-3">
-                                {/* 티커 입력 */}
                                 <div className="flex-[2] min-w-[140px] relative">
                                     <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">Search Ticker</label>
                                     <input 
@@ -701,7 +703,6 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                         onChange={(e) => setDraftTicker(e.target.value)} 
                                         className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" 
                                     />
-                                    {/* 검색 결과 드롭다운 */}
                                     {(isSearching || searchResults.length > 0) && (
                                         <div className="absolute top-[105%] left-0 w-full bg-white dark:bg-slate-800 border-2 border-indigo-100 dark:border-slate-700 rounded-xl shadow-2xl z-[160] max-h-60 overflow-y-auto">
                                             {isSearching ? (
@@ -725,13 +726,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                     )}
                                 </div>
 
-                                {/* 주식 수 */}
                                 <div className="w-24">
                                     <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">주식 수</label>
                                     <input type="number" placeholder="0" value={draftShares} onChange={(e) => setDraftShares(e.target.value)} className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" />
                                 </div>
 
-                                {/* 매입가 */}
                                 <div className="w-32">
                                     <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">매입가</label>
                                     <input type="number" placeholder="단가" value={draftAvgPrice} onChange={(e) => setDraftAvgPrice(e.target.value)} className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" />
@@ -746,6 +745,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             </div>
                         </div>
                     </section>
+                    */}
 
                     {/* 4. Stock List Table */}
                     <section className="space-y-3">
@@ -774,17 +774,128 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                 <div className="text-[10px] font-black text-indigo-500/70 font-mono">{item.ticker || '수동'}</div>
                                             </td>
                                             <td className="py-3">
-                                                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                                                    <span className="font-bold">{item.shares}주</span>
-                                                    <div className="text-[10px] text-slate-400">{item.currency==='USD'?'$':'₩'}{Number(item.avgPrice).toLocaleString()}</div>
+                                                <div className="flex flex-col gap-1">
+                                                    {/* 수량 편집 */}
+                                                    {editingCell && editingCell.index === idx && editingCell.field === 'shares' ? (
+                                                        <input 
+                                                            type="number" 
+                                                            className="w-20 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                                                            defaultValue={item.shares}
+                                                            autoFocus
+                                                            onBlur={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, shares: val } : li));
+                                                                setEditingCell(null);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, shares: val } : li));
+                                                                    setEditingCell(null);
+                                                                }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <span 
+                                                            onClick={() => setEditingCell({ index: idx, field: 'shares' })} 
+                                                            className="font-bold text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
+                                                            title="클릭하여 수량 수정"
+                                                        >
+                                                            {item.shares}주 ✏️
+                                                        </span>
+                                                    )}
+                                                    
+                                                    {/* 매입가 편집 */}
+                                                    {editingCell && editingCell.index === idx && editingCell.field === 'avgPrice' ? (
+                                                        <input 
+                                                            type="number" 
+                                                            className="w-24 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-[10px] font-bold focus:outline-none"
+                                                            defaultValue={item.avgPrice}
+                                                            autoFocus
+                                                            onBlur={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, avgPrice: val } : li));
+                                                                setEditingCell(null);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, avgPrice: val } : li));
+                                                                    setEditingCell(null);
+                                                                }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <span 
+                                                            onClick={() => setEditingCell({ index: idx, field: 'avgPrice' })} 
+                                                            className="text-[10px] text-slate-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
+                                                            title="클릭하여 매입단가 수정"
+                                                        >
+                                                            {item.currency==='USD'?'$':'₩'}{Number(item.avgPrice).toLocaleString()} ✏️
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="py-3">
-                                                <div className="flex flex-col gap-1">
-                                                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{item.currency==='USD'?'$':'₩'}{Number(item.currentPrice).toLocaleString()}</div>
-                                                    <span className={`w-fit text-[8px] font-black px-1.5 py-0.5 rounded ${item.autoUpdate ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30' : 'bg-slate-200 text-slate-500 dark:bg-slate-700'}`}>
-                                                        {item.autoUpdate ? 'LIVE' : 'FIXED'}
-                                                    </span>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex flex-col gap-1">
+                                                        {/* 현재가 편집 */}
+                                                        {editingCell && editingCell.index === idx && editingCell.field === 'currentPrice' ? (
+                                                            <input 
+                                                                type="number" 
+                                                                className="w-24 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                                                                defaultValue={item.currentPrice}
+                                                                autoFocus
+                                                                onBlur={(e) => {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, currentPrice: val } : li));
+                                                                    setEditingCell(null);
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        const val = parseFloat(e.target.value) || 0;
+                                                                        setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, currentPrice: val } : li));
+                                                                        setEditingCell(null);
+                                                                    }
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <span 
+                                                                onClick={() => setEditingCell({ index: idx, field: 'currentPrice' })} 
+                                                                className="text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
+                                                                title="클릭하여 현재단가 수정"
+                                                            >
+                                                                {item.currency==='USD'?'$':'₩'}{Number(item.currentPrice).toLocaleString()} ✏️
+                                                            </span>
+                                                        )}
+                                                        
+                                                        {/* 상태 뱃지 */}
+                                                        {(() => {
+                                                            const isLiveGlobal = localStorage.getItem('asset_enable_live_quotes') !== 'false';
+                                                            if (!isLiveGlobal && item.autoUpdate) {
+                                                                return (
+                                                                    <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700" title="핵심 설정에서 실시간 연동이 비활성화되었습니다.">
+                                                                        LIVE (OFF)
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            return (
+                                                                <span className={`w-fit text-[8px] font-black px-1.5 py-0.5 rounded ${item.autoUpdate ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30' : 'bg-slate-200 text-slate-500 dark:bg-slate-700'}`}>
+                                                                    {item.autoUpdate ? 'LIVE' : 'FIXED'}
+                                                                </span>
+                                                            );
+                                                        })()}
+                                                    </div>
+
+                                                    {/* API 연동 개별 스위치 */}
+                                                    <div className="flex items-center" title="실시간 시세 자동 연동 On/Off">
+                                                        <button 
+                                                            onClick={() => setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, autoUpdate: !li.autoUpdate } : li))}
+                                                            className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${item.autoUpdate ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                                                        >
+                                                            <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${item.autoUpdate ? 'translate-x-3' : 'translate-x-0'}`} />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className="py-3 text-right">
@@ -2349,6 +2460,46 @@ window.ScreenshotImportModal = ({ isOpen, onClose, appData, setAppData, addToast
         const matched = [];
         
         extractedList.forEach(item => {
+            // [Fail-safe] 금액이 만원 단위가 아닌 원화(e.g., 5,000,000)로 오추출된 경우 보정
+            let safeAmount = item.amount;
+            if (safeAmount > 50000) {
+                safeAmount = Math.round(safeAmount / 10000);
+            }
+
+            // [Fail-safe] 개별 주식의 가격이 만원 단위(e.g., 7.5)로 오추출된 경우 원화(75,000)로 복원
+            let safeStockItems = item.stockItems;
+            if (Array.isArray(safeStockItems)) {
+                safeStockItems = safeStockItems.map(s => {
+                    let avg = parseFloat(s.avgPrice) || 0;
+                    let cur = parseFloat(s.currentPrice) || 0;
+                    const shares = parseFloat(s.shares) || 0;
+                    const tickerStr = String(s.ticker || '');
+                    const isKorean = s.currency === 'KRW' || /^\d{6}/.test(tickerStr) || tickerStr.endsWith('.KS') || tickerStr.endsWith('.KQ');
+                    
+                    if (isKorean) {
+                        if (avg > 0 && avg < 1000) avg *= 10000;
+                        if (cur > 0 && cur < 1000) cur *= 10000;
+                        
+                        // [추가 Fail-safe] AI가 총매입금액이나 평가손익을 매입단가(평단가)로 혼동하여 극단적으로 큰 값을 추출했을 때 보정
+                        if (avg > 0 && cur > 0 && (avg / cur >= 3.0)) {
+                            if (shares > 0) {
+                                // 총액을 수량으로 나눠 단가를 복원하되 자릿수(100배율 등)를 고려한 보정치 검증
+                                const tempAvg = (avg * 100) / shares;
+                                if (tempAvg / cur >= 0.5 && tempAvg / cur <= 2.0) {
+                                    avg = Math.round(tempAvg);
+                                } else {
+                                    // 자릿수 보정마저 안 되는 완전한 노이즈라면 안전하게 현재가로 대체
+                                    avg = cur;
+                                }
+                            } else {
+                                avg = cur;
+                            }
+                        }
+                    }
+                    return { ...s, avgPrice: avg, currentPrice: cur };
+                });
+            }
+
             if (item.matchedId) {
                 let existingAsset = null;
                 let existingSector = null;
@@ -2369,10 +2520,11 @@ window.ScreenshotImportModal = ({ isOpen, onClose, appData, setAppData, addToast
                         selected: true,
                         isNew: false,
                         extractedName: item.name,
-                        amount: item.amount,
+                        amount: safeAmount,
                         existingAsset: existingAsset,
                         existingSector: existingSector,
-                        sector: existingSector
+                        sector: existingSector,
+                        stockItems: safeStockItems
                     });
                     return;
                 }
@@ -2384,8 +2536,9 @@ window.ScreenshotImportModal = ({ isOpen, onClose, appData, setAppData, addToast
                 selected: true,
                 isNew: true,
                 extractedName: item.name,
-                amount: item.amount,
-                sector: item.sector || 'deposit'
+                amount: safeAmount,
+                sector: item.sector || 'deposit',
+                stockItems: safeStockItems
             });
         });
 
@@ -2432,11 +2585,30 @@ ${JSON.stringify(currentAssetsList, null, 2)}
 - 매칭되는 기존 자산이 있다면: 해당 기존 자산의 'id'를 'matchedId' 필드에 매핑해 주세요.
 - 매칭되는 기존 자산이 없다면(새로운 자산인 경우): 'matchedId'를 null로 지정하고, 이 자산이 속할 가장 적절한 카테고리('sector': 'deposit' | 'savings' | 'investment' | 'loan' 중 하나)를 추론해 지정해 주세요.
 
-결과는 오직 다음 형식의 JSON 객체로만 답해 주세요. 다른 설명 텍스트나 코드 블록 표시(\`\`\`json 등)는 절대 적지 마세요:
+⚠️주의: 절대 '매입금액(총투자액)'이나 '평가손익'의 숫자와 '매입단가(1주당 가격, 평단가)'를 혼동하여 추출하지 마세요. 매입단가(avgPrice)는 현재가(currentPrice)와 자릿수(액수 범위)가 비슷해야 합니다. (예: 현재가가 13420원인데 매입단가를 매입금액인 5743714원이나 57437원으로 잘못 추출하면 안 됩니다. 이 경우 매입단가는 11000원 대여야 합니다).
+
+★만약 이미지에서 주식/ETF 종목 목록(잔고 수량, 평가금액, 매입단가/평단가, 현재가 등)이 식별된다면, 이를 하나의 통합 주식 계좌("OO증권 주식계좌" 등)에 포함된 종목 리스트 또는 개별 주식 항목으로 추출해 주세요.
+주식 항목들은 "stockItems" 배열에 포함시켜야 하며, 각 주식 정보는 다음 필드를 가집니다:
+- ticker: 해당 주식의 티커/코드 (예: 국장은 '005930', 미장은 'AAPL', 'TSLA' 등)
+- name: 종목명 (예: '삼성전자', '테슬라' 등)
+- shares: 잔고 수량 (숫자)
+- avgPrice: 매입단가 (숫자, 평단가)
+- currentPrice: 현재단가 (숫자)
+- currency: 화폐 단위 ('KRW' 또는 'USD')
+
+결과는 오직 다음 형식의 JSON 객체로만 답해 주세요. 다른 설명 텍스트나 코드 블록 기호는 절대 적지 마세요:
 
 {
   "assets": [
-    { "name": "자산명", "amount": 120, "matchedId": "기존 자산의 id 또는 null", "sector": "추론한 sector 또는 null" }
+    { 
+      "name": "자산명", 
+      "amount": 120, 
+      "matchedId": "기존 자산의 id 또는 null", 
+      "sector": "추론한 sector 또는 null",
+      "stockItems": [
+        { "ticker": "005930", "name": "삼성전자", "shares": 10, "avgPrice": 75000, "currentPrice": 82000, "currency": "KRW" }
+      ]
+    }
   ]
 }`;
 
@@ -2534,12 +2706,62 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                     newAsset.feeRate = 0;
                     newAsset.monthlyContributionFrom = window.MONTHLY_INCOME_SOURCE || '월급';
                 }
+                // 주식 개별종목 연동 데이터 생성
+                if (item.stockItems && item.stockItems.length > 0) {
+                    newAsset.linkedItems = item.stockItems.map((s, idx) => ({
+                        id: 'stock_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 5),
+                        ticker: s.ticker,
+                        name: s.name,
+                        shares: s.shares,
+                        avgPrice: s.avgPrice,
+                        currentPrice: s.currentPrice,
+                        currency: s.currency || 'KRW',
+                        autoUpdate: true
+                    }));
+                    
+                    // 예수금 계산 (자산총액 - 주식 총 평가액)
+                    let stockTotalManwon = 0;
+                    const cachedFx = Number(localStorage.getItem('asset_last_usd_krw')) || 1420;
+                    item.stockItems.forEach(s => {
+                        let price = parseFloat(s.currentPrice) || 0;
+                        let shares = parseFloat(s.shares) || 0;
+                        let val = price * shares;
+                        if (s.currency === 'USD') val *= cachedFx;
+                        stockTotalManwon += (val / 10000);
+                    });
+                    newAsset.baseAmount = Math.max(0, Math.round((item.amount - stockTotalManwon) * 100) / 100); // 예수금 보존
+                }
                 updatedAssets[item.sector].push(newAsset);
             } else {
                 const list = updatedAssets[item.existingSector] || [];
                 const target = list.find(a => a.id === item.existingAsset.id);
                 if (target) {
                     target.amount = item.amount;
+                    // 기존 자산에 주식 개별종목 연동 데이터 적용
+                    if (item.stockItems && item.stockItems.length > 0) {
+                        target.linkedItems = item.stockItems.map((s, idx) => ({
+                            id: 'stock_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 5),
+                            ticker: s.ticker,
+                            name: s.name,
+                            shares: s.shares,
+                            avgPrice: s.avgPrice,
+                            currentPrice: s.currentPrice,
+                            currency: s.currency || 'KRW',
+                            autoUpdate: true
+                        }));
+                        
+                        // 예수금 계산 (자산총액 - 주식 총 평가액)
+                        let stockTotalManwon = 0;
+                        const cachedFx = Number(localStorage.getItem('asset_last_usd_krw')) || 1420;
+                        item.stockItems.forEach(s => {
+                            let price = parseFloat(s.currentPrice) || 0;
+                            let shares = parseFloat(s.shares) || 0;
+                            let val = price * shares;
+                            if (s.currency === 'USD') val *= cachedFx;
+                            stockTotalManwon += (val / 10000);
+                        });
+                        target.baseAmount = Math.max(0, Math.round((item.amount - stockTotalManwon) * 100) / 100); // 예수금 보존
+                    }
                 }
             }
         });
@@ -2560,6 +2782,18 @@ ${JSON.stringify(currentAssetsList, null, 2)}
     const changeNewSector = (id, newSector) => {
         setAnalysisResult(prev => prev.map(item => item.id === id ? { ...item, sector: newSector } : item));
     };
+
+    const allExistingAssets = [];
+    Object.keys(appData.assets || {}).forEach(sector => {
+        (appData.assets[sector] || []).forEach(asset => {
+            allExistingAssets.push({
+                id: asset.id,
+                name: asset.name,
+                amount: asset.amount,
+                sector: sector
+            });
+        });
+    });
 
     if (!isOpen) return null;
 
@@ -2704,25 +2938,72 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                                                         {item.isNew ? '신규 감지' : '기존 매칭'}
                                                     </span>
                                                 </div>
-                                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                                    {item.isNew ? (
-                                                        <div className="flex items-center gap-1.5 mt-1">
-                                                            <span>분류 카테고리:</span>
-                                                            <select
-                                                                value={item.sector}
-                                                                onChange={(e) => changeNewSector(item.id, e.target.value)}
-                                                                className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700 dark:text-gray-200 cursor-pointer"
-                                                            >
-                                                                <option value="deposit">입출금(현금)</option>
-                                                                <option value="savings">예적금/청약</option>
-                                                                <option value="investment">투자(주식/펀드)</option>
-                                                                <option value="loan">대출/부채</option>
-                                                            </select>
-                                                        </div>
-                                                    ) : (
-                                                        <span>기존 자산: <strong className="text-gray-700 dark:text-gray-300">{item.existingAsset.name}</strong></span>
-                                                    )}
+                                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 flex flex-wrap items-center gap-2">
+                                                    <span>대상 지정:</span>
+                                                    <select
+                                                        value={item.isNew ? `new_${item.sector}` : item.existingAsset.id}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            if (val.startsWith('new_')) {
+                                                                const sector = val.replace('new_', '');
+                                                                setAnalysisResult(prev => prev.map(a => a.id === item.id ? { 
+                                                                    ...a, 
+                                                                    isNew: true, 
+                                                                    sector: sector,
+                                                                    existingAsset: null,
+                                                                    existingSector: null
+                                                                } : a));
+                                                            } else {
+                                                                const matchedAsset = allExistingAssets.find(a => a.id === val);
+                                                                if (matchedAsset) {
+                                                                    setAnalysisResult(prev => prev.map(a => a.id === item.id ? { 
+                                                                        ...a, 
+                                                                        isNew: false, 
+                                                                        sector: matchedAsset.sector,
+                                                                        existingSector: matchedAsset.sector,
+                                                                        existingAsset: matchedAsset
+                                                                    } : a));
+                                                                }
+                                                            }
+                                                        }}
+                                                        className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700 dark:text-gray-200 cursor-pointer max-w-[180px] sm:max-w-[220px] truncate"
+                                                    >
+                                                        <optgroup label="신규 자산 등록">
+                                                            <option value="new_deposit">📥 입출금(현금)으로 신규 등록</option>
+                                                            <option value="new_savings">📥 예적금/청약으로 신규 등록</option>
+                                                            <option value="new_investment">📥 투자(주식/펀드)로 신규 등록</option>
+                                                            <option value="new_loan">📥 대출/부채로 신규 등록</option>
+                                                        </optgroup>
+                                                        {allExistingAssets.length > 0 && (
+                                                            <optgroup label="기존 자산 업데이트">
+                                                                {allExistingAssets.map(a => (
+                                                                    <option key={a.id} value={a.id}>
+                                                                        🔄 {a.name} ({Math.round(a.amount).toLocaleString()}만원)
+                                                                    </option>
+                                                                ))}
+                                                            </optgroup>
+                                                        )}
+                                                    </select>
                                                 </div>
+                                                {/* 개별 종목 추출 결과 표시 */}
+                                                {item.stockItems && item.stockItems.length > 0 && (
+                                                    <div className="mt-2.5 pl-3 border-l-2 border-indigo-200 dark:border-indigo-800 space-y-1.5">
+                                                        {item.stockItems.map((stock, sidx) => (
+                                                            <div key={sidx} className="text-[11px] text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-1.5 font-sans">
+                                                                <span className="font-bold text-gray-800 dark:text-gray-200">{stock.name}</span>
+                                                                <span className="text-[10px] text-gray-400 font-mono">({stock.ticker})</span>
+                                                                <span className="text-gray-300 dark:text-gray-700">|</span>
+                                                                <span>{stock.shares.toLocaleString()}주</span>
+                                                                <span className="text-gray-300 dark:text-gray-700">|</span>
+                                                                <span>평단 {stock.avgPrice.toLocaleString()}원</span>
+                                                                <span className="text-gray-400 dark:text-gray-500">→</span>
+                                                                <span className={stock.currentPrice > stock.avgPrice ? "text-rose-500 font-bold" : stock.currentPrice < stock.avgPrice ? "text-blue-500 font-bold" : "text-gray-500 font-bold"}>
+                                                                    {stock.currentPrice.toLocaleString()}원
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
 
