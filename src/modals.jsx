@@ -2793,7 +2793,7 @@ ${JSON.stringify(currentAssetsList, null, 2)}
     Object.keys(appData.assets || {}).forEach(sector => {
         (appData.assets[sector] || []).forEach(asset => {
             allExistingAssets.push({
-                id: asset.id,
+                id: asset.id || asset.name, // [방어] id가 누락된 경우 자산명을 고유 키로 활용
                 name: asset.name,
                 amount: asset.amount,
                 sector: sector
@@ -2947,7 +2947,7 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                                                 <div className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 flex flex-wrap items-center gap-2">
                                                     <span>대상 지정:</span>
                                                     <select
-                                                        value={item.isNew ? `new_${item.sector}` : item.existingAsset.id}
+                                                        value={item.isNew ? (item.sector ? `new_${item.sector}` : '') : (item.existingAsset?.id || item.existingAsset?.name || '')}
                                                         onChange={(e) => {
                                                             const val = e.target.value;
                                                             if (val.startsWith('new_')) {
