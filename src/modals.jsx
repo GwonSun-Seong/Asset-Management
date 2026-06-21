@@ -561,10 +561,12 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             
             let evalVal = curPrice * shares;
             let purVal = avgPrice * shares;
+            /* [임시 주석 처리 - 해외 주식 달러 무시 및 100% 원화로 직통 처리]
             if (item.currency === 'USD') { 
                 evalVal *= safeFxRate; 
                 purVal *= safeFxRate; 
             }
+            */
 
             const evalManwon = evalVal / 10000;
             const purManwon = purVal / 10000;
@@ -870,30 +872,18 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                         )}
                                                         
                                                         {/* 상태 뱃지 */}
-                                                        {(() => {
-                                                            const isLiveGlobal = localStorage.getItem('asset_enable_live_quotes') !== 'false';
-                                                            if (!isLiveGlobal && item.autoUpdate) {
-                                                                return (
-                                                                    <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700" title="핵심 설정에서 실시간 연동이 비활성화되었습니다.">
-                                                                        LIVE (OFF)
-                                                                    </span>
-                                                                );
-                                                            }
-                                                            return (
-                                                                <span className={`w-fit text-[8px] font-black px-1.5 py-0.5 rounded ${item.autoUpdate ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30' : 'bg-slate-200 text-slate-500 dark:bg-slate-700'}`}>
-                                                                    {item.autoUpdate ? 'LIVE' : 'FIXED'}
-                                                                </span>
-                                                            );
-                                                        })()}
+                                                        <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700" title="현재 야후 API 실시간 연동이 비활성화되어 FIXED 상태로 동작합니다.">
+                                                            FIXED
+                                                        </span>
                                                     </div>
 
                                                     {/* API 연동 개별 스위치 */}
-                                                    <div className="flex items-center" title="실시간 시세 자동 연동 On/Off">
+                                                    <div className="flex items-center" title="실시간 시세 연동 (API 대기 중)">
                                                         <button 
-                                                            onClick={() => setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, autoUpdate: !li.autoUpdate } : li))}
-                                                            className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${item.autoUpdate ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                                                            disabled
+                                                            className="relative inline-flex h-4 w-7 flex-shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none bg-slate-200 dark:bg-slate-700 opacity-50"
                                                         >
-                                                            <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${item.autoUpdate ? 'translate-x-3' : 'translate-x-0'}`} />
+                                                            <span className="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0" />
                                                         </button>
                                                     </div>
                                                 </div>
@@ -2715,18 +2705,16 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                         shares: s.shares,
                         avgPrice: s.avgPrice,
                         currentPrice: s.currentPrice,
-                        currency: s.currency || 'KRW',
+                        currency: 'KRW', // 무조건 KRW 강제
                         autoUpdate: true
                     }));
                     
                     // 예수금 계산 (자산총액 - 주식 총 평가액)
                     let stockTotalManwon = 0;
-                    const cachedFx = Number(localStorage.getItem('asset_last_usd_krw')) || 1420;
                     item.stockItems.forEach(s => {
                         let price = parseFloat(s.currentPrice) || 0;
                         let shares = parseFloat(s.shares) || 0;
-                        let val = price * shares;
-                        if (s.currency === 'USD') val *= cachedFx;
+                        let val = price * shares; // 달러 환율 무시
                         stockTotalManwon += (val / 10000);
                     });
                     newAsset.baseAmount = Math.max(0, Math.round((item.amount - stockTotalManwon) * 100) / 100); // 예수금 보존
@@ -2736,31 +2724,49 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                 const list = updatedAssets[item.existingSector] || [];
                 const target = list.find(a => a.id === item.existingAsset.id);
                 if (target) {
-                    target.amount = item.amount;
-                    // 기존 자산에 주식 개별종목 연동 데이터 적용
+                    // 기존 자산 평가액(amount)을 보존 (없다면 새로 추출된 item.amount 사용)
+                    const baseTargetAmount = target.amount || item.amount || 0;
+                    target.amount = baseTargetAmount;
+
                     if (item.stockItems && item.stockItems.length > 0) {
-                        target.linkedItems = item.stockItems.map((s, idx) => ({
+                        const currentLinked = Array.isArray(target.linkedItems) ? target.linkedItems : [];
+                        
+                        // 신규 수신 주식 매핑 (무조건 KRW 강제)
+                        const incomingItems = item.stockItems.map((s, idx) => ({
                             id: 'stock_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 5),
                             ticker: s.ticker,
                             name: s.name,
                             shares: s.shares,
                             avgPrice: s.avgPrice,
                             currentPrice: s.currentPrice,
-                            currency: s.currency || 'KRW',
+                            currency: 'KRW',
                             autoUpdate: true
                         }));
+
+                        // 티커, 고유 ID, 또는 이름을 기준으로 안전하게 누적 병합 (Merge)
+                        const mergedMap = new Map();
+                        currentLinked.forEach(existing => {
+                            const key = existing.ticker || existing.id || existing.name;
+                            if (key) mergedMap.set(key, existing);
+                        });
+                        incomingItems.forEach(incoming => {
+                            const key = incoming.ticker || incoming.id || incoming.name;
+                            if (key) mergedMap.set(key, incoming);
+                        });
+                        target.linkedItems = Array.from(mergedMap.values());
                         
-                        // 예수금 계산 (자산총액 - 주식 총 평가액)
+                        // 예수금 계산 (기존 보존액 - 병합된 주식 총 평가액)
                         let stockTotalManwon = 0;
-                        const cachedFx = Number(localStorage.getItem('asset_last_usd_krw')) || 1420;
-                        item.stockItems.forEach(s => {
+                        target.linkedItems.forEach(s => {
                             let price = parseFloat(s.currentPrice) || 0;
                             let shares = parseFloat(s.shares) || 0;
-                            let val = price * shares;
-                            if (s.currency === 'USD') val *= cachedFx;
+                            let val = price * shares; // 달러 환율 무시
                             stockTotalManwon += (val / 10000);
                         });
-                        target.baseAmount = Math.max(0, Math.round((item.amount - stockTotalManwon) * 100) / 100); // 예수금 보존
+                        
+                        // 주식 총액이 기존 계좌 잔액보다 커진 경우, 계좌 총액도 그에 맞춰 상향
+                        target.amount = Math.max(baseTargetAmount, Math.round(stockTotalManwon * 100) / 100);
+                        target.baseAmount = Math.max(0, Math.round((baseTargetAmount - stockTotalManwon) * 100) / 100);
                     }
                 }
             }

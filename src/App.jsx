@@ -60,14 +60,14 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                 </label>
                             </div>
                             <div className="mt-2">
-                                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-600 dark:text-gray-400" title="비활성화 시 야후 파이낸스를 통한 실시간 현재가 갱신을 멈춥니다.">
+                                <label className="flex items-center gap-1.5 cursor-not-allowed text-xs text-gray-400 dark:text-gray-500" title="현재 야후 API 연동이 비활성화되었습니다. (추후 토스 API 발급 시 제공 예정)">
                                     <input 
                                         type="checkbox" 
-                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                                        checked={enableLiveQuotes !== false}
-                                        onChange={(e) => setEnableLiveQuotes(e.target.checked)}
+                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 opacity-50 cursor-not-allowed"
+                                        checked={false}
+                                        disabled
                                     />
-                                    실시간 시세 자동 연동 (야후 API)
+                                    실시간 시세 자동 연동 (API 준비 중)
                                 </label>
                             </div>
                         </div>
