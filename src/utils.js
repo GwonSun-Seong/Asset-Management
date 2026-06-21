@@ -401,7 +401,7 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                     const interestForMonth = loan.amount * monthlyRate;
 
                     // 1. 이자 가산 (상환일이 지나서 상환을 못 하더라도 이자는 발생)
-                    if (!loan._skipGrowthThisMonth) {
+                    if (!loan._skipTransactionsThisMonth) {
                         loan.amount += interestForMonth;
                     }
 
@@ -1468,6 +1468,35 @@ const exportDashboardToPDF = async (addToast, darkMode, fileName) => {
             });
 
             if (input.parentNode) input.parentNode.replaceChild(textEl, input);
+        });
+
+        // 3.5. PDF 잘림 방지를 위한 페이지별 여백(Spacer) 삽입
+        const pxPageHeight = Math.floor(clone.offsetWidth * 1.414);
+        const targets = Array.from(clone.querySelectorAll('.rounded-2xl, .rounded-xl, canvas, table, .border'));
+        
+        targets.forEach(el => {
+            if (el.classList.contains('pdf-page-spacer')) return;
+            
+            const rect = el.getBoundingClientRect();
+            const cloneRect = clone.getBoundingClientRect();
+            const relativeTop = rect.top - cloneRect.top;
+            const relativeBottom = rect.bottom - cloneRect.top;
+            
+            const pageIndex = Math.floor(relativeTop / pxPageHeight);
+            const nextPageStart = (pageIndex + 1) * pxPageHeight;
+            
+            // 경계선에 걸치는지 확인
+            if (relativeTop < nextPageStart && relativeBottom > nextPageStart) {
+                const spacerHeight = nextPageStart - relativeTop;
+                
+                // 너무 큰 영역을 밀면 빈 페이지가 과도하게 생기므로 페이지 높이의 80% 이하일 때만 아래로 밀어줌
+                if (spacerHeight > 0 && spacerHeight < pxPageHeight * 0.8) {
+                    const spacer = document.createElement('div');
+                    spacer.style.height = `${spacerHeight}px`;
+                    spacer.className = 'pdf-page-spacer';
+                    el.parentNode.insertBefore(spacer, el);
+                }
+            }
         });
 
         // 4. 캔버스 생성

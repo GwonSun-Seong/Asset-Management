@@ -1,3 +1,4 @@
+import React from 'react';
 // game.js - 내 노후 뽑기 (저축률 기반 가챠 게임)
 const { useState, useEffect, useRef } = React;
 

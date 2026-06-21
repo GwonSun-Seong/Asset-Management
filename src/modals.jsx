@@ -1,3 +1,4 @@
+import React from 'react';
 // modals.js - 모달 및 가이드 컴포넌트 모음
 const { useState, useMemo, useEffect, useRef } = React;
 

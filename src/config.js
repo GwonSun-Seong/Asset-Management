@@ -1,6 +1,6 @@
 // config.js - 폰트와 색깔 정보 관리 파일
 
-tailwind.config = {
+window.tailwind.config = {
     darkMode: 'class',
     theme: {
         extend: {
