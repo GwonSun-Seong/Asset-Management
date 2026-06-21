@@ -1,6 +1,6 @@
 import React from 'react';
 
-const AssetSummaryCard = ({ calculation, projectionMonths, baseMonth, baseDate, displayMode, editingPhase }) => {
+const AssetSummaryCard = ({ calculation, projectionMonths, baseMonth, baseDate, displayMode, editingPhase, isCalculating }) => {
     const formatNumber = window.formatNumber || ((n) => Number(n || 0).toLocaleString());
     const formatPercent = window.formatPercent || ((n) => (Number(n || 0)).toFixed(1));
     const TEXTS = window.TEXTS || {};
@@ -28,7 +28,7 @@ const AssetSummaryCard = ({ calculation, projectionMonths, baseMonth, baseDate, 
     }
 
     return (
-        <div className="md:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-xl shadow-lg p-6">
+        <div className={`md:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-xl shadow-lg p-6 transition-all duration-300 ${isCalculating ? 'opacity-60 animate-pulse' : ''}`}>
             <div>
                 <h2 className="text-lg font-semibold mb-2 text-gray-600 dark:text-white">
                     {isEditing ? `🚀 ${editingPhase.displayLabel} 자산 상태 (가상)` : (TEXTS.summary?.currentTotal || "현재 총자산")}

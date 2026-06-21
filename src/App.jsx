@@ -83,7 +83,8 @@ import MarketDataWidget from './components/MarketDataWidget';
             goalMode, setGoalMode, setGoalSeekResult,
             projectionMonths, setProjectionMonths, targetAmount, setTargetAmount,
             calculateGoalSeek, goalSeekResult,
-            inflationRate, setInflationRate
+            inflationRate, setInflationRate,
+            onOpenScreenshotModal
         }) => {
             const TEXTS = window.TEXTS || {};
             const [isPlaying, setIsPlaying] = useState(false);
@@ -966,6 +967,7 @@ import MarketDataWidget from './components/MarketDataWidget';
             const [isDiffModalOpen, setIsDiffModalOpen] = useState(false); // [추가] Diff 모달 상태
             const [diffData, setDiffData] = useState(null); // [추가] Diff 데이터
             const [isGameModalOpen, setIsGameModalOpen] = useState(false); // [추가] 미니게임 모달 상태
+            const [isScreenshotModalOpen, setIsScreenshotModalOpen] = useState(false); // [추가] 스크린샷 모달 상태
             const [activeBanner, setActiveBanner] = useState('ai'); // [추가] 사이드바 배너 탭 상태
             const [scenarioToExport, setScenarioToExport] = useState(null); // [추가] 내보낼 시나리오 상태
             const [activeAssetTab, setActiveAssetTab] = useState('cash'); // [추가] 자산 상세 탭 상태
@@ -2712,341 +2714,69 @@ import MarketDataWidget from './components/MarketDataWidget';
                 setDraggedPanelId(null);
             }, [draggedPanelId]);
 
-            const calculation = useMemo(() => {
-                if (!appData || !appData.assets || typeof appData.assets !== 'object') {
-                    return {
-                        initial: {},
-                        projected: {},
-                        currentTotal: 0,
-                        projectedTotal: 0,
-                        growth: 0,
-                        grand: 0,
-                        realValue: 0,
-                        monthlyProjections: [],
-                        warnings: [],
-                        fireMetrics: null,
-                        rebalanceInfo: null
-                    };
-                }
-                
-                const months = projectionMonths;
-                // [수정] 인플레이션 보정 및 이벤트 배열 안전성 확보 (undefined 방지)
-                const safeAppData = {
-                    ...appData,
-                    incomeEvents: Array.isArray(appData.incomeEvents) ? appData.incomeEvents : [],
-                    expenseEvents: Array.isArray(appData.expenseEvents) ? appData.expenseEvents : [],
-                };
-
-                const localTotalMonthlyExpense = (appData.monthlyExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
-                
-                // [추가] 예산 초과 검증 변수 계산
-                const localMonthlySalary = Number(appData.monthlySalary || 0);
-                const localMaxContrib = Math.max(0, localMonthlySalary - localTotalMonthlyExpense);
-                let localTotalContrib = 0;
-                
-                // [수정] 예산 초과 검증 시에도 납입 출처 확인 (이체는 제외)
-                Object.entries(appData.assets).forEach(([sector, arr]) => {
-                    if (Array.isArray(arr)) {
-                        arr.forEach(a => {
-                            let include = true;
-                            if (sector === 'loan') {
-                                if (a.repaymentAccount !== 'salary') include = false;
-                                
-                                // [수정] 내부 calculation의 예산 경고 판단 시에도 미래 대출은 스킵
-                                if (a.loanStartDate) {
-                                    const [bY, bM] = (baseDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
-                                    let effectiveYear = bY;
-                                    let effectiveMonth = bM;
-                                    if (editingPhase !== null) {
-                                        const d = new Date(bY, bM - 1 + editingPhase.startMonth, 1);
-                                        effectiveYear = d.getFullYear();
-                                        effectiveMonth = d.getMonth() + 1;
-                                    }
-                                    const effectiveTotalMonths = effectiveYear * 12 + effectiveMonth;
-                                    
-                                    const [y, m] = a.loanStartDate.split('-').map(Number);
-                                    const loanStartTotalMonths = y * 12 + m;
-                                    // [Fix] 예산 오차 수정 (< 적용)
-                                    if (effectiveTotalMonths < loanStartTotalMonths) include = false;
-                                }
-                            } else {
-                                const source = a.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE;
-                                if (source !== window.MONTHLY_INCOME_SOURCE) include = false;
-                            }
-                            if (include) localTotalContrib += Number(a.monthlyContrib || 0);
-                        });
-                    }
-                });
-                
-                // 1. High-Precision Initial Metrics
-                let currentTotal = 0;
-                let totalNetProfitMonthlyInitial = 0;
-                let totalInvestedPrincipal = 0;
-                const sectorSums = {};
-                
-                Object.keys(appData.assets).forEach(sector => {
-                    if (!sectorSums[sector]) sectorSums[sector] = 0;
-                    (appData.assets[sector] || []).forEach(asset => {
-                        const amt = Number(asset.amount || 0);
-                        if (sector === 'loan') {
-                            currentTotal -= amt;
-                        } else {
-                            currentTotal += amt;
-                            sectorSums[sector] += amt;
-                            totalInvestedPrincipal += amt;
-                            // Monthly_Net_Profit = (Amount * rate / 1200) * (1 - feeRate / 100)
-                            const monthlyProfit = (amt * (Number(asset.rate || 0) / 1200)) * (1 - (Number(asset.feeRate || 0) / 100));
-                            totalNetProfitMonthlyInitial += monthlyProfit;
-                        }
-                    });
-                });
-
-                // 2. Individual Asset Simulation (Runway - 1200 Months)
-                let runwayMonths = 0;
-                let debtFreeMonth = -1;
-                const maxSimMonths = 1200;
-                const simAssets = JSON.parse(JSON.stringify(appData.assets));
-                
-                // [수정] 초기 자산이 0 이하인 경우 생존 기간 0으로 처리
-                if (currentTotal <= 0) {
-                    runwayMonths = 0;
-                } else {
-                    // [Refactor] Find Main Account in Simulation Data
-                    let simMainAccount = null;
-                    for (const s in simAssets) {
-                        const found = simAssets[s].find(a => a.name === appData.mainCashFlowAccount);
-                        if (found) { simMainAccount = found; break; }
-                    }
-                    if (!simMainAccount) {
-                        const firstSector = Object.keys(simAssets).find(s => s !== 'loan' && simAssets[s].length > 0);
-                        if (firstSector) simMainAccount = simAssets[firstSector][0];
-                    }
-
-                    for (let m = 1; m <= maxSimMonths; m++) {
-                        // 1. Inflation Adjusted Expense
-                        const inflationFactor = Math.pow(1 + inflationRate / 1200, m);
-                        const currentMonthlyExpense = localTotalMonthlyExpense * inflationFactor;
-
-                        // 2. Loan Repayment & Interest
-                        let totalLoanRepayment = 0;
-                        let currentLoanBalance = 0;
-
-                        if (simAssets.loan) {
-                            simAssets.loan.forEach(loan => {
-                                if (loan.amount > 0) {
-                                    const interest = loan.amount * (Number(loan.rate || 0) / 1200);
-                                    const monthlyPayment = Number(loan.monthlyContrib || 0);
-                                    
-                                    let cashOutflow = monthlyPayment;
-                                    let principalPayment = monthlyPayment - interest;
-
-                                    if (loan.amount + interest <= monthlyPayment) {
-                                        cashOutflow = loan.amount + interest;
-                                        principalPayment = loan.amount;
-                                        loan.amount = 0;
-                                    } else {
-                                        loan.amount -= principalPayment;
-                                    }
-                                    
-                                    totalLoanRepayment += cashOutflow;
-                                    currentLoanBalance += loan.amount;
-                                }
-                            });
-                        }
-
-                        if (currentLoanBalance <= 0 && debtFreeMonth === -1) {
-                            debtFreeMonth = m;
-                        }
-                        
-                        // 3. Net Flow (Salary = 0 for Survival Mode)
-                        let eventFlow = 0;
-                        const checkEvent = (e) => {
-                            if (!e.startMonth || typeof e.startMonth !== 'string' || !e.endMonth || typeof e.endMonth !== 'string') return false;
-                            const [bY, bM] = baseDate.split('-').map(Number); // [수정] baseDate 사용
-                            const [sY, sM] = e.startMonth.split('-').map(Number);
-                            const [eY, eM] = e.endMonth.split('-').map(Number);
-                            const cur = bY * 12 + bM + m - 1;
-                            return cur >= (sY * 12 + sM) && cur <= (eY * 12 + eM);
-                        };
-                        safeAppData.incomeEvents.forEach(e => { if (checkEvent(e)) eventFlow += Number(e.amount || 0); });
-                        safeAppData.expenseEvents.forEach(e => { if (checkEvent(e)) eventFlow -= Number(e.amount || 0); });
-
-                        const netFlow = eventFlow - currentMonthlyExpense - totalLoanRepayment;
-
-                        // 4. Apply to Main Account & Liquidate
-                        if (simMainAccount) {
-                            simMainAccount.amount += netFlow;
-                        }
-
-                        // Liquidation Logic (Prevent Negative Cash)
-                        if (simMainAccount && simMainAccount.amount < 0) {
-                            let deficit = -simMainAccount.amount;
-                            simMainAccount.amount = 0;
-
-                            const liquidationOrder = ['deposit', 'savings', 'investment'];
-                            for (const sector of liquidationOrder) {
-                                if (deficit <= 0) break;
-                                if (!simAssets[sector]) continue;
-
-                                for (const asset of simAssets[sector]) {
-                                    if (deficit <= 0) break;
-                                    if (asset.name === simMainAccount.name) continue;
-                                    if (asset.amount <= 0) continue;
-
-                                    const taken = Math.min(asset.amount, deficit);
-                                    asset.amount -= taken;
-                                    deficit -= taken;
-                                }
-                            }
-
-                            if (deficit > 0) {
-                                runwayMonths = m - 1;
-                                break;
-                            }
-                        } else if (!simMainAccount && netFlow < 0) {
-                             runwayMonths = m - 1;
-                             break;
-                        }
-
-                        // 5. Apply Profits (Growth)
-                        Object.keys(simAssets).forEach(sector => {
-                            if (sector === 'loan') return;
-                            simAssets[sector].forEach(asset => {
-                                if (asset.amount > 0) {
-                                    const profit = asset.amount * (Number(asset.rate || 0) / 1200) * (1 - (Number(asset.feeRate || 0) / 100));
-                                    asset.amount += profit;
-                                }
-                            });
-                        });
-
-                        if (m === maxSimMonths) runwayMonths = maxSimMonths;
-                    }
-                }
-
-                // 3. FIRE Indicators (Reverse Engineered)
-                const loanInterestInitial = (appData.assets.loan || []).reduce((sum, l) => sum + (Number(l.amount || 0) * Number(l.rate || 0) / 1200), 0);
-                const annualFixedExp = (localTotalMonthlyExpense + loanInterestInitial) * 12;
-                const annualFixedExpPostDebt = localTotalMonthlyExpense * 12;
-
-                const swr4PercentCapital = annualFixedExpPostDebt * 25; // 4% Rule Reference
-
-                // 4. Soft Rebalancing Engine (Pro-rata)
-                const disposableIncome = Math.max(0, (appData.monthlySalary || 0) - localTotalMonthlyExpense);
-                const targetMonths = appData.rebalanceMonths || 12;
-                const futureValue = currentTotal + (disposableIncome * targetMonths);
-                const sectorGaps = {};
-                let totalGap = 0;
-                const validSectors = Object.keys(sectorInfo).filter(k => k !== 'loan');
-                const itemRecs = {};
-                const rebalancingGlobal = appData.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
-                
-                validSectors.forEach(sector => {
-                    const targetPct = (appData.rebalancingTargets && appData.rebalancingTargets[sector] !== undefined) 
-                        ? appData.rebalancingTargets[sector] 
-                        : Math.round(100 / validSectors.length);
-                    const targetBalance = futureValue * (targetPct / 100);
-                    const currentBalance = sectorSums[sector] || 0;
-                    const gap = Math.max(0, targetBalance - currentBalance);
-                    sectorGaps[sector] = gap;
-                    totalGap += gap;
-                });
-
-                const budgetLimited = (totalGap / targetMonths) > disposableIncome;
-                const sectorRecs = {};
-                validSectors.forEach(sector => {
-                    if (totalGap === 0) sectorRecs[sector] = 0;
-                    else {
-                        sectorRecs[sector] = budgetLimited 
-                            ? (sectorGaps[sector] / totalGap) * disposableIncome 
-                            : (sectorGaps[sector] / targetMonths);
-                    }
-                });
-
-                // [추가] 항목별 리밸런싱 추천 계산
-                validSectors.forEach(sector => {
-                    const sectorAssets = appData.assets[sector] || [];
-                    if (sectorAssets.length === 0) return;
-                    
-                    const sectorMonthlyContrib = sectorRecs[sector] || 0;
-                    const sectorTargetPct = (appData.rebalancingTargets && appData.rebalancingTargets[sector] !== undefined) ? appData.rebalancingTargets[sector] : Math.round(100 / validSectors.length);
-                    const sectorFutureValue = futureValue * (sectorTargetPct / 100);
-                    
-                    let totalItemWeight = 0;
-                    const currentItemTargets = appData.itemTargets || {};
-                    sectorAssets.forEach(a => { totalItemWeight += (currentItemTargets[a.id] ?? Math.round(100/sectorAssets.length)); });
-                    
-                    let totalItemGap = 0;
-                    const currentItemGaps = {};
-                    
-                    sectorAssets.forEach(a => {
-                        const weight = (currentItemTargets[a.id] ?? Math.round(100/sectorAssets.length));
-                        const normWeight = totalItemWeight === 0 ? 0 : (weight / totalItemWeight);
-                        const targetVal = sectorFutureValue * normWeight;
-                        const gap = Math.max(0, targetVal - (a.amount || 0));
-                        currentItemGaps[a.id] = gap;
-                        totalItemGap += gap;
-                    });
-                    
-                    sectorAssets.forEach(a => {
-                        itemRecs[a.id] = totalItemGap > 0 ? (currentItemGaps[a.id] / totalItemGap) * sectorMonthlyContrib : 0;
-                    });
-                });
-
-                const { projections: monthlyProjections, warnings } = calculateMonthlyProjection({ ...safeAppData, inflationRate, baseDate }, months);
-
-                // [추가] 월납입 한도 초과 시 경고 목록에 추가 (플로팅 버튼 트리거용)
-                if (localTotalContrib > localMaxContrib) {
-                    warnings.unshift({
-                        month: '설정',
-                        type: 'budget',
-                        message: `월납입 한도 초과! ${window.formatNumber(localTotalContrib - localMaxContrib)}만원이 부족합니다. (가용: ${window.formatNumber(localMaxContrib)}만원)`
-                    });
-                }
-
-                if (!monthlyProjections || monthlyProjections.length === 0) {
-                    return { error: true, warnings: warnings };
-                }
-
-                const initialProjection = monthlyProjections[0] || {};
-                const newCurrentTotal = initialProjection.total || 0;
-                const newCurrentNet = initialProjection.net || 0;
-                const newCurrentGross = initialProjection.gross || 0;
-
-                const finalProjection = monthlyProjections[monthlyProjections.length - 1];
-                const newProjectedTotal = finalProjection ? finalProjection.total : newCurrentTotal;
-                const newProjectedNet = finalProjection ? finalProjection.net : newCurrentNet;
-                const newProjectedGross = finalProjection ? finalProjection.gross : newCurrentGross;
-
-                const realValue = newProjectedGross / Math.pow(1 + inflationRate / 100, months / 12);
-
+            // [추가] Web Worker 기반 비동기 시뮬레이션 상태
+            const [calculation, setCalculation] = useState(() => {
+                const initialAssets = appData?.assets || {};
                 return {
-                    initial: appData.assets,
-                    projected: finalProjection ? finalProjection.assets : appData.assets,
-                    currentTotal: newCurrentTotal,
-                    currentNet: newCurrentNet,
-                    currentGross: newCurrentGross,
-                    projectedTotal: newProjectedTotal,
-                    projectedNet: newProjectedNet,
-                    projectedGross: newProjectedGross,
-                    realValue,
-                    growth: newProjectedGross - newCurrentGross,
-                    grand: newCurrentNet, // grand for history is net assets
-                    monthlyProjections: monthlyProjections,
-                    warnings: warnings,
+                    initial: initialAssets,
+                    projected: initialAssets,
+                    currentTotal: 0,
+                    currentNet: 0,
+                    currentGross: 0,
+                    projectedTotal: 0,
+                    projectedNet: 0,
+                    projectedGross: 0,
+                    realValue: 0,
+                    growth: 0,
+                    grand: 0,
+                    monthlyProjections: [],
+                    warnings: [],
                     fireMetrics: {
-                        runwayMonths,
-                        debtFreeMonth,
-                        swr4PercentCapital
+                        runwayMonths: 0,
+                        debtFreeMonth: -1,
+                        swr4PercentCapital: 0
                     },
-                    totalMonthlyExpense: localTotalMonthlyExpense,
+                    totalMonthlyExpense: 0,
                     rebalanceInfo: {
-                        recs: sectorRecs,
-                        budgetLimited,
-                        targetMonths: targetMonths,
-                        itemRecs
+                        recs: {},
+                        budgetLimited: false,
+                        targetMonths: 12,
+                        itemRecs: {}
                     }
                 };
-            }, [appData, inflationRate, projectionMonths, baseMonth]);
+            });
+            const [isCalculating, setIsCalculating] = useState(false);
+
+            useEffect(() => {
+                if (!appData || !appData.assets || typeof appData.assets !== 'object') return;
+
+                setIsCalculating(true);
+                const worker = new Worker(new URL('./projection.worker.js', import.meta.url), { type: 'module' });
+
+                worker.postMessage({
+                    appData,
+                    projectionMonths: appData.projectionMonths || 120,
+                    inflationRate,
+                    baseDate: appData.baseDate || appData.baseMonth || '',
+                    editingPhase,
+                    sectorInfo
+                });
+
+                worker.onmessage = (e) => {
+                    const { success, result, error } = e.data;
+                    setIsCalculating(false);
+                    if (success) {
+                        setCalculation(result);
+                    } else {
+                        console.error('Simulation error:', error);
+                    }
+                    worker.terminate();
+                };
+
+                return () => {
+                    worker.terminate();
+                };
+            }, [appData, inflationRate, editingPhase]);
 
 
             const { currentGrossTotal, projectedGrossTotal, currentSectorTotals, projectedSectorTotals } = useMemo(() => {
@@ -3147,6 +2877,7 @@ import MarketDataWidget from './components/MarketDataWidget';
                     }
                 }
             };
+
 
             const commonChartOptions = useMemo(() => {
                 const textColor = darkMode ? '#e5e7eb' : '#111827';
@@ -5256,7 +4987,7 @@ import MarketDataWidget from './components/MarketDataWidget';
                                                     onDragStart={(e) => handleAssetDragStart(e, sectorKey, idx)}
                                                     onDragOver={handleAssetDragOver}
                                                     onDrop={(e) => handleAssetDrop(e, sectorKey, idx)}
-                                                    className={`group relative bg-white dark:bg-gray-800 rounded-xl p-5 pl-11 shadow-sm border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md transition-all duration-200 ${draggedAssetSector === sectorKey && draggedAssetIndex === idx ? 'opacity-40 border-dashed border-indigo-400' : ''}`}
+                                                    className={'group relative bg-white dark:bg-gray-800 rounded-xl p-5 pl-11 shadow-sm border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md transition-all duration-200 ' + (draggedAssetSector === sectorKey && draggedAssetIndex === idx ? 'opacity-40 border-dashed border-indigo-400' : '')}
                                                 >
                                                     {/* Drag handle */}
                                                     <div 
@@ -5272,75 +5003,140 @@ import MarketDataWidget from './components/MarketDataWidget';
                                                             <circle cx="15" cy="19" r="1.5" fill="currentColor"/>
                                                         </svg>
                                                     </div>
-                                                    <div className="flex flex-col lg:flex-row gap-6 items-start lg:items-center">
-                                                        {/* Icon & Name */}
-                                                        <div className="flex-1 w-full lg:w-auto">
-                                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 block">{isLoan ? '대출명' : '계좌명'}</label>
-                                                            <div className="flex items-center gap-3">
-                                                                <div
-                                                                    onClick={() => setIconPickerState({ sector: sectorKey, index: idx })}
-                                                                    className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity relative group/icon"
-                                                                    style={{
-                                                                        backgroundColor: darkMode ? `${colorObj[600] || '#4f46e5'}33` : (colorObj[50] || '#eef2ff'),
-                                                                        color: darkMode ? (colorObj.start || '#a5b4fc') : (colorObj[500] || '#6366f1')
-                                                                    }}
-                                                                >
-                                                                    {asset.icon ? <span className="text-xl leading-none select-none">{asset.icon}</span> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>}
-                                                                    <div className="absolute -bottom-1 -right-1 bg-gray-100 dark:bg-gray-700 rounded-full p-0.5 border border-gray-200 dark:border-gray-600 opacity-0 group-hover/icon:opacity-100 transition-opacity">
-                                                                        <svg className="w-2.5 h-2.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                                                    </div>
+
+                                                    {/* Card Header (Icon, Name Input, Actions) */}
+                                                    <div className="flex items-center justify-between gap-4 mb-4">
+                                                        <div className="flex items-center gap-3 flex-1">
+                                                            <div
+                                                                onClick={() => setIconPickerState({ sector: sectorKey, index: idx })}
+                                                                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity relative group/icon"
+                                                                style={{
+                                                                    backgroundColor: darkMode ? (colorObj[600] ? colorObj[600] + '33' : '#4f46e533') : (colorObj[50] || '#eef2ff'),
+                                                                    color: darkMode ? (colorObj.start || '#a5b4fc') : (colorObj[500] || '#6366f1')
+                                                                }}
+                                                            >
+                                                                {asset.icon ? <span className="text-lg leading-none select-none">{asset.icon}</span> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>}
+                                                                <div className="absolute -bottom-1 -right-1 bg-gray-100 dark:bg-gray-700 rounded-full p-0.5 border border-gray-200 dark:border-gray-600 opacity-0 group-hover/icon:opacity-100 transition-opacity">
+                                                                    <svg className="w-2.5 h-2.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                                                 </div>
-                                                                <input 
-                                                                    type="text" 
-                                                                    value={asset.name} 
-                                                                    onChange={(e) => updateAsset(sectorKey, idx, 'name', e.target.value)}
-                                                                    className="w-full bg-transparent border-b-2 border-transparent focus:border-indigo-500 text-lg font-bold text-gray-800 dark:text-white focus:outline-none px-1 py-0.5 transition-colors placeholder-gray-300"
-                                                                    placeholder={isLoan ? "대출 이름 입력" : "계좌 이름 입력"}
-                                                                />
                                                             </div>
+                                                            <input 
+                                                                type="text" 
+                                                                value={asset.name} 
+                                                                onChange={(e) => updateAsset(sectorKey, idx, 'name', e.target.value)}
+                                                                className="w-full bg-transparent border-b border-transparent focus:border-indigo-500 text-base font-bold text-gray-800 dark:text-white focus:outline-none px-1 py-0.5 transition-colors placeholder-gray-400"
+                                                                placeholder={isLoan ? '대출 이름' : '계좌 이름'}
+                                                            />
                                                         </div>
 
-                                                        {/* Amount */}
-                                                        <div className="w-full lg:w-64">
-                                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 block">{isLoan ? '대출 잔액 (만원)' : '현재 잔액 (만원)'}</label>
+                                                        <div className="flex items-center gap-2">
+                                                            {sectorKey !== 'loan' && (
+                                                                <button 
+                                                                    onClick={() => setStockLinkState({ sectorKey, index: idx, asset })} 
+                                                                    className={'px-2.5 py-1 rounded-full text-xs font-semibold border transition-all flex items-center gap-1 ' + (
+                                                                        asset.linkedItems?.length > 0 
+                                                                            ? 'bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-400' 
+                                                                            : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-indigo-950/40'
+                                                                    )}
+                                                                >
+                                                                    🔗 {asset.linkedItems?.length > 0 ? '연동 완료 (' + asset.linkedItems.length + ')' : '종목 연동'}
+                                                                </button>
+                                                            )}
+                                                            <button 
+                                                                onClick={() => removeAsset(sectorKey, idx)} 
+                                                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors" 
+                                                                title="삭제"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Grid of Inputs */}
+                                                    <div className={isLoan ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4' : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4'}>
+                                                        {/* Balance Input (Common) */}
+                                                        <div>
+                                                            <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">
+                                                                {isLoan ? '대출 잔액 (만원)' : '현재 잔액 (만원)'}
+                                                            </label>
                                                             <div className="relative">
                                                                 <CalculatorInput 
                                                                     value={asset.amount} 
                                                                     readOnly={asset.linkedItems?.length > 0}
                                                                     onChange={(e) => updateAsset(sectorKey, idx, 'amount', e.target.value)}
-                                                                    className={`w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg pl-8 pr-4 py-2.5 text-right font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all ${asset.linkedItems?.length > 0 ? 'opacity-80' : ''}`}
+                                                                    className={'w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg pl-7 pr-3 py-1.5 text-right font-bold text-gray-900 dark:text-white focus:ring-1 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums ' + (asset.linkedItems?.length > 0 ? 'opacity-80' : '')}
                                                                     displayMode={displayMode}
                                                                 />
-                                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold">₩</span>
+                                                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">₩</span>
                                                                 {asset.linkedItems?.length > 0 && (
-                                                                    <div className="absolute -top-6 right-0 text-[10px] text-indigo-500 font-bold">🔗 연동됨</div>
+                                                                    <div className="absolute -top-4 right-0 text-[8px] text-indigo-500 font-bold">🔗 연동됨</div>
                                                                 )}
                                                             </div>
                                                         </div>
-                                                    </div>
 
-                                                    {/* Divider */}
-                                                    <div className="h-px bg-gray-100 dark:bg-gray-700 my-4"></div>
-
-                                                    {/* Secondary Details */}
-                                                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4 items-end">
                                                         {isLoan ? (
                                                             <>
-                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">이자율</label><div className="relative"><input type="number" step="0.1" value={asset.rate} onChange={(e) => updateAsset(sectorKey, idx, 'rate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
-                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">월 상환액 (원금+이자)</label><CalculatorInput value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" displayMode={displayMode} /></div>
-                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">만기 (개월)</label><input type="number" value={asset.maturityMonth ?? 12} onChange={(e) => updateAsset(sectorKey, idx, 'maturityMonth', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" /></div>
-                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">대출 시작월</label><input type="month" value={asset.loanStartDate ? asset.loanStartDate.slice(0, 7) : ''} onChange={(e) => updateAsset(sectorKey, idx, 'loanStartDate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" /></div>
                                                                 <div>
-                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">상환 방식</label>
-                                                                    <select value={asset.repaymentMethod || '원리금균등'} onChange={(e) => updateAsset(sectorKey, idx, 'repaymentMethod', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500">
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">이자율</label>
+                                                                    <div className="relative">
+                                                                        <input 
+                                                                            type="number" 
+                                                                            step="0.1" 
+                                                                            value={asset.rate} 
+                                                                            onChange={(e) => updateAsset(sectorKey, idx, 'rate', e.target.value)} 
+                                                                            className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md pl-3 pr-6 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right tabular-nums" 
+                                                                        />
+                                                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">월 상환액 (원금+이자)</label>
+                                                                    <CalculatorInput 
+                                                                        value={asset.monthlyContrib} 
+                                                                        onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} 
+                                                                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right tabular-nums" 
+                                                                        displayMode={displayMode} 
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">만기 (개월)</label>
+                                                                    <input 
+                                                                        type="number" 
+                                                                        value={asset.maturityMonth ?? 12} 
+                                                                        onChange={(e) => updateAsset(sectorKey, idx, 'maturityMonth', e.target.value)} 
+                                                                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right tabular-nums" 
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">대출 시작월</label>
+                                                                    <input 
+                                                                        type="month" 
+                                                                        value={asset.loanStartDate ? asset.loanStartDate.slice(0, 7) : ''} 
+                                                                        onChange={(e) => updateAsset(sectorKey, idx, 'loanStartDate', e.target.value)} 
+                                                                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" 
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">상환 방식</label>
+                                                                    <select 
+                                                                        value={asset.repaymentMethod || '원리금균등'} 
+                                                                        onChange={(e) => updateAsset(sectorKey, idx, 'repaymentMethod', e.target.value)} 
+                                                                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500"
+                                                                    >
                                                                         <option value="원리금균등">원리금균등</option>
                                                                         <option value="원금균등">원금균등</option>
                                                                         <option value="만기일시">만기일시</option>
                                                                     </select>
                                                                 </div>
                                                                 <div>
-                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">상환 계좌</label>
-                                                                    <select value={asset.repaymentAccount} onChange={(e) => updateAsset(sectorKey, idx, 'repaymentAccount', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500">
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">상환 계좌</label>
+                                                                    <select 
+                                                                        value={asset.repaymentAccount} 
+                                                                        onChange={(e) => updateAsset(sectorKey, idx, 'repaymentAccount', e.target.value)} 
+                                                                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500"
+                                                                    >
                                                                         <option value="salary">월급(고정수입)</option>
                                                                         {accountOptions.filter(name => name !== asset.name).map((name, i) => (
                                                                             <option key={i} value={name}>{name}</option>
@@ -5348,27 +5144,66 @@ import MarketDataWidget from './components/MarketDataWidget';
                                                                     </select>
                                                                 </div>
                                                                 <div>
-                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">메모</label>
-                                                                    <input type="text" placeholder="메모" value={asset.memo || ''} onChange={(e) => updateAsset(sectorKey, idx, 'memo', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" />
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">메모</label>
+                                                                    <input 
+                                                                        type="text" 
+                                                                        placeholder="메모" 
+                                                                        value={asset.memo || ''} 
+                                                                        onChange={(e) => updateAsset(sectorKey, idx, 'memo', e.target.value)} 
+                                                                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" 
+                                                                    />
                                                                 </div>
                                                             </>
                                                         ) : (
                                                             <>
                                                                 <div>
-                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">월 납입액</label>
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">월 납입액</label>
                                                                     <div className="relative">
-                                                                        <CalculatorInput value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right" displayMode={displayMode} />
-                                                                        {itemRec > 0 && <span className="absolute -top-5 right-0 text-[9px] text-blue-500 font-bold bg-blue-50 px-1 rounded">권장: {Math.round(itemRec).toLocaleString()}</span>}
+                                                                        <CalculatorInput 
+                                                                            value={asset.monthlyContrib} 
+                                                                            onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContrib', e.target.value)} 
+                                                                            className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right tabular-nums" 
+                                                                            displayMode={displayMode} 
+                                                                        />
+                                                                        {itemRec > 0 && (
+                                                                            <span className="absolute -top-4 right-0 text-[8px] text-blue-500 font-bold bg-blue-50 dark:bg-blue-900/40 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800">
+                                                                                권장: {Math.round(itemRec).toLocaleString()}
+                                                                            </span>
+                                                                        )}
                                                                     </div>
                                                                 </div>
-                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">연 수익률</label><div className="relative"><input type="number" step="0.1" value={asset.rate} onChange={(e) => updateAsset(sectorKey, idx, 'rate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
-                                                                <div><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">수수료/세금</label><div className="relative"><input type="number" step="0.01" value={asset.feeRate ?? 0} onChange={(e) => updateAsset(sectorKey, idx, 'feeRate', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right pr-6" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span></div></div>
                                                                 <div>
-                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">납입 출처</label>
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">연 수익률</label>
+                                                                    <div className="relative">
+                                                                        <input 
+                                                                            type="number" 
+                                                                            step="0.1" 
+                                                                            value={asset.rate} 
+                                                                            onChange={(e) => updateAsset(sectorKey, idx, 'rate', e.target.value)} 
+                                                                            className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md pl-3 pr-6 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right tabular-nums" 
+                                                                        />
+                                                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">수수료/세금</label>
+                                                                    <div className="relative">
+                                                                        <input 
+                                                                            type="number" 
+                                                                            step="0.01" 
+                                                                            value={asset.feeRate ?? 0} 
+                                                                            onChange={(e) => updateAsset(sectorKey, idx, 'feeRate', e.target.value)} 
+                                                                            className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md pl-3 pr-6 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500 text-right tabular-nums" 
+                                                                        />
+                                                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">납입 출처</label>
                                                                     <select 
                                                                         value={asset.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE} 
                                                                         onChange={(e) => updateAsset(sectorKey, idx, 'monthlyContributionFrom', e.target.value)} 
-                                                                        className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500"
+                                                                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500"
                                                                     >
                                                                         <option value={window.MONTHLY_INCOME_SOURCE}>{window.MONTHLY_INCOME_SOURCE}</option>
                                                                         {accountOptions.filter(name => name !== asset.name).map((name, i) => (
@@ -5377,26 +5212,23 @@ import MarketDataWidget from './components/MarketDataWidget';
                                                                     </select>
                                                                 </div>
                                                                 <div>
-                                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">메모</label>
-                                                                    <input type="text" placeholder="간단한 메모를 입력하세요" value={asset.memo || ''} onChange={(e) => updateAsset(sectorKey, idx, 'memo', e.target.value)} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" />
+                                                                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 block">메모</label>
+                                                                    <input 
+                                                                        type="text" 
+                                                                        placeholder="메모 입력" 
+                                                                        value={asset.memo || ''} 
+                                                                        onChange={(e) => updateAsset(sectorKey, idx, 'memo', e.target.value)} 
+                                                                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500" 
+                                                                    />
                                                                 </div>
-                                                                {sectorKey !== 'loan' && (
-                                                                    <div className="col-span-2 sm:col-span-4 lg:col-span-1 flex items-end">
-                                                                        <button onClick={() => setStockLinkState({ sectorKey, index: idx, asset })} className="w-full py-1.5 border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-md text-xs font-bold hover:bg-indigo-100 transition-colors">🔗 종목 연동</button>
-                                                                    </div>
-                                                                )}
                                                             </>
                                                         )}
-                                                        <div className="flex justify-end items-center gap-1.5 col-span-2 sm:col-span-4 lg:col-span-1 w-full lg:w-auto no-drag">
-                                                            <button onClick={() => removeAsset(sectorKey, idx)} className="text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 justify-center w-full lg:w-auto">
-                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                                삭제
-                                                            </button>
-                                                        </div>
                                                     </div>
                                                 </div>
                                                 );
                                             })}
+
+
                                             {(!assets[sectorKey] || assets[sectorKey].length === 0) && (
                                                 <div className="flex flex-col items-center justify-center py-12 text-gray-400 bg-white dark:bg-gray-800 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-all cursor-pointer group" onClick={() => addAsset(sectorKey)}>
                                                     <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 transition-transform group-hover:scale-110 bg-${sectorColor}-50 dark:bg-${sectorColor}-900/20 text-${sectorColor}-500`}>
@@ -6236,6 +6068,7 @@ import MarketDataWidget from './components/MarketDataWidget';
                                 <div id="header-actions" className="hidden sm:flex items-center gap-2 sm:gap-3"> 
                                     {/* [수정] 글로벌 액션 버튼들을 더 콤팩트하게 변경 */}
                                     <div className="flex items-center gap-1 mr-2 px-3 py-1 bg-gray-50 dark:bg-gray-900/50 rounded-full border dark:border-gray-700">
+                                        <button onClick={() => setIsScreenshotModalOpen(true)} className="p-1.5 text-gray-500 hover:text-emerald-600 transition-colors" title="스크린샷으로 자산 업데이트"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
                                         <button onClick={saveToPDF} disabled={editingPhase !== null} className="p-1.5 text-gray-500 hover:text-blue-600 transition-colors" title="PDF 저장"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></button>
                                         <button onClick={saveAsDefault} className="p-1.5 text-gray-500 hover:text-amber-500 transition-colors" title="기본값 저장"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5h14l-2 14H7L5 5z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v4M9 5v2M15 5v2" /></svg></button>
                                         <button onClick={loadCustomDefault} className="p-1.5 text-gray-500 hover:text-indigo-500 transition-colors" title="기본값 불러오기"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
@@ -6294,6 +6127,7 @@ import MarketDataWidget from './components/MarketDataWidget';
                                             <div className="border-t dark:border-gray-700 my-1"></div>
                                             <button onClick={saveToPDF} disabled={editingPhase !== null} className={`w-full text-left px-3 py-2 rounded transition-colors ${editingPhase !== null ? 'text-gray-400 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200'}`}>📄 PDF 저장</button>
                                             <button onClick={() => setIsAIModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-indigo-600 font-bold">🤖 AI 자산 분석</button>
+                                            <button onClick={() => setIsScreenshotModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-emerald-600 font-bold">📷 스크린샷 자산 업데이트</button>
                                             <button onClick={saveAsDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">⭐ 기본값 저장</button>
                                             <button onClick={loadCustomDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">↩️ 기본값 불러오기</button>
                                         </div>
@@ -6561,6 +6395,7 @@ import MarketDataWidget from './components/MarketDataWidget';
                                         return <PanelWrapper {...panelProps} title="📊 요약 및 설정" className="bg-white dark:bg-gray-900 rounded-lg shadow">
     <SummaryPanel 
         calculation={calculation}
+        isCalculating={isCalculating}
         projectionMonths={projectionMonths}
         baseMonth={baseMonth}
         displayMode={displayMode}
@@ -6586,7 +6421,9 @@ import MarketDataWidget from './components/MarketDataWidget';
         saveScenario={saveScenario}
         onOpenAI={() => setIsAIModalOpen(true)}
         editingPhase={editingPhase}
+        onOpenScreenshotModal={() => setIsScreenshotModalOpen(true)}
     />
+    
     {calculation.warnings && calculation.warnings.length > 0 && (
         <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded shadow-sm">
             <h3 className="text-sm font-bold text-red-800 dark:text-red-400 mb-2 flex items-center gap-2">⚠️ 시뮬레이션 경고 ({calculation.warnings.length}건)</h3>
@@ -6869,6 +6706,13 @@ import MarketDataWidget from './components/MarketDataWidget';
                         calculation={calculation} 
                         assetHistory={assetHistory}
                         onApplyProposal={handleApplyAIProposal}
+                    />}
+                    {window.ScreenshotImportModal && <window.ScreenshotImportModal 
+                        isOpen={isScreenshotModalOpen} 
+                        onClose={() => setIsScreenshotModalOpen(false)} 
+                        appData={appData} 
+                        setAppData={setAppData} 
+                        addToast={addToast} 
                     />}
                     {window.HistoryActionModal && <window.HistoryActionModal 
                         isOpen={isHistoryActionModalOpen}

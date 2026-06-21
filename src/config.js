@@ -36,9 +36,9 @@ const sectorInfo = {
 // [보안] 설정값 은폐 (IIFE Closure)
 (function() {
     const _VAULT = {
-        SUPABASE_URL: '__SUPABASE_URL__',
-        SUPABASE_KEY: '__SUPABASE_KEY__',
-        SECURITY_KEY: '__SECURITY_KEY__'
+        SUPABASE_URL: __SUPABASE_URL__,
+        SUPABASE_KEY: __SUPABASE_KEY__,
+        SECURITY_KEY: __SECURITY_KEY__
     };
     window.getVaultConfig = (key) => _VAULT[key];
 })();

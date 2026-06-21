@@ -1206,7 +1206,6 @@ const streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) =>
 
 window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory, onApplyProposal }) => {
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
-    const [model, setModel] = useState('gemini-3-flash-preview'); // [수정] 안정적인 모델명으로 기본값 변경
     const [persona, setPersona] = useState(() => localStorage.getItem('asset_ai_persona') || '냉철한 전문 자산 관리사');
     const [requestProposal, setRequestProposal] = useState(() => localStorage.getItem('asset_ai_request_proposal') !== 'false'); // [추가] 제안 요청 여부 (기본값 true)
 
@@ -1246,6 +1245,36 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
             } catch (e) { return null; }
         }
         return null;
+    };
+
+    // [추가] 3.1 -> 3.5 -> 2.5 순서대로 폴백 호출하는 스트리밍 헬퍼
+    const streamGeminiWithFallback = async (urlGenerator, body, onUpdate, onComplete, onError) => {
+        const models = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
+        
+        const tryModel = (index) => {
+            if (index >= models.length) {
+                onError(new Error('모든 AI 모델(3.1, 3.5, 2.5) 호출에 실패했습니다. API 키나 할당량을 확인해주세요.'));
+                return;
+            }
+            
+            const currentModel = models[index];
+            const url = urlGenerator(currentModel);
+            
+            streamGeminiResponse(
+                url,
+                body,
+                onUpdate,
+                (finalText) => {
+                    onComplete(finalText);
+                },
+                (err) => {
+                    console.warn(`⚠️ Model ${currentModel} failed. Trying next fallback... Error: ${err.message}`);
+                    tryModel(index + 1);
+                }
+            );
+        };
+
+        tryModel(0);
     };
 
     const handleAnalyze = async () => {
@@ -1355,12 +1384,11 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
             setMessages([{ role: 'model', text: '' }]);
             setShowSettings(false);
 
-            await streamGeminiResponse(
-                `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${trimmedKey}`,
+            await streamGeminiWithFallback(
+                (m) => `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${trimmedKey}`,
                 { contents: [{ parts: [{ text: prompt }] }] },
                 (text) => {
                     setMessages([{ role: 'model', text }]);
-                    // 스트리밍 중 JSON 파싱 시도 (완성되었을 때만 성공)
                     const extracted = extractJSON(text);
                     if (extracted) setProposal(extracted);
                 }, 
@@ -1369,7 +1397,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                     const extracted = extractJSON(finalText);
                     if (extracted) setProposal(extracted);
                 }, 
-                (err) => { setError(err.message); setLoading(false); } // Error
+                (err) => { setError(err.message); setLoading(false); }
             );
         } catch (err) {
             setError(err.message);
@@ -1397,8 +1425,8 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                 { role: 'user', parts: [{ text: userMsg.text }] }
             ];
 
-            await streamGeminiResponse(
-                `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
+            await streamGeminiWithFallback(
+                (m) => `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${apiKey}`,
                 { contents },
                 (text) => setMessages(prev => {
                     const updated = [...prev];
@@ -1441,33 +1469,21 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                             개인 식별 정보는 포함되지 않으나, 실제 금융 데이터가 전송되므로 주의가 필요합니다.
                         </div>
                     
-                    <div className="flex flex-col sm:flex-row gap-2">
-                        <div className="flex flex-col gap-1 w-full sm:w-auto">
-                            <select 
-                                value={model} 
-                                onChange={(e) => setModel(e.target.value)}
-                                className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 text-sm"
-                            >
-                                <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
-                                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                            </select>
-                        </div>
-                        <div className="flex-1 flex flex-col sm:flex-row gap-2">
-                            <input 
-                                type="password" 
-                                placeholder="Gemini API Key 입력" 
-                                className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-                                value={apiKey}
-                                onChange={(e) => setApiKey(e.target.value)}
-                            />
-                            <button 
-                                onClick={handleAnalyze} 
-                                disabled={loading || !apiKey}
-                                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap"
-                            >
-                                {loading ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> 분석 중...</> : '분석 시작'}
-                            </button>
-                        </div>
+                    <div className="flex flex-col sm:flex-row gap-2 w-full">
+                        <input 
+                            type="password" 
+                            placeholder="Gemini API Key 입력" 
+                            className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                        />
+                        <button 
+                            onClick={handleAnalyze} 
+                            disabled={loading || !apiKey}
+                            className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap"
+                        >
+                            {loading ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> 분석 중...</> : '분석 시작'}
+                        </button>
                     </div>
                     
                     <div className="space-y-3 pt-2 border-t dark:border-gray-700">
@@ -2261,6 +2277,480 @@ window.DataConsentModal = ({ isOpen, onClose, onConfirm }) => {
                 <div className="flex gap-3">
                     <button onClick={onClose} className="flex-1 py-3 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl font-bold transition-colors text-sm">나중에 하기</button>
                     <button onClick={onConfirm} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-colors text-sm">동의하고 시작하기</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+window.ScreenshotImportModal = ({ isOpen, onClose, appData, setAppData, addToast }) => {
+    const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
+    const [showKeyInput, setShowKeyInput] = useState(() => !localStorage.getItem('asset_gemini_api_key'));
+    const [image, setImage] = useState(null);
+    const [imagePreview, setImagePreview] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [analysisResult, setAnalysisResult] = useState(null);
+
+    useEffect(() => {
+        if (!isOpen) {
+            setImage(null);
+            setImagePreview('');
+            setAnalysisResult(null);
+            setError('');
+        }
+    }, [isOpen]);
+
+    // 클립보드 붙여넣기 (Ctrl + V) 이벤트 감지
+    useEffect(() => {
+        if (!isOpen) return;
+        const handlePaste = (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    const blob = items[i].getAsFile();
+                    setImage(blob);
+                    const reader = new FileReader();
+                    reader.onload = (event) => setImagePreview(event.target.result);
+                    reader.readAsDataURL(blob);
+                    addToast('📋 클립보드에서 이미지가 붙여넣어졌습니다.', 'success');
+                    break;
+                }
+            }
+        };
+        window.addEventListener('paste', handlePaste);
+        return () => window.removeEventListener('paste', handlePaste);
+    }, [isOpen, addToast]);
+
+    const handleFileChange = (e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setImage(file);
+            const reader = new FileReader();
+            reader.onload = (event) => setImagePreview(event.target.result);
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        const file = e.dataTransfer.files?.[0];
+        if (file && file.type.startsWith('image/')) {
+            setImage(file);
+            const reader = new FileReader();
+            reader.onload = (event) => setImagePreview(event.target.result);
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const runMatchingAlgorithm = (extractedList) => {
+        const currentAssets = appData.assets || {};
+        const matched = [];
+        
+        extractedList.forEach(item => {
+            if (item.matchedId) {
+                let existingAsset = null;
+                let existingSector = null;
+
+                // Find the existing asset by matchedId provided by Gemini
+                Object.keys(currentAssets).forEach(sector => {
+                    const list = currentAssets[sector] || [];
+                    const found = list.find(a => a.id === item.matchedId);
+                    if (found) {
+                        existingAsset = found;
+                        existingSector = sector;
+                    }
+                });
+
+                if (existingAsset) {
+                    matched.push({
+                        id: Math.random().toString(36).substring(2, 9),
+                        selected: true,
+                        isNew: false,
+                        extractedName: item.name,
+                        amount: item.amount,
+                        existingAsset: existingAsset,
+                        existingSector: existingSector,
+                        sector: existingSector
+                    });
+                    return;
+                }
+            }
+
+            // If not matched or no matchedId, treat as new asset
+            matched.push({
+                id: Math.random().toString(36).substring(2, 9),
+                selected: true,
+                isNew: true,
+                extractedName: item.name,
+                amount: item.amount,
+                sector: item.sector || 'deposit'
+            });
+        });
+
+        setAnalysisResult(matched);
+    };
+
+    const handleAnalyzeImage = async () => {
+        const trimmedKey = apiKey.trim();
+        if (!trimmedKey) { setError('API 키를 입력해주세요.'); return; }
+        if (!image) { setError('분석할 이미지를 업로드하거나 붙여넣어주세요.'); return; }
+        localStorage.setItem('asset_gemini_api_key', trimmedKey);
+        setShowKeyInput(false);
+
+        setLoading(true);
+        setError('');
+        setAnalysisResult(null);
+
+        try {
+            const base64Data = imagePreview.split(',')[1];
+            const mimeType = image.type || 'image/png';
+
+            // Gather list of existing assets to pass to the Gemini prompt
+            const currentAssets = appData.assets || {};
+            const currentAssetsList = [];
+            Object.keys(currentAssets).forEach(sector => {
+                (currentAssets[sector] || []).forEach(asset => {
+                    currentAssetsList.push({
+                        id: asset.id,
+                        name: asset.name,
+                        amount: asset.amount,
+                        sector: sector
+                    });
+                });
+            });
+
+            const prompt = `당신은 금융 분석 및 자산 매칭 전문가입니다. 
+이 이미지(금융 스크샷)에서 계좌명, 자산명, 주식이름, 대출명 등 식별 가능한 모든 자산의 명칭과 해당 잔액(금액)을 추출해 주세요. 
+금액은 한국 원화 기준이며 반드시 만원 단위로 변환해 주세요 (예: 50,000원은 5, 1,200,000원은 120, 20,000,000원은 2000). 만약 주식 수량과 단가가 적혀 있다면 총 평가 금액을 계산해서 만원 단위 정수로 추출해 주세요.
+
+또한, 다음은 현재 사용자의 대시보드에 등록되어 있는 기존 자산 목록입니다:
+${JSON.stringify(currentAssetsList, null, 2)}
+
+추출한 각 자산 항목에 대해, 기존 자산 목록의 이름, 금액(금액은 최근 변동했을 가능성 고려), 섹터(맥락)를 종합적으로 판단하여 동일한 자산으로 매칭되는 항목이 있는지 파악해 주세요.
+- 매칭되는 기존 자산이 있다면: 해당 기존 자산의 'id'를 'matchedId' 필드에 매핑해 주세요.
+- 매칭되는 기존 자산이 없다면(새로운 자산인 경우): 'matchedId'를 null로 지정하고, 이 자산이 속할 가장 적절한 카테고리('sector': 'deposit' | 'savings' | 'investment' | 'loan' 중 하나)를 추론해 지정해 주세요.
+
+결과는 오직 다음 형식의 JSON 객체로만 답해 주세요. 다른 설명 텍스트나 코드 블록 표시(\`\`\`json 등)는 절대 적지 마세요:
+
+{
+  "assets": [
+    { "name": "자산명", "amount": 120, "matchedId": "기존 자산의 id 또는 null", "sector": "추론한 sector 또는 null" }
+  ]
+}`;
+
+            const body = {
+                contents: [
+                    {
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    mimeType: mimeType,
+                                    data: base64Data
+                                }
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            const models = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
+            
+            const tryModel = (index) => {
+                if (index >= models.length) {
+                    setError('모든 AI 모델(3.1, 3.5, 2.5) 이미지 분석에 실패했습니다. API 키나 크기 제한을 확인해 주세요.');
+                    setLoading(false);
+                    return;
+                }
+                
+                const currentModel = models[index];
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:streamGenerateContent?alt=sse&key=${trimmedKey}`;
+                
+                let accumulatedText = '';
+                streamGeminiResponse(
+                    url,
+                    body,
+                    (text) => { accumulatedText = text; },
+                    (finalText) => {
+                        try {
+                            let jsonStr = finalText.trim();
+                            if (jsonStr.startsWith('```')) {
+                                jsonStr = jsonStr.replace(/^```(json)?/, '').replace(/```$/, '').trim();
+                            }
+                            const parsed = JSON.parse(jsonStr);
+                            if (parsed && Array.isArray(parsed.assets)) {
+                                runMatchingAlgorithm(parsed.assets);
+                                setLoading(false);
+                            } else {
+                                throw new Error('올바른 assets 배열 형식이 아닙니다.');
+                            }
+                        } catch (e) {
+                            console.warn(`⚠️ JSON parse failed for ${currentModel}:`, e);
+                            tryModel(index + 1);
+                        }
+                    },
+                    (err) => {
+                        console.warn(`⚠️ Vision Model ${currentModel} failed:`, err);
+                        tryModel(index + 1);
+                    }
+                );
+            };
+
+            tryModel(0);
+        } catch (err) {
+            setError(err.message || '분석 중 알 수 없는 에러가 발생했습니다.');
+            setLoading(false);
+        }
+    };
+
+    const handleApply = () => {
+        if (!analysisResult) return;
+        
+        const updatedAssets = JSON.parse(JSON.stringify(appData.assets || {}));
+
+        analysisResult.forEach(item => {
+            if (!item.selected) return;
+
+            if (item.isNew) {
+                if (!updatedAssets[item.sector]) {
+                    updatedAssets[item.sector] = [];
+                }
+                const newAsset = {
+                    id: 'asset_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+                    name: item.extractedName,
+                    amount: item.amount,
+                    rate: item.sector === 'loan' ? 4.5 : 2.0,
+                    monthlyContrib: 0,
+                    memo: '스크린샷 OCR 자동등록'
+                };
+                if (item.sector === 'loan') {
+                    newAsset.repaymentMethod = '원리금균등';
+                    newAsset.repaymentAccount = 'salary';
+                    newAsset.maturityMonth = 12;
+                    newAsset.loanStartDate = new Date().toISOString().slice(0, 7);
+                } else {
+                    newAsset.feeRate = 0;
+                    newAsset.monthlyContributionFrom = window.MONTHLY_INCOME_SOURCE || '월급';
+                }
+                updatedAssets[item.sector].push(newAsset);
+            } else {
+                const list = updatedAssets[item.existingSector] || [];
+                const target = list.find(a => a.id === item.existingAsset.id);
+                if (target) {
+                    target.amount = item.amount;
+                }
+            }
+        });
+
+        setAppData(prev => ({
+            ...prev,
+            assets: updatedAssets
+        }));
+
+        addToast('🎉 스크린샷 분석 결과가 자산 데이터에 정상 반영되었습니다!', 'success');
+        onClose();
+    };
+
+    const toggleSelectItem = (id) => {
+        setAnalysisResult(prev => prev.map(item => item.id === id ? { ...item, selected: !item.selected } : item));
+    };
+
+    const changeNewSector = (id, newSector) => {
+        setAnalysisResult(prev => prev.map(item => item.id === id ? { ...item, sector: newSector } : item));
+    };
+
+    if (!isOpen) return null;
+
+    const darkMode = document.documentElement.classList.contains('dark');
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] sm:max-h-[85vh] flex flex-col animate-in zoom-in duration-300 overflow-hidden">
+                {/* Header */}
+                <div className="p-5 border-b dark:border-gray-700 flex justify-between items-center flex-shrink-0">
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        📷 스크린샷 자산 정보 업데이트
+                    </h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 p-6 overflow-y-auto custom-scrollbar space-y-5">
+                    {error && (
+                        <div className="p-3.5 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-xl text-sm font-semibold border border-red-100 dark:border-red-900/50">
+                            ⚠️ {error}
+                        </div>
+                    )}
+
+                    {!analysisResult ? (
+                        <div className="space-y-4">
+                            <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-xl text-xs text-blue-800 dark:text-blue-200 border border-blue-100 dark:border-blue-900/50 leading-relaxed">
+                                <p className="font-bold mb-1">💡 사용 방법</p>
+                                1. 증권사 계좌 목록, 은행 계좌 조회화면, 토스 등의 자산 스크린샷을 찍거나 캡처합니다.<br/>
+                                2. 이 모달창을 클릭한 뒤 키보드로 <strong>Ctrl + V</strong>를 눌러 직접 붙여넣거나 아래 박스에 업로드하세요.<br/>
+                                3. API 키 입력 후 '분석 시작'을 누르면 AI가 금액과 이름을 추출해 매칭 제안을 드립니다.
+                            </div>
+
+                            {/* Drop/Paste area */}
+                            <div
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={handleDrop}
+                                className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl p-8 flex flex-col items-center justify-center text-center bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900/80 transition-all cursor-pointer relative min-h-[160px]"
+                                onClick={() => document.getElementById('screenshot-file-input').click()}
+                            >
+                                <input
+                                    id="screenshot-file-input"
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleFileChange}
+                                    className="hidden"
+                                />
+                                {imagePreview ? (
+                                    <div className="relative max-h-[150px] overflow-hidden rounded-lg">
+                                        <img src={imagePreview} alt="Screenshot Preview" className="max-h-[150px] object-contain" />
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setImage(null); setImagePreview(''); }}
+                                            className="absolute top-1 right-1 bg-black/60 hover:bg-black text-white p-1 rounded-full text-xs"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <span className="text-4xl">📸</span>
+                                        <p className="text-sm font-bold text-gray-600 dark:text-gray-300">
+                                            스크린샷 이미지 드래그 또는 붙여넣기 (Ctrl + V)
+                                        </p>
+                                        <p className="text-xs text-gray-400">
+                                            클릭하여 탐색기로 파일 선택 가능
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {(!showKeyInput && apiKey) ? (
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 bg-gray-50 dark:bg-gray-900/40 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                                        <span>🔑</span>
+                                        <span>API 키가 등록되어 있습니다.</span>
+                                        <button 
+                                            onClick={() => setShowKeyInput(true)} 
+                                            className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline font-bold ml-1"
+                                        >
+                                            변경
+                                        </button>
+                                    </div>
+                                    <button
+                                        onClick={handleAnalyzeImage}
+                                        disabled={loading || !image}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap w-full sm:w-auto"
+                                    >
+                                        {loading ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> 분석 중...</> : '분석 시작'}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col sm:flex-row gap-2">
+                                    <input
+                                        type="password"
+                                        placeholder="Gemini API Key 입력"
+                                        className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                                        value={apiKey}
+                                        onChange={(e) => setApiKey(e.target.value)}
+                                    />
+                                    <button
+                                        onClick={handleAnalyzeImage}
+                                        disabled={loading || !image || !apiKey}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap"
+                                    >
+                                        {loading ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> 분석 중...</> : '분석 시작'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <h4 className="font-bold text-sm text-gray-700 dark:text-gray-200">🔍 AI 자산 매칭 분석 결과</h4>
+                            <div className="space-y-2 max-h-[450px] overflow-y-auto custom-scrollbar pr-1">
+                                {analysisResult.map((item) => (
+                                    <div 
+                                        key={item.id}
+                                        className={`p-4 rounded-xl border flex items-center justify-between gap-4 transition-all ${
+                                            !item.selected 
+                                                ? 'bg-gray-50/50 dark:bg-gray-900/30 border-gray-100 dark:border-gray-800 opacity-60' 
+                                                : item.isNew 
+                                                    ? 'bg-emerald-50/40 dark:bg-emerald-950/10 border-emerald-200/60 dark:border-emerald-900/40' 
+                                                    : 'bg-indigo-50/40 dark:bg-indigo-950/10 border-indigo-200/60 dark:border-indigo-900/40'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={item.selected} 
+                                                onChange={() => toggleSelectItem(item.id)}
+                                                className="w-4.5 h-4.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            />
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-sm text-gray-800 dark:text-gray-200">{item.extractedName}</span>
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${
+                                                        item.isNew 
+                                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' 
+                                                            : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300'
+                                                    }`}>
+                                                        {item.isNew ? '신규 감지' : '기존 매칭'}
+                                                    </span>
+                                                </div>
+                                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                    {item.isNew ? (
+                                                        <div className="flex items-center gap-1.5 mt-1">
+                                                            <span>분류 카테고리:</span>
+                                                            <select
+                                                                value={item.sector}
+                                                                onChange={(e) => changeNewSector(item.id, e.target.value)}
+                                                                className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700 dark:text-gray-200 cursor-pointer"
+                                                            >
+                                                                <option value="deposit">입출금(현금)</option>
+                                                                <option value="savings">예적금/청약</option>
+                                                                <option value="investment">투자(주식/펀드)</option>
+                                                                <option value="loan">대출/부채</option>
+                                                            </select>
+                                                        </div>
+                                                    ) : (
+                                                        <span>기존 자산: <strong className="text-gray-700 dark:text-gray-300">{item.existingAsset.name}</strong></span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="text-right">
+                                            <div className="font-bold text-sm text-gray-900 dark:text-white">{item.amount.toLocaleString()}만원</div>
+                                            {!item.isNew && (
+                                                <div className="text-[10px] text-gray-400 mt-0.5">
+                                                    기존: {Math.round(item.existingAsset.amount).toLocaleString()}만원 
+                                                    <span className={`ml-1 font-bold ${item.amount > item.existingAsset.amount ? 'text-rose-500' : item.amount < item.existingAsset.amount ? 'text-blue-500' : 'text-gray-400'}`}>
+                                                        {item.amount > item.existingAsset.amount ? `(+${Math.round(item.amount - item.existingAsset.amount)})` : item.amount < item.existingAsset.amount ? `(-${Math.round(item.existingAsset.amount - item.amount)})` : '(동일)'}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex gap-2">
+                                <button onClick={() => setAnalysisResult(null)} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white rounded-xl font-bold text-sm transition-colors">
+                                    ↩ 다시 분석
+                                </button>
+                                <button onClick={handleApply} className="flex-[2] py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/35 transition-all">
+                                    💾 자산 데이터 반영하기
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
