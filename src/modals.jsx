@@ -469,6 +469,14 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
 
+    // 스크린샷 자산 연동 관련 상태 추가
+    const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
+    const [showKeyInput, setShowKeyInput] = useState(() => !localStorage.getItem('asset_gemini_api_key'));
+    const [ocrImage, setOcrImage] = useState(null);
+    const [ocrImagePreview, setOcrImagePreview] = useState(null);
+    const [ocrLoading, setOcrLoading] = useState(false);
+    const [ocrError, setOcrError] = useState('');
+
     useEffect(() => {
         if (!isOpen || !asset) return;
         // 데이터 초기화
@@ -530,6 +538,246 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         };
         initFetch();
     }, [isOpen, asset]);
+
+    // 글로벌 paste 붙여넣기 이벤트 바인딩
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleGlobalPaste = (e) => {
+            if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') {
+                return;
+            }
+            handleOcrPaste(e);
+        };
+        window.addEventListener('paste', handleGlobalPaste);
+        return () => window.removeEventListener('paste', handleGlobalPaste);
+    }, [isOpen, linkedItems]);
+
+    const handleOcrFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file && file.type.startsWith('image/')) {
+            setOcrImage(file);
+            const reader = new FileReader();
+            reader.onload = (event) => setOcrImagePreview(event.target.result);
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleOcrPaste = (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const file = items[i].getAsFile();
+                setOcrImage(file);
+                const reader = new FileReader();
+                reader.onload = (event) => setOcrImagePreview(event.target.result);
+                reader.readAsDataURL(file);
+                break;
+            }
+        }
+    };
+
+    const handleOcrDragOver = (e) => {
+        e.preventDefault();
+    };
+
+    const handleOcrDrop = (e) => {
+        e.preventDefault();
+        const file = e.dataTransfer?.files[0];
+        if (file && file.type.startsWith('image/')) {
+            setOcrImage(file);
+            const reader = new FileReader();
+            reader.onload = (event) => setOcrImagePreview(event.target.result);
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const applyOcrResult = (data) => {
+        let ocrStocks = Array.isArray(data.stockItems) ? data.stockItems : [];
+        ocrStocks = ocrStocks.map((s, idx) => {
+            let avg = parseFloat(s.avgPrice) || 0;
+            let cur = parseFloat(s.currentPrice) || 0;
+            const shares = parseFloat(s.shares) || 0;
+            const tickerStr = String(s.ticker || '');
+            const isKorean = s.currency === 'KRW' || /^\d{6}/.test(tickerStr) || tickerStr.endsWith('.KS') || tickerStr.endsWith('.KQ');
+            
+            if (isKorean) {
+                if (avg > 0 && avg < 1000) avg *= 10000;
+                if (cur > 0 && cur < 1000) cur *= 10000;
+                
+                if (avg > 0 && cur > 0 && (avg / cur >= 3.0)) {
+                    if (shares > 0) {
+                        const tempAvg = (avg * 100) / shares;
+                        if (tempAvg / cur >= 0.5 && tempAvg / cur <= 2.0) {
+                            avg = Math.round(tempAvg);
+                        } else {
+                            avg = cur;
+                        }
+                    } else {
+                        avg = cur;
+                    }
+                }
+            }
+            return {
+                id: 'stock_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 5),
+                ticker: s.ticker || '',
+                name: s.name || s.ticker || '미확인 종목',
+                shares: shares,
+                avgPrice: avg,
+                currentPrice: cur,
+                currency: 'KRW',
+                autoUpdate: true
+            };
+        });
+
+        const mergedMap = new Map();
+        linkedItems.forEach(existing => {
+            const key = existing.ticker || existing.id || existing.name;
+            if (key) mergedMap.set(key, existing);
+        });
+        ocrStocks.forEach(incoming => {
+            const key = incoming.ticker || incoming.id || incoming.name;
+            if (key) mergedMap.set(key, incoming);
+        });
+        const finalLinkedItems = Array.from(mergedMap.values());
+        setLinkedItems(finalLinkedItems);
+
+        let stockTotalManwon = 0;
+        finalLinkedItems.forEach(s => {
+            let price = parseFloat(s.currentPrice) || 0;
+            let shares = parseFloat(s.shares) || 0;
+            let val = price * shares;
+            stockTotalManwon += (val / 10000);
+        });
+
+        let extractedTotal = data.totalAmount;
+        if (extractedTotal > 50000) {
+            extractedTotal = Math.round(extractedTotal / 10000);
+        }
+
+        if (extractedTotal && extractedTotal > 0) {
+            const calculatedBase = Math.max(0, Math.round((extractedTotal - stockTotalManwon) * 100) / 100);
+            setBaseAmount(calculatedBase);
+        }
+
+        if (window.addToast) {
+            window.addToast('📷 스크린샷에서 종목 정보가 성공적으로 추출되어 병합되었습니다!', 'success');
+        } else {
+            alert('📷 스크린샷에서 종목 정보가 성공적으로 추출되어 병합되었습니다!');
+        }
+    };
+
+    const handleAnalyzeImageOcr = async () => {
+        const trimmedKey = apiKey.trim();
+        if (!trimmedKey) { setOcrError('API 키를 입력해주세요.'); return; }
+        if (!ocrImage) { setOcrError('분석할 이미지를 업로드하거나 붙여넣어주세요.'); return; }
+        localStorage.setItem('asset_gemini_api_key', trimmedKey);
+        setShowKeyInput(false);
+
+        setOcrLoading(true);
+        setOcrError('');
+
+        try {
+            const base64Data = ocrImagePreview.split(',')[1];
+            const mimeType = ocrImage.type || 'image/png';
+
+            const prompt = `당신은 금융 분석 및 자산 매칭 전문가입니다.
+이 이미지(금융 스크린샷)는 특정 투자 계좌(예: 직접투자계좌, ISA 등)의 상세 화면 또는 잔고/종목 목록 화면입니다.
+이 이미지에서 다음 두 가지 정보를 추출해 주세요.
+
+1. 이 계좌의 '총 평가 금액' 또는 '총 자산 금액': 원화 기준이며 반드시 만원 단위로 변환해 주세요 (예: 50,000,000원은 5000, 2,500,000원은 250).
+2. 이 계좌에 포함된 주식/펀드/ETF 종목 목록 (수량, 평가금액, 매입단가/평단가, 현재가 등):
+   각 주식 종목은 "stockItems" 배열에 포함되어야 하며, 다음 필드를 가집니다:
+   - ticker: 해당 주식의 티커/코드 (예: 국장은 '005930', 미장은 'AAPL', 'TSLA' 등)
+   - name: 종목명 (예: '삼성전자', '테슬라' 등)
+   - shares: 잔고 수량 (숫자)
+   - avgPrice: 매입단가 (숫자, 평단가)
+   - currentPrice: 현재단가 (숫자)
+   - currency: 화폐 단위 ('KRW' 또는 'USD')
+
+⚠️주의: 절대 '매입금액(총투자액)'이나 '평가손익'의 숫자와 '매입단가(1주당 가격, 평단가)'를 혼동하여 추출하지 마세요. 매입단가(avgPrice)는 현재가(currentPrice)와 자릿수(액수 범위)가 비슷해야 합니다.
+⚠️금액은 해외 주식이어도 원화(KRW)로 변환하거나 표시된 값을 그대로 숫자로 추출하되, 통화 표기는 currency 필드로 명시하세요.
+
+결과는 오직 다음 형식의 JSON 객체로만 답해 주세요. 다른 설명 텍스트나 코드 블록 기호는 절대 적지 마세요:
+
+{
+  "totalAmount": 5500,
+  "stockItems": [
+    { "ticker": "005930", "name": "삼성전자", "shares": 10, "avgPrice": 75000, "currentPrice": 82000, "currency": "KRW" }
+  ]
+}`;
+
+            const body = {
+                contents: [
+                    {
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    mimeType: mimeType,
+                                    data: base64Data
+                                }
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            const models = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
+            
+            const tryModel = (index) => {
+                if (index >= models.length) {
+                    setOcrError('모든 AI 모델 이미지 분석에 실패했습니다. API 키나 크기 제한을 확인해 주세요.');
+                    setOcrLoading(false);
+                    return;
+                }
+                
+                const currentModel = models[index];
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:streamGenerateContent?alt=sse&key=${trimmedKey}`;
+                
+                let accumulatedText = '';
+                streamGeminiResponse(
+                    url,
+                    body,
+                    (text) => { accumulatedText = text; },
+                    (finalText) => {
+                        try {
+                            let cleanJson = finalText.trim();
+                            if (cleanJson.includes('```json')) {
+                                cleanJson = cleanJson.split('```json')[1].split('```')[0].trim();
+                            } else if (cleanJson.includes('```')) {
+                                cleanJson = cleanJson.split('```')[1].split('```')[0].trim();
+                            }
+                            
+                            const parsed = JSON.parse(cleanJson);
+                            
+                            if (parsed) {
+                                applyOcrResult(parsed);
+                                setOcrLoading(false);
+                                setOcrImage(null);
+                                setOcrImagePreview(null);
+                            } else {
+                                throw new Error("Invalid format");
+                            }
+                        } catch (e) {
+                            console.warn(`Model ${currentModel} failed parsing, trying next...`, e);
+                            tryModel(index + 1);
+                        }
+                    },
+                    (err) => {
+                        console.warn(`Model ${currentModel} stream failed, trying next...`, err);
+                        tryModel(index + 1);
+                    }
+                );
+            };
+
+            tryModel(0);
+
+        } catch (e) {
+            setOcrError('분석 중 오류 발생: ' + e.message);
+            setOcrLoading(false);
+        }
+    };
 
     // [추가] 티커 검색 로직 (Debounced)
     useEffect(() => {
@@ -672,6 +920,106 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
+                    {/* 📷 스크린샷 종목 캡처 연동 드롭존 */}
+                    <section className="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border-2 border-dashed border-indigo-200 dark:border-slate-700 transition-all hover:border-indigo-400">
+                        <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                📷 스크린샷으로 종목 및 평가액 일괄 등록
+                            </h4>
+                            {apiKey && (
+                                <button 
+                                    onClick={() => setShowKeyInput(prev => !prev)}
+                                    className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-800"
+                                >
+                                    🔑 API 키 설정
+                                </button>
+                            )}
+                        </div>
+
+                        {/* API 키 입력 창 (접혀있거나 펼쳐짐) */}
+                        {showKeyInput && (
+                            <div className="mb-4 bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 space-y-2.5">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase block font-sans">Gemini API Key</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="password" 
+                                        placeholder="AI 분석에 사용할 Gemini API 키를 입력하세요..." 
+                                        className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
+                                        value={apiKey}
+                                        onChange={(e) => setApiKey(e.target.value)}
+                                    />
+                                    <button 
+                                        onClick={() => {
+                                            localStorage.setItem('asset_gemini_api_key', apiKey.trim());
+                                            setShowKeyInput(false);
+                                        }}
+                                        className="bg-indigo-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-indigo-700"
+                                    >
+                                        저장
+                                    </button>
+                                </div>
+                                <p className="text-[9px] text-slate-400">API 키가 없으면 스크린샷 종목 인식 기능을 이용할 수 없습니다.</p>
+                            </div>
+                        )}
+
+                        <div 
+                            onDragOver={handleOcrDragOver}
+                            onDrop={handleOcrDrop}
+                            className="bg-white dark:bg-slate-800/40 rounded-xl p-6 border border-slate-100 dark:border-slate-700 flex flex-col items-center justify-center text-center relative min-h-[140px] transition-all"
+                        >
+                            {ocrLoading ? (
+                                <div className="flex flex-col items-center justify-center gap-3">
+                                    <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                                    <div className="text-xs font-black text-indigo-600 dark:text-indigo-400 animate-pulse">Gemini Vision AI가 이미지 분석 및 종목 추출 중...</div>
+                                    <div className="text-[10px] text-slate-400">잠시만 기다려 주세요 (약 3~5초 소요)</div>
+                                </div>
+                            ) : ocrImagePreview ? (
+                                <div className="w-full flex flex-col sm:flex-row items-center gap-4">
+                                    <img src={ocrImagePreview} alt="Preview" className="w-24 h-24 object-cover rounded-lg border dark:border-slate-700 shadow-sm" />
+                                    <div className="flex-1 text-left space-y-2">
+                                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate max-w-[280px]">파일: {ocrImage.name || '클립보드 이미지'}</div>
+                                        <div className="text-[10px] text-slate-400">분석 준비 완료. 이 이미지를 사용해 주식 종목과 잔액을 분석합니다.</div>
+                                        <div className="flex gap-2">
+                                            <button 
+                                                onClick={handleAnalyzeImageOcr}
+                                                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-1.5 px-3 rounded-lg shadow transition-colors"
+                                            >
+                                                ⚡ 분석 시작
+                                            </button>
+                                            <button 
+                                                onClick={() => { setOcrImage(null); setOcrImagePreview(null); }}
+                                                className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors"
+                                            >
+                                                취소
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <label className="cursor-pointer flex flex-col items-center justify-center gap-2.5 w-full h-full py-4">
+                                    <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        onChange={handleOcrFileChange} 
+                                        className="hidden" 
+                                    />
+                                    <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-500 hover:scale-110 transition-transform">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <div className="text-xs font-black text-indigo-900 dark:text-indigo-200">여기에 스크린샷 이미지를 놓거나, 클릭하여 선택</div>
+                                        <div className="text-[10px] text-slate-400 font-medium font-sans">또는 이 화면에서 <kbd className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded border text-[9px] font-mono">Ctrl</kbd>+<kbd className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded border text-[9px] font-mono">V</kbd>로 캡처 이미지 붙여넣기</div>
+                                    </div>
+                                </label>
+                            )}
+                        </div>
+                        {ocrError && (
+                            <div className="mt-3 p-2.5 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 rounded-lg text-[10px] font-bold border border-red-100 dark:border-red-900/30">
+                                ⚠️ {ocrError}
+                            </div>
+                        )}
+                    </section>
+
                     {/* 2. Deposit Section */}
                     <section className="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border dark:border-slate-700 flex items-center justify-between group transition-all hover:border-indigo-300">
                         <div>
@@ -2514,7 +2862,8 @@ window.ScreenshotImportModal = ({ isOpen, onClose, appData, setAppData, addToast
                         existingAsset: existingAsset,
                         existingSector: existingSector,
                         sector: existingSector,
-                        stockItems: safeStockItems
+                        stockItems: safeStockItems,
+                        selectedTargetId: existingAsset.id || existingAsset.name
                     });
                     return;
                 }
@@ -2528,7 +2877,8 @@ window.ScreenshotImportModal = ({ isOpen, onClose, appData, setAppData, addToast
                 extractedName: item.name,
                 amount: safeAmount,
                 sector: item.sector || 'deposit',
-                stockItems: safeStockItems
+                stockItems: safeStockItems,
+                selectedTargetId: 'new_' + (item.sector || 'deposit')
             });
         });
 
@@ -2722,7 +3072,10 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                 updatedAssets[item.sector].push(newAsset);
             } else {
                 const list = updatedAssets[item.existingSector] || [];
-                const target = list.find(a => a.id === item.existingAsset.id);
+                const target = list.find(a => {
+                    const targetId = item.selectedTargetId || (item.existingAsset && (item.existingAsset.id || item.existingAsset.name));
+                    return (a.id && a.id === targetId) || (a.name && a.name === targetId);
+                });
                 if (target) {
                     // 기존 자산 평가액(amount)을 보존 (없다면 새로 추출된 item.amount 사용)
                     const baseTargetAmount = target.amount || item.amount || 0;
@@ -2947,7 +3300,7 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                                                 <div className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 flex flex-wrap items-center gap-2">
                                                     <span>대상 지정:</span>
                                                     <select
-                                                        value={item.isNew ? (item.sector ? `new_${item.sector}` : '') : (item.existingAsset?.id || item.existingAsset?.name || '')}
+                                                        value={item.selectedTargetId || ''}
                                                         onChange={(e) => {
                                                             const val = e.target.value;
                                                             if (val.startsWith('new_')) {
@@ -2957,17 +3310,26 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                                                                     isNew: true, 
                                                                     sector: sector,
                                                                     existingAsset: null,
-                                                                    existingSector: null
+                                                                    existingSector: null,
+                                                                    selectedTargetId: val
                                                                 } : a));
                                                             } else {
                                                                 const matchedAsset = allExistingAssets.find(a => a.id === val);
                                                                 if (matchedAsset) {
+                                                                    // appData.assets에서 진짜 원본 자산 매핑을 추출하여 상태 유지
+                                                                    let realAsset = null;
+                                                                    Object.keys(appData.assets || {}).forEach(sec => {
+                                                                        const found = (appData.assets[sec] || []).find(x => (x.id || x.name) === val);
+                                                                        if (found) realAsset = found;
+                                                                    });
+                                                                    
                                                                     setAnalysisResult(prev => prev.map(a => a.id === item.id ? { 
                                                                         ...a, 
                                                                         isNew: false, 
                                                                         sector: matchedAsset.sector,
                                                                         existingSector: matchedAsset.sector,
-                                                                        existingAsset: matchedAsset
+                                                                        existingAsset: realAsset || matchedAsset,
+                                                                        selectedTargetId: val
                                                                     } : a));
                                                                 }
                                                             }
