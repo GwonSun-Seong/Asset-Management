@@ -887,6 +887,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             const [editingRebalanceSector, setEditingRebalanceSector] = useState(null); // [추가] 리밸런싱 상세 편집 섹터
             const [iconPickerState, setIconPickerState] = useState(null); // [추가] 아이콘 선택기 상태 { sector, index }
             const [isAIModalOpen, setIsAIModalOpen] = useState(false); // [추가] AI 분석 모달 상태
+            const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false); // [추가] API 키 설정 모달 상태
             const [isHistoryActionModalOpen, setIsHistoryActionModalOpen] = useState(false); // [추가] 히스토리 액션 모달
             const [pendingHistoryData, setPendingHistoryData] = useState(null); // [추가] 로드 대기 중인 히스토리 데이터
             const [activePanel, setActivePanel] = useState('summary'); // [추가] 현재 화면에 보이는 패널 감지
@@ -980,6 +981,134 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             useEffect(() => {
                 localStorage.setItem('assetDashboardAssetSectorOrder', JSON.stringify(assetSectorOrder));
             }, [assetSectorOrder]);
+
+            // [추가] 토스 실시간 시세 연동 타이머 & AI 분석 모달 오픈 핸들러
+            const runTossLivePriceSync = async () => {
+                const enabled = localStorage.getItem('toss_live_price_enabled') === 'true';
+                if (!enabled) return;
+                
+                const clientId = localStorage.getItem('toss_client_id');
+                const clientSecret = localStorage.getItem('toss_client_secret');
+                if (!clientId || !clientSecret) return;
+
+                // 스케줄링 최적화: 주말 제외 & 정규 장 개장 시간대만
+                const now = new Date();
+                const day = now.getDay();
+                if (day === 0 || day === 6) return; 
+
+                const hours = now.getHours();
+                const mins = now.getMinutes();
+                const currentMins = hours * 60 + mins;
+
+                const isKrxOpen = currentMins >= 540 && currentMins <= 930;
+                const isUsOpen = currentMins >= 1260 || currentMins <= 360;
+
+                if (!isKrxOpen && !isUsOpen) return;
+
+                // 백그라운드 탭 지연 방지 (비활성 시 스킵)
+                if (document.hidden) return;
+
+                const appDataCur = appDataRef.current;
+                if (!appDataCur || !appDataCur.assets) return;
+
+                const symbolsToFetch = new Set();
+                Object.keys(appDataCur.assets).forEach(sector => {
+                    const list = appDataCur.assets[sector] || [];
+                    list.forEach(asset => {
+                        if (asset.linkedItems && Array.isArray(asset.linkedItems)) {
+                            asset.linkedItems.forEach(item => {
+                                if (item.autoUpdate !== false && item.ticker) {
+                                    symbolsToFetch.add(item.ticker);
+                                }
+                            });
+                        }
+                    });
+                });
+
+                if (symbolsToFetch.size === 0) return;
+
+                const quotes = await window.fetchTossQuotes(Array.from(symbolsToFetch));
+                if (!quotes || Object.keys(quotes).length === 0) return;
+
+                setAppData(prevData => {
+                    if (!prevData || !prevData.assets) return prevData;
+                    const newAssets = { ...prevData.assets };
+                    let hasChanges = false;
+
+                    Object.keys(newAssets).forEach(sector => {
+                        newAssets[sector] = newAssets[sector].map(asset => {
+                            if (asset.linkedItems && Array.isArray(asset.linkedItems)) {
+                                let assetChanged = false;
+                                const newLinkedItems = asset.linkedItems.map(item => {
+                                    if (item.autoUpdate !== false && item.ticker) {
+                                        const q = quotes[item.ticker];
+                                        if (q && q.price && q.price !== item.currentPrice) {
+                                            assetChanged = true;
+                                            hasChanges = true;
+                                            return { ...item, currentPrice: q.price };
+                                        }
+                                    }
+                                    return item;
+                                });
+
+                                if (assetChanged) {
+                                    let linkedTotal = 0;
+                                    newLinkedItems.forEach(item => {
+                                        const curPrice = parseFloat(item.currentPrice) || 0;
+                                        const shares = parseFloat(item.shares) || 0;
+                                        linkedTotal += (curPrice * shares) / 10000;
+                                    });
+                                    const newAmount = (Number(asset.baseAmount) || 0) + linkedTotal;
+
+                                    return {
+                                        ...asset,
+                                        amount: Math.round(newAmount * 100) / 100,
+                                        linkedItems: newLinkedItems
+                                    };
+                                }
+                            }
+                            return asset;
+                        });
+                    });
+
+                    if (hasChanges) {
+                        addToast('실시간 주식 시세가 업데이트되었습니다.', 'success');
+                        return { ...prevData, assets: newAssets };
+                    }
+                    return prevData;
+                });
+            };
+
+            useEffect(() => {
+                const intervalId = setInterval(runTossLivePriceSync, 60000);
+                const handleVisibilityChange = () => {
+                    if (!document.hidden) {
+                        runTossLivePriceSync();
+                    }
+                };
+                
+                document.addEventListener('visibilitychange', handleVisibilityChange);
+                runTossLivePriceSync();
+
+                // 모달 등에서 원격으로 API 설정 창을 띄울 수 있도록 전역 바인딩
+                window.showApiKeyModal = () => setIsApiKeyModalOpen(true);
+
+                return () => {
+                    clearInterval(intervalId);
+                    document.removeEventListener('visibilitychange', handleVisibilityChange);
+                    window.showApiKeyModal = null;
+                };
+            }, []);
+
+            const handleOpenAIAnalysis = () => {
+                const key = localStorage.getItem('asset_gemini_api_key');
+                if (!key || !key.trim()) {
+                    setIsApiKeyModalOpen(true);
+                    addToast('AI 분석을 위해 Gemini API 키를 등록해주세요.', 'warning');
+                } else {
+                    setIsAIModalOpen(true);
+                }
+            };
 
             // [추가] 스크롤 스파이 로직: 현재 화면에 보이는 섹션을 감지하여 사이드바에 반영
             useEffect(() => {
@@ -1128,6 +1257,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             }, [isLoading]);
 
             const appDataRef = useRef(appData);
+            useEffect(() => { appDataRef.current = appData; }, [appData]);
         const scenariosRef = useRef(scenarios);
         const assetHistoryRef = useRef(assetHistory);
 
@@ -6063,6 +6193,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                                         )}
                                                     </div>
                                                 <button onClick={() => setIsSettingsModalOpen(true)} className="w-full text-left px-3 py-2 rounded bg-gray-100 dark:bg-gray-700 text-blue-600 dark:text-blue-400 font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">⚙️ 앱 설정</button>
+                                                 <button onClick={() => setIsApiKeyModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-sm flex items-center gap-1.5"><span className="text-gray-500">🔑</span> API 키 및 연동 설정</button>
                                                     <button onClick={() => setIsSuggestionModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-sm">💡 기능 제안</button>
                                                     {isAdmin && (
                                                         <button onClick={() => setIsAdminModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-600 dark:text-purple-400 font-bold text-sm">🛡️ 관리자 대시보드</button>
@@ -6071,7 +6202,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                             )}
                                             <div className="border-t dark:border-gray-700 my-1"></div>
                                             <button onClick={saveToPDF} disabled={editingPhase !== null} className={`w-full text-left px-3 py-2 rounded transition-colors ${editingPhase !== null ? 'text-gray-400 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200'}`}>📄 PDF 저장</button>
-                                            <button onClick={() => setIsAIModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-indigo-600 font-bold">🤖 AI 자산 분석</button>
+                                            <button onClick={handleOpenAIAnalysis} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-indigo-600 font-bold">🤖 AI 자산 분석</button>
                                             <button onClick={() => setIsScreenshotModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-emerald-600 font-bold">📷 스크린샷 자산 업데이트</button>
                                             <button onClick={saveAsDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">⭐ 기본값 저장</button>
                                             <button onClick={loadCustomDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">↩️ 기본값 불러오기</button>
@@ -6247,7 +6378,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                             {/* [추가] 배너 스와이프 영역 (AI 분석 / 가챠 게임) */}
                             <div className="mt-4 relative group">
                                 {activeBanner === 'ai' ? (
-                                    <div className="p-4 bg-gradient-to-br from-indigo-600 to-violet-600 dark:from-indigo-900 dark:to-violet-950 rounded-xl shadow-lg text-white relative overflow-hidden cursor-pointer transition-transform hover:scale-[1.02]" onClick={() => setIsAIModalOpen(true)}>
+                                    <div className="p-4 bg-gradient-to-br from-indigo-600 to-violet-600 dark:from-indigo-900 dark:to-violet-950 rounded-xl shadow-lg text-white relative overflow-hidden cursor-pointer transition-transform hover:scale-[1.02]" onClick={handleOpenAIAnalysis}>
                                         <div className="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-white opacity-10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
                                         <div className="relative z-10 pb-2">
                                             <div className="flex items-center gap-2 mb-2">
@@ -6364,7 +6495,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
         inflationRate={inflationRate}
         setInflationRate={setInflationRate}
         saveScenario={saveScenario}
-        onOpenAI={() => setIsAIModalOpen(true)}
+        onOpenAI={handleOpenAIAnalysis}
         editingPhase={editingPhase}
         onOpenScreenshotModal={() => setIsScreenshotModalOpen(true)}
         enableLiveQuotes={enableLiveQuotes}
@@ -6645,6 +6776,10 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         onClose={() => setIconPickerState(null)} 
                         onSelect={(icon) => { updateAsset(iconPickerState.sector, iconPickerState.index, 'icon', icon); setIconPickerState(null); }}
                         currentIcon={iconPickerState ? assets[iconPickerState.sector][iconPickerState.index].icon : null}
+                    />}
+                    {window.ApiKeyModal && <window.ApiKeyModal 
+                        isOpen={isApiKeyModalOpen} 
+                        onClose={() => setIsApiKeyModalOpen(false)} 
                     />}
                     {window.AIAnalysisModal && <window.AIAnalysisModal 
                         isOpen={isAIModalOpen} 

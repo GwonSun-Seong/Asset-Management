@@ -1183,91 +1183,197 @@ const fetchWithProxyRace = async (targetUrl, responseType = 'json', timeoutMs = 
     }
 };
 
-// [추가] 야후 파이낸스 데이터 가져오기 (CORS 프록시 경쟁 호출 사용)
-const fetchYahooData = async (symbol) => {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1mo&interval=1d`;
+// [추가] 토스증권 OpenAPI OAuth 2.0 access token 발급 및 캐싱
+const getTossToken = async (clientId, clientSecret) => {
+    const cachedToken = localStorage.getItem('toss_access_token');
+    const expiry = localStorage.getItem('toss_token_expiry');
+    
+    if (cachedToken && expiry && Number(expiry) > Date.now() + 300000) {
+        return cachedToken;
+    }
+    
     try {
-        const json = await fetchWithProxyRace(url);
-        const result = json?.chart?.result?.[0];
-        if (!result) return null;
-
-        const quotes = result.indicators.quote[0];
-        const prices = quotes.close.filter(p => typeof p === 'number');
+        const response = await fetch('https://openapi.tossinvest.com/oauth2/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+                grant_type: 'client_credentials',
+                client_id: clientId,
+                client_secret: clientSecret
+            })
+        });
         
-        if (prices.length === 0) return null;
-
-        const currentPrice = prices[prices.length - 1];
-        const prevPrice = prices[prices.length - 2] || currentPrice;
-        const changePct = prevPrice !== 0 ? ((currentPrice - prevPrice) / prevPrice * 100) : 0;
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Token fetch failed: ${response.status} ${errText}`);
+        }
         
-        return { price: currentPrice, change: changePct, data: prices, isLive: true };
+        const data = await response.json();
+        if (data.access_token) {
+            localStorage.setItem('toss_access_token', data.access_token);
+            const expiresMs = (data.expires_in || 3600) * 1000;
+            localStorage.setItem('toss_token_expiry', (Date.now() + expiresMs).toString());
+            return data.access_token;
+        } else {
+            throw new Error("No access_token in response");
+        }
     } catch (e) {
-        console.warn(`All proxies failed in fetchYahooData for ${symbol}`, e);
-        return null;
+        console.error("Toss Token Fetch Error:", e);
+        throw e;
     }
 };
 
-// [추가] 실시간 다중 주식/환율 조회 (Yahoo Finance)
-const fetchYahooQuotes = async (symbols) => {
+// [추가] 토스증권 OpenAPI 다중 현재가 조회
+const fetchTossQuotes = async (symbols) => {
     if (!symbols || symbols.length === 0) return {};
-    const uniqueSymbols = [...new Set(symbols)].map(s => encodeURIComponent(s.trim()));
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${uniqueSymbols.join(',')}`;
+    
+    const clientId = localStorage.getItem('toss_client_id');
+    const clientSecret = localStorage.getItem('toss_client_secret');
+    
+    if (!clientId || !clientSecret) {
+        console.warn("Toss API Client ID or Secret is missing in localStorage");
+        return {};
+    }
     
     try {
-        const json = await fetchWithProxyRace(url);
-        const results = json?.quoteResponse?.result;
-        if (!results) throw new Error("No result in quoteResponse");
+        const token = await getTossToken(clientId, clientSecret);
         
-        const map = {};
-        results.forEach(r => {
-            map[r.symbol] = {
-                symbol: r.symbol,
-                price: r.regularMarketPrice || r.postMarketPrice || r.preMarketPrice,
-                currency: r.currency,
-                name: r.shortName || r.longName || r.symbol,
-                changePct: r.regularMarketChangePercent
+        const cleanedSymbols = [...new Set(symbols.map(s => {
+            let sym = s.trim().toUpperCase();
+            sym = sym.replace(/\.[A-Z]+$/i, '');
+            return sym;
+        }))];
+        
+        const symbolsParam = cleanedSymbols.join(',');
+        const url = `https://openapi.tossinvest.com/api/v1/prices?symbols=${encodeURIComponent(symbolsParam)}`;
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Toss prices API error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        const resultList = data.result || [];
+        const quotesMap = {};
+        
+        resultList.forEach(item => {
+            const priceNum = Number(item.lastPrice);
+            quotesMap[item.symbol] = {
+                symbol: item.symbol,
+                price: priceNum,
+                currency: item.currency || 'KRW',
+                name: item.symbol,
+                changePct: 0
             };
         });
-        return map;
-    } catch(e) { 
-        console.warn("Batch fetch with proxy race failed, attempting individual fallbacks...", e);
-        const fallbackMap = {};
-        for (const symbol of symbols) {
-            try {
-                const single = await fetchYahooData(symbol);
-                if (single) {
-                    fallbackMap[symbol] = {
-                        symbol: symbol,
-                        price: single.price,
-                        name: symbol
-                    };
-                }
-            } catch(err) {}
-        }
-        return fallbackMap;
+        
+        const finalMap = {};
+        symbols.forEach(originalSymbol => {
+            const cleaned = originalSymbol.trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
+            if (quotesMap[cleaned]) {
+                finalMap[originalSymbol] = {
+                    ...quotesMap[cleaned],
+                    symbol: originalSymbol
+                };
+            }
+        });
+        
+        return finalMap;
+        
+    } catch (e) {
+        console.error("fetchTossQuotes failed:", e);
+        return {};
     }
 };
 
-// [추가] 주식/코인 종목 검색 자동완성
-const fetchYahooSearch = async (query) => {
+// [추가] 토스증권 OpenAPI 기반 검색 자동완성 대체
+const fetchTossSearch = async (query) => {
     if (!query) return [];
-    const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0&lang=ko-KR&region=KR`;
+    const trimmed = query.trim().toUpperCase();
+    
+    const localStocks = [
+        { symbol: "005930", name: "삼성전자" },
+        { symbol: "000660", name: "SK하이닉스" },
+        { symbol: "035420", name: "NAVER" },
+        { symbol: "035720", name: "카카오" },
+        { symbol: "AAPL", name: "애플 (Apple)" },
+        { symbol: "TSLA", name: "테슬라 (Tesla)" },
+        { symbol: "NVDA", name: "엔비디아 (NVIDIA)" },
+        { symbol: "MSFT", name: "마이크로소프트 (Microsoft)" },
+        { symbol: "AMZN", name: "아마존 (Amazon)" },
+        { symbol: "GOOGL", name: "구글 (Alphabet A)" },
+        { symbol: "META", name: "메타 (Meta Platforms)" }
+    ];
+    
+    const localMatches = localStocks.filter(s => 
+        s.name.includes(query) || s.symbol.includes(trimmed)
+    );
+    
+    if (localMatches.length > 0) {
+        return localMatches.map(s => ({
+            symbol: s.symbol,
+            name: s.name,
+            exchDisp: /^\d{6}$/.test(s.symbol) ? 'KRX' : 'NASDAQ',
+            typeDisp: 'EQUITY'
+        }));
+    }
+    
+    const isKoreanTicker = /^\d{6}$/.test(trimmed);
+    const isUsTicker = /^[A-Z]{1,5}$/.test(trimmed);
+    
+    if (!isKoreanTicker && !isUsTicker) return [];
+    
+    const clientId = localStorage.getItem('toss_client_id');
+    const clientSecret = localStorage.getItem('toss_client_secret');
+    if (!clientId || !clientSecret) return [];
     
     try {
-        const json = await fetchWithProxyRace(url);
-        const results = json.quotes || [];
-        return results
-            .filter(r => r.symbol && (r.quoteType === 'EQUITY' || r.quoteType === 'ETF' || r.quoteType === 'CRYPTOCURRENCY'))
-            .map(r => ({
-                symbol: r.symbol,
-                name: r.shortname || r.longname || r.symbol,
-                exchDisp: r.exchDisp,
-                typeDisp: r.typeDisp
+        const token = await getTossToken(clientId, clientSecret);
+        const url = `https://openapi.tossinvest.com/api/v1/stocks?symbols=${encodeURIComponent(trimmed)}`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            const list = data.result || [];
+            return list.map(item => ({
+                symbol: item.symbol,
+                name: item.name || item.symbol,
+                exchDisp: isKoreanTicker ? 'KRX' : 'NASDAQ',
+                typeDisp: 'EQUITY'
             }));
+        }
     } catch (e) {
-        console.warn("fetchYahooSearch failed", e);
-        return [];
+        console.warn("fetchTossSearch API fallback failed:", e);
     }
+    
+    return [];
+};
+
+// 야후 파이낸스 함수들을 토스 Open API 기반으로 매핑하여 하위 호환성 보장
+const fetchYahooQuotes = fetchTossQuotes;
+const fetchYahooSearch = fetchTossSearch;
+const fetchYahooData = async (symbol) => {
+    const quotes = await fetchTossQuotes([symbol]);
+    if (quotes[symbol]) {
+        return {
+            price: quotes[symbol].price,
+            change: 0,
+            data: window.INITIAL_MARKET_ITEMS[0].data,
+            isLive: true
+        };
+    }
+    return null;
 };
 
 // [추가] 비트코인 데이터 가져오기 (CoinGecko API)

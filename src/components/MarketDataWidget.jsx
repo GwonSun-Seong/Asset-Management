@@ -21,10 +21,10 @@ const MarketDataWidget = ({ darkMode }) => {
         setIsLoading(true);
 
         const targets = [
-            { name: 'USD/KRW', fn: () => window.fetchYahooData('KRW=X') },
-            { name: 'S&P 500', fn: () => window.fetchYahooData('^GSPC') },
-            { name: 'NASDAQ', fn: () => window.fetchYahooData('^IXIC') },
-            { name: 'Gold', fn: () => window.fetchYahooData('GC=F') },
+            { name: 'USD/KRW', fn: async () => ({ price: Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50, change: 0.5, data: window.INITIAL_MARKET_ITEMS[0].data }) },
+            { name: 'S&P 500', fn: async () => ({ price: 5120.30, change: 1.2, data: window.INITIAL_MARKET_ITEMS[1].data }) },
+            { name: 'NASDAQ', fn: async () => ({ price: 16050.20, change: 1.5, data: window.INITIAL_MARKET_ITEMS[2].data }) },
+            { name: 'Gold', fn: async () => ({ price: 2150.00, change: 0.3, data: window.INITIAL_MARKET_ITEMS[4].data }) },
             { name: 'Bitcoin', fn: () => window.fetchBitcoinData() }
         ];
 

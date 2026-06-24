@@ -462,6 +462,10 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
     const [isInitialSyncing, setIsInitialSyncing] = useState(false); // [추가] 초기 동기화와 버튼 로딩 분리
     const [isLoading, setIsLoading] = useState(false);
     const [editingCell, setEditingCell] = useState(null); // [추가] { index, field } 인라인 편집 셀 추적
+    const [sortField, setSortField] = useState('name'); 
+    const [sortDirection, setSortDirection] = useState('asc');
+    const [ocrPendingData, setOcrPendingData] = useState(null);
+    const [duplicateActions, setDuplicateActions] = useState({});
     
     const [draftTicker, setDraftTicker] = useState('');
     const [draftShares, setDraftShares] = useState('');
@@ -479,6 +483,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
     useEffect(() => {
         if (!isOpen || !asset) return;
+        setApiKey(localStorage.getItem('asset_gemini_api_key') || '');
         // 데이터 초기화
         setBaseAmount(asset.baseAmount !== undefined ? asset.baseAmount : (asset.amount || 0));
         setLinkedItems(Array.isArray(asset.linkedItems) ? asset.linkedItems : []);
@@ -592,6 +597,103 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         }
     };
 
+    const checkOcrDuplicates = (ocrStocks) => {
+        const duplicates = [];
+        ocrStocks.forEach(incoming => {
+            const existing = linkedItems.find(existing => {
+                const incomingTicker = String(incoming.ticker || '').trim().toUpperCase().replace(/\.K[SQ]$/i, '');
+                const existingTicker = String(existing.ticker || '').trim().toUpperCase().replace(/\.K[SQ]$/i, '');
+                const tickerMatch = incomingTicker && existingTicker && (incomingTicker === existingTicker);
+                
+                const incomingName = String(incoming.name || '').trim();
+                const existingName = String(existing.name || '').trim();
+                const nameMatch = incomingName && existingName && (incomingName === existingName);
+                
+                return tickerMatch || nameMatch;
+            });
+            if (existing) {
+                duplicates.push({
+                    incoming,
+                    existing
+                });
+            }
+        });
+        return duplicates;
+    };
+
+    const finalizeOcrMerge = (ocrStocks, actions, totalAmount) => {
+        const finalLinkedItems = [...linkedItems];
+
+        ocrStocks.forEach(incoming => {
+            const key = incoming.ticker || incoming.name;
+            const action = actions[key]; // 'update' | 'ignore' | 'add'
+
+            if (action) {
+                if (action === 'ignore') {
+                    return; // 무시
+                } else if (action === 'add') {
+                    finalLinkedItems.push(incoming); // 중복 추가
+                } else {
+                    // 최신화
+                    const existingIndex = finalLinkedItems.findIndex(existing => {
+                        const incomingTicker = String(incoming.ticker || '').trim().toUpperCase().replace(/\.K[SQ]$/i, '');
+                        const existingTicker = String(existing.ticker || '').trim().toUpperCase().replace(/\.K[SQ]$/i, '');
+                        const tickerMatch = incomingTicker && existingTicker && (incomingTicker === existingTicker);
+                        
+                        const incomingName = String(incoming.name || '').trim();
+                        const existingName = String(existing.name || '').trim();
+                        const nameMatch = incomingName && existingName && (incomingName === existingName);
+                        
+                        return tickerMatch || nameMatch;
+                    });
+                    if (existingIndex !== -1) {
+                        const existing = finalLinkedItems[existingIndex];
+                        finalLinkedItems[existingIndex] = {
+                            ...existing,
+                            shares: incoming.shares,
+                            avgPrice: incoming.avgPrice,
+                            currentPrice: incoming.currentPrice,
+                            currency: incoming.currency || existing.currency
+                        };
+                    } else {
+                        finalLinkedItems.push(incoming);
+                    }
+                }
+            } else {
+                finalLinkedItems.push(incoming);
+            }
+        });
+
+        setLinkedItems(finalLinkedItems);
+
+        let stockTotalManwon = 0;
+        finalLinkedItems.forEach(s => {
+            let price = parseFloat(s.currentPrice) || 0;
+            let shares = parseFloat(s.shares) || 0;
+            let val = price * shares;
+            stockTotalManwon += (val / 10000);
+        });
+
+        let extractedTotal = totalAmount;
+        if (extractedTotal > 50000) {
+            extractedTotal = Math.round(extractedTotal / 10000);
+        }
+
+        if (extractedTotal && extractedTotal > 0) {
+            const calculatedBase = Math.max(0, Math.round((extractedTotal - stockTotalManwon) * 100) / 100);
+            setBaseAmount(calculatedBase);
+        }
+
+        if (window.addToast) {
+            window.addToast('📷 스크린샷에서 종목 정보가 성공적으로 추출되어 병합되었습니다!', 'success');
+        } else {
+            alert('📷 스크린샷에서 종목 정보가 성공적으로 추출되어 병합되었습니다!');
+        }
+
+        setOcrPendingData(null);
+        setDuplicateActions({});
+    };
+
     const applyOcrResult = (data) => {
         let ocrStocks = Array.isArray(data.stockItems) ? data.stockItems : [];
         ocrStocks = ocrStocks.map((s, idx) => {
@@ -625,45 +727,24 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                 shares: shares,
                 avgPrice: avg,
                 currentPrice: cur,
-                currency: 'KRW',
+                currency: s.currency || 'KRW',
                 autoUpdate: true
             };
         });
 
-        const mergedMap = new Map();
-        linkedItems.forEach(existing => {
-            const key = existing.ticker || existing.id || existing.name;
-            if (key) mergedMap.set(key, existing);
-        });
-        ocrStocks.forEach(incoming => {
-            const key = incoming.ticker || incoming.id || incoming.name;
-            if (key) mergedMap.set(key, incoming);
-        });
-        const finalLinkedItems = Array.from(mergedMap.values());
-        setLinkedItems(finalLinkedItems);
+        const duplicates = checkOcrDuplicates(ocrStocks);
 
-        let stockTotalManwon = 0;
-        finalLinkedItems.forEach(s => {
-            let price = parseFloat(s.currentPrice) || 0;
-            let shares = parseFloat(s.shares) || 0;
-            let val = price * shares;
-            stockTotalManwon += (val / 10000);
-        });
-
-        let extractedTotal = data.totalAmount;
-        if (extractedTotal > 50000) {
-            extractedTotal = Math.round(extractedTotal / 10000);
-        }
-
-        if (extractedTotal && extractedTotal > 0) {
-            const calculatedBase = Math.max(0, Math.round((extractedTotal - stockTotalManwon) * 100) / 100);
-            setBaseAmount(calculatedBase);
-        }
-
-        if (window.addToast) {
-            window.addToast('📷 스크린샷에서 종목 정보가 성공적으로 추출되어 병합되었습니다!', 'success');
+        if (duplicates.length > 0) {
+            setOcrPendingData({ totalAmount: data.totalAmount, ocrStocks, duplicates });
+            
+            const initialActions = {};
+            duplicates.forEach(d => {
+                const key = d.incoming.ticker || d.incoming.name;
+                initialActions[key] = 'update'; // 디폴트는 최신화
+            });
+            setDuplicateActions(initialActions);
         } else {
-            alert('📷 스크린샷에서 종목 정보가 성공적으로 추출되어 병합되었습니다!');
+            finalizeOcrMerge(ocrStocks, {}, data.totalAmount);
         }
     };
 
@@ -802,10 +883,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         let linkedPurchaseTotal = 0;
         const safeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
 
-        const mapped = linkedItems.map(item => {
+        const mapped = linkedItems.map((item, idx) => {
             const curPrice = parseFloat(item.currentPrice) || 0;
             const avgPrice = parseFloat(item.avgPrice) || curPrice; 
             const shares = parseFloat(item.shares) || 0;
+            const id = item.id || `stock_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 5)}`;
             
             let evalVal = curPrice * shares;
             let purVal = avgPrice * shares;
@@ -821,7 +903,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             
             linkedTotal += evalManwon;
             linkedPurchaseTotal += purManwon;
-            return { ...item, currentPrice: curPrice, avgPrice, shares, valueManwon: evalManwon, purchaseManwon: purManwon };
+            return { ...item, id, currentPrice: curPrice, avgPrice, shares, valueManwon: evalManwon, purchaseManwon: purManwon };
         });
 
         const grandTotal = (Number(baseAmount) || 0) + linkedTotal;
@@ -837,6 +919,47 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             }))
         };
     }, [baseAmount, linkedItems, fxRate]);
+
+    const handleSort = (field) => {
+        if (sortField === field) {
+            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortDirection('asc');
+        }
+    };
+
+    const sortedItemsWithMeta = useMemo(() => {
+        if (!itemsWithMeta) return [];
+        const sorted = [...itemsWithMeta];
+        sorted.sort((a, b) => {
+            let valA, valB;
+            if (sortField === 'name') {
+                valA = String(a.name || '').trim();
+                valB = String(b.name || '').trim();
+                return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            } else if (sortField === 'shares') {
+                valA = a.shares || 0;
+                valB = b.shares || 0;
+            } else if (sortField === 'avgPrice') {
+                valA = a.avgPrice || 0;
+                valB = b.avgPrice || 0;
+            } else if (sortField === 'currentPrice') {
+                valA = a.currentPrice || 0;
+                valB = b.currentPrice || 0;
+            } else if (sortField === 'profitManwon') {
+                valA = a.profitManwon || 0;
+                valB = b.profitManwon || 0;
+            } else if (sortField === 'valueManwon') {
+                valA = a.valueManwon || 0;
+                valB = b.valueManwon || 0;
+            } else {
+                return 0;
+            }
+            return sortDirection === 'asc' ? valA - valB : valB - valA;
+        });
+        return sorted;
+    }, [itemsWithMeta, sortField, sortDirection]);
 
     const handleAddStock = () => {
         if (!draftTicker.trim()) return alert('티커를 입력하거나 종목을 선택해주세요.');
@@ -926,39 +1049,29 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                                 📷 스크린샷으로 종목 및 평가액 일괄 등록
                             </h4>
-                            {apiKey && (
-                                <button 
-                                    onClick={() => setShowKeyInput(prev => !prev)}
-                                    className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-800"
-                                >
-                                    🔑 API 키 설정
-                                </button>
-                            )}
+                            <button 
+                                onClick={() => {
+                                    if (window.showApiKeyModal) window.showApiKeyModal();
+                                }}
+                                className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-800 flex items-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-800 transition-colors"
+                            >
+                                🔑 연동 및 키 설정
+                            </button>
                         </div>
 
-                        {/* API 키 입력 창 (접혀있거나 펼쳐짐) */}
-                        {showKeyInput && (
-                            <div className="mb-4 bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 space-y-2.5">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase block font-sans">Gemini API Key</label>
-                                <div className="flex gap-2">
-                                    <input 
-                                        type="password" 
-                                        placeholder="AI 분석에 사용할 Gemini API 키를 입력하세요..." 
-                                        className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
-                                        value={apiKey}
-                                        onChange={(e) => setApiKey(e.target.value)}
-                                    />
-                                    <button 
-                                        onClick={() => {
-                                            localStorage.setItem('asset_gemini_api_key', apiKey.trim());
-                                            setShowKeyInput(false);
-                                        }}
-                                        className="bg-indigo-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-indigo-700"
-                                    >
-                                        저장
-                                    </button>
+                        {!apiKey && (
+                            <div className="mb-4 bg-amber-50 dark:bg-amber-950/20 p-4 rounded-xl border border-amber-100 dark:border-amber-900/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                <div className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                                    ⚠️ Google Gemini API 키가 설정되지 않았습니다. 스크린샷 분석 기능을 사용하시려면 먼저 API 키를 등록해주세요.
                                 </div>
-                                <p className="text-[9px] text-slate-400">API 키가 없으면 스크린샷 종목 인식 기능을 이용할 수 없습니다.</p>
+                                <button 
+                                    onClick={() => {
+                                        if (window.showApiKeyModal) window.showApiKeyModal();
+                                    }}
+                                    className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                                >
+                                    🔑 API 키 설정 바로가기
+                                </button>
                             </div>
                         )}
 
@@ -1019,6 +1132,97 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             </div>
                         )}
                     </section>
+
+                    {ocrPendingData && (
+                        <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-2xl p-5 space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/50 dark:border-amber-900/40 pb-3">
+                                <div>
+                                    <h5 className="text-xs font-black text-amber-800 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                                        ⚠️ 중복 연동 종목 발견 ({ocrPendingData.duplicates.length}개)
+                                    </h5>
+                                    <p className="text-[10px] font-bold text-amber-700/80 dark:text-amber-500/80 mt-0.5">동일한 종목이 감지되었습니다. 처리 방식을 결정해 주세요.</p>
+                                </div>
+                                <span className="text-[9px] font-black bg-amber-100 dark:bg-amber-900 text-amber-850 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-850 select-none">기본값: 최신화(덮어쓰기)</span>
+                            </div>
+                            <div className="space-y-3">
+                                {ocrPendingData.duplicates.map((d, index) => {
+                                    const itemKey = d.incoming.ticker || d.incoming.name;
+                                    const currentAction = duplicateActions[itemKey] || 'update';
+                                    const isPriceChanged = Number(d.existing.avgPrice) !== Number(d.incoming.avgPrice);
+                                    
+                                    return (
+                                        <div key={index} className="flex flex-col md:flex-row md:items-center justify-between p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 gap-3 shadow-sm hover:shadow-md transition-shadow">
+                                            {/* 왼쪽: 종목 정보 및 대비 */}
+                                            <div className="space-y-1">
+                                                <div className="text-sm font-extrabold text-slate-850 dark:text-slate-100">{d.incoming.name}</div>
+                                                <div className="text-[10px] text-slate-400 font-medium flex items-center gap-2 flex-wrap">
+                                                    <span className="bg-slate-50 dark:bg-slate-850 px-1.5 py-0.5 rounded">기존: {d.existing.shares}주 (평단 ₩{Number(d.existing.avgPrice).toLocaleString()})</span>
+                                                    <span className="text-slate-350 dark:text-slate-650 font-bold">→</span>
+                                                    <span className="bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-650 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded border border-indigo-100/50 dark:border-indigo-950">
+                                                        새 스크린샷: {d.incoming.shares}주 (평단 <span className={isPriceChanged ? "text-red-500 dark:text-red-400 font-extrabold" : ""}>₩{Number(d.incoming.avgPrice).toLocaleString()}</span>)
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* 오른쪽: 결정 버튼 그룹 (순서: 최신화 -> 추가하기 -> 반영 제외) */}
+                                            <div className="flex flex-wrap gap-1">
+                                                <button
+                                                    onClick={() => setDuplicateActions(prev => ({ ...prev, [itemKey]: 'update' }))}
+                                                    className={`text-[9px] font-black px-3 py-2 rounded-xl border transition-all ${
+                                                        currentAction === 'update'
+                                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/10'
+                                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-450 border-transparent hover:bg-slate-200'
+                                                    }`}
+                                                >
+                                                    ⚡ 최신화(덮어쓰기)
+                                                </button>
+                                                <button
+                                                    onClick={() => setDuplicateActions(prev => ({ ...prev, [itemKey]: 'add' }))}
+                                                    className={`text-[9px] font-black px-3 py-2 rounded-xl border transition-all ${
+                                                        currentAction === 'add'
+                                                            ? 'bg-teal-650 text-white border-teal-650 shadow-md shadow-teal-600/10'
+                                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-450 border-transparent hover:bg-slate-200'
+                                                    }`}
+                                                >
+                                                    ➕ 추가하기
+                                                </button>
+                                                <button
+                                                    onClick={() => setDuplicateActions(prev => ({ ...prev, [itemKey]: 'ignore' }))}
+                                                    className={`text-[9px] font-black px-3 py-2 rounded-xl border transition-all ${
+                                                        currentAction === 'ignore'
+                                                            ? 'bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-600/10'
+                                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-450 border-transparent hover:bg-slate-200'
+                                                    }`}
+                                                >
+                                                    🔇 반영 제외
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            
+                            {/* 결정 반영 버튼 */}
+                            <div className="flex gap-2 justify-end pt-2">
+                                <button 
+                                    onClick={() => {
+                                        setOcrPendingData(null);
+                                        setDuplicateActions({});
+                                        if (window.addToast) window.addToast('🚫 업로드 반영이 취소되었습니다.', 'info');
+                                    }}
+                                    className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-black rounded-xl transition-all"
+                                >
+                                    가져오기 취소
+                                </button>
+                                <button 
+                                    onClick={() => finalizeOcrMerge(ocrPendingData.ocrStocks, duplicateActions, ocrPendingData.totalAmount)}
+                                    className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black rounded-xl shadow-lg shadow-amber-600/20 transition-all flex items-center gap-1.5"
+                                >
+                                    ✔️ 설정 반영 및 데이터 병합 완료
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* 2. Deposit Section */}
                     <section className="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border dark:border-slate-700 flex items-center justify-between group transition-all hover:border-indigo-300">
@@ -1104,29 +1308,44 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             <table className="w-full text-left border-separate border-spacing-y-2 min-w-[600px]">
                                 <thead className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4">
                                     <tr>
-                                        <th className="pb-2 pl-4">종목 정보</th>
-                                        <th className="pb-2">수량 / 매입가</th>
-                                        <th className="pb-2">현재가 / 상태</th>
-                                        <th className="pb-2 text-right">평가손익</th>
-                                        <th className="pb-2 text-right">평가금액 (비중)</th>
+                                        <th className="pb-2 pl-4 cursor-pointer select-none hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors" onClick={() => handleSort('name')}>
+                                            종목 정보 {sortField === 'name' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                                        </th>
+                                        <th className="pb-2 select-none">
+                                            <span className="cursor-pointer hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors" onClick={() => handleSort('shares')}>
+                                                수량 {sortField === 'shares' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                                            </span>
+                                            <span className="mx-1 text-slate-350">/</span>
+                                            <span className="cursor-pointer hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors" onClick={() => handleSort('avgPrice')}>
+                                                매입가 {sortField === 'avgPrice' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                                            </span>
+                                        </th>
+                                        <th className="pb-2 cursor-pointer select-none hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors" onClick={() => handleSort('currentPrice')}>
+                                            현재가 {sortField === 'currentPrice' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                                        </th>
+                                        <th className="pb-2 text-right cursor-pointer select-none hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors" onClick={() => handleSort('profitManwon')}>
+                                            평가손익 {sortField === 'profitManwon' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                                        </th>
+                                        <th className="pb-2 text-right cursor-pointer select-none hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors" onClick={() => handleSort('valueManwon')}>
+                                            평가금액 (비중) {sortField === 'valueManwon' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                                        </th>
                                         <th className="pb-2 pr-4"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {itemsWithMeta.map((item, idx) => {
+                                    {sortedItemsWithMeta.map((item) => {
                                         const isProfit = item.profitManwon >= 0;
                                         const profitColor = isProfit ? 'text-red-500 dark:text-red-400' : 'text-blue-500 dark:text-blue-400';
                                         
                                         return (
-                                        <tr key={idx} className="bg-slate-50 dark:bg-slate-900/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10 transition-colors group">
+                                        <tr key={item.id} className="bg-slate-50 dark:bg-slate-900/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10 transition-colors group">
                                             <td className="py-3 pl-4 rounded-l-2xl">
                                                 <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[120px]" title={item.name}>{item.name}</div>
-                                                <div className="text-[10px] font-black text-indigo-500/70 font-mono">{item.ticker || '수동'}</div>
                                             </td>
                                             <td className="py-3">
                                                 <div className="flex flex-col gap-1">
                                                     {/* 수량 편집 */}
-                                                    {editingCell && editingCell.index === idx && editingCell.field === 'shares' ? (
+                                                    {editingCell && editingCell.id === item.id && editingCell.field === 'shares' ? (
                                                         <input 
                                                             type="number" 
                                                             className="w-20 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
@@ -1134,20 +1353,20 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                             autoFocus
                                                             onBlur={(e) => {
                                                                 const val = parseFloat(e.target.value) || 0;
-                                                                setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, shares: val } : li));
+                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
                                                                 setEditingCell(null);
                                                             }}
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter') {
                                                                     const val = parseFloat(e.target.value) || 0;
-                                                                    setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, shares: val } : li));
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
                                                                     setEditingCell(null);
                                                                 }
                                                             }}
                                                         />
                                                     ) : (
                                                         <span 
-                                                            onClick={() => setEditingCell({ index: idx, field: 'shares' })} 
+                                                            onClick={() => setEditingCell({ id: item.id, field: 'shares' })} 
                                                             className="font-bold text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
                                                             title="클릭하여 수량 수정"
                                                         >
@@ -1156,7 +1375,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                     )}
                                                     
                                                     {/* 매입가 편집 */}
-                                                    {editingCell && editingCell.index === idx && editingCell.field === 'avgPrice' ? (
+                                                    {editingCell && editingCell.id === item.id && editingCell.field === 'avgPrice' ? (
                                                         <input 
                                                             type="number" 
                                                             className="w-24 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-[10px] font-bold focus:outline-none"
@@ -1164,20 +1383,20 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                             autoFocus
                                                             onBlur={(e) => {
                                                                 const val = parseFloat(e.target.value) || 0;
-                                                                setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, avgPrice: val } : li));
+                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
                                                                 setEditingCell(null);
                                                             }}
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter') {
                                                                     const val = parseFloat(e.target.value) || 0;
-                                                                    setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, avgPrice: val } : li));
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
                                                                     setEditingCell(null);
                                                                 }
                                                             }}
                                                         />
                                                     ) : (
                                                         <span 
-                                                            onClick={() => setEditingCell({ index: idx, field: 'avgPrice' })} 
+                                                            onClick={() => setEditingCell({ id: item.id, field: 'avgPrice' })} 
                                                             className="text-[10px] text-slate-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
                                                             title="클릭하여 매입단가 수정"
                                                         >
@@ -1190,7 +1409,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex flex-col gap-1">
                                                         {/* 현재가 편집 */}
-                                                        {editingCell && editingCell.index === idx && editingCell.field === 'currentPrice' ? (
+                                                        {editingCell && editingCell.id === item.id && editingCell.field === 'currentPrice' ? (
                                                             <input 
                                                                 type="number" 
                                                                 className="w-24 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
@@ -1198,20 +1417,20 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                                 autoFocus
                                                                 onBlur={(e) => {
                                                                     const val = parseFloat(e.target.value) || 0;
-                                                                    setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, currentPrice: val } : li));
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, currentPrice: val } : li));
                                                                     setEditingCell(null);
                                                                 }}
                                                                 onKeyDown={(e) => {
                                                                     if (e.key === 'Enter') {
                                                                         const val = parseFloat(e.target.value) || 0;
-                                                                        setLinkedItems(prev => prev.map((li, i) => i === idx ? { ...li, currentPrice: val } : li));
+                                                                        setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, currentPrice: val } : li));
                                                                         setEditingCell(null);
                                                                     }
                                                                 }}
                                                             />
                                                         ) : (
                                                             <span 
-                                                                onClick={() => setEditingCell({ index: idx, field: 'currentPrice' })} 
+                                                                onClick={() => setEditingCell({ id: item.id, field: 'currentPrice' })} 
                                                                 className="text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
                                                                 title="클릭하여 현재단가 수정"
                                                             >
@@ -1224,7 +1443,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                             FIXED
                                                         </span>
                                                     </div>
-
+ 
                                                     {/* API 연동 개별 스위치 */}
                                                     <div className="flex items-center" title="실시간 시세 연동 (API 대기 중)">
                                                         <button 
@@ -1249,7 +1468,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                 <div className="text-[10px] font-bold text-slate-400">{(item.weight || 0).toFixed(1)}%</div>
                                             </td>
                                             <td className="py-3 pr-4 text-right rounded-r-2xl">
-                                                <button onClick={() => setLinkedItems(prev => prev.filter((_, i) => i !== idx))} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors">
+                                                <button onClick={() => setLinkedItems(prev => prev.filter(li => li.id !== item.id))} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors">
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                                 </button>
                                             </td>
@@ -1727,9 +1946,10 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
     };
 
     const handleAnalyze = async () => {
-        const trimmedKey = apiKey.trim();
-        if (!trimmedKey) { setError('API 키를 입력해주세요.'); return; }
-        localStorage.setItem('asset_gemini_api_key', trimmedKey);
+        const localKey = localStorage.getItem('asset_gemini_api_key') || '';
+        const trimmedKey = localKey.trim();
+        if (!trimmedKey) { setError('API 키가 없습니다. 앱 설정 및 보안에서 Gemini API 키를 등록해주세요.'); return; }
+        setApiKey(trimmedKey);
         setLoading(true);
         setError('');
         setMessages([]);
@@ -1906,68 +2126,54 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pt-0 space-y-4">
                     {showSettings && (
                         <>
-                        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-sm text-blue-800 dark:text-blue-200 mb-4">
-                            <p className="font-bold mb-1">💡 API 키 발급 안내</p>
-                            Google AI Studio에서 API 키를 발급받아 입력해주세요. (개인용 무료 티어 이용 가능)<br/>
-                            <span className="text-xs opacity-80">* Gemini 웹사이트 유료 구독(Advanced)과는 별개의 서비스입니다.</span>
-                            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="underline font-bold ml-1 hover:text-blue-600 block mt-2">키 발급받으러 가기 ↗</a>
-                        </div>
-                        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg text-sm text-yellow-800 dark:text-yellow-200 mb-4 border border-yellow-200 dark:border-yellow-800">
-                            <p className="font-bold mb-1">⚠️ 데이터 보안 주의</p>
-                            분석을 위해 자산 요약 정보(금액, 포트폴리오 등)가 암호화되지 않은 JSON 형태로 Google 서버로 전송됩니다.
-                            개인 식별 정보는 포함되지 않으나, 실제 금융 데이터가 전송되므로 주의가 필요합니다.
-                        </div>
-                    
-                    <div className="flex flex-col sm:flex-row gap-2 w-full">
-                        <input 
-                            type="password" 
-                            placeholder="Gemini API Key 입력" 
-                            className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                        />
-                        <button 
-                            onClick={handleAnalyze} 
-                            disabled={loading || !apiKey}
-                            className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap"
-                        >
-                            {loading ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> 분석 중...</> : '분석 시작'}
-                        </button>
-                    </div>
-                    
-                    <div className="space-y-3 pt-2 border-t dark:border-gray-700">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">AI 페르소나 (자산 관리사 성격)</label>
-                            <div className="flex flex-col sm:flex-row gap-2">
-                                <input 
-                                    type="text" 
-                                    className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                                    value={persona}
-                                    onChange={(e) => setPersona(e.target.value)}
-                                    placeholder="예: 100년 경력의 워렌 버핏, 냉철한 분석가, 친절한 이웃집 은행원"
-                                />
-                                <label className="flex items-center gap-2 px-3 border dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="체크 시 AI가 구체적인 리밸런싱/월납입금 변경 제안을 JSON 데이터로 함께 제공합니다.">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">AI 페르소나 (자산 관리사 성격)</label>
+                                <div className="flex flex-col sm:flex-row gap-2">
                                     <input 
-                                        type="checkbox" 
-                                        checked={requestProposal} 
-                                        onChange={(e) => setRequestProposal(e.target.checked)}
-                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                        type="text" 
+                                        className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                                        value={persona}
+                                        onChange={(e) => setPersona(e.target.value)}
+                                        placeholder="예: 100년 경력의 워렌 버핏, 냉철한 분석가, 친절한 이웃집 은행원"
                                     />
-                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap">자산배분 설정 제안 받기</span>
-                                </label>
+                                    <label className="flex items-center gap-2 px-3 border dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="체크 시 AI가 구체적인 리밸런싱/월납입금 변경 제안을 JSON 데이터로 함께 제공합니다.">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={requestProposal} 
+                                            onChange={(e) => setRequestProposal(e.target.checked)}
+                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-xs font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap">자산배분 설정 제안 받기</span>
+                                    </label>
+                                </div>
                             </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">추가 요청사항 (선택)</label>
+                                <textarea 
+                                    className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 resize-none h-24"
+                                    value={additionalRequest}
+                                    onChange={(e) => setAdditionalRequest(e.target.value)}
+                                    placeholder="예: 은퇴 자금 마련을 위해 공격적인 투자가 필요할까요? 아니면 안전 자산을 늘려야 할까요?"
+                                />
+                            </div>
+
+                            <button 
+                                onClick={handleAnalyze} 
+                                disabled={loading}
+                                className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white py-3 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg flex items-center justify-center gap-2"
+                            >
+                                {loading ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        AI 분석 중...
+                                    </>
+                                ) : (
+                                    '⚡ AI 자산 분석 시작'
+                                )}
+                            </button>
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">추가 요청사항 (선택)</label>
-                            <textarea 
-                                className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 resize-none h-20"
-                                value={additionalRequest}
-                                onChange={(e) => setAdditionalRequest(e.target.value)}
-                                placeholder="예: 은퇴 자금 마련을 위해 공격적인 투자가 필요할까요? 아니면 안전 자산을 늘려야 할까요?"
-                            />
-                        </div>
-                    </div>
-                    </>
+                        </>
                     )}
 
                     {error && <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
@@ -3400,6 +3606,141 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                             </div>
                         </div>
                     )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// [추가] API 키 및 실시간 시세 연동 설정 모달
+window.ApiKeyModal = ({ isOpen, onClose }) => {
+    const [geminiKey, setGeminiKey] = React.useState(() => localStorage.getItem('asset_gemini_api_key') || '');
+    const [tossId, setTossId] = React.useState(() => localStorage.getItem('toss_client_id') || '');
+    const [tossSecret, setTossSecret] = React.useState(() => localStorage.getItem('toss_client_secret') || '');
+    const [liveEnabled, setLiveEnabled] = React.useState(() => localStorage.getItem('toss_live_price_enabled') === 'true');
+
+    if (!isOpen) return null;
+
+    const handleSave = () => {
+        localStorage.setItem('asset_gemini_api_key', geminiKey.trim());
+        localStorage.setItem('toss_client_id', tossId.trim());
+        localStorage.setItem('toss_client_secret', tossSecret.trim());
+        localStorage.setItem('toss_live_price_enabled', liveEnabled ? 'true' : 'false');
+        
+        // 토스 인증 캐시 강제 만료
+        localStorage.removeItem('toss_access_token');
+        localStorage.removeItem('toss_token_expiry');
+        
+        onClose();
+        if (window.dispatchEvent) {
+            window.dispatchEvent(new Event('storage'));
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[160] p-4 font-sans">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200 border dark:border-slate-700">
+                {/* Header */}
+                <div className="px-6 py-5 border-b dark:border-slate-700 flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20">
+                    <div>
+                        <h3 className="text-lg font-black text-indigo-950 dark:text-indigo-100 flex items-center gap-2">🔑 API 키 및 연동 설정</h3>
+                        <p className="text-xs text-indigo-600 dark:text-indigo-400 font-bold mt-1">AI 기능 및 증권 계좌 실시간 연동을 설정합니다.</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-indigo-100 dark:hover:bg-indigo-800 rounded-full text-indigo-400 transition-colors">✕</button>
+                </div>
+
+                <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                    {/* Google Gemini AI Key */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-black text-slate-700 dark:text-slate-200 flex justify-between items-center">
+                            <span>🤖 Google Gemini API Key</span>
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold">
+                                API 키 발급받기 ↗
+                            </a>
+                        </label>
+                        <input
+                            type="password"
+                            placeholder="AI 자산 분석 및 OCR을 위한 키 입력"
+                            value={geminiKey}
+                            onChange={(e) => setGeminiKey(e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 transition-all shadow-sm"
+                        />
+                        <p className="text-[10px] text-slate-400">자산 분석 조언 기능 및 스크린샷 이미지 종목 일괄 추출에 사용됩니다.</p>
+                    </div>
+
+                    <div className="border-t dark:border-slate-700 my-4"></div>
+
+                    {/* Toss Securities API */}
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <label className="text-xs font-black text-slate-700 dark:text-slate-200">
+                                📈 토스증권 Open API 연동
+                            </label>
+                            <span className="text-[9px] font-bold text-slate-400">{"토스 WTS > 설정 > Open API 발급"}</span>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Client ID</label>
+                            <input
+                                type="text"
+                                placeholder="Toss API Client ID 입력"
+                                value={tossId}
+                                onChange={(e) => setTossId(e.target.value)}
+                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 transition-all shadow-sm"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Client Secret</label>
+                            <input
+                                type="password"
+                                placeholder="Toss API Client Secret 입력"
+                                value={tossSecret}
+                                onChange={(e) => setTossSecret(e.target.value)}
+                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 transition-all shadow-sm"
+                            />
+                        </div>
+
+                        {/* Realtime ON/OFF radio style buttons */}
+                        <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border dark:border-slate-700 flex justify-between items-center">
+                            <div>
+                                <span className="text-xs font-black text-slate-700 dark:text-slate-200 block">⚡ 실시간 시세 연동</span>
+                                <span className="text-[10px] text-slate-400 block mt-0.5">ON 설정 시 1분 간격으로 현재가를 자동 조회합니다.</span>
+                            </div>
+                            <div className="flex bg-slate-200 dark:bg-slate-950 p-1 rounded-xl border dark:border-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setLiveEnabled(true)}
+                                    className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${liveEnabled ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                                >
+                                    ON
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setLiveEnabled(false)}
+                                    className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${!liveEnabled ? 'bg-slate-400 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                                >
+                                    OFF
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer buttons */}
+                <div className="px-6 py-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-2">
+                    <button
+                        onClick={onClose}
+                        className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors"
+                    >
+                        취소
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        className="px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow transition-colors"
+                    >
+                        설정 저장
+                    </button>
                 </div>
             </div>
         </div>
