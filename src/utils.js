@@ -1290,7 +1290,7 @@ const fetchTossQuotes = async (symbols) => {
         
     } catch (e) {
         console.error("fetchTossQuotes failed:", e);
-        return {};
+        throw e;
     }
 };
 
@@ -1665,6 +1665,8 @@ window.decompressData = decompressData;
 window.fetchYahooData = fetchYahooData;
 window.fetchYahooQuotes = fetchYahooQuotes;
 window.fetchYahooSearch = fetchYahooSearch;
+window.fetchTossQuotes = fetchTossQuotes;
+window.fetchTossSearch = fetchTossSearch;
 window.fetchBitcoinData = fetchBitcoinData;
 window.calculateGoalReachMonth = calculateGoalReachMonth;
 window.normalizeTargets = normalizeTargets;

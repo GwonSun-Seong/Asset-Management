@@ -1037,6 +1037,86 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         });
     };
 
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const handleManualRefresh = async () => {
+        const clientId = localStorage.getItem('toss_client_id');
+        const clientSecret = localStorage.getItem('toss_client_secret');
+        
+        if (!clientId || !clientSecret) {
+            if (window.addToast) {
+                window.addToast('토스 API 키를 먼저 등록해주세요.', 'warning');
+            }
+            return;
+        }
+
+        const tickersToFetch = linkedItems
+            .filter(item => item.autoUpdate !== false && item.ticker)
+            .map(item => item.ticker);
+
+        if (tickersToFetch.length === 0) {
+            if (window.addToast) {
+                window.addToast('실시간 연동이 활성화된 종목이 없습니다.', 'info');
+            }
+            return;
+        }
+
+        setIsRefreshing(true);
+        try {
+            const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
+            if (!fetchFn) throw new Error("Fetch function not found");
+            const quotes = await fetchFn(tickersToFetch);
+            
+            let hasChanges = false;
+            const newLinkedItems = linkedItems.map(item => {
+                if (item.autoUpdate !== false && item.ticker) {
+                    const q = quotes[item.ticker];
+                    const targetStatus = (q && q.price) ? 'online' : 'error';
+                    const targetPrice = (q && q.price) ? q.price : item.currentPrice;
+                    
+                    if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus) {
+                        hasChanges = true;
+                        return { ...item, currentPrice: targetPrice, syncStatus: targetStatus };
+                    }
+                }
+                return item;
+            });
+
+            if (hasChanges) {
+                setLinkedItems(newLinkedItems);
+                if (window.addToast) {
+                    window.addToast('실시간 주식 시세가 업데이트되었습니다.', 'success');
+                }
+            } else {
+                // 상태만 online으로 업데이트 해야 할 수 있으므로 체크
+                const statusOnlyChanged = linkedItems.some(item => 
+                    item.autoUpdate !== false && item.ticker && item.syncStatus !== 'online'
+                );
+                if (statusOnlyChanged) {
+                    setLinkedItems(prev => prev.map(item => 
+                        (item.autoUpdate !== false && item.ticker) ? { ...item, syncStatus: 'online' } : item
+                    ));
+                    if (window.addToast) {
+                        window.addToast('실시간 주식 시세가 업데이트되었습니다.', 'success');
+                    }
+                } else if (window.addToast) {
+                    window.addToast('이미 최신 시세입니다.', 'info');
+                }
+            }
+        } catch (e) {
+            console.error("Manual refresh failed:", e);
+            // 에러 상태로 뱃지를 전환하기 위한 로컬 상태 갱신
+            setLinkedItems(prev => prev.map(item => 
+                (item.autoUpdate !== false && item.ticker) ? { ...item, syncStatus: 'error' } : item
+            ));
+            if (window.addToast) {
+                window.addToast('토스 API 연동 실패로 인해 시세가 오류(ERROR) 상태로 전환되었습니다.', 'error');
+            }
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+
     if (!isOpen || !asset) return null;
 
     return (
@@ -1312,7 +1392,21 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
                     {/* 4. Stock List Table */}
                     <section className="space-y-3">
-                        <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 px-1">📋 연동 종목 리스트</h4>
+                        <div className="flex items-center justify-between px-1">
+                            <h4 className="text-xs font-black text-slate-500 dark:text-slate-400">📋 연동 종목 리스트</h4>
+                            <button
+                                onClick={handleManualRefresh}
+                                disabled={isRefreshing}
+                                className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2.5 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800 flex items-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-850 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                {isRefreshing ? (
+                                    <span className="w-2.5 h-2.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></span>
+                                ) : (
+                                    <span>🔄</span>
+                                )}
+                                <span>실시간 시세 새로고침</span>
+                            </button>
+                        </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left border-separate border-spacing-y-2 min-w-[600px]">
                                 <thead className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4">
@@ -1449,15 +1543,27 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                         )}
                                                         
                                                         {/* 상태 뱃지 */}
-                                                        {item.autoUpdate !== false && isTossConfigured ? (
-                                                            <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" title="토스 Open API 실시간 시세 연동 작동 중">
-                                                                TOSS
-                                                            </span>
-                                                        ) : (
-                                                            <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700" title="수동 고정 현재가 사용 중">
-                                                                FIXED
-                                                            </span>
-                                                        )}
+                                                        {(() => {
+                                                            if (item.autoUpdate === false || !isTossConfigured) {
+                                                                return (
+                                                                    <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700" title="실시간 시세 연동 비활성화 (오프라인)">
+                                                                        OFFLINE
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            if (item.syncStatus === 'error') {
+                                                                return (
+                                                                    <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400" title="토스 API 연동 실패 (키 오설정 또는 네트워크 오류)">
+                                                                        ERROR
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            return (
+                                                                <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" title="토스 Open API 실시간 시세 연동 정상 작동 중 (온라인)">
+                                                                    ONLINE
+                                                                </span>
+                                                            );
+                                                        })()}
                                                     </div>
  
                                                     {/* API 연동 개별 스위치 */}
@@ -1467,7 +1573,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                             onClick={() => {
                                                                 if (isTossConfigured) {
                                                                     setLinkedItems(prev => prev.map(li => 
-                                                                        li.id === item.id ? { ...li, autoUpdate: li.autoUpdate === false ? true : false } : li
+                                                                        li.id === item.id ? { 
+                                                                            ...li, 
+                                                                            autoUpdate: li.autoUpdate === false ? true : false,
+                                                                            syncStatus: li.autoUpdate === false ? 'online' : 'offline'
+                                                                        } : li
                                                                     ));
                                                                 }
                                                             }}

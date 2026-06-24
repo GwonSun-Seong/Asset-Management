@@ -1027,56 +1027,101 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
 
                 if (symbolsToFetch.size === 0) return;
 
-                const quotes = await window.fetchTossQuotes(Array.from(symbolsToFetch));
-                if (!quotes || Object.keys(quotes).length === 0) return;
+                try {
+                    const quotes = await window.fetchTossQuotes(Array.from(symbolsToFetch));
+                    
+                    setAppData(prevData => {
+                        if (!prevData || !prevData.assets) return prevData;
+                        const newAssets = { ...prevData.assets };
+                        let hasChanges = false;
 
-                setAppData(prevData => {
-                    if (!prevData || !prevData.assets) return prevData;
-                    const newAssets = { ...prevData.assets };
-                    let hasChanges = false;
-
-                    Object.keys(newAssets).forEach(sector => {
-                        newAssets[sector] = newAssets[sector].map(asset => {
-                            if (asset.linkedItems && Array.isArray(asset.linkedItems)) {
-                                let assetChanged = false;
-                                const newLinkedItems = asset.linkedItems.map(item => {
-                                    if (item.autoUpdate !== false && item.ticker) {
-                                        const q = quotes[item.ticker];
-                                        if (q && q.price && q.price !== item.currentPrice) {
-                                            assetChanged = true;
-                                            hasChanges = true;
-                                            return { ...item, currentPrice: q.price };
+                        Object.keys(newAssets).forEach(sector => {
+                            newAssets[sector] = newAssets[sector].map(asset => {
+                                if (asset.linkedItems && Array.isArray(asset.linkedItems)) {
+                                    let assetChanged = false;
+                                    const newLinkedItems = asset.linkedItems.map(item => {
+                                        if (item.autoUpdate !== false && item.ticker) {
+                                            const q = quotes[item.ticker];
+                                            const targetStatus = (q && q.price) ? 'online' : 'error';
+                                            const targetPrice = (q && q.price) ? q.price : item.currentPrice;
+                                            
+                                            if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus) {
+                                                assetChanged = true;
+                                                hasChanges = true;
+                                                return { ...item, currentPrice: targetPrice, syncStatus: targetStatus };
+                                            }
                                         }
-                                    }
-                                    return item;
-                                });
-
-                                if (assetChanged) {
-                                    let linkedTotal = 0;
-                                    newLinkedItems.forEach(item => {
-                                        const curPrice = parseFloat(item.currentPrice) || 0;
-                                        const shares = parseFloat(item.shares) || 0;
-                                        linkedTotal += (curPrice * shares) / 10000;
+                                        return item;
                                     });
-                                    const newAmount = (Number(asset.baseAmount) || 0) + linkedTotal;
 
-                                    return {
-                                        ...asset,
-                                        amount: Math.round(newAmount * 100) / 100,
-                                        linkedItems: newLinkedItems
-                                    };
+                                    if (assetChanged) {
+                                        let linkedTotal = 0;
+                                        newLinkedItems.forEach(item => {
+                                            const curPrice = parseFloat(item.currentPrice) || 0;
+                                            const shares = parseFloat(item.shares) || 0;
+                                            linkedTotal += (curPrice * shares) / 10000;
+                                        });
+                                        const newAmount = (Number(asset.baseAmount) || 0) + linkedTotal;
+
+                                        return {
+                                            ...asset,
+                                            amount: Math.round(newAmount * 100) / 100,
+                                            linkedItems: newLinkedItems
+                                        };
+                                    }
                                 }
-                            }
-                            return asset;
+                                return asset;
+                            });
                         });
-                    });
 
-                    if (hasChanges) {
-                        addToast('실시간 주식 시세가 업데이트되었습니다.', 'success');
-                        return { ...prevData, assets: newAssets };
-                    }
-                    return prevData;
-                });
+                        if (hasChanges) {
+                            addToast('실시간 주식 시세가 업데이트되었습니다.', 'success');
+                            return { ...prevData, assets: newAssets };
+                        }
+                        return prevData;
+                    });
+                } catch (e) {
+                    console.error("Toss sync failed, fallback to error status:", e);
+                    
+                    // 에러 상태로 뱃지를 전환하기 위한 상태 갱신
+                    setAppData(prevData => {
+                        if (!prevData || !prevData.assets) return prevData;
+                        const newAssets = { ...prevData.assets };
+                        let hasChanges = false;
+
+                        Object.keys(newAssets).forEach(sector => {
+                            newAssets[sector] = newAssets[sector].map(asset => {
+                                if (asset.linkedItems && Array.isArray(asset.linkedItems)) {
+                                    let assetChanged = false;
+                                    const newLinkedItems = asset.linkedItems.map(item => {
+                                        if (item.autoUpdate !== false && item.ticker) {
+                                            if (item.syncStatus !== 'error') {
+                                                assetChanged = true;
+                                                hasChanges = true;
+                                                return { ...item, syncStatus: 'error' };
+                                            }
+                                        }
+                                        return item;
+                                    });
+
+                                    if (assetChanged) {
+                                        return {
+                                            ...asset,
+                                            linkedItems: newLinkedItems
+                                        };
+                                    }
+                                }
+                                return asset;
+                            });
+                        });
+
+                        if (hasChanges) {
+                            addToast('토스 API 연동 실패로 인해 시세가 오류(ERROR) 상태로 전환되었습니다.', 'error');
+                            return { ...prevData, assets: newAssets };
+                        }
+                        return prevData;
+                    });
+                }
             };
 
             useEffect(() => {
