@@ -11,6 +11,16 @@ export default defineConfig(({ mode }) => {
       '__SUPABASE_URL__': JSON.stringify(env.SUPABASE_URL || '__SUPABASE_URL__'),
       '__SUPABASE_KEY__': JSON.stringify(env.SUPABASE_KEY || '__SUPABASE_KEY__'),
       '__SECURITY_KEY__': JSON.stringify(env.SECURITY_KEY || '__SECURITY_KEY__'),
+    },
+    server: {
+      proxy: {
+        '/toss-api': {
+          target: 'https://openapi.tossinvest.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/toss-api/, ''),
+          secure: true
+        }
+      }
     }
   };
 });

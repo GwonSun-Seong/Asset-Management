@@ -1184,6 +1184,14 @@ const fetchWithProxyRace = async (targetUrl, responseType = 'json', timeoutMs = 
 };
 
 // [추가] 토스증권 OpenAPI OAuth 2.0 access token 발급 및 캐싱
+// [추가] 토스 OpenAPI 전용 CORS 프록시 경쟁 호출 유틸리티
+const fetchTossWithProxy = async (targetUrl, options = {}) => {
+    // openapi.tossinvest.com 호출 주소를 로컬 proxy 경로인 /toss-api로 치환
+    const proxiedUrl = targetUrl.replace('https://openapi.tossinvest.com', '/toss-api');
+    return await fetch(proxiedUrl, options);
+};
+
+// [추가] 토스증권 OpenAPI OAuth 2.0 access token 발급 및 캐싱
 const getTossToken = async (clientId, clientSecret) => {
     const cachedToken = localStorage.getItem('toss_access_token');
     const expiry = localStorage.getItem('toss_token_expiry');
@@ -1193,7 +1201,7 @@ const getTossToken = async (clientId, clientSecret) => {
     }
     
     try {
-        const response = await fetch('https://openapi.tossinvest.com/oauth2/token', {
+        const response = await fetchTossWithProxy('https://openapi.tossinvest.com/oauth2/token', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded'
@@ -1249,7 +1257,7 @@ const fetchTossQuotes = async (symbols) => {
         const symbolsParam = cleanedSymbols.join(',');
         const url = `https://openapi.tossinvest.com/api/v1/prices?symbols=${encodeURIComponent(symbolsParam)}`;
         
-        const response = await fetch(url, {
+        const response = await fetchTossWithProxy(url, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -1338,7 +1346,7 @@ const fetchTossSearch = async (query) => {
     try {
         const token = await getTossToken(clientId, clientSecret);
         const url = `https://openapi.tossinvest.com/api/v1/stocks?symbols=${encodeURIComponent(trimmed)}`;
-        const response = await fetch(url, {
+        const response = await fetchTossWithProxy(url, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${token}` }
         });
