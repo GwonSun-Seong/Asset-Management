@@ -1344,6 +1344,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                 <tbody>
                                     {sortedItemsWithMeta.map((item) => {
                                         const isProfit = item.profitManwon >= 0;
+                                        const isTossConfigured = !!localStorage.getItem('toss_client_id') && !!localStorage.getItem('toss_client_secret');
                                         const profitColor = isProfit ? 'text-red-500 dark:text-red-400' : 'text-blue-500 dark:text-blue-400';
                                         
                                         return (
