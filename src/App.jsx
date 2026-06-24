@@ -1118,7 +1118,6 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         });
 
                         if (hasChanges) {
-                            addToast(`토스 API 연동 실패: ${errorMsg}`, 'error');
                             return { ...prevData, assets: newAssets };
                         }
                         return prevData;

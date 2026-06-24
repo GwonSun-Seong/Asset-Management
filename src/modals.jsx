@@ -1155,9 +1155,6 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             setLinkedItems(prev => prev.map(item => 
                 (item.autoUpdate !== false && item.ticker) ? { ...item, syncStatus: 'error', syncErrorReason: errorMsg } : item
             ));
-            if (window.addToast) {
-                window.addToast(`토스 API 연동 실패: ${errorMsg}`, 'error');
-            }
         } finally {
             setIsRefreshing(false);
         }
@@ -1502,177 +1499,188 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                         const profitColor = isProfit ? 'text-red-500 dark:text-red-400' : 'text-blue-500 dark:text-blue-400';
                                         
                                         return (
-                                        <tr key={item.id} className="bg-slate-50 dark:bg-slate-900/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10 transition-colors group">
-                                            <td className="py-3 pl-4 rounded-l-2xl">
-                                                <div className="flex flex-col">
-                                                    <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[120px]" title={item.name}>{item.name}</div>
-                                                    <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5" title="종목 티커">{item.ticker || '티커 없음'}</div>
-                                                </div>
-                                            </td>
-                                            <td className="py-3">
-                                                <div className="flex flex-col gap-1">
-                                                    {/* 수량 편집 */}
-                                                    {editingCell && editingCell.id === item.id && editingCell.field === 'shares' ? (
-                                                        <input 
-                                                            type="number" 
-                                                            className="w-20 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
-                                                            defaultValue={item.shares}
-                                                            autoFocus
-                                                            onBlur={(e) => {
-                                                                const val = parseFloat(e.target.value) || 0;
-                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
-                                                                setEditingCell(null);
-                                                            }}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === 'Enter') {
-                                                                    const val = parseFloat(e.target.value) || 0;
-                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
-                                                                    setEditingCell(null);
-                                                                }
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        <span 
-                                                            onClick={() => setEditingCell({ id: item.id, field: 'shares' })} 
-                                                            className="font-bold text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
-                                                            title="클릭하여 수량 수정"
-                                                        >
-                                                            {item.shares}주 ✏️
-                                                        </span>
-                                                    )}
-                                                    
-                                                    {/* 매입가 편집 */}
-                                                    {editingCell && editingCell.id === item.id && editingCell.field === 'avgPrice' ? (
-                                                        <input 
-                                                            type="number" 
-                                                            className="w-24 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-[10px] font-bold focus:outline-none"
-                                                            defaultValue={item.avgPrice}
-                                                            autoFocus
-                                                            onBlur={(e) => {
-                                                                const val = parseFloat(e.target.value) || 0;
-                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
-                                                                setEditingCell(null);
-                                                            }}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === 'Enter') {
-                                                                    const val = parseFloat(e.target.value) || 0;
-                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
-                                                                    setEditingCell(null);
-                                                                }
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        <span 
-                                                            onClick={() => setEditingCell({ id: item.id, field: 'avgPrice' })} 
-                                                            className="text-[10px] text-slate-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
-                                                            title="클릭하여 매입단가 수정"
-                                                        >
-                                                            {item.currency==='USD'?'$':'₩'}{Number(item.avgPrice).toLocaleString()} ✏️
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="py-3">
-                                                <div className="flex items-center gap-3">
+                                        <React.Fragment key={item.id}>
+                                            <tr className="bg-slate-50 dark:bg-slate-900/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10 transition-colors group">
+                                                <td className="py-3 pl-4 rounded-l-2xl">
+                                                    <div className="flex flex-col">
+                                                        <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[120px]" title={item.name}>{item.name}</div>
+                                                        <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5" title="종목 티커">{item.ticker || '티커 없음'}</div>
+                                                    </div>
+                                                </td>
+                                                <td className="py-3">
                                                     <div className="flex flex-col gap-1">
-                                                        {/* 현재가 편집 */}
-                                                        {editingCell && editingCell.id === item.id && editingCell.field === 'currentPrice' ? (
+                                                        {/* 수량 편집 */}
+                                                        {editingCell && editingCell.id === item.id && editingCell.field === 'shares' ? (
                                                             <input 
                                                                 type="number" 
-                                                                className="w-24 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
-                                                                defaultValue={item.currentPrice}
+                                                                className="w-20 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                                                                defaultValue={item.shares}
                                                                 autoFocus
                                                                 onBlur={(e) => {
                                                                     const val = parseFloat(e.target.value) || 0;
-                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, currentPrice: val } : li));
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
                                                                     setEditingCell(null);
                                                                 }}
                                                                 onKeyDown={(e) => {
                                                                     if (e.key === 'Enter') {
                                                                         const val = parseFloat(e.target.value) || 0;
-                                                                        setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, currentPrice: val } : li));
+                                                                        setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
                                                                         setEditingCell(null);
                                                                     }
                                                                 }}
                                                             />
                                                         ) : (
                                                             <span 
-                                                                onClick={() => setEditingCell({ id: item.id, field: 'currentPrice' })} 
-                                                                className="text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
-                                                                title="클릭하여 현재단가 수정"
+                                                                onClick={() => setEditingCell({ id: item.id, field: 'shares' })} 
+                                                                className="font-bold text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
+                                                                title="클릭하여 수량 수정"
                                                             >
-                                                                {item.currency==='USD'?'$':'₩'}{Number(item.currentPrice).toLocaleString()} ✏️
+                                                                {item.shares}주 ✏️
                                                             </span>
                                                         )}
                                                         
-                                                        {/* 상태 뱃지 */}
-                                                        {(() => {
-                                                            if (item.autoUpdate === false || !isTossConfigured) {
-                                                                return (
-                                                                    <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700" title="실시간 시세 연동 비활성화 (오프라인)">
-                                                                        OFFLINE
-                                                                    </span>
-                                                                );
-                                                            }
-                                                            if (item.syncStatus === 'error') {
-                                                                return (
-                                                                    <span 
-                                                                        className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 cursor-help" 
-                                                                        title={`토스 API 연동 실패: ${item.syncErrorReason || '알 수 없는 오류 (키 설정 또는 네트워크 확인)'}`}
-                                                                    >
-                                                                        ERROR
-                                                                    </span>
-                                                                );
-                                                            }
-                                                            return (
-                                                                <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" title="토스 Open API 실시간 시세 연동 정상 작동 중 (온라인)">
-                                                                    ONLINE
+                                                        {/* 매입가 편집 */}
+                                                        {editingCell && editingCell.id === item.id && editingCell.field === 'avgPrice' ? (
+                                                            <input 
+                                                                type="number" 
+                                                                className="w-24 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-[10px] font-bold focus:outline-none"
+                                                                defaultValue={item.avgPrice}
+                                                                autoFocus
+                                                                onBlur={(e) => {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
+                                                                    setEditingCell(null);
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        const val = parseFloat(e.target.value) || 0;
+                                                                        setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
+                                                                        setEditingCell(null);
+                                                                    }
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <span 
+                                                                onClick={() => setEditingCell({ id: item.id, field: 'avgPrice' })} 
+                                                                className="text-[10px] text-slate-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
+                                                                title="클릭하여 매입단가 수정"
+                                                            >
+                                                                {item.currency==='USD'?'$':'₩'}{Number(item.avgPrice).toLocaleString()} ✏️
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="py-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex flex-col gap-1">
+                                                            {/* 현재가 편집 */}
+                                                            {editingCell && editingCell.id === item.id && editingCell.field === 'currentPrice' ? (
+                                                                <input 
+                                                                    type="number" 
+                                                                    className="w-24 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                                                                    defaultValue={item.currentPrice}
+                                                                    autoFocus
+                                                                    onBlur={(e) => {
+                                                                        const val = parseFloat(e.target.value) || 0;
+                                                                        setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, currentPrice: val } : li));
+                                                                        setEditingCell(null);
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            const val = parseFloat(e.target.value) || 0;
+                                                                            setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, currentPrice: val } : li));
+                                                                            setEditingCell(null);
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <span 
+                                                                    onClick={() => setEditingCell({ id: item.id, field: 'currentPrice' })} 
+                                                                    className="text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-855 rounded px-1 w-fit block"
+                                                                    title="클릭하여 현재단가 수정"
+                                                                >
+                                                                    {item.currency==='USD'?'$':'₩'}{Number(item.currentPrice).toLocaleString()} ✏️
                                                                 </span>
-                                                            );
-                                                        })()}
-                                                    </div>
- 
-                                                    {/* API 연동 개별 스위치 */}
-                                                    <div className="flex items-center" title={isTossConfigured ? "실시간 시세 연동 토글" : "토스 API 키를 먼저 등록해주세요"}>
-                                                        <button 
-                                                            type="button"
-                                                            onClick={() => {
-                                                                if (isTossConfigured) {
-                                                                    setLinkedItems(prev => prev.map(li => 
-                                                                        li.id === item.id ? { 
-                                                                            ...li, 
-                                                                            autoUpdate: li.autoUpdate === false ? true : false,
-                                                                            syncStatus: li.autoUpdate === false ? 'online' : 'offline'
-                                                                        } : li
-                                                                    ));
+                                                            )}
+                                                            
+                                                            {/* 상태 뱃지 */}
+                                                            {(() => {
+                                                                if (item.autoUpdate === false || !isTossConfigured) {
+                                                                    return (
+                                                                        <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700" title="실시간 시세 연동 비활성화 (오프라인)">
+                                                                            OFFLINE
+                                                                        </span>
+                                                                    );
                                                                 }
-                                                            }}
-                                                            disabled={!isTossConfigured}
-                                                            className={`relative inline-flex h-4 w-7 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${!isTossConfigured ? 'cursor-not-allowed bg-slate-200 dark:bg-slate-700 opacity-50' : (item.autoUpdate !== false ? 'bg-indigo-600' : 'bg-slate-350 dark:bg-slate-600')}`}
-                                                        >
-                                                            <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${item.autoUpdate !== false && isTossConfigured ? 'translate-x-3' : 'translate-x-0'}`} />
-                                                        </button>
+                                                                if (item.syncStatus === 'error') {
+                                                                    return (
+                                                                        <span 
+                                                                            className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 cursor-help" 
+                                                                            title={`토스 API 연동 실패: ${item.syncErrorReason || '알 수 없는 오류 (키 설정 또는 네트워크 확인)'}`}
+                                                                        >
+                                                                            ERROR
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" title="토스 Open API 실시간 시세 연동 정상 작동 중 (온라인)">
+                                                                        ONLINE
+                                                                    </span>
+                                                                );
+                                                            })()}
+                                                        </div>
+ 
+                                                        {/* API 연동 개별 스위치 */}
+                                                        <div className="flex items-center" title={isTossConfigured ? "실시간 시세 연동 토글" : "토스 API 키를 먼저 등록해주세요"}>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (isTossConfigured) {
+                                                                        setLinkedItems(prev => prev.map(li => 
+                                                                            li.id === item.id ? { 
+                                                                                ...li, 
+                                                                                autoUpdate: li.autoUpdate === false ? true : false,
+                                                                                syncStatus: li.autoUpdate === false ? 'online' : 'offline'
+                                                                            } : li
+                                                                        ));
+                                                                    }
+                                                                }}
+                                                                disabled={!isTossConfigured}
+                                                                className={`relative inline-flex h-4 w-7 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${!isTossConfigured ? 'cursor-not-allowed bg-slate-200 dark:bg-slate-700 opacity-50' : (item.autoUpdate !== false ? 'bg-indigo-600' : 'bg-slate-350 dark:bg-slate-600')}`}
+                                                            >
+                                                                <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${item.autoUpdate !== false && isTossConfigured ? 'translate-x-3' : 'translate-x-0'}`} />
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </td>
-                                            <td className="py-3 text-right">
-                                                <div className={`text-xs font-black ${profitColor}`}>
-                                                    {isProfit ? '+' : ''}{Math.round(item.profitManwon).toLocaleString()}만
-                                                </div>
-                                                <div className={`text-[10px] font-bold opacity-80 ${profitColor}`}>
-                                                    {isProfit ? '▲' : '▼'} {Math.abs(item.profitRate).toFixed(2)}%
-                                                </div>
-                                            </td>
-                                            <td className="py-3 text-right">
-                                                <div className="font-black text-indigo-600 dark:text-indigo-400 text-sm">{Math.round(item.valueManwon).toLocaleString()}<span className="text-[10px] font-bold ml-0.5">만</span></div>
-                                                <div className="text-[10px] font-bold text-slate-400">{(item.weight || 0).toFixed(1)}%</div>
-                                            </td>
-                                            <td className="py-3 pr-4 text-right rounded-r-2xl">
-                                                <button onClick={() => setLinkedItems(prev => prev.filter(li => li.id !== item.id))} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors">
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                </button>
-                                            </td>
-                                        </tr>
+                                                </td>
+                                                <td className="py-3 text-right">
+                                                    <div className={`text-xs font-black ${profitColor}`}>
+                                                        {isProfit ? '+' : ''}{Math.round(item.profitManwon).toLocaleString()}만
+                                                    </div>
+                                                    <div className={`text-[10px] font-bold opacity-80 ${profitColor}`}>
+                                                        {isProfit ? '▲' : '▼'} {Math.abs(item.profitRate).toFixed(2)}%
+                                                    </div>
+                                                </td>
+                                                <td className="py-3 text-right">
+                                                    <div className="font-black text-indigo-600 dark:text-indigo-400 text-sm">{Math.round(item.valueManwon).toLocaleString()}<span className="text-[10px] font-bold ml-0.5">만</span></div>
+                                                    <div className="text-[10px] font-bold text-slate-400">{(item.weight || 0).toFixed(1)}%</div>
+                                                </td>
+                                                <td className="py-3 pr-4 text-right rounded-r-2xl">
+                                                    <button onClick={() => setLinkedItems(prev => prev.filter(li => li.id !== item.id))} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            {item.syncStatus === 'error' && (
+                                                <tr className="bg-red-50/15 dark:bg-red-950/5 select-none animate-in fade-in slide-in-from-top-1 duration-200">
+                                                    <td colSpan={7} className="py-1.5 pl-4 pr-4 rounded-2xl text-[10px] text-red-500 dark:text-red-400/90 font-bold border-b border-red-100/50 dark:border-red-950/20">
+                                                        <span className="inline-flex items-center gap-1.5 bg-red-50/50 dark:bg-red-950/30 px-2 py-0.5 rounded border border-red-100 dark:border-red-900/30">
+                                                            ⚠️ 연동 오류 사유: {item.syncErrorReason || '알 수 없는 오류 (티커 코드 오설정 또는 네트워크 확인)'}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
                                     );})}
                                 </tbody>
                             </table>
@@ -3880,10 +3888,10 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Client ID</label>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">API Key</label>
                             <input
                                 type="text"
-                                placeholder="Toss API Client ID 입력"
+                                placeholder="Toss API Key 입력"
                                 value={tossId}
                                 onChange={(e) => setTossId(e.target.value)}
                                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 transition-all shadow-sm"
@@ -3891,10 +3899,10 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Client Secret</label>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Secret Key</label>
                             <input
                                 type="password"
-                                placeholder="Toss API Client Secret 입력"
+                                placeholder="Toss Secret Key 입력"
                                 value={tossSecret}
                                 onChange={(e) => setTossSecret(e.target.value)}
                                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 transition-all shadow-sm"
