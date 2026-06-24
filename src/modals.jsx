@@ -630,7 +630,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         return duplicates;
     };
 
-    const finalizeOcrMerge = (ocrStocks, actions, totalAmount) => {
+    const finalizeOcrMerge = async (ocrStocks, actions, totalAmount) => {
         const finalLinkedItems = [...linkedItems];
 
         ocrStocks.forEach(incoming => {
@@ -662,7 +662,8 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             shares: incoming.shares,
                             avgPrice: incoming.avgPrice,
                             currentPrice: incoming.currentPrice,
-                            currency: incoming.currency || existing.currency
+                            currency: incoming.currency || existing.currency,
+                            autoUpdate: true
                         };
                     } else {
                         finalLinkedItems.push(incoming);
@@ -691,6 +692,40 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         if (extractedTotal && extractedTotal > 0) {
             const calculatedBase = Math.max(0, Math.round((extractedTotal - stockTotalManwon) * 100) / 100);
             setBaseAmount(calculatedBase);
+        }
+
+        // OCR 병합 즉시 최신 시세 갱신
+        const tickersToFetch = finalLinkedItems
+            .filter(item => item.autoUpdate !== false && item.ticker)
+            .map(item => item.ticker);
+
+        if (tickersToFetch.length > 0) {
+            try {
+                const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
+                if (fetchFn) {
+                    const quotes = await fetchFn(tickersToFetch);
+                    setLinkedItems(prev => prev.map(item => {
+                        if (item.autoUpdate !== false && item.ticker) {
+                            const q = quotes[item.ticker];
+                            if (q && q.price) {
+                                return { ...item, currentPrice: q.price, syncStatus: 'online', syncErrorReason: null };
+                            } else {
+                                return { ...item, syncStatus: 'error', syncErrorReason: '시세를 불러오지 못했습니다.' };
+                            }
+                        }
+                        return item;
+                    }));
+                }
+            } catch (e) {
+                console.error("Immediate post-OCR fetch failed:", e);
+                const errorMsg = e.message || '알 수 없는 API 에러';
+                setLinkedItems(prev => prev.map(item => {
+                    if (item.autoUpdate !== false && item.ticker) {
+                        return { ...item, syncStatus: 'error', syncErrorReason: errorMsg };
+                    }
+                    return item;
+                }));
+            }
         }
 
         if (window.addToast) {
@@ -1004,27 +1039,36 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         setDraftTicker(''); setDraftShares(''); setDraftAvgPrice('');
         setSearchResults([]);
 
-        // 4. 백그라운드 시세 동기화
+        // 4. 백그라운드 시세 동기화 (즉시 토스 API 호출)
         (async () => {
             try {
-                let tickersToTry = [ticker];
-                if (/^\d{6}$/.test(ticker)) tickersToTry = [`${ticker}.KS`, `${ticker}.KQ`];
-                const quotes = await window.fetchYahooQuotes([...tickersToTry, 'KRW=X']);
-                const found = tickersToTry.find(t => quotes[t]?.price);
+                const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
+                if (!fetchFn) return;
+                const quotes = await fetchFn([ticker]);
+                const q = quotes[ticker];
                 
-                if (found) {
-                    const q = quotes[found];
+                if (q && q.price) {
                     setLinkedItems(prev => prev.map(item => 
                         item.id === tempId 
-                        ? { ...item, ticker: found, name: (q.name && q.name !== q.symbol && !q.name.endsWith('.KS') && !q.name.endsWith('.KQ')) ? q.name : item.name, currentPrice: q.price, currency: q.currency || item.currency }
+                        ? { ...item, currentPrice: q.price, syncStatus: 'online', syncErrorReason: null }
                         : item
                     ));
-                    if (quotes['KRW=X']?.price) {
-                        setFxRate(quotes['KRW=X'].price);
-                        localStorage.setItem('asset_last_usd_krw', quotes['KRW=X'].price.toString());
-                    }
+                } else {
+                    setLinkedItems(prev => prev.map(item => 
+                        item.id === tempId 
+                        ? { ...item, syncStatus: 'error', syncErrorReason: '종목 코드를 찾을 수 없습니다.' }
+                        : item
+                    ));
                 }
-            } catch (e) { console.warn("Background fetch failed:", e); }
+            } catch (e) { 
+                console.warn("Immediate registration fetch failed:", e); 
+                const errorMsg = e.message || 'API 연동 에러';
+                setLinkedItems(prev => prev.map(item => 
+                    item.id === tempId 
+                    ? { ...item, syncStatus: 'error', syncErrorReason: errorMsg }
+                    : item
+                ));
+            }
         })();
     };
 
@@ -1073,10 +1117,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                     const q = quotes[item.ticker];
                     const targetStatus = (q && q.price) ? 'online' : 'error';
                     const targetPrice = (q && q.price) ? q.price : item.currentPrice;
+                    const targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
                     
-                    if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus) {
+                    if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError) {
                         hasChanges = true;
-                        return { ...item, currentPrice: targetPrice, syncStatus: targetStatus };
+                        return { ...item, currentPrice: targetPrice, syncStatus: targetStatus, syncErrorReason: targetError };
                     }
                 }
                 return item;
@@ -1090,11 +1135,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             } else {
                 // 상태만 online으로 업데이트 해야 할 수 있으므로 체크
                 const statusOnlyChanged = linkedItems.some(item => 
-                    item.autoUpdate !== false && item.ticker && item.syncStatus !== 'online'
+                    item.autoUpdate !== false && item.ticker && (item.syncStatus !== 'online' || item.syncErrorReason !== null)
                 );
                 if (statusOnlyChanged) {
                     setLinkedItems(prev => prev.map(item => 
-                        (item.autoUpdate !== false && item.ticker) ? { ...item, syncStatus: 'online' } : item
+                        (item.autoUpdate !== false && item.ticker) ? { ...item, syncStatus: 'online', syncErrorReason: null } : item
                     ));
                     if (window.addToast) {
                         window.addToast('실시간 주식 시세가 업데이트되었습니다.', 'success');
@@ -1105,12 +1150,13 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             }
         } catch (e) {
             console.error("Manual refresh failed:", e);
+            const errorMsg = e.message || '알 수 없는 API 에러';
             // 에러 상태로 뱃지를 전환하기 위한 로컬 상태 갱신
             setLinkedItems(prev => prev.map(item => 
-                (item.autoUpdate !== false && item.ticker) ? { ...item, syncStatus: 'error' } : item
+                (item.autoUpdate !== false && item.ticker) ? { ...item, syncStatus: 'error', syncErrorReason: errorMsg } : item
             ));
             if (window.addToast) {
-                window.addToast('토스 API 연동 실패로 인해 시세가 오류(ERROR) 상태로 전환되었습니다.', 'error');
+                window.addToast(`토스 API 연동 실패: ${errorMsg}`, 'error');
             }
         } finally {
             setIsRefreshing(false);
@@ -1553,7 +1599,10 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                             }
                                                             if (item.syncStatus === 'error') {
                                                                 return (
-                                                                    <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400" title="토스 API 연동 실패 (키 오설정 또는 네트워크 오류)">
+                                                                    <span 
+                                                                        className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 cursor-help" 
+                                                                        title={`토스 API 연동 실패: ${item.syncErrorReason || '알 수 없는 오류 (키 설정 또는 네트워크 확인)'}`}
+                                                                    >
                                                                         ERROR
                                                                     </span>
                                                                 );

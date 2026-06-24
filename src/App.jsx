@@ -1044,11 +1044,12 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                             const q = quotes[item.ticker];
                                             const targetStatus = (q && q.price) ? 'online' : 'error';
                                             const targetPrice = (q && q.price) ? q.price : item.currentPrice;
+                                            const targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
                                             
-                                            if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus) {
+                                            if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError) {
                                                 assetChanged = true;
                                                 hasChanges = true;
-                                                return { ...item, currentPrice: targetPrice, syncStatus: targetStatus };
+                                                return { ...item, currentPrice: targetPrice, syncStatus: targetStatus, syncErrorReason: targetError };
                                             }
                                         }
                                         return item;
@@ -1082,6 +1083,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                     });
                 } catch (e) {
                     console.error("Toss sync failed, fallback to error status:", e);
+                    const errorMsg = e.message || '알 수 없는 API 에러';
                     
                     // 에러 상태로 뱃지를 전환하기 위한 상태 갱신
                     setAppData(prevData => {
@@ -1095,10 +1097,10 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                     let assetChanged = false;
                                     const newLinkedItems = asset.linkedItems.map(item => {
                                         if (item.autoUpdate !== false && item.ticker) {
-                                            if (item.syncStatus !== 'error') {
+                                            if (item.syncStatus !== 'error' || item.syncErrorReason !== errorMsg) {
                                                 assetChanged = true;
                                                 hasChanges = true;
-                                                return { ...item, syncStatus: 'error' };
+                                                return { ...item, syncStatus: 'error', syncErrorReason: errorMsg };
                                             }
                                         }
                                         return item;
@@ -1116,7 +1118,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         });
 
                         if (hasChanges) {
-                            addToast('토스 API 연동 실패로 인해 시세가 오류(ERROR) 상태로 전환되었습니다.', 'error');
+                            addToast(`토스 API 연동 실패: ${errorMsg}`, 'error');
                             return { ...prevData, assets: newAssets };
                         }
                         return prevData;
