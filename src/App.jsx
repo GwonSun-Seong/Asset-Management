@@ -6811,12 +6811,12 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         isPro={isPro}
                     />}
                     {showSaveToast && (
-                        <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[100] bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[99999] bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
                             <span className="text-green-400 text-xl">✓</span>
                             <span className="text-sm font-bold tracking-tight">데이터가 안전하게 저장되었습니다!</span>
                         </div>
                     )}
-                    <div className="fixed bottom-5 left-1/2 transform -translate-x-1/2 z-[110] flex flex-col gap-2 pointer-events-none">
+                    <div className="fixed bottom-5 left-1/2 transform -translate-x-1/2 z-[99999] flex flex-col gap-2 pointer-events-none">
                         {window.Toast && toasts.map(toast => (
                             <window.Toast key={toast.id} message={toast.message} type={toast.type} onClose={() => removeToast(toast.id)} />
                         ))}

@@ -1440,18 +1440,32 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                     <section className="space-y-3">
                         <div className="flex items-center justify-between px-1">
                             <h4 className="text-xs font-black text-slate-500 dark:text-slate-400">📋 연동 종목 리스트</h4>
-                            <button
-                                onClick={handleManualRefresh}
-                                disabled={isRefreshing}
-                                className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2.5 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800 flex items-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-850 transition-all active:scale-95 disabled:opacity-50"
-                            >
-                                {isRefreshing ? (
-                                    <span className="w-2.5 h-2.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></span>
-                                ) : (
-                                    <span>🔄</span>
-                                )}
-                                <span>실시간 시세 새로고침</span>
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        if (confirm("정말로 모든 연동 종목을 삭제하시겠습니까?")) {
+                                            setLinkedItems([]);
+                                            if (window.addToast) window.addToast("🗑️ 모든 연동 종목이 일괄 삭제되었습니다.", "info");
+                                        }
+                                    }}
+                                    className="text-[10px] font-black text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2.5 py-1 rounded-lg border border-red-100 dark:border-red-900/40 flex items-center gap-1 hover:bg-red-100 dark:hover:bg-red-950/40 transition-all active:scale-95"
+                                >
+                                    <span>🗑️</span>
+                                    <span>종목 일괄삭제</span>
+                                </button>
+                                <button
+                                    onClick={handleManualRefresh}
+                                    disabled={isRefreshing}
+                                    className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2.5 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800 flex items-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-850 transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                    {isRefreshing ? (
+                                        <span className="w-2.5 h-2.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></span>
+                                    ) : (
+                                        <span>🔄</span>
+                                    )}
+                                    <span>실시간 시세 새로고침</span>
+                                </button>
+                            </div>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left border-separate border-spacing-y-2 min-w-[600px]">
@@ -1490,7 +1504,10 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                         return (
                                         <tr key={item.id} className="bg-slate-50 dark:bg-slate-900/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10 transition-colors group">
                                             <td className="py-3 pl-4 rounded-l-2xl">
-                                                <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[120px]" title={item.name}>{item.name}</div>
+                                                <div className="flex flex-col">
+                                                    <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[120px]" title={item.name}>{item.name}</div>
+                                                    <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5" title="종목 티커">{item.ticker || '티커 없음'}</div>
+                                                </div>
                                             </td>
                                             <td className="py-3">
                                                 <div className="flex flex-col gap-1">
