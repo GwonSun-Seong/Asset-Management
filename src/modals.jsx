@@ -402,6 +402,15 @@ window.SettingsModal = ({
                     {/* 동기화 및 로그아웃 */}
                     <div className="pt-4 border-t dark:border-gray-700 space-y-2">
                         <button 
+                            onClick={() => {
+                                onClose();
+                                if (window.showApiKeyModal) window.showApiKeyModal();
+                            }}
+                            className="w-full py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-md transition-all flex items-center justify-center gap-1.5"
+                        >
+                            🔑 API 키 및 연동 설정
+                        </button>
+                        <button 
                             onClick={() => { onSyncNow(); onClose(); }}
                             className="w-full py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl text-sm font-bold hover:bg-indigo-100 transition-colors"
                         >
@@ -1439,18 +1448,32 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                         )}
                                                         
                                                         {/* 상태 뱃지 */}
-                                                        <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700" title="현재 야후 API 실시간 연동이 비활성화되어 FIXED 상태로 동작합니다.">
-                                                            FIXED
-                                                        </span>
+                                                        {item.autoUpdate !== false && isTossConfigured ? (
+                                                            <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" title="토스 Open API 실시간 시세 연동 작동 중">
+                                                                TOSS
+                                                            </span>
+                                                        ) : (
+                                                            <span className="w-fit text-[8px] font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700" title="수동 고정 현재가 사용 중">
+                                                                FIXED
+                                                            </span>
+                                                        )}
                                                     </div>
  
                                                     {/* API 연동 개별 스위치 */}
-                                                    <div className="flex items-center" title="실시간 시세 연동 (API 대기 중)">
+                                                    <div className="flex items-center" title={isTossConfigured ? "실시간 시세 연동 토글" : "토스 API 키를 먼저 등록해주세요"}>
                                                         <button 
-                                                            disabled
-                                                            className="relative inline-flex h-4 w-7 flex-shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none bg-slate-200 dark:bg-slate-700 opacity-50"
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (isTossConfigured) {
+                                                                    setLinkedItems(prev => prev.map(li => 
+                                                                        li.id === item.id ? { ...li, autoUpdate: li.autoUpdate === false ? true : false } : li
+                                                                    ));
+                                                                }
+                                                            }}
+                                                            disabled={!isTossConfigured}
+                                                            className={`relative inline-flex h-4 w-7 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${!isTossConfigured ? 'cursor-not-allowed bg-slate-200 dark:bg-slate-700 opacity-50' : (item.autoUpdate !== false ? 'bg-indigo-600' : 'bg-slate-350 dark:bg-slate-600')}`}
                                                         >
-                                                            <span className="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0" />
+                                                            <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${item.autoUpdate !== false && isTossConfigured ? 'translate-x-3' : 'translate-x-0'}`} />
                                                         </button>
                                                     </div>
                                                 </div>
