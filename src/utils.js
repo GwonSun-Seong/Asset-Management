@@ -1403,6 +1403,68 @@ const fetchBitcoinData = async () => {
     }
 };
 
+// [추가] 토스증권 OpenAPI 기반 실시간 환율 조회 및 동적 파싱
+const fetchTossExchangeRate = async () => {
+    const clientId = localStorage.getItem('toss_client_id');
+    const clientSecret = localStorage.getItem('toss_client_secret');
+    if (!clientId || !clientSecret) return Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50;
+    
+    try {
+        const token = await getTossToken(clientId, clientSecret);
+        const response = await fetchTossWithProxy('https://openapi.tossinvest.com/api/v1/exchange-rate', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log("Toss Exchange Rate API Raw Response:", data);
+            
+            let rateVal = null;
+            const checkAndSet = (val) => {
+                const num = parseFloat(val);
+                if (isNaN(num)) return false;
+                if (num > 500 && num < 2000) {
+                    rateVal = num;
+                    return true;
+                }
+                if (num > 0 && num < 1) { // 만약 KRW/USD 형태로 온 경우 (0.00075 등) 역산
+                    rateVal = 1 / num;
+                    return true;
+                }
+                return false;
+            };
+
+            if (data.result !== undefined) {
+                const res = data.result;
+                if (typeof res === 'object' && res !== null) {
+                    const keys = ['rate', 'baseRate', 'price', 'exchangeRate', 'lastPrice', 'value', 'usdKrw', 'krwUsd'];
+                    for (const k of keys) {
+                        if (res[k] !== undefined && checkAndSet(res[k])) {
+                            break;
+                        }
+                    }
+                } else {
+                    checkAndSet(res);
+                }
+            } else {
+                checkAndSet(data);
+            }
+
+            if (rateVal) {
+                console.log("Extracted Toss Exchange Rate:", rateVal);
+                localStorage.setItem('asset_last_usd_krw', rateVal.toString());
+                return rateVal;
+            }
+        }
+    } catch (e) {
+        console.warn("fetchTossExchangeRate failed, using cached/default:", e);
+    }
+    return Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50;
+};
+
 // [추가] 목표 달성 기간 계산 (Goal Seek)
 const calculateGoalReachMonth = (appData, targetAmount) => {
     const MAX_MONTHS = 600;
@@ -1675,6 +1737,7 @@ window.fetchYahooQuotes = fetchYahooQuotes;
 window.fetchYahooSearch = fetchYahooSearch;
 window.fetchTossQuotes = fetchTossQuotes;
 window.fetchTossSearch = fetchTossSearch;
+window.fetchTossExchangeRate = fetchTossExchangeRate;
 window.fetchBitcoinData = fetchBitcoinData;
 window.calculateGoalReachMonth = calculateGoalReachMonth;
 window.normalizeTargets = normalizeTargets;

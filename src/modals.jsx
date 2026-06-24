@@ -498,56 +498,42 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         setLinkedItems(Array.isArray(asset.linkedItems) ? asset.linkedItems : []);
         
         const initFetch = async () => {
-            setIsInitialSyncing(true); // [수정] 입력창을 막지 않는 초기 동기화 상태 사용
+            setIsInitialSyncing(true);
             try {
-                /*
-                const symbolsToFetch = new Set(['KRW=X', 'USD/KRW']);
-                const currentItems = Array.isArray(asset.linkedItems) ? asset.linkedItems : [];
-                
-                currentItems.forEach(item => {
-                    if (item.autoUpdate !== false && item.ticker) {
-                        const t = item.ticker.toUpperCase().trim();
-                        if (/^\d{6}$/.test(t)) {
-                            symbolsToFetch.add(`${t}.KS`);
-                            symbolsToFetch.add(`${t}.KQ`);
-                        } else {
-                            symbolsToFetch.add(t);
-                        }
-                    }
-                });
-
-                let quotes = await window.fetchYahooQuotes(Array.from(symbolsToFetch));
-                const fxRateData = quotes['KRW=X'] || quotes['USD/KRW'] || quotes['USDKRW=X'];
-
-                if (fxRateData?.price) {
-                    const newRate = fxRateData.price;
-                    setFxRate(newRate);
-                    localStorage.setItem('asset_last_usd_krw', newRate.toString());
+                if (window.fetchTossExchangeRate) {
+                    const rate = await window.fetchTossExchangeRate();
+                    setFxRate(rate);
                 }
 
-                if (currentItems.length > 0) {
-                    setLinkedItems(prev => prev.map(item => {
-                        if (item.autoUpdate !== false) {
-                            const t = item.ticker.toUpperCase().trim();
-                            // 정확한 매칭 또는 접미사가 붙은 매칭 확인
-                            const q = quotes[t] || quotes[`${t}.KS`] || quotes[`${t}.KQ`];
-                            if (q?.price) {
-                                return { 
-                                    ...item, 
-                                    currentPrice: q.price, 
-                                    currency: q.currency || item.currency, 
-                                    name: (q.name && q.name !== q.symbol && !q.name.endsWith('.KS') && !q.name.endsWith('.KQ')) ? q.name : item.name,
-                                    ticker: q.symbol || item.ticker // 실제 조회된 티커로 업데이트(.KS 등)
-                                };
+                const tickersToFetch = linkedItems
+                    .filter(item => item.autoUpdate !== false && item.ticker)
+                    .map(item => item.ticker);
+
+                if (tickersToFetch.length > 0) {
+                    const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
+                    if (fetchFn) {
+                        const quotes = await fetchFn(tickersToFetch);
+                        setLinkedItems(prev => prev.map(item => {
+                            if (item.autoUpdate !== false && item.ticker) {
+                                const q = quotes[item.ticker];
+                                if (q && q.price) {
+                                    return { 
+                                        ...item, 
+                                        currentPrice: q.price, 
+                                        currency: q.currency || item.currency, 
+                                        syncStatus: 'online', 
+                                        syncErrorReason: null 
+                                    };
+                                } else {
+                                    return { ...item, syncStatus: 'error', syncErrorReason: '시세를 불러오지 못했습니다.' };
+                                }
                             }
-                        }
-                        return item;
-                    }));
+                            return item;
+                        }));
+                    }
                 }
-                */
             } catch (err) { 
                 console.error("StockLink Init Fetch Error:", err);
-                // 에러 발생 시 사용자 알림 (선택 사항)
             } finally { setIsInitialSyncing(false); }
         };
         initFetch();
@@ -935,12 +921,10 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             
             let evalVal = curPrice * shares;
             let purVal = avgPrice * shares;
-            /* [임시 주석 처리 - 해외 주식 달러 무시 및 100% 원화로 직통 처리]
             if (item.currency === 'USD') { 
                 evalVal *= safeFxRate; 
                 purVal *= safeFxRate; 
             }
-            */
 
             const evalManwon = evalVal / 10000;
             const purManwon = purVal / 10000;
@@ -1107,6 +1091,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
         setIsRefreshing(true);
         try {
+            if (window.fetchTossExchangeRate) {
+                const rate = await window.fetchTossExchangeRate();
+                setFxRate(rate);
+            }
+
             const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
             if (!fetchFn) throw new Error("Fetch function not found");
             const quotes = await fetchFn(tickersToFetch);
@@ -1117,11 +1106,12 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                     const q = quotes[item.ticker];
                     const targetStatus = (q && q.price) ? 'online' : 'error';
                     const targetPrice = (q && q.price) ? q.price : item.currentPrice;
+                    const targetCurrency = (q && q.currency) ? q.currency : item.currency;
                     const targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
                     
-                    if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError) {
+                    if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError || item.currency !== targetCurrency) {
                         hasChanges = true;
-                        return { ...item, currentPrice: targetPrice, syncStatus: targetStatus, syncErrorReason: targetError };
+                        return { ...item, currentPrice: targetPrice, currency: targetCurrency, syncStatus: targetStatus, syncErrorReason: targetError };
                     }
                 }
                 return item;
