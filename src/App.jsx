@@ -902,6 +902,8 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             const [historyChartInfo, setHistoryChartInfo] = useState(null); // [추가] 히스토리 차트 상단 정보바 상태
             const lastHistoryInfoRef = useRef(null); // [추가] 정보바 업데이트 최적화용 Ref
             
+            const [livePriceEnabled, setLivePriceEnabled] = useState(() => localStorage.getItem('toss_live_price_enabled') === 'true');
+            const [livePriceInterval, setLivePriceInterval] = useState(() => Number(localStorage.getItem('toss_live_price_interval')) || 60);
             const [isDiffModalOpen, setIsDiffModalOpen] = useState(false); // [추가] Diff 모달 상태
             const [diffData, setDiffData] = useState(null); // [추가] Diff 데이터
             const [isGameModalOpen, setIsGameModalOpen] = useState(false); // [추가] 미니게임 모달 상태
@@ -991,20 +993,6 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 const clientSecret = localStorage.getItem('toss_client_secret');
                 if (!clientId || !clientSecret) return;
 
-                // 스케줄링 최적화: 주말 제외 & 정규 장 개장 시간대만
-                const now = new Date();
-                const day = now.getDay();
-                if (day === 0 || day === 6) return; 
-
-                const hours = now.getHours();
-                const mins = now.getMinutes();
-                const currentMins = hours * 60 + mins;
-
-                const isKrxOpen = currentMins >= 540 && currentMins <= 930;
-                const isUsOpen = currentMins >= 1260 || currentMins <= 360;
-
-                if (!isKrxOpen && !isUsOpen) return;
-
                 // 백그라운드 탭 지연 방지 (비활성 시 스킵)
                 if (document.hidden) return;
 
@@ -1083,7 +1071,6 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         });
 
                         if (hasChanges) {
-                            addToast('실시간 주식 시세가 업데이트되었습니다.', 'success');
                             return { ...prevData, assets: newAssets };
                         }
                         return prevData;
@@ -1133,7 +1120,11 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             };
 
             useEffect(() => {
-                const intervalId = setInterval(runTossLivePriceSync, 60000);
+                if (!livePriceEnabled) return;
+                
+                const intervalMs = Math.max(2, livePriceInterval) * 1000;
+                const intervalId = setInterval(runTossLivePriceSync, intervalMs);
+                
                 const handleVisibilityChange = () => {
                     if (!document.hidden) {
                         runTossLivePriceSync();
@@ -1143,12 +1134,16 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 document.addEventListener('visibilitychange', handleVisibilityChange);
                 runTossLivePriceSync();
 
-                // 모달 등에서 원격으로 API 설정 창을 띄울 수 있도록 전역 바인딩
-                window.showApiKeyModal = () => setIsApiKeyModalOpen(true);
-
                 return () => {
                     clearInterval(intervalId);
                     document.removeEventListener('visibilitychange', handleVisibilityChange);
+                };
+            }, [livePriceEnabled, livePriceInterval]);
+
+            useEffect(() => {
+                // 모달 등에서 원격으로 API 설정 창을 띄울 수 있도록 전역 바인딩
+                window.showApiKeyModal = () => setIsApiKeyModalOpen(true);
+                return () => {
                     window.showApiKeyModal = null;
                 };
             }, []);
@@ -6815,6 +6810,16 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         dataConsent={userProfile?.data_consent}
                         onToggleConsent={toggleDataConsent}
                         isPro={isPro}
+                        liveEnabled={livePriceEnabled}
+                        onLiveEnabledChange={(val) => {
+                            setLivePriceEnabled(val);
+                            localStorage.setItem('toss_live_price_enabled', val ? 'true' : 'false');
+                        }}
+                        liveInterval={livePriceInterval}
+                        onLiveIntervalChange={(val) => {
+                            setLivePriceInterval(val);
+                            localStorage.setItem('toss_live_price_interval', String(val));
+                        }}
                     />}
                     {showSaveToast && (
                         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[99999] bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">

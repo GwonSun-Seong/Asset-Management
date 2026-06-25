@@ -335,7 +335,9 @@ window.SettingsModal = ({
     darkMode, onThemeToggle, logoutBehavior, onLogoutBehaviorChange,
     onSyncNow, onLogout,
     dataConsent, onToggleConsent,
-    isPro
+    isPro,
+    liveEnabled, onLiveEnabledChange,
+    liveInterval, onLiveIntervalChange
 }) => {
     if (!isOpen) return null;
     return (
@@ -383,6 +385,56 @@ window.SettingsModal = ({
                                 <span className="text-[10px] text-gray-500">통계 서비스 제공을 위해 익명화된 자산 데이터를 활용합니다.</span>
                             </div>
                             <input type="checkbox" checked={!!dataConsent} onChange={(e) => onToggleConsent(e.target.checked)} className="w-5 h-5 accent-indigo-600 cursor-pointer" />
+                        </div>
+                    </section>
+                    {/* 실시간 시세 연동 설정 */}
+                    <section>
+                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">⚡ 실시간 시세 연동</h4>
+                        <div className="space-y-3 p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <span className="text-sm font-medium dark:text-white block">시세 자동 동기화</span>
+                                    <span className="text-[10px] text-gray-500">배경에서 주식 현재가를 주기적으로 갱신합니다.</span>
+                                </div>
+                                <div className="flex bg-gray-100 dark:bg-gray-900 p-1 rounded-xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => onLiveEnabledChange(true)}
+                                        className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${liveEnabled ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500'}`}
+                                    >
+                                        ON
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => onLiveEnabledChange(false)}
+                                        className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${!liveEnabled ? 'bg-gray-400 text-white shadow-sm' : 'text-gray-500'}`}
+                                    >
+                                        OFF
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            {liveEnabled && (
+                                <div className="flex justify-between items-center pt-2 border-t dark:border-gray-800">
+                                    <div>
+                                        <span className="text-xs font-bold dark:text-white block">동기화 주기 (초)</span>
+                                        <span className="text-[10px] text-gray-500">초 단위로 입력 (예: 60 = 1분, 10 = 10초)</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <input 
+                                            type="number"
+                                            min="2"
+                                            className="w-16 bg-gray-50 dark:bg-gray-900 border dark:border-gray-800 rounded px-2 py-1 text-xs font-bold text-center focus:outline-none"
+                                            value={liveInterval || 60}
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value) || 60;
+                                                onLiveIntervalChange(val);
+                                            }}
+                                        />
+                                        <span className="text-xs text-gray-500 font-bold">초</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </section>
                     {/* 로그아웃 정책 */}
@@ -4025,7 +4077,6 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
     const [geminiKey, setGeminiKey] = React.useState(() => localStorage.getItem('asset_gemini_api_key') || '');
     const [tossId, setTossId] = React.useState(() => localStorage.getItem('toss_client_id') || '');
     const [tossSecret, setTossSecret] = React.useState(() => localStorage.getItem('toss_client_secret') || '');
-    const [liveEnabled, setLiveEnabled] = React.useState(() => localStorage.getItem('toss_live_price_enabled') === 'true');
 
     if (!isOpen) return null;
 
@@ -4033,7 +4084,6 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
         localStorage.setItem('asset_gemini_api_key', geminiKey.trim());
         localStorage.setItem('toss_client_id', tossId.trim());
         localStorage.setItem('toss_client_secret', tossSecret.trim());
-        localStorage.setItem('toss_live_price_enabled', liveEnabled ? 'true' : 'false');
         
         // 토스 인증 캐시 강제 만료
         localStorage.removeItem('toss_access_token');
@@ -4107,32 +4157,7 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                                 onChange={(e) => setTossSecret(e.target.value)}
                                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 transition-all shadow-sm"
                             />
-                        </div>
-
-                        {/* Realtime ON/OFF radio style buttons */}
-                        <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border dark:border-slate-700 flex justify-between items-center">
-                            <div>
-                                <span className="text-xs font-black text-slate-700 dark:text-slate-200 block">⚡ 실시간 시세 연동</span>
-                                <span className="text-[10px] text-slate-400 block mt-0.5">ON 설정 시 1분 간격으로 현재가를 자동 조회합니다.</span>
-                            </div>
-                            <div className="flex bg-slate-200 dark:bg-slate-950 p-1 rounded-xl border dark:border-slate-800">
-                                <button
-                                    type="button"
-                                    onClick={() => setLiveEnabled(true)}
-                                    className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${liveEnabled ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-                                >
-                                    ON
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setLiveEnabled(false)}
-                                    className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${!liveEnabled ? 'bg-slate-400 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-                                >
-                                    OFF
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                        </div>                    </div>
                 </div>
 
                 {/* Footer buttons */}
