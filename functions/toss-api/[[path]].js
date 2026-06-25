@@ -20,6 +20,21 @@ export async function onRequest(context) {
   // [개선] 클라우드플레어 환경변수 TOSS_PROXY_URL이 있으면 가상서버로 우회, 없으면 기본 주소로 작동 (환경 변수 적용 및 재배포 트리거)
   const proxyBaseUrl = context.env.TOSS_PROXY_URL || 'https://openapi.tossinvest.com';
   const targetUrl = `${proxyBaseUrl.replace(/\/$/, '')}${targetPath}${url.search}`;
+
+  // 디버깅용 엔드포인트: 쿼리에 ?debug=1 이 있으면 환경 변수 주입 상태를 출력
+  if (url.searchParams.get('debug') === '1') {
+    return new Response(JSON.stringify({
+      TOSS_PROXY_URL: context.env.TOSS_PROXY_URL || "UNDEFINED (미설정)",
+      targetUrl: targetUrl,
+      envKeys: Object.keys(context.env || {})
+    }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
+  }
   
   // 중요: Cloudflare 헤더 스푸핑 차단 방지를 위해 필수 헤더만 필터링하여 전달
   const headers = new Headers();
