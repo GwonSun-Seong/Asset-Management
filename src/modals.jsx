@@ -1225,24 +1225,60 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                     <div className="text-xs font-black text-indigo-600 dark:text-indigo-400 animate-pulse">Gemini Vision AI가 이미지 분석 및 종목 추출 중...</div>
                                     <div className="text-[10px] text-slate-400">잠시만 기다려 주세요 (약 3~5초 소요)</div>
                                 </div>
-                            ) : ocrImagePreview ? (
-                                <div className="w-full flex flex-col sm:flex-row items-center gap-4">
-                                    <img src={ocrImagePreview} alt="Preview" className="w-24 h-24 object-cover rounded-lg border dark:border-slate-700 shadow-sm" />
-                                    <div className="flex-1 text-left space-y-2">
-                                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate max-w-[280px]">파일: {ocrImage.name || '클립보드 이미지'}</div>
-                                        <div className="text-[10px] text-slate-400">분석 준비 완료. 이 이미지를 사용해 주식 종목과 잔액을 분석합니다.</div>
-                                        <div className="flex gap-2">
+                            ) : ocrImages.length > 0 ? (
+                                <div className="w-full flex flex-col gap-4">
+                                    {/* 이미지 리스트 */}
+                                    <div className="flex flex-wrap gap-3 items-center justify-start w-full">
+                                        {ocrImages.map((img) => (
+                                            <div key={img.id} className="relative group w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm transition-transform hover:scale-105">
+                                                <img src={img.preview} alt="Preview" className="w-full h-full object-cover" />
+                                                <button 
+                                                    onClick={(e) => { e.preventDefault(); removeOcrImage(img.id); }}
+                                                    className="absolute top-1 right-1 bg-slate-900/85 hover:bg-red-600 text-white rounded-full p-1 text-[8px] transition-colors"
+                                                    title="이미지 삭제"
+                                                >
+                                                    ✕
+                                                </button>
+                                                <div className="absolute bottom-0 left-0 right-0 bg-slate-950/60 text-white text-[8px] px-1 py-0.5 truncate text-center font-mono">
+                                                    {img.file.name || '클립보드 이미지'}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        
+                                        {/* 추가 업로드 드롭존 버튼 */}
+                                        <label className="cursor-pointer w-20 h-20 sm:w-24 sm:h-24 border-2 border-dashed border-indigo-200 hover:border-indigo-400 dark:border-slate-700 dark:hover:border-slate-500 rounded-xl flex flex-col items-center justify-center gap-1 bg-slate-50/50 dark:bg-slate-900/30 transition-all hover:scale-105">
+                                            <input 
+                                                type="file" 
+                                                accept="image/*" 
+                                                multiple
+                                                onChange={handleOcrFileChange} 
+                                                className="hidden" 
+                                            />
+                                            <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                                            </svg>
+                                            <span className="text-[9px] font-extrabold text-indigo-500 dark:text-indigo-400">추가하기</span>
+                                        </label>
+                                    </div>
+                                    
+                                    {/* 하단 제어 버튼 */}
+                                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t dark:border-slate-700/60 pt-3.5 w-full">
+                                        <div className="text-left font-sans">
+                                            <div className="text-xs font-black text-slate-700 dark:text-slate-200">선택된 스크린샷: 총 {ocrImages.length}장</div>
+                                            <div className="text-[10px] text-slate-400 font-bold mt-0.5">Gemini Vision AI가 업로드된 모든 이미지의 종목들을 합산하여 분석합니다.</div>
+                                        </div>
+                                        <div className="flex gap-2 w-full sm:w-auto">
                                             <button 
                                                 onClick={handleAnalyzeImageOcr}
-                                                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-1.5 px-3 rounded-lg shadow transition-colors"
+                                                className="flex-1 sm:flex-none bg-indigo-650 hover:bg-indigo-750 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg shadow transition-colors"
                                             >
-                                                ⚡ 분석 시작
+                                                ⚡ 분석 시작 ({ocrImages.length}장)
                                             </button>
                                             <button 
-                                                onClick={() => { setOcrImage(null); setOcrImagePreview(null); }}
-                                                className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors"
+                                                onClick={() => { setOcrImages([]); }}
+                                                className="flex-1 sm:flex-none bg-slate-200 hover:bg-slate-350 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-600 dark:text-slate-300 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors"
                                             >
-                                                취소
+                                                모두 취소
                                             </button>
                                         </div>
                                     </div>
@@ -1252,15 +1288,16 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                     <input 
                                         type="file" 
                                         accept="image/*" 
+                                        multiple
                                         onChange={handleOcrFileChange} 
                                         className="hidden" 
                                     />
                                     <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-500 hover:scale-110 transition-transform">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                     </div>
-                                    <div className="space-y-1">
-                                        <div className="text-xs font-black text-indigo-900 dark:text-indigo-200">여기에 스크린샷 이미지를 놓거나, 클릭하여 선택</div>
-                                        <div className="text-[10px] text-slate-400 font-medium font-sans">또는 이 화면에서 <kbd className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded border text-[9px] font-mono">Ctrl</kbd>+<kbd className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded border text-[9px] font-mono">V</kbd>로 캡처 이미지 붙여넣기</div>
+                                    <div className="space-y-1 font-sans">
+                                        <div className="text-xs font-black text-indigo-900 dark:text-indigo-200">여기에 스크린샷 이미지들을 놓거나, 클릭하여 선택 (여러 장 가능)</div>
+                                        <div className="text-[10px] text-slate-400 font-bold">또는 이 화면에서 <kbd className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded border text-[9px] font-mono">Ctrl</kbd>+<kbd className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded border text-[9px] font-mono">V</kbd>로 캡처 이미지들을 붙여넣기</div>
                                     </div>
                                 </label>
                             )}
