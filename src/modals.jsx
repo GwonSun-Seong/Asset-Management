@@ -822,13 +822,17 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 1. 모든 이미지에 표시된 계좌들의 실질적인 '총 평가 금액' 또는 '총 자산 금액'의 합산: 원화 기준이며 반드시 만원 단위로 변환해 주세요 (예: 50,000,000원은 5000, 2,500,000원은 250). 만약 동일한 계좌의 여러 스크린샷이라면 중복 합산하지 말고 최종 총액을, 서로 다른 계좌의 목록이라면 합산액을 의미합니다.
 2. 모든 이미지에 흩어져 있는 주식/펀드/ETF 종목 목록 전체 (수량, 평가금액, 매입단가/평단가, 현재가 등):
 각 주식 종목은 "stockItems" 배열에 포함되어야 하며, 다음 필드를 가집니다:
-- ticker: 해당 주식의 티커/코드 (예: 국장은 '005930', 미장은 'AAPL', 'TSLA' 등)
-- name: 종목명 (예: '삼성전자', '테슬라' 등)
+- ticker: 해당 주식의 티커/코드. 
+  ⚠️중요: 이미지에 숫자 티커가 없더라도 'TIGER 미국S&P500', '삼성전자' 등 종목명이 확인된다면 당신의 금융 지식을 활용하여 한국 주식/ETF는 반드시 6자리 숫자 코드(예: '360750'), 미국 주식은 영문 심볼(예: 'AAPL')을 유추해서 채워 넣으세요.
+- name: 종목명.
+  ⚠️중요: '[연금] TIGER 미국S&P500' 이나 '[ISA] KODEX 200' 처럼 계좌 유형이나 특정 접두어/접미어가 붙어 있다면 이를 모두 제거하고 본래의 깔끔한 종목명(예: 'TIGER 미국S&P500', 'KODEX 200')만 추출하세요.
 - shares: 잔고 수량 (숫자)
 - avgPrice: 매입단가 (숫자, 평단가)
 - currentPrice: 현재단가 (숫자)
 - currency: 화폐 단위 ('KRW' 또는 'USD')
 
+⚠️스크롤 중복 제거: 만약 여러 스크린샷에 걸쳐 겹쳐서 찍힌 동일한 종목이 있다면, 수량과 평단가가 가장 최신이거나 명확한 하나만 남기고 중복을 제거(Deduplicate)하여 하나만 포함시키세요.
+⚠️말줄임 텍스트 복원: 화면 우측 끝에서 종목명이 잘려 있더라도(예: 'TIGER 미국S&P5...'), 문맥을 보고 원래 이름(TIGER 미국S&P500)으로 판단하여 올바른 티커를 찾아내세요.
 ⚠️주의: 절대 '매입금액(총투자액)'이나 '평가손익'의 숫자와 '매입단가(1주당 가격, 평단가)'를 혼동하여 추출하지 마세요. 매입단가(avgPrice)는 현재가(currentPrice)와 자릿수(액수 범위)가 비슷해야 합니다.
 ⚠️금액은 해외 주식이어도 원화(KRW)로 변환하거나 표시된 값을 그대로 숫자로 추출하되, 통화 표기는 currency 필드로 명시하세요.
 
@@ -1092,6 +1096,93 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             baseAmount: Number(baseAmount) || 0, 
             linkedItems: linkedItems 
         });
+    };
+
+    const handleUpdateTicker = async (itemId, newTicker) => {
+        const ticker = newTicker.trim().toUpperCase();
+        if (!ticker) return;
+
+        // 1. Optimistic update
+        setLinkedItems(prev => prev.map(item => 
+            item.id === itemId 
+            ? { ...item, ticker, syncStatus: 'syncing', syncErrorReason: null }
+            : item
+        ));
+
+        // 2. Check API key
+        const clientId = localStorage.getItem('toss_client_id');
+        const clientSecret = localStorage.getItem('toss_client_secret');
+        if (!clientId || !clientSecret) {
+            setLinkedItems(prev => prev.map(item => 
+                item.id === itemId 
+                ? { ...item, ticker, syncStatus: 'error', syncErrorReason: '토스 API 키가 등록되지 않았습니다.' }
+                : item
+            ));
+            if (window.addToast) {
+                window.addToast('토스 API 키를 먼저 등록해주세요.', 'warning');
+            }
+            return;
+        }
+
+        try {
+            // Try to resolve stock name
+            let resolvedName = ticker;
+            const searchFn = window.fetchTossSearch || window.fetchYahooSearch;
+            if (searchFn) {
+                try {
+                    const searchResults = await searchFn(ticker);
+                    const exactMatch = searchResults.find(r => r.symbol.toUpperCase() === ticker);
+                    if (exactMatch && exactMatch.name) {
+                        resolvedName = exactMatch.name;
+                    }
+                } catch (err) {
+                    console.warn("Search name lookup failed:", err);
+                }
+            }
+
+            const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
+            if (!fetchFn) throw new Error("Fetch function not found");
+            
+            const quotes = await fetchFn([ticker]);
+            const q = quotes[ticker];
+
+            if (q && q.price) {
+                const isUsStock = /^[A-Za-z]/.test(ticker);
+                const activeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
+                const finalPrice = isUsStock ? Math.round(q.price * activeFxRate) : q.price;
+                
+                setLinkedItems(prev => prev.map(item => 
+                    item.id === itemId 
+                    ? { 
+                        ...item, 
+                        ticker, 
+                        name: (item.name === item.ticker || !item.name || /^[A-Z0-9\s-]+$/i.test(item.name)) ? resolvedName : item.name, 
+                        currentPrice: finalPrice, 
+                        currency: 'KRW', 
+                        syncStatus: 'online', 
+                        syncErrorReason: null 
+                      }
+                    : item
+                ));
+                
+                if (window.addToast) {
+                    window.addToast(`티커가 변경되었으며 시세를 갱신했습니다: ${resolvedName} (₩${finalPrice.toLocaleString()})`, 'success');
+                }
+            } else {
+                throw new Error("종목 코드를 찾을 수 없거나 시세 데이터가 없습니다.");
+            }
+        } catch (e) {
+            console.error("Update ticker fetch failed:", e);
+            const errorMsg = e.message || 'API 연동 에러';
+            setLinkedItems(prev => prev.map(item => 
+                item.id === itemId 
+                ? { ...item, ticker, syncStatus: 'error', syncErrorReason: errorMsg }
+                : item
+            ));
+            if (window.addToast) {
+                window.addToast(`티커 연동 실패: ${errorMsg}`, 'error');
+            }
+        }
     };
 
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1567,7 +1658,42 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                 <td className="py-3 pl-4 rounded-l-2xl">
                                                     <div className="flex flex-col">
                                                         <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[120px]" title={item.name}>{item.name}</div>
-                                                        <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5" title="종목 티커">{item.ticker || '티커 없음'}</div>
+                                                        {editingCell && editingCell.id === item.id && editingCell.field === 'ticker' ? (
+                                                            <input 
+                                                                type="text" 
+                                                                className="w-24 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-[10px] font-mono font-bold focus:outline-none mt-0.5"
+                                                                defaultValue={item.ticker || ''}
+                                                                autoFocus
+                                                                placeholder="티커/번호"
+                                                                onBlur={(e) => {
+                                                                    const val = e.target.value.trim().toUpperCase();
+                                                                    if (val && val !== item.ticker) {
+                                                                        handleUpdateTicker(item.id, val);
+                                                                    }
+                                                                    setEditingCell(null);
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        const val = e.target.value.trim().toUpperCase();
+                                                                        if (val && val !== item.ticker) {
+                                                                            handleUpdateTicker(item.id, val);
+                                                                        }
+                                                                        setEditingCell(null);
+                                                                    } else if (e.key === 'Escape') {
+                                                                        setEditingCell(null);
+                                                                    }
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <div 
+                                                                onClick={() => setEditingCell({ id: item.id, field: 'ticker' })} 
+                                                                className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 py-0.5 w-fit flex items-center gap-1 group/ticker"
+                                                                title="클릭하여 티커 수정"
+                                                            >
+                                                                <span>{item.ticker || '티커 없음'}</span>
+                                                                <span className="opacity-0 group-hover/ticker:opacity-100 transition-opacity">✏️</span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="py-3">
