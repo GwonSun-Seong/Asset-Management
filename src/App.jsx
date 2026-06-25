@@ -1000,23 +1000,28 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 if (!appDataCur || !appDataCur.assets) return;
 
                 const symbolsToFetch = new Set();
+                let hasUnresolvedTickers = false;
                 Object.keys(appDataCur.assets).forEach(sector => {
                     const list = appDataCur.assets[sector] || [];
                     list.forEach(asset => {
                         if (asset.linkedItems && Array.isArray(asset.linkedItems)) {
                             asset.linkedItems.forEach(item => {
                                 if (item.autoUpdate !== false && item.ticker) {
-                                    symbolsToFetch.add(item.ticker);
+                                    if (item.ticker === '사용자 입력 필요') {
+                                        hasUnresolvedTickers = true;
+                                    } else {
+                                        symbolsToFetch.add(item.ticker);
+                                    }
                                 }
                             });
                         }
                     });
                 });
 
-                if (symbolsToFetch.size === 0) return;
+                if (symbolsToFetch.size === 0 && !hasUnresolvedTickers) return;
 
                 try {
-                    const quotes = await window.fetchTossQuotes(Array.from(symbolsToFetch));
+                    const quotes = symbolsToFetch.size > 0 ? await window.fetchTossQuotes(Array.from(symbolsToFetch)) : {};
                     
                     setAppData(prevData => {
                         if (!prevData || !prevData.assets) return prevData;
@@ -1029,6 +1034,19 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                     let assetChanged = false;
                                     const newLinkedItems = asset.linkedItems.map(item => {
                                         if (item.autoUpdate !== false && item.ticker) {
+                                            if (item.ticker === '사용자 입력 필요') {
+                                                const targetStatus = 'error';
+                                                const targetPrice = item.currentPrice;
+                                                const targetCurrency = 'KRW';
+                                                const targetError = '티커 번호(6자리 코드 등)를 수정하여 올바른 시세를 연동해 주세요.';
+                                                
+                                                if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError || item.currency !== targetCurrency) {
+                                                    assetChanged = true;
+                                                    hasChanges = true;
+                                                    return { ...item, currentPrice: targetPrice, currency: targetCurrency, syncStatus: targetStatus, syncErrorReason: targetError };
+                                                }
+                                                return item;
+                                            }
                                             const q = quotes[item.ticker];
                                             const targetStatus = (q && q.price) ? 'online' : 'error';
                                             

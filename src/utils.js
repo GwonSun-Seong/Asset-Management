@@ -1368,21 +1368,7 @@ const fetchTossSearch = async (query) => {
     return [];
 };
 
-// 야후 파이낸스 함수들을 토스 Open API 기반으로 매핑하여 하위 호환성 보장
-const fetchYahooQuotes = fetchTossQuotes;
-const fetchYahooSearch = fetchTossSearch;
-const fetchYahooData = async (symbol) => {
-    const quotes = await fetchTossQuotes([symbol]);
-    if (quotes[symbol]) {
-        return {
-            price: quotes[symbol].price,
-            change: 0,
-            data: window.INITIAL_MARKET_ITEMS[0].data,
-            isLive: true
-        };
-    }
-    return null;
-};
+
 
 // [추가] 비트코인 데이터 가져오기 (CoinGecko API)
 const fetchBitcoinData = async () => {
@@ -1732,9 +1718,7 @@ window.generateCSV = generateCSV;
 window.parseCSV = parseCSV;
 window.compressData = compressData;
 window.decompressData = decompressData;
-window.fetchYahooData = fetchYahooData;
-window.fetchYahooQuotes = fetchYahooQuotes;
-window.fetchYahooSearch = fetchYahooSearch;
+
 window.fetchTossQuotes = fetchTossQuotes;
 window.fetchTossSearch = fetchTossSearch;
 window.fetchTossExchangeRate = fetchTossExchangeRate;

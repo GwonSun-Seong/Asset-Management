@@ -557,15 +557,22 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                 }
 
                 const tickersToFetch = linkedItems
-                    .filter(item => item.autoUpdate !== false && item.ticker)
+                    .filter(item => item.autoUpdate !== false && item.ticker && item.ticker !== '사용자 입력 필요')
                     .map(item => item.ticker);
 
-                if (tickersToFetch.length > 0) {
-                    const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
+                if (tickersToFetch.length > 0 || linkedItems.some(item => item.autoUpdate !== false && item.ticker === '사용자 입력 필요')) {
+                    const fetchFn = window.fetchTossQuotes;
                     if (fetchFn) {
                         const quotes = await fetchFn(tickersToFetch);
                         setLinkedItems(prev => prev.map(item => {
                             if (item.autoUpdate !== false && item.ticker) {
+                                if (item.ticker === '사용자 입력 필요') {
+                                    return { 
+                                        ...item, 
+                                        syncStatus: 'error', 
+                                        syncErrorReason: '티커 번호(6자리 코드 등)를 수정하여 올바른 시세를 연동해 주세요.' 
+                                    };
+                                }
                                 const q = quotes[item.ticker];
                                 if (q && q.price) {
                                     const isUsStock = /^[A-Za-z]/.test(item.ticker);
@@ -751,16 +758,23 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
         // OCR 병합 즉시 최신 시세 갱신
         const tickersToFetch = finalLinkedItems
-            .filter(item => item.autoUpdate !== false && item.ticker)
+            .filter(item => item.autoUpdate !== false && item.ticker && item.ticker !== '사용자 입력 필요')
             .map(item => item.ticker);
 
-        if (tickersToFetch.length > 0) {
+        if (tickersToFetch.length > 0 || finalLinkedItems.some(item => item.autoUpdate !== false && item.ticker === '사용자 입력 필요')) {
             try {
-                const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
+                const fetchFn = window.fetchTossQuotes;
                 if (fetchFn) {
                     const quotes = await fetchFn(tickersToFetch);
                     setLinkedItems(prev => prev.map(item => {
                         if (item.autoUpdate !== false && item.ticker) {
+                            if (item.ticker === '사용자 입력 필요') {
+                                return { 
+                                    ...item, 
+                                    syncStatus: 'error', 
+                                    syncErrorReason: '티커 번호(6자리 코드 등)를 수정하여 올바른 시세를 연동해 주세요.' 
+                                };
+                            }
                             const q = quotes[item.ticker];
                             if (q && q.price) {
                                 const isUsStock = /^[A-Za-z]/.test(item.ticker);
@@ -876,6 +890,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 각 주식 종목은 "stockItems" 배열에 포함되어야 하며, 다음 필드를 가집니다:
 - ticker: 해당 주식의 티커/코드. 
   ⚠️중요: 이미지에 숫자 티커가 없더라도 'TIGER 미국S&P500', '삼성전자' 등 종목명이 확인된다면 당신의 금융 지식을 활용하여 한국 주식/ETF는 반드시 6자리 숫자 코드(예: '360750'), 미국 주식은 영문 심볼(예: 'AAPL')을 유추해서 채워 넣으세요.
+  ⚠️정확도 필터링: 단, 국장에 상장된 해외 주식 ETF(예: 미국 S&P500, 나스닥100, 반도체 테마 등 국내 상장 ETF)나 이름이 복잡한 종목의 경우, 정확한 6자리 숫자를 100% 확신할 수 없거나 매칭 정확도가 낮다고 판단되면 유추하지 말고 반드시 "사용자 입력 필요"라고 티커값에 기입하세요.
 - name: 종목명.
   ⚠️중요: '[연금] TIGER 미국S&P500' 이나 '[ISA] KODEX 200' 처럼 계좌 유형이나 특정 접두어/접미어가 붙어 있다면 이를 모두 제거하고 본래의 깔끔한 종목명(예: 'TIGER 미국S&P500', 'KODEX 200')만 추출하세요.
 - shares: 잔고 수량 (숫자)
@@ -984,7 +999,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         const timer = setTimeout(async () => {
             setIsSearching(true);
             try {
-                const results = await window.fetchYahooSearch(draftTicker);
+                const results = await window.fetchTossSearch(draftTicker);
                 setSearchResults(results || []);
             } catch (e) { console.error(e); }
             finally { setIsSearching(false); }
@@ -1111,7 +1126,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         // 4. 백그라운드 시세 동기화 (즉시 토스 API 호출)
         (async () => {
             try {
-                const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
+                const fetchFn = window.fetchTossQuotes;
                 if (!fetchFn) return;
                 const quotes = await fetchFn([ticker]);
                 const q = quotes[ticker];
@@ -1179,7 +1194,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         try {
             // Try to resolve stock name
             let resolvedName = ticker;
-            const searchFn = window.fetchTossSearch || window.fetchYahooSearch;
+            const searchFn = window.fetchTossSearch;
             if (searchFn) {
                 try {
                     const searchResults = await searchFn(ticker);
@@ -1192,7 +1207,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                 }
             }
 
-            const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
+            const fetchFn = window.fetchTossQuotes;
             if (!fetchFn) throw new Error("Fetch function not found");
             
             const quotes = await fetchFn([ticker]);
@@ -1251,10 +1266,10 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         }
 
         const tickersToFetch = linkedItems
-            .filter(item => item.autoUpdate !== false && item.ticker)
+            .filter(item => item.autoUpdate !== false && item.ticker && item.ticker !== '사용자 입력 필요')
             .map(item => item.ticker);
 
-        if (tickersToFetch.length === 0) {
+        if (tickersToFetch.length === 0 && !linkedItems.some(item => item.autoUpdate !== false && item.ticker === '사용자 입력 필요')) {
             if (window.addToast) {
                 window.addToast('실시간 연동이 활성화된 종목이 없습니다.', 'info');
             }
@@ -1268,13 +1283,24 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                 setFxRate(rate);
             }
 
-            const fetchFn = window.fetchTossQuotes || window.fetchYahooQuotes;
+            const fetchFn = window.fetchTossQuotes;
             if (!fetchFn) throw new Error("Fetch function not found");
-            const quotes = await fetchFn(tickersToFetch);
+            const quotes = tickersToFetch.length > 0 ? await fetchFn(tickersToFetch) : {};
             
             let hasChanges = false;
             const newLinkedItems = linkedItems.map(item => {
                 if (item.autoUpdate !== false && item.ticker) {
+                    if (item.ticker === '사용자 입력 필요') {
+                        const targetStatus = 'error';
+                        const targetPrice = item.currentPrice;
+                        const targetCurrency = 'KRW';
+                        const targetError = '티커 번호(6자리 코드 등)를 수정하여 올바른 시세를 연동해 주세요.';
+                        if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError || item.currency !== targetCurrency) {
+                            hasChanges = true;
+                            return { ...item, currentPrice: targetPrice, currency: targetCurrency, syncStatus: targetStatus, syncErrorReason: targetError };
+                        }
+                        return item;
+                    }
                     const q = quotes[item.ticker];
                     const targetStatus = (q && q.price) ? 'online' : 'error';
                     
@@ -1303,11 +1329,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             } else {
                 // 상태만 online으로 업데이트 해야 할 수 있으므로 체크
                 const statusOnlyChanged = linkedItems.some(item => 
-                    item.autoUpdate !== false && item.ticker && (item.syncStatus !== 'online' || item.syncErrorReason !== null)
+                    item.autoUpdate !== false && item.ticker && item.ticker !== '사용자 입력 필요' && (item.syncStatus !== 'online' || item.syncErrorReason !== null)
                 );
                 if (statusOnlyChanged) {
                     setLinkedItems(prev => prev.map(item => 
-                        (item.autoUpdate !== false && item.ticker) ? { ...item, syncStatus: 'online', syncErrorReason: null } : item
+                        (item.autoUpdate !== false && item.ticker && item.ticker !== '사용자 입력 필요') ? { ...item, syncStatus: 'online', syncErrorReason: null } : item
                     ));
                     if (window.addToast) {
                         window.addToast('실시간 주식 시세가 업데이트되었습니다.', 'success');

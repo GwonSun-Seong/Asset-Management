@@ -20,12 +20,89 @@ const MarketDataWidget = ({ darkMode }) => {
         if (isForce) retryCountRef.current = 0;
         setIsLoading(true);
 
+        // Fetch live quotes and rate from Toss API if credentials are set
+        let quotes = {};
+        let liveRate = Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50;
+        const clientId = localStorage.getItem('toss_client_id');
+        const clientSecret = localStorage.getItem('toss_client_secret');
+        const hasTossKeys = clientId && clientSecret;
+
+        if (hasTossKeys) {
+            try {
+                const fetchQuotesFn = window.fetchTossQuotes;
+                if (fetchQuotesFn) {
+                    quotes = await fetchQuotesFn(['SPY', 'QQQ', 'GLD']);
+                }
+            } catch (err) {
+                console.warn("Toss quotes fetch failed in widget:", err);
+            }
+            try {
+                if (window.fetchTossExchangeRate) {
+                    liveRate = await window.fetchTossExchangeRate();
+                }
+            } catch (err) {
+                console.warn("Toss exchange rate fetch failed in widget:", err);
+            }
+        }
+
+        const getIndexData = (idx, livePrice) => {
+            const baseData = window.INITIAL_MARKET_ITEMS[idx].data;
+            const prevPrice = baseData[baseData.length - 2];
+            const changePercent = prevPrice > 0 ? ((livePrice - prevPrice) / prevPrice) * 100 : 0;
+            const chartData = [...baseData.slice(0, baseData.length - 1), livePrice];
+            return { price: livePrice, change: changePercent, data: chartData };
+        };
+
         const targets = [
-            { name: 'USD/KRW', fn: async () => ({ price: Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50, change: 0.5, data: window.INITIAL_MARKET_ITEMS[0].data }) },
-            { name: 'S&P 500', fn: async () => ({ price: 5120.30, change: 1.2, data: window.INITIAL_MARKET_ITEMS[1].data }) },
-            { name: 'NASDAQ', fn: async () => ({ price: 16050.20, change: 1.5, data: window.INITIAL_MARKET_ITEMS[2].data }) },
-            { name: 'Gold', fn: async () => ({ price: 2150.00, change: 0.3, data: window.INITIAL_MARKET_ITEMS[4].data }) },
-            { name: 'Bitcoin', fn: () => window.fetchBitcoinData() }
+            { 
+                name: 'USD/KRW', 
+                fn: async () => {
+                    if (hasTossKeys) {
+                        return getIndexData(0, liveRate);
+                    }
+                    return { price: Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50, change: 0.5, data: window.INITIAL_MARKET_ITEMS[0].data };
+                }
+            },
+            { 
+                name: 'S&P 500', 
+                fn: async () => {
+                    const spyPrice = quotes['SPY']?.price;
+                    if (hasTossKeys && spyPrice) {
+                        return getIndexData(1, spyPrice * 10);
+                    }
+                    return { price: 5120.30, change: 1.2, data: window.INITIAL_MARKET_ITEMS[1].data };
+                }
+            },
+            { 
+                name: 'NASDAQ', 
+                fn: async () => {
+                    const qqqPrice = quotes['QQQ']?.price;
+                    if (hasTossKeys && qqqPrice) {
+                        return getIndexData(2, qqqPrice * 40);
+                    }
+                    return { price: 16050.20, change: 1.5, data: window.INITIAL_MARKET_ITEMS[2].data };
+                }
+            },
+            { 
+                name: 'Bitcoin', 
+                fn: async () => {
+                    const btc = await window.fetchBitcoinData();
+                    if (btc && btc.price) {
+                        return getIndexData(3, btc.price);
+                    }
+                    return { price: 65400.00, change: -0.8, data: window.INITIAL_MARKET_ITEMS[3].data };
+                }
+            },
+            { 
+                name: 'Gold', 
+                fn: async () => {
+                    const gldPrice = quotes['GLD']?.price;
+                    if (hasTossKeys && gldPrice) {
+                        return getIndexData(4, gldPrice * 10);
+                    }
+                    return { price: 2150.00, change: 0.3, data: window.INITIAL_MARKET_ITEMS[4].data };
+                }
+            }
         ];
 
         const itemsToFetch = isForce 
