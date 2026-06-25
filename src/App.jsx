@@ -1043,13 +1043,20 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                         if (item.autoUpdate !== false && item.ticker) {
                                             const q = quotes[item.ticker];
                                             const targetStatus = (q && q.price) ? 'online' : 'error';
-                                            const targetPrice = (q && q.price) ? q.price : item.currentPrice;
+                                            
+                                            let targetPrice = item.currentPrice;
+                                            if (q && q.price) {
+                                                const isUsStock = /^[A-Za-z]/.test(item.ticker);
+                                                const safeFxRate = Number(localStorage.getItem('asset_last_usd_krw')) || 1420;
+                                                targetPrice = isUsStock ? Math.round(q.price * safeFxRate) : q.price;
+                                            }
+                                            const targetCurrency = 'KRW'; // Always store and sync in KRW
                                             const targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
                                             
-                                            if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError) {
+                                            if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError || item.currency !== targetCurrency) {
                                                 assetChanged = true;
                                                 hasChanges = true;
-                                                return { ...item, currentPrice: targetPrice, syncStatus: targetStatus, syncErrorReason: targetError };
+                                                return { ...item, currentPrice: targetPrice, currency: targetCurrency, syncStatus: targetStatus, syncErrorReason: targetError };
                                             }
                                         }
                                         return item;

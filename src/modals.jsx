@@ -516,10 +516,13 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             if (item.autoUpdate !== false && item.ticker) {
                                 const q = quotes[item.ticker];
                                 if (q && q.price) {
+                                    const isUsStock = /^[A-Za-z]/.test(item.ticker);
+                                    const activeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
+                                    const finalPrice = isUsStock ? Math.round(q.price * activeFxRate) : q.price;
                                     return { 
                                         ...item, 
-                                        currentPrice: q.price, 
-                                        currency: q.currency || item.currency, 
+                                        currentPrice: finalPrice, 
+                                        currency: 'KRW', // Always store and sync in KRW
                                         syncStatus: 'online', 
                                         syncErrorReason: null 
                                     };
@@ -708,7 +711,10 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                         if (item.autoUpdate !== false && item.ticker) {
                             const q = quotes[item.ticker];
                             if (q && q.price) {
-                                return { ...item, currentPrice: q.price, syncStatus: 'online', syncErrorReason: null };
+                                const isUsStock = /^[A-Za-z]/.test(item.ticker);
+                                const activeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
+                                const finalPrice = isUsStock ? Math.round(q.price * activeFxRate) : q.price;
+                                return { ...item, currentPrice: finalPrice, currency: 'KRW', syncStatus: 'online', syncErrorReason: null };
                             } else {
                                 return { ...item, syncStatus: 'error', syncErrorReason: '시세를 불러오지 못했습니다.' };
                             }
@@ -746,6 +752,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             const shares = parseFloat(s.shares) || 0;
             const tickerStr = String(s.ticker || '');
             const isKorean = s.currency === 'KRW' || /^\d{6}/.test(tickerStr) || tickerStr.endsWith('.KS') || tickerStr.endsWith('.KQ');
+            const isUsStock = /^[A-Za-z]/.test(tickerStr);
             
             if (isKorean) {
                 if (avg > 0 && avg < 1000) avg *= 10000;
@@ -763,6 +770,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                         avg = cur;
                     }
                 }
+            } else if (isUsStock && (s.currency === 'USD' || avg < 2000)) {
+                // If it is a US stock and the values are extracted in USD, convert to KRW
+                const activeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
+                avg = Math.round(avg * activeFxRate);
+                cur = Math.round(cur * activeFxRate);
             }
             return {
                 id: 'stock_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 5),
@@ -771,7 +783,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                 shares: shares,
                 avgPrice: avg,
                 currentPrice: cur,
-                currency: s.currency || 'KRW',
+                currency: 'KRW', // Always store in KRW
                 autoUpdate: true
             };
         });
@@ -1122,8 +1134,14 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                 if (item.autoUpdate !== false && item.ticker) {
                     const q = quotes[item.ticker];
                     const targetStatus = (q && q.price) ? 'online' : 'error';
-                    const targetPrice = (q && q.price) ? q.price : item.currentPrice;
-                    const targetCurrency = (q && q.currency) ? q.currency : item.currency;
+                    
+                    let targetPrice = item.currentPrice;
+                    if (q && q.price) {
+                        const isUsStock = /^[A-Za-z]/.test(item.ticker);
+                        const activeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
+                        targetPrice = isUsStock ? Math.round(q.price * activeFxRate) : q.price;
+                    }
+                    const targetCurrency = 'KRW'; // Always store and sync in KRW
                     const targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
                     
                     if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError || item.currency !== targetCurrency) {
@@ -1270,7 +1288,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                         <div className="flex gap-2 w-full sm:w-auto">
                                             <button 
                                                 onClick={handleAnalyzeImageOcr}
-                                                className="flex-1 sm:flex-none bg-indigo-650 hover:bg-indigo-750 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg shadow transition-colors"
+                                                className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg shadow transition-colors"
                                             >
                                                 스크린샷 분석하기 ({ocrImages.length}장)
                                             </button>
@@ -1541,6 +1559,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                         const isProfit = item.profitManwon >= 0;
                                         const isTossConfigured = !!localStorage.getItem('toss_client_id') && !!localStorage.getItem('toss_client_secret');
                                         const profitColor = isProfit ? 'text-red-500 dark:text-red-400' : 'text-blue-500 dark:text-blue-400';
+                                        const safeFxRate = fxRate || 1300;
                                         
                                         return (
                                         <React.Fragment key={item.id}>
@@ -1609,7 +1628,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                                 className="text-[10px] text-slate-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
                                                                 title="클릭하여 매입단가 수정"
                                                             >
-                                                                {item.currency==='USD'?'$':'₩'}{Number(item.avgPrice).toLocaleString()} ✏️
+                                                                {item.currency==='USD' ? `₩${Math.round(Number(item.avgPrice) * safeFxRate).toLocaleString()} ($${Number(item.avgPrice).toLocaleString()})` : `₩${Number(item.avgPrice).toLocaleString()}`} ✏️
                                                             </span>
                                                         )}
                                                     </div>
@@ -1643,7 +1662,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                                     className="text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-855 rounded px-1 w-fit block"
                                                                     title="클릭하여 현재단가 수정"
                                                                 >
-                                                                    {item.currency==='USD'?'$':'₩'}{Number(item.currentPrice).toLocaleString()} ✏️
+                                                                    {item.currency==='USD' ? `₩${Math.round(Number(item.currentPrice) * safeFxRate).toLocaleString()} ($${Number(item.currentPrice).toLocaleString()})` : `₩${Number(item.currentPrice).toLocaleString()}`} ✏️
                                                                 </span>
                                                             )}
                                                             
