@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import AssetSummaryCard from './components/AssetSummaryCard';
-import MarketDataWidget from './components/MarketDataWidget';
 import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioComponents';
 
         const CoreSettingsCard = ({
@@ -6442,7 +6441,6 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                     </div>
                                 ))}
                             </div>
-                            <MarketDataWidget darkMode={darkMode} />
                             
                             {/* [추가] 배너 스와이프 영역 (AI 분석 / 가챠 게임) */}
                             <div className="mt-4 relative group">
