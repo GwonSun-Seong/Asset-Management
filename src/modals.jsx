@@ -1272,7 +1272,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                 onClick={handleAnalyzeImageOcr}
                                                 className="flex-1 sm:flex-none bg-indigo-650 hover:bg-indigo-750 text-white text-xs font-bold py-1.5 px-3.5 rounded-lg shadow transition-colors"
                                             >
-                                                ⚡ 분석 시작 ({ocrImages.length}장)
+                                                스크린샷 분석하기 ({ocrImages.length}장)
                                             </button>
                                             <button 
                                                 onClick={() => { setOcrImages([]); }}
