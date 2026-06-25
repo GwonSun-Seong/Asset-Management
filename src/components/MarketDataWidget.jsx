@@ -21,6 +21,7 @@ const MarketDataWidget = ({ darkMode }) => {
         setIsLoading(true);
 
         // Fetch live quotes and rate from Toss API if credentials are set
+        let spyCandles = null, qqqCandles = null, gldCandles = null;
         let quotes = {};
         let liveRate = Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50;
         const clientId = localStorage.getItem('toss_client_id');
@@ -28,14 +29,35 @@ const MarketDataWidget = ({ darkMode }) => {
         const hasTossKeys = clientId && clientSecret;
 
         if (hasTossKeys) {
+            // 1. 캔들 조회 시도 (30일치 차트 및 실시간 시세 확보)
             try {
-                const fetchQuotesFn = window.fetchTossQuotes;
-                if (fetchQuotesFn) {
-                    quotes = await fetchQuotesFn(['SPY', 'QQQ', 'GLD']);
+                if (window.fetchTossCandles) {
+                    const results = await Promise.allSettled([
+                        window.fetchTossCandles('SPY', 30),
+                        window.fetchTossCandles('QQQ', 30),
+                        window.fetchTossCandles('GLD', 30)
+                    ]);
+                    spyCandles = results[0].status === 'fulfilled' ? results[0].value : null;
+                    qqqCandles = results[1].status === 'fulfilled' ? results[1].value : null;
+                    gldCandles = results[2].status === 'fulfilled' ? results[2].value : null;
                 }
             } catch (err) {
-                console.warn("Toss quotes fetch failed in widget:", err);
+                console.warn("Toss candles fetch failed in widget:", err);
             }
+
+            // 2. 만약 일부 캔들 조회가 실패한 경우에만 백업용으로 현재가(Quotes) 조회
+            const needQuotes = !spyCandles || !qqqCandles || !gldCandles;
+            if (needQuotes) {
+                try {
+                    if (window.fetchTossQuotes) {
+                        quotes = await window.fetchTossQuotes(['SPY', 'QQQ', 'GLD']);
+                    }
+                } catch (err) {
+                    console.warn("Toss quotes backup fetch failed in widget:", err);
+                }
+            }
+
+            // 3. 환율 조회
             try {
                 if (window.fetchTossExchangeRate) {
                     liveRate = await window.fetchTossExchangeRate();
@@ -45,12 +67,26 @@ const MarketDataWidget = ({ darkMode }) => {
             }
         }
 
+        // 과거 30일 데이터 스케일링 함수 (수직 점프 방지용 백업 폴백)
         const getIndexData = (idx, livePrice) => {
             const baseData = window.INITIAL_MARKET_ITEMS[idx].data;
-            const prevPrice = baseData[baseData.length - 2];
-            const changePercent = prevPrice > 0 ? ((livePrice - prevPrice) / prevPrice) * 100 : 0;
-            const chartData = [...baseData.slice(0, baseData.length - 1), livePrice];
+            const lastHistoricalPrice = baseData[baseData.length - 1];
+            const scaleFactor = lastHistoricalPrice > 0 ? livePrice / lastHistoricalPrice : 1;
+            const chartData = baseData.map(val => val * scaleFactor);
+            
+            const prevPriceScaled = baseData[baseData.length - 2] * scaleFactor;
+            const changePercent = prevPriceScaled > 0 ? ((livePrice - prevPriceScaled) / prevPriceScaled) * 100 : 0;
             return { price: livePrice, change: changePercent, data: chartData };
+        };
+
+        // 토스 캔들 기반 인덱스 빌드 함수 (100% 실시세 차트)
+        const getCandleIndexData = (candles, multiplier) => {
+            const sortedCandles = [...candles].reverse();
+            const prices = sortedCandles.map(c => Number(c.closePrice) * multiplier);
+            const livePrice = prices[prices.length - 1];
+            const prevPrice = prices[prices.length - 2] || livePrice;
+            const changePercent = prevPrice > 0 ? ((livePrice - prevPrice) / prevPrice) * 100 : 0;
+            return { price: livePrice, change: changePercent, data: prices };
         };
 
         const targets = [
@@ -58,29 +94,35 @@ const MarketDataWidget = ({ darkMode }) => {
                 name: 'USD/KRW', 
                 fn: async () => {
                     if (hasTossKeys) {
-                        return getIndexData(0, liveRate);
+                        return { ...getIndexData(0, liveRate), isLive: true };
                     }
-                    return { price: Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50, change: 0.5, data: window.INITIAL_MARKET_ITEMS[0].data };
+                    return { price: Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50, change: 0.5, data: window.INITIAL_MARKET_ITEMS[0].data, isLive: false };
                 }
             },
             { 
                 name: 'S&P 500', 
                 fn: async () => {
+                    if (spyCandles && spyCandles.length >= 2) {
+                        return { ...getCandleIndexData(spyCandles, 10.035), isLive: true };
+                    }
                     const spyPrice = quotes['SPY']?.price;
                     if (hasTossKeys && spyPrice) {
-                        return getIndexData(1, spyPrice * 10);
+                        return { ...getIndexData(1, spyPrice * 10.035), isLive: true };
                     }
-                    return { price: 5120.30, change: 1.2, data: window.INITIAL_MARKET_ITEMS[1].data };
+                    return { price: 5120.30, change: 1.2, data: window.INITIAL_MARKET_ITEMS[1].data, isLive: false };
                 }
             },
             { 
                 name: 'NASDAQ', 
                 fn: async () => {
+                    if (qqqCandles && qqqCandles.length >= 2) {
+                        return { ...getCandleIndexData(qqqCandles, 35.85), isLive: true };
+                    }
                     const qqqPrice = quotes['QQQ']?.price;
                     if (hasTossKeys && qqqPrice) {
-                        return getIndexData(2, qqqPrice * 40);
+                        return { ...getIndexData(2, qqqPrice * 35.85), isLive: true };
                     }
-                    return { price: 16050.20, change: 1.5, data: window.INITIAL_MARKET_ITEMS[2].data };
+                    return { price: 16050.20, change: 1.5, data: window.INITIAL_MARKET_ITEMS[2].data, isLive: false };
                 }
             },
             { 
@@ -88,19 +130,22 @@ const MarketDataWidget = ({ darkMode }) => {
                 fn: async () => {
                     const btc = await window.fetchBitcoinData();
                     if (btc && btc.price) {
-                        return getIndexData(3, btc.price);
+                        return { ...getIndexData(3, btc.price), isLive: true };
                     }
-                    return { price: 65400.00, change: -0.8, data: window.INITIAL_MARKET_ITEMS[3].data };
+                    return { price: 65400.00, change: -0.8, data: window.INITIAL_MARKET_ITEMS[3].data, isLive: false };
                 }
             },
             { 
                 name: 'Gold', 
                 fn: async () => {
+                    if (gldCandles && gldCandles.length >= 2) {
+                        return { ...getCandleIndexData(gldCandles, 10.92), isLive: true };
+                    }
                     const gldPrice = quotes['GLD']?.price;
                     if (hasTossKeys && gldPrice) {
-                        return getIndexData(4, gldPrice * 10);
+                        return { ...getIndexData(4, gldPrice * 10.92), isLive: true };
                     }
-                    return { price: 2150.00, change: 0.3, data: window.INITIAL_MARKET_ITEMS[4].data };
+                    return { price: 2150.00, change: 0.3, data: window.INITIAL_MARKET_ITEMS[4].data, isLive: false };
                 }
             }
         ];
@@ -148,7 +193,7 @@ const MarketDataWidget = ({ darkMode }) => {
                             change: `${sign}${data.change.toFixed(2)}%`,
                             color: color,
                             data: data.data,
-                            isLive: true
+                            isLive: !!data.isLive
                         };
                     } else {
                         failCount++;

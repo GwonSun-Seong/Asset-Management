@@ -1302,6 +1302,39 @@ const fetchTossQuotes = async (symbols) => {
     }
 };
 
+const fetchTossCandles = async (symbol, count = 30) => {
+    if (!symbol) return null;
+    const clientId = localStorage.getItem('toss_client_id');
+    const clientSecret = localStorage.getItem('toss_client_secret');
+    if (!clientId || !clientSecret) {
+        console.warn("Toss API Client ID or Secret is missing in localStorage");
+        return null;
+    }
+    
+    try {
+        const token = await getTossToken(clientId, clientSecret);
+        const cleaned = symbol.trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
+        const url = `https://openapi.tossinvest.com/api/v1/candles?symbol=${cleaned}&interval=1d&count=${count}&adjusted=true`;
+        
+        const response = await fetchTossWithProxy(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Toss candles API error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.result?.candles || null;
+    } catch (e) {
+        console.error(`fetchTossCandles failed for ${symbol}:`, e);
+        return null;
+    }
+};
+
 // [추가] 토스증권 OpenAPI 기반 검색 자동완성 대체
 const fetchTossSearch = async (query) => {
     if (!query) return [];
@@ -1720,6 +1753,7 @@ window.compressData = compressData;
 window.decompressData = decompressData;
 
 window.fetchTossQuotes = fetchTossQuotes;
+window.fetchTossCandles = fetchTossCandles;
 window.fetchTossSearch = fetchTossSearch;
 window.fetchTossExchangeRate = fetchTossExchangeRate;
 window.fetchBitcoinData = fetchBitcoinData;
