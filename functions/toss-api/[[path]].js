@@ -2,7 +2,7 @@ export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
   
-  // OPTIONS preflight 요청 처리
+  // OPTIONS preflight 요청 처리 (CORS 대응)
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -15,13 +15,21 @@ export async function onRequest(context) {
     });
   }
 
-  // /toss-api 뒤의 실제 토스 API 경로 추출
+  // /toss-api 뒤의 실제 토스 API 경로 추출 (예: /oauth2/token)
   const targetPath = url.pathname.replace(/^\/toss-api/, '');
-  const targetUrl = `https://openapi.tossinvest.com${targetPath}${url.search}`;
+  // [개선] 클라우드플레어 환경변수 TOSS_PROXY_URL이 있으면 가상서버로 우회, 없으면 기본 주소로 작동
+  const proxyBaseUrl = context.env.TOSS_PROXY_URL || 'https://openapi.tossinvest.com';
+  const targetUrl = `${proxyBaseUrl.replace(/\/$/, '')}${targetPath}${url.search}`;
   
-  // 기존 요청 헤더 복사 (host 헤더는 fetch 시 Cloudflare가 재정의하므로 삭제)
-  const headers = new Headers(request.headers);
-  headers.delete('host');
+  // 중요: Cloudflare 헤더 스푸핑 차단 방지를 위해 필수 헤더만 필터링하여 전달
+  const headers = new Headers();
+  const allowedHeaders = ['content-type', 'authorization', 'accept', 'accept-encoding', 'user-agent'];
+  for (const [key, value] of request.headers.entries()) {
+    const lowerKey = key.toLowerCase();
+    if (allowedHeaders.includes(lowerKey)) {
+      headers.set(key, value);
+    }
+  }
   
   const fetchOptions = {
     method: request.method,
@@ -37,7 +45,7 @@ export async function onRequest(context) {
   try {
     const response = await fetch(targetUrl, fetchOptions);
     
-    // 응답 객체 생성 및 클라이언트에 반환 (헤더와 바디 복사)
+    // 응답 객체 생성 및 클라이언트에 반환 (헤더와 바디 복사 및 CORS 허용 헤더 주입)
     const newResponse = new Response(response.body, response);
     newResponse.headers.set('Access-Control-Allow-Origin', '*');
     newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');

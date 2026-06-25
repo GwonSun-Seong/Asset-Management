@@ -1661,15 +1661,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                     </button>
                                                 </td>
                                             </tr>
-                                            {item.syncStatus === 'error' && (
-                                                <tr className="bg-red-50/15 dark:bg-red-950/5 select-none animate-in fade-in slide-in-from-top-1 duration-200">
-                                                    <td colSpan={7} className="py-1.5 pl-4 pr-4 rounded-2xl text-[10px] text-red-500 dark:text-red-400/90 font-bold border-b border-red-100/50 dark:border-red-950/20">
-                                                        <span className="inline-flex items-center gap-1.5 bg-red-50/50 dark:bg-red-950/30 px-2 py-0.5 rounded border border-red-100 dark:border-red-900/30">
-                                                            ⚠️ 연동 오류 사유: {item.syncErrorReason || '알 수 없는 오류 (티커 코드 오설정 또는 네트워크 확인)'}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            )}
+                                            {/* 인라인 에러 행 제거 (리스트 아래 일괄 출력 처리) */}
                                         </React.Fragment>
                                     );})}
                                 </tbody>
@@ -1677,6 +1669,25 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             {linkedItems.length === 0 && (
                                 <div className="text-center py-10 bg-slate-50/50 dark:bg-slate-900/20 rounded-2xl border-2 border-dashed dark:border-slate-700 text-slate-400 text-xs font-bold italic">연동된 종목이 없습니다.</div>
                             )}
+                            
+                            {/* [추가] 중복 제거된 연동 오류 사유 리스트를 테이블 하단에 출력 */}
+                            {(() => {
+                                const uniqueErrors = Array.from(new Set(
+                                    linkedItems
+                                        .filter(item => item.syncStatus === 'error' && item.syncErrorReason)
+                                        .map(item => item.syncErrorReason)
+                                ));
+                                if (uniqueErrors.length === 0) return null;
+                                return (
+                                    <div className="mt-4 flex flex-col gap-2 select-none animate-in fade-in slide-in-from-top-1 duration-200">
+                                        {uniqueErrors.map((err, i) => (
+                                            <div key={i} className="flex items-center gap-1.5 bg-red-50/50 dark:bg-red-950/30 px-3 py-2.5 rounded-2xl border border-red-100 dark:border-red-900/30 text-[10px] text-red-500 dark:text-red-400/90 font-bold w-fit">
+                                                <span>⚠️ 연동 오류 사유: {err}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </section>
                 </div>
