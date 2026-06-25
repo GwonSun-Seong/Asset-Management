@@ -485,8 +485,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
     // 스크린샷 자산 연동 관련 상태 추가
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
     const [showKeyInput, setShowKeyInput] = useState(() => !localStorage.getItem('asset_gemini_api_key'));
-    const [ocrImage, setOcrImage] = useState(null);
-    const [ocrImagePreview, setOcrImagePreview] = useState(null);
+    const [ocrImages, setOcrImages] = useState([]);
     const [ocrLoading, setOcrLoading] = useState(false);
     const [ocrError, setOcrError] = useState('');
 
@@ -552,28 +551,41 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         return () => window.removeEventListener('paste', handleGlobalPaste);
     }, [isOpen, linkedItems]);
 
-    const handleOcrFileChange = (e) => {
-        const file = e.target.files[0];
-        if (file && file.type.startsWith('image/')) {
-            setOcrImage(file);
+    const processNewFiles = (newFiles) => {
+        newFiles.forEach(file => {
             const reader = new FileReader();
-            reader.onload = (event) => setOcrImagePreview(event.target.result);
+            reader.onload = (event) => {
+                const newImg = {
+                    id: 'ocr_img_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+                    file: file,
+                    preview: event.target.result
+                };
+                setOcrImages(prev => [...prev, newImg]);
+            };
             reader.readAsDataURL(file);
+        });
+    };
+
+    const handleOcrFileChange = (e) => {
+        const files = Array.from(e.target.files);
+        const imageFiles = files.filter(f => f.type.startsWith('image/'));
+        if (imageFiles.length > 0) {
+            processNewFiles(imageFiles);
         }
     };
 
     const handleOcrPaste = (e) => {
         const items = e.clipboardData?.items;
         if (!items) return;
+        const pastedFiles = [];
         for (let i = 0; i < items.length; i++) {
             if (items[i].type.indexOf('image') !== -1) {
                 const file = items[i].getAsFile();
-                setOcrImage(file);
-                const reader = new FileReader();
-                reader.onload = (event) => setOcrImagePreview(event.target.result);
-                reader.readAsDataURL(file);
-                break;
+                pastedFiles.push(file);
             }
+        }
+        if (pastedFiles.length > 0) {
+            processNewFiles(pastedFiles);
         }
     };
 
@@ -583,13 +595,15 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
     const handleOcrDrop = (e) => {
         e.preventDefault();
-        const file = e.dataTransfer?.files[0];
-        if (file && file.type.startsWith('image/')) {
-            setOcrImage(file);
-            const reader = new FileReader();
-            reader.onload = (event) => setOcrImagePreview(event.target.result);
-            reader.readAsDataURL(file);
+        const files = Array.from(e.dataTransfer?.files || []);
+        const imageFiles = files.filter(f => f.type.startsWith('image/'));
+        if (imageFiles.length > 0) {
+            processNewFiles(imageFiles);
         }
+    };
+
+    const removeOcrImage = (id) => {
+        setOcrImages(prev => prev.filter(img => img.id !== id));
     };
 
     const checkOcrDuplicates = (ocrStocks) => {
@@ -781,7 +795,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
     const handleAnalyzeImageOcr = async () => {
         const trimmedKey = apiKey.trim();
         if (!trimmedKey) { setOcrError('API 키를 입력해주세요.'); return; }
-        if (!ocrImage) { setOcrError('분석할 이미지를 업로드하거나 붙여넣어주세요.'); return; }
+        if (ocrImages.length === 0) { setOcrError('분석할 이미지를 업로드하거나 붙여넣어주세요.'); return; }
         localStorage.setItem('asset_gemini_api_key', trimmedKey);
         setShowKeyInput(false);
 
@@ -789,22 +803,19 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         setOcrError('');
 
         try {
-            const base64Data = ocrImagePreview.split(',')[1];
-            const mimeType = ocrImage.type || 'image/png';
-
             const prompt = `당신은 금융 분석 및 자산 매칭 전문가입니다.
-이 이미지(금융 스크린샷)는 특정 투자 계좌(예: 직접투자계좌, ISA 등)의 상세 화면 또는 잔고/종목 목록 화면입니다.
-이 이미지에서 다음 두 가지 정보를 추출해 주세요.
+제공된 이미지들(금융 스크린샷)은 특정 투자 계좌(예: 직접투자계좌, ISA 등)의 상세 화면 또는 잔고/종목 목록 화면입니다. 한 장 또는 여러 장의 스크린샷으로 구성되어 있습니다.
+이 이미지들에서 다음 두 가지 정보를 종합하여 추출해 주세요.
 
-1. 이 계좌의 '총 평가 금액' 또는 '총 자산 금액': 원화 기준이며 반드시 만원 단위로 변환해 주세요 (예: 50,000,000원은 5000, 2,500,000원은 250).
-2. 이 계좌에 포함된 주식/펀드/ETF 종목 목록 (수량, 평가금액, 매입단가/평단가, 현재가 등):
-   각 주식 종목은 "stockItems" 배열에 포함되어야 하며, 다음 필드를 가집니다:
-   - ticker: 해당 주식의 티커/코드 (예: 국장은 '005930', 미장은 'AAPL', 'TSLA' 등)
-   - name: 종목명 (예: '삼성전자', '테슬라' 등)
-   - shares: 잔고 수량 (숫자)
-   - avgPrice: 매입단가 (숫자, 평단가)
-   - currentPrice: 현재단가 (숫자)
-   - currency: 화폐 단위 ('KRW' 또는 'USD')
+1. 모든 이미지에 표시된 계좌들의 실질적인 '총 평가 금액' 또는 '총 자산 금액'의 합산: 원화 기준이며 반드시 만원 단위로 변환해 주세요 (예: 50,000,000원은 5000, 2,500,000원은 250). 만약 동일한 계좌의 여러 스크린샷이라면 중복 합산하지 말고 최종 총액을, 서로 다른 계좌의 목록이라면 합산액을 의미합니다.
+2. 모든 이미지에 흩어져 있는 주식/펀드/ETF 종목 목록 전체 (수량, 평가금액, 매입단가/평단가, 현재가 등):
+각 주식 종목은 "stockItems" 배열에 포함되어야 하며, 다음 필드를 가집니다:
+- ticker: 해당 주식의 티커/코드 (예: 국장은 '005930', 미장은 'AAPL', 'TSLA' 등)
+- name: 종목명 (예: '삼성전자', '테슬라' 등)
+- shares: 잔고 수량 (숫자)
+- avgPrice: 매입단가 (숫자, 평단가)
+- currentPrice: 현재단가 (숫자)
+- currency: 화폐 단위 ('KRW' 또는 'USD')
 
 ⚠️주의: 절대 '매입금액(총투자액)'이나 '평가손익'의 숫자와 '매입단가(1주당 가격, 평단가)'를 혼동하여 추출하지 마세요. 매입단가(avgPrice)는 현재가(currentPrice)와 자릿수(액수 범위)가 비슷해야 합니다.
 ⚠️금액은 해외 주식이어도 원화(KRW)로 변환하거나 표시된 값을 그대로 숫자로 추출하되, 통화 표기는 currency 필드로 명시하세요.
@@ -818,18 +829,25 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
   ]
 }`;
 
+            const parts = [
+                { text: prompt }
+            ];
+
+            ocrImages.forEach(img => {
+                const base64Data = img.preview.split(',')[1];
+                const mimeType = img.file.type || 'image/png';
+                parts.push({
+                    inlineData: {
+                        mimeType: mimeType,
+                        data: base64Data
+                    }
+                });
+            });
+
             const body = {
                 contents: [
                     {
-                        parts: [
-                            { text: prompt },
-                            {
-                                inlineData: {
-                                    mimeType: mimeType,
-                                    data: base64Data
-                                }
-                            }
-                        ]
+                        parts: parts
                     }
                 ]
             };
@@ -865,8 +883,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             if (parsed) {
                                 applyOcrResult(parsed);
                                 setOcrLoading(false);
-                                setOcrImage(null);
-                                setOcrImagePreview(null);
+                                setOcrImages([]);
                             } else {
                                 throw new Error("Invalid format");
                             }

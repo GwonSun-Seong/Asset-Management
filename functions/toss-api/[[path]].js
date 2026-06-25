@@ -17,7 +17,7 @@ export async function onRequest(context) {
 
   // /toss-api 뒤의 실제 토스 API 경로 추출 (예: /oauth2/token)
   const targetPath = url.pathname.replace(/^\/toss-api/, '');
-  // [개선] 클라우드플레어 환경변수 TOSS_PROXY_URL이 있으면 가상서버로 우회, 없으면 기본 주소로 작동
+  // [개선] 클라우드플레어 환경변수 TOSS_PROXY_URL이 있으면 가상서버로 우회, 없으면 기본 주소로 작동 (환경 변수 적용 및 재배포 트리거)
   const proxyBaseUrl = context.env.TOSS_PROXY_URL || 'https://openapi.tossinvest.com';
   const targetUrl = `${proxyBaseUrl.replace(/\/$/, '')}${targetPath}${url.search}`;
   
