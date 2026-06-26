@@ -36,6 +36,54 @@ export async function onRequest(context) {
     });
   }
   
+  // [추가] /api/push-notice 요청 가로채기: Cloudflare 환경변수에서 키를 주입하여 GCP VM으로 전달
+  if (targetPath === '/api/push-notice' && request.method === 'POST') {
+    try {
+      const gcpServerUrl = context.env.TOSS_PROXY_URL;
+      if (!gcpServerUrl) {
+        return new Response(JSON.stringify({ error: 'TOSS_PROXY_URL 환경변수가 설정되지 않았습니다.' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
+
+      // 원본 요청 본문 읽기
+      const originalBody = await request.json();
+
+      // Cloudflare 환경변수에서 키 주입 (기존 등록된 변수명 그대로 사용)
+      const enrichedBody = {
+        ...originalBody,
+        supabaseUrl: context.env.SUPABASE_URL,
+        supabaseKey: context.env.SUPABASE_KEY,
+        securityKey: context.env.SECURITY_KEY,
+        vapidPublicKey: context.env.VAPID_PUBLIC_KEY,
+        vapidPrivateKey: context.env.VAPID_PRIVATE_KEY
+      };
+
+      // GCP VM 푸시 서버로 직접 전달 (포트 3000)
+      const baseUrl = gcpServerUrl.replace(/\/$/, '').replace(/:\d+$/, '');
+      const pushResponse = await fetch(`${baseUrl}:3000/api/push-notice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(enrichedBody)
+      });
+
+      const pushResult = await pushResponse.text();
+      return new Response(pushResult, {
+        status: pushResponse.status,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: 'Push notice proxy failed', detail: err.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+  }
+
   // 중요: Cloudflare 헤더 스푸핑 차단 방지를 위해 필수 헤더만 필터링하여 전달
   const headers = new Headers();
   const allowedHeaders = ['content-type', 'authorization', 'accept', 'accept-encoding', 'user-agent'];

@@ -3287,16 +3287,12 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
         if (noticeContent.trim()) {
             await supabase.from('notices').insert({ content: noticeContent, is_active: true });
             
-            // [추가] 공지사항 푸시 발송 요청
+            // [추가] 공지사항 푸시 발송 요청 (Cloudflare가 키를 자동 주입하여 GCP VM으로 전달)
             try {
-                const securityKey = window.getVaultConfig ? window.getVaultConfig('SECURITY_KEY') : '';
                 await fetch('/toss-api/api/push-notice', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        content: noticeContent,
-                        securityKey: securityKey
-                    })
+                    body: JSON.stringify({ content: noticeContent })
                 });
             } catch (err) {
                 console.warn("Notice push dispatch failed:", err);
