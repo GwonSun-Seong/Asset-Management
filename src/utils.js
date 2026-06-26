@@ -1827,7 +1827,7 @@ const registerPushNotification = async (supabase, userId) => {
     // 4. Supabase DB에 토큰 정보 업로드 (user_id를 기본키로 사용, push_consent 활성화)
     const { error } = await supabase.from('users_push_tokens').upsert({
         user_id: userId,
-        subscription: JSON.stringify(subscription),
+        subscription: subscription.toJSON(),
         push_consent: true,
         updated_at: new Date().toISOString()
     });
