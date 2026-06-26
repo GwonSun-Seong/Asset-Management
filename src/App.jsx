@@ -6836,6 +6836,8 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                             setLivePriceInterval(val);
                             localStorage.setItem('toss_live_price_interval', String(val));
                         }}
+                        supabase={supabase}
+                        userId={userProfile?.id}
                     />}
                     {showSaveToast && (
                         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[99999] bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">

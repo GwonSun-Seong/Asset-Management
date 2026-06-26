@@ -337,9 +337,55 @@ window.SettingsModal = ({
     dataConsent, onToggleConsent,
     isPro,
     liveEnabled, onLiveEnabledChange,
-    liveInterval, onLiveIntervalChange
+    liveInterval, onLiveIntervalChange,
+    supabase,
+    userId
 }) => {
     if (!isOpen) return null;
+
+    const [pushStatus, setPushStatus] = React.useState({ supported: false, permission: 'default', subscribed: false });
+    const [pushLoading, setPushLoading] = React.useState(false);
+
+    React.useEffect(() => {
+        if (isOpen) {
+            checkPushStatus();
+        }
+    }, [isOpen]);
+
+    const checkPushStatus = async () => {
+        if (window.getPushSubscriptionStatus) {
+            const status = await window.getPushSubscriptionStatus();
+            setPushStatus(status);
+        }
+    };
+
+    const handlePushToggle = async () => {
+        if (pushLoading) return;
+        if (!supabase || !userId) {
+            if (window.addToast) window.addToast('실시간 동기화 상태(로그인 완료)에서만 알림을 설정할 수 있습니다.', 'warning');
+            return;
+        }
+        setPushLoading(true);
+        try {
+            if (pushStatus.subscribed) {
+                if (window.unregisterPushNotification) {
+                    await window.unregisterPushNotification(supabase, userId);
+                    if (window.addToast) window.addToast('실시간 푸시 알림 구독이 해제되었습니다.', 'success');
+                }
+            } else {
+                if (window.registerPushNotification) {
+                    await window.registerPushNotification(supabase, userId);
+                    if (window.addToast) window.addToast('실시간 푸시 알림 구독이 등록되었습니다!', 'success');
+                }
+            }
+            await checkPushStatus();
+        } catch (err) {
+            console.error(err);
+            if (window.addToast) window.addToast(err.message, 'error');
+        } finally {
+            setPushLoading(false);
+        }
+    };
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-300">
@@ -435,6 +481,38 @@ window.SettingsModal = ({
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    </section>
+                    {/* 실시간 푸시 알림 설정 */}
+                    <section>
+                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">🔔 실시간 푸시 알림</h4>
+                        <div className="p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <span className="text-sm font-medium dark:text-white block">푸시 알림 수신</span>
+                                    <span className="text-[10px] text-gray-500">
+                                        {!pushStatus.supported 
+                                            ? '이 기기/브라우저는 푸시를 지원하지 않습니다.' 
+                                            : pushStatus.permission === 'denied' 
+                                                ? '🚨 알림 권한이 차단됨 (브라우저 설정 필요)' 
+                                                : '해외 장 마감/환율 리포트 알림을 스마트폰으로 수신합니다.'}
+                                    </span>
+                                </div>
+                                {pushStatus.supported && (
+                                    <button
+                                        type="button"
+                                        disabled={pushLoading}
+                                        onClick={handlePushToggle}
+                                        className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
+                                            pushStatus.subscribed 
+                                                ? 'bg-red-500 hover:bg-red-600 text-white shadow-sm' 
+                                                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm'
+                                        } ${pushLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    >
+                                        {pushLoading ? '처리 중...' : pushStatus.subscribed ? '알림 끄기' : '알림 켜기'}
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </section>
                     {/* 로그아웃 정책 */}
@@ -3208,6 +3286,21 @@ window.AdminDashboardModal = ({ isOpen, onClose, supabase, showSuggestionButton,
         await supabase.from('notices').update({ is_active: false }).eq('is_active', true);
         if (noticeContent.trim()) {
             await supabase.from('notices').insert({ content: noticeContent, is_active: true });
+            
+            // [추가] 공지사항 푸시 발송 요청
+            try {
+                const securityKey = window.getVaultConfig ? window.getVaultConfig('SECURITY_KEY') : '';
+                await fetch('/toss-api/api/push-notice', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        content: noticeContent,
+                        securityKey: securityKey
+                    })
+                });
+            } catch (err) {
+                console.warn("Notice push dispatch failed:", err);
+            }
         }
         alert('공지사항이 업데이트되었습니다.');
     };

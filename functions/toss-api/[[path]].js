@@ -62,6 +62,10 @@ export async function onRequest(context) {
     
     // 응답 객체 생성 및 클라이언트에 반환 (헤더와 바디 복사 및 CORS 허용 헤더 주입)
     const newResponse = new Response(response.body, response);
+    
+    // [해결] 401 Unauthorized 응답 시 브라우저가 기본 로그인 창을 띄우지 않도록 WWW-Authenticate 헤더 제거
+    newResponse.headers.delete('www-authenticate');
+    
     newResponse.headers.set('Access-Control-Allow-Origin', '*');
     newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     newResponse.headers.set('Access-Control-Allow-Headers', '*');

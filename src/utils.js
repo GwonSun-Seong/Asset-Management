@@ -1762,6 +1762,105 @@ window.normalizeTargets = normalizeTargets;
 window.calculateCapitalIncomeFlow = calculateCapitalIncomeFlow;
 window.exportDashboardToPDF = exportDashboardToPDF;
 
+// [추가] PWA Web Push 알림 관련 유틸리티 함수 및 VAPID 공개키 정의
+const VAPID_PUBLIC_KEY = 'BPeWoE18PTswXI0r-6rRoITdnDy7JKe-L04cDAA5eh1YqQIdAH9BkScl9n83vLYMZ0NEv-vrRbHECMV8mCkaQSA';
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
+const getPushSubscriptionStatus = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        return { supported: false, status: 'unsupported' };
+    }
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        return {
+            supported: true,
+            permission: Notification.permission,
+            subscribed: !!subscription
+        };
+    } catch (e) {
+        console.error("Error checking push status:", e);
+        return { supported: true, permission: Notification.permission, subscribed: false, error: e.message };
+    }
+};
+
+const registerPushNotification = async (supabase, userId) => {
+    if (!supabase || !userId) throw new Error("Supabase 클라이언트와 사용자 ID가 필요합니다.");
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        throw new Error("이 브라우저/기기는 푸시 알림을 지원하지 않습니다.");
+    }
+
+    // 1. 서비스 워커 등록 대기
+    const registration = await navigator.serviceWorker.ready;
+
+    // 2. 알림 권한 동의 요청
+    let permission = Notification.permission;
+    if (permission === 'default') {
+        permission = await Notification.requestPermission();
+    }
+
+    if (permission !== 'granted') {
+        throw new Error("알림 권한이 거부되었습니다. 브라우저 설정에서 알림을 허용해 주세요.");
+    }
+
+    // 3. 브라우저 푸시 매니저 구독 생성 (VAPID 키 사용)
+    const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey
+    });
+
+    // 4. Supabase DB에 토큰 정보 업로드 (user_id를 기본키로 사용, push_consent 활성화)
+    const { error } = await supabase.from('users_push_tokens').upsert({
+        user_id: userId,
+        subscription: JSON.stringify(subscription),
+        push_consent: true,
+        updated_at: new Date().toISOString()
+    });
+
+    if (error) {
+        throw new Error(`백엔드에 푸시 토큰 등록 실패: ${error.message}`);
+    }
+
+    return subscription;
+};
+
+const unregisterPushNotification = async (supabase, userId) => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    
+    if (subscription) {
+        await subscription.unsubscribe();
+    }
+
+    if (supabase && userId) {
+        const { error } = await supabase.from('users_push_tokens').delete().eq('user_id', userId);
+        if (error) console.error("Failed to delete push token from Supabase:", error);
+    }
+    
+    return true;
+};
+
+window.getPushSubscriptionStatus = getPushSubscriptionStatus;
+window.registerPushNotification = registerPushNotification;
+window.unregisterPushNotification = unregisterPushNotification;
+
 // [추가] Global Deletion Sync: 현재 페이즈(Phase 0)에서 자산 삭제 시 미래 페이즈에서도 연쇄 삭제하여 유령 자산 방지
 const syncPhaseAssetDeletions = (appData, deletedAssetId) => {
     if (!appData || !appData.futurePhases || !Array.isArray(appData.futurePhases)) return appData;

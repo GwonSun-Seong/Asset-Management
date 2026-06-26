@@ -1,5 +1,6 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
+import ReactDOMClient from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import Decimal from 'decimal.js';
 import CryptoJS from 'crypto-js';
 import pako from 'pako';
@@ -23,7 +24,7 @@ Chart.register(...registerables, ChartjsPluginGradient, zoomPlugin);
 
 // Bind variables to window for backward compatibility with components & utility files
 window.React = React;
-window.ReactDOM = ReactDOM;
+window.ReactDOM = { ...ReactDOMClient, createPortal };
 window.useState = React.useState;
 window.useMemo = React.useMemo;
 window.useEffect = React.useEffect;
@@ -47,6 +48,17 @@ import './utils.js';
 import './modals.jsx';
 import './game.jsx';
 import AssetDashboard from './App.jsx';
+
+// PWA 서비스 워커 등록
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      console.log('[PWA] 서비스 워커 등록 성공:', reg.scope);
+    }).catch(err => {
+      console.warn('[PWA] 서비스 워커 등록 실패:', err);
+    });
+  });
+}
 
 const ErrorBoundary = window.ErrorBoundary || React.Fragment;
 
