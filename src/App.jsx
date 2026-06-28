@@ -58,32 +58,45 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                     자동 갱신
                                 </label>
                             </div>
-                            <div className="mt-2">
-                                <label className="flex items-center gap-1.5 cursor-not-allowed text-xs text-gray-400 dark:text-gray-500" title="현재 야후 API 연동이 비활성화되었습니다. (추후 토스 API 발급 시 제공 예정)">
-                                    <input 
-                                        type="checkbox" 
-                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 opacity-50 cursor-not-allowed"
-                                        checked={false}
-                                        disabled
-                                    />
-                                    실시간 시세 자동 연동 (API 준비 중)
-                                </label>
-                            </div>
+
                         </div>
                                 <div className="pt-4 border-t dark:border-gray-700">
-                            <h3 className="text-sm font-bold text-gray-700 dark:text-white mb-2">{TEXTS.settings?.dataManagement || "데이터 관리"}</h3>
-                            <div className="flex flex-col gap-2">
-                                <button onClick={onOpenDataManage} className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 shadow-sm transition-all">
-                                    <span>💾</span> 데이터 내보내기 / 불러오기
-                                </button>
-                                <button onClick={saveCurrentAsset} className="flex items-center justify-center gap-2 px-3 py-2 text-white text-sm font-semibold rounded-lg shadow-sm transition-all mt-2 bg-indigo-500 hover:bg-indigo-600 hover:shadow-md">
-                                    <span>💾</span> {TEXTS.settings?.saveHistory || "히스토리 저장"}
-                                </button>
-                                <button onClick={saveScenario} className="flex items-center justify-center gap-2 px-3 py-2 text-white text-sm font-semibold rounded-lg shadow-sm transition-all mt-2 bg-gray-600 hover:bg-gray-700 hover:shadow-md">
-                                    <span>💾</span> 시나리오 저장
-                                </button>
-                            </div>
-                        </div>
+                                    <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">{TEXTS.settings?.dataManagement || "데이터 관리"}</h3>
+                                    <div className="flex items-center justify-between bg-slate-55 dark:bg-slate-900/50 p-1.5 rounded-xl border border-slate-100 dark:border-slate-800 gap-1">
+                                        <button 
+                                            onClick={onOpenDataManage} 
+                                            title="데이터 내보내기 / 불러오기 (JSON/CSV)" 
+                                            className="flex-1 flex flex-col items-center justify-center py-2 px-1 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-white dark:hover:bg-gray-800 rounded-lg transition-all duration-200 active:scale-95 group"
+                                        >
+                                            <svg className="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-2m-4-2v8m0 0l-3-3m3 3l3-3" />
+                                            </svg>
+                                            <span className="text-[9px] font-black tracking-tight whitespace-nowrap">백업/복구</span>
+                                        </button>
+                                        <div className="w-px h-6 bg-slate-200 dark:bg-slate-800"></div>
+                                        <button 
+                                            onClick={saveCurrentAsset} 
+                                            title="현재 순자산을 기록 히스토리에 저장" 
+                                            className="flex-1 flex flex-col items-center justify-center py-2 px-1 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-gray-800 rounded-lg transition-all duration-200 active:scale-95 group"
+                                        >
+                                            <svg className="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                            </svg>
+                                            <span className="text-[9px] font-black tracking-tight whitespace-nowrap">히스토리</span>
+                                        </button>
+                                        <div className="w-px h-6 bg-slate-200 dark:bg-slate-800"></div>
+                                        <button 
+                                            onClick={saveScenario} 
+                                            title="현재 저축/투자 계획을 시나리오로 저장" 
+                                            className="flex-1 flex flex-col items-center justify-center py-2 px-1 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-white dark:hover:bg-gray-800 rounded-lg transition-all duration-200 active:scale-95 group"
+                                        >
+                                            <svg className="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                            </svg>
+                                            <span className="text-[9px] font-black tracking-tight whitespace-nowrap">시나리오</span>
+                                        </button>
+                                    </div>
+                                </div>
                             </>
                         )}
                     </div>
@@ -186,10 +199,8 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
 
         const SummaryPanel = (props) => {
             return (
-                <div className={`grid grid-cols-1 ${props.editingPhase !== null ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-6 transition-colors`}>
+                <div className="transition-colors">
                     <AssetSummaryCard {...props} />
-                    <CoreSettingsCard {...props} />
-                    {props.editingPhase === null && <GoalSettingsCard {...props} />}
                 </div>
             );
         };
