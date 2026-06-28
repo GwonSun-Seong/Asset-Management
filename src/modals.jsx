@@ -345,10 +345,15 @@ window.SettingsModal = ({
 
     const [pushStatus, setPushStatus] = React.useState({ supported: false, permission: 'default', subscribed: false });
     const [pushLoading, setPushLoading] = React.useState(false);
+    const [deviceTokens, setDeviceTokens] = React.useState([]);
 
     React.useEffect(() => {
         if (isOpen) {
             checkPushStatus();
+            loadDeviceTokens();
+            if (window.updatePushTokenActive) {
+                window.updatePushTokenActive(supabase, userId);
+            }
         }
     }, [isOpen]);
 
@@ -356,6 +361,50 @@ window.SettingsModal = ({
         if (window.getPushSubscriptionStatus) {
             const status = await window.getPushSubscriptionStatus();
             setPushStatus(status);
+        }
+    };
+
+    const loadDeviceTokens = async () => {
+        if (!supabase || !userId) return;
+        try {
+            const { data, error } = await supabase
+                .from('users_push_tokens')
+                .select('id, os, browser, last_active_at, endpoint, updated_at')
+                .eq('user_id', userId)
+                .order('last_active_at', { ascending: false });
+            if (error) throw error;
+            if (data) setDeviceTokens(data);
+        } catch (err) {
+            console.error("Failed to load device tokens:", err);
+        }
+    };
+
+    const handleRemoveDevice = async (endpoint) => {
+        if (!supabase || !userId) return;
+        if (!confirm('이 기기의 푸시 알림 수신을 차단/삭제하시겠습니까?')) return;
+        try {
+            const { error } = await supabase
+                .from('users_push_tokens')
+                .delete()
+                .eq('user_id', userId)
+                .eq('endpoint', endpoint);
+            if (error) throw error;
+
+            if ('serviceWorker' in navigator && 'PushManager' in window) {
+                const registration = await navigator.serviceWorker.ready;
+                const subscription = await registration.pushManager.getSubscription();
+                if (subscription && subscription.endpoint === endpoint) {
+                    await subscription.unsubscribe();
+                    if (window.addToast) window.addToast('현재 기기의 푸시 알림 구독이 해제되었습니다.', 'success');
+                } else {
+                    if (window.addToast) window.addToast('선택한 기기가 원격으로 해제되었습니다.', 'success');
+                }
+            }
+            await loadDeviceTokens();
+            await checkPushStatus();
+        } catch (err) {
+            console.error(err);
+            if (window.addToast) window.addToast('기기 해제 실패: ' + err.message, 'error');
         }
     };
 
@@ -379,6 +428,7 @@ window.SettingsModal = ({
                 }
             }
             await checkPushStatus();
+            await loadDeviceTokens();
         } catch (err) {
             console.error(err);
             if (window.addToast) window.addToast(err.message, 'error');
@@ -515,6 +565,53 @@ window.SettingsModal = ({
                             </div>
                         </div>
                     </section>
+                    {/* 연결된 기기 관리 목록 */}
+                    {pushStatus.supported && deviceTokens.length > 0 && (
+                        <section className="animate-in fade-in slide-in-from-top-2 duration-300">
+                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">📱 알림 수신 기기 관리 ({deviceTokens.length}대)</h4>
+                            <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
+                                {deviceTokens.map(token => {
+                                    const isActive = token.last_active_at;
+                                    const timeStr = isActive ? new Date(token.last_active_at).toLocaleString('ko-KR', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                    }) : '기록 없음';
+
+                                    // OS 종류에 따른 아이콘 매핑
+                                    let deviceIcon = '💻';
+                                    if (/Android/i.test(token.os)) deviceIcon = '🤖';
+                                    else if (/iOS/i.test(token.os)) deviceIcon = '🍎';
+                                    else if (/macOS/i.test(token.os)) deviceIcon = '🍏';
+                                    else if (/Windows/i.test(token.os)) deviceIcon = '🪟';
+
+                                    return (
+                                        <div key={token.id} className="flex justify-between items-center p-2.5 rounded-xl border dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 text-xs transition-all hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-lg">{deviceIcon}</span>
+                                                <div>
+                                                    <span className="font-bold text-gray-800 dark:text-gray-200 block">
+                                                        {token.browser || '브라우저'} ({token.os || '알 수 없는 OS'})
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-500 block">
+                                                        최근 활성: {timeStr}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={() => handleRemoveDevice(token.endpoint)}
+                                                className="text-[10px] font-bold text-red-500 hover:text-red-700 hover:underline px-2 py-1 rounded transition-colors"
+                                                title="알림 차단 및 기기 삭제"
+                                            >
+                                                기기 삭제
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    )}
                     {/* 로그아웃 정책 */}
                     <section>
                         <div className="flex justify-between items-center mb-3">
@@ -2439,34 +2536,51 @@ const streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) =>
 window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory, onApplyProposal }) => {
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('asset_gemini_api_key') || '');
     const [persona, setPersona] = useState(() => localStorage.getItem('asset_ai_persona') || '냉철한 전문 자산 관리사');
-    const [requestProposal, setRequestProposal] = useState(() => localStorage.getItem('asset_ai_request_proposal') !== 'false'); // [추가] 제안 요청 여부 (기본값 true)
+    const [requestProposal, setRequestProposal] = useState(() => localStorage.getItem('asset_ai_request_proposal') !== 'false');
 
-    // [추가] 페르소나 변경 시 로컬 스토리지 자동 저장
+    const [additionalRequest, setAdditionalRequest] = useState('');
+    const [showConfigDropdown, setShowConfigDropdown] = useState(false); // 설정 드롭다운 토글
+    
+    const [messages, setMessages] = useState([]);
+    const [chatInput, setChatInput] = useState('');
+    const [contextPrompt, setContextPrompt] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [proposal, setProposal] = useState(null);
+    const messagesEndRef = useRef(null);
+
+    const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+
+    // 모달이 열리면 웰컴 메시지 주입
+    useEffect(() => {
+        if (isOpen) {
+            const localKey = localStorage.getItem('asset_gemini_api_key') || '';
+            setApiKey(localKey.trim());
+            
+            if (messages.length === 0) {
+                setMessages([
+                    { 
+                        role: 'model', 
+                        text: `🤖 안녕하세요! 자산 분석 및 재무 상담을 도와주는 AI 비서입니다.\n\n궁금한 점을 편하게 질문해 주시거나, 상단의 **[📊 내 자산 분석하기]** 버튼을 클릭하여 포트폴리오 진단과 최적의 자산 배분 제안을 받아보세요!` 
+                    }
+                ]);
+            }
+            setTimeout(scrollToBottom, 100);
+        }
+    }, [isOpen]);
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages, loading]);
+
     useEffect(() => {
         localStorage.setItem('asset_ai_persona', persona);
     }, [persona]);
 
-    // [추가] 제안 요청 설정 저장
     useEffect(() => {
         localStorage.setItem('asset_ai_request_proposal', requestProposal);
     }, [requestProposal]);
 
-    const [additionalRequest, setAdditionalRequest] = useState('');
-    const [showSettings, setShowSettings] = useState(true);
-    
-    // [수정] 멀티턴 대화를 위한 상태 관리
-    const [messages, setMessages] = useState([]); // { role: 'user' | 'model', text: string }
-    const [chatInput, setChatInput] = useState('');
-    const [contextPrompt, setContextPrompt] = useState(''); // 초기 컨텍스트 저장용
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    const [proposal, setProposal] = useState(null); // [추가] AI 제안 데이터
-    const messagesEndRef = useRef(null);
-
-    const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    useEffect(() => { if (isOpen) scrollToBottom(); }, [messages, showSettings, isOpen]);
-
-    // [추가] JSON 추출 헬퍼
     const extractJSON = (text) => {
         const start = text.indexOf('---JSON_START---');
         const end = text.indexOf('---JSON_END---');
@@ -2479,7 +2593,6 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
         return null;
     };
 
-    // [추가] 3.1 -> 3.5 -> 2.5 순서대로 폴백 호출하는 스트리밍 헬퍼
     const streamGeminiWithFallback = async (urlGenerator, body, onUpdate, onComplete, onError) => {
         const models = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
         
@@ -2510,13 +2623,10 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
     };
 
     const handleAnalyze = async () => {
-        const localKey = localStorage.getItem('asset_gemini_api_key') || '';
-        const trimmedKey = localKey.trim();
+        const trimmedKey = apiKey.trim() || (localStorage.getItem('asset_gemini_api_key') || '').trim();
         if (!trimmedKey) { setError('API 키가 없습니다. 앱 설정 및 보안에서 Gemini API 키를 등록해주세요.'); return; }
-        setApiKey(trimmedKey);
         setLoading(true);
         setError('');
-        setMessages([]);
         setProposal(null);
         
         try {
@@ -2531,13 +2641,11 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                     if (!sectorTotals[k] || sectorTotals[k].percentage < 1) return null;
                     return `${window.sectorInfo[k].name}: ${Math.round(sectorTotals[k].percentage)}%`;
                 }).filter(Boolean).join(', '),
-                // [추가] AI가 구체적인 조언을 할 수 있도록 개별 자산 항목 정보 추가
                 details: Object.keys(appData.assets).reduce((acc, k) => {
                     const assets = appData.assets[k] || [];
                     if (assets.length > 0 && window.sectorInfo[k]) {
                         const isLoan = k === 'loan';
                         if (isLoan) {
-                            // [수정] 대출일 경우 상환 방식과 만기 정보를 포함하여 더 구체적으로 전송
                             acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(현재 ${Math.round(a.amount)}만원, 이자율 ${a.rate || 0}%, 월납입 ${a.monthlyContrib || 0}만원, ${a.repaymentMethod || '원리금균등'}, 만기 ${a.maturityMonth || 0}개월 남음)`).join(', ');
                         } else {
                             acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(현재 ${Math.round(a.amount)}만원, 수익률 ${a.rate || 0}%, 월납입 ${a.monthlyContrib || 0}만원)`).join(', ');
@@ -2545,7 +2653,6 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                     }
                     return acc;
                 }, {}),
-                // [추가] 사용자가 설정한 리밸런싱 목표 비중 전송 (AI가 목표 대비 현재 상태를 분석하도록 함)
                 targetRatios: appData.rebalancingTargets,
                 memo: appData.memo || '내용 없음',
                 fixedExpenses: (appData.monthlyExpenses || []).map(e => `${e.name}(${e.amount}만원)`).join(', '),
@@ -2553,13 +2660,11 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                     income: (appData.incomeEvents || []).map(e => `${e.name}(${e.amount}만원, ${e.startMonth}~${e.endMonth})`).join(', '),
                     expense: (appData.expenseEvents || []).map(e => `${e.name}(${e.amount}만원, ${e.startMonth}~${e.endMonth})`).join(', ')
                 },
-                // [추가] 자산 히스토리 전체 데이터 (날짜, 자산, 메모)
                 history: (assetHistory || []).map(h => ({
                     date: h.date,
                     asset: h.netWorth,
                     memo: h.memo
                 })),
-                // [추가] 미래 타임라인 분기점 데이터
                 futurePhases: (appData.futurePhases || []).filter(p => p.startDate).map(p => {
                     const changes = [];
                     if (p.data) {
@@ -2582,7 +2687,6 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                 }).join('\n')
             };
 
-            // [수정] 시스템 프롬프트 구성 (초기 컨텍스트)
             let prompt = `
                 당신은 ${persona}입니다. 아래 재무 데이터를 분석해주세요.
                 데이터: ${JSON.stringify(summary)}
@@ -2611,17 +2715,21 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                 이후 사용자의 질문에 대해서도 위 데이터를 바탕으로 답변해주세요.
             `;
 
-            setContextPrompt(prompt); // 컨텍스트 저장
+            setContextPrompt(prompt);
 
-            // [수정] 스트리밍 적용 (빈 메시지 추가 후 업데이트)
-            setMessages([{ role: 'model', text: '' }]);
-            setShowSettings(false);
+            const userMsg = { role: 'user', text: '📊 내 자산에 대한 포트폴리오 분석과 자산배분 조언을 해줘.' };
+            const newMessages = [...messages, userMsg, { role: 'model', text: '' }];
+            setMessages(newMessages);
 
             await streamGeminiWithFallback(
                 (m) => `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${trimmedKey}`,
                 { contents: [{ parts: [{ text: prompt }] }] },
                 (text) => {
-                    setMessages([{ role: 'model', text }]);
+                    setMessages(prev => {
+                        const updated = [...prev];
+                        updated[updated.length - 1] = { role: 'model', text };
+                        return updated;
+                    });
                     const extracted = extractJSON(text);
                     if (extracted) setProposal(extracted);
                 }, 
@@ -2638,28 +2746,58 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
         }
     };
 
-    // [추가] 추가 질문 전송 핸들러 (멀티턴)
     const handleSendMessage = async () => {
         if (!chatInput.trim() || loading) return;
+        const trimmedKey = apiKey.trim() || (localStorage.getItem('asset_gemini_api_key') || '').trim();
+        if (!trimmedKey) { setError('API 키가 없습니다. 앱 설정 및 보안에서 Gemini API 키를 등록해주세요.'); return; }
+        
         const userMsg = { role: 'user', text: chatInput };
         const newMessages = [...messages, userMsg];
         setMessages(newMessages);
         setChatInput('');
         setLoading(true);
+        setError('');
 
-        // [추가] 모델 응답을 위한 빈 메시지 미리 추가
         setMessages(prev => [...prev, { role: 'model', text: '' }]);
 
+        let currentContext = contextPrompt;
+        if (!currentContext) {
+            try {
+                const sectorTotals = window.getSectorTotals(appData.assets, calculation.currentTotal);
+                const summary = {
+                    totalAsset: Math.round(calculation.currentTotal) + '만원',
+                    netWorth: Math.round(calculation.currentNet) + '만원',
+                    monthlyIncome: appData.monthlySalary + '만원',
+                    monthlyExpense: Math.round(calculation.totalMonthlyExpense) + '만원',
+                    targetAsset: appData.targetAmount + '만원',
+                    portfolio: Object.keys(appData.assets).map(k => {
+                        if (!sectorTotals[k] || sectorTotals[k].percentage < 1) return null;
+                        return `${window.sectorInfo[k].name}: ${Math.round(sectorTotals[k].percentage)}%`;
+                    }).filter(Boolean).join(', '),
+                    details: Object.keys(appData.assets).reduce((acc, k) => {
+                        const assets = appData.assets[k] || [];
+                        if (assets.length > 0 && window.sectorInfo[k]) {
+                            acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(현재 ${Math.round(a.amount)}만원, 수익률 ${a.rate || 0}%, 월납입 ${a.monthlyContrib || 0}만원)`).join(', ');
+                        }
+                        return acc;
+                    }, {})
+                };
+                currentContext = `당신은 ${persona}입니다. 아래 재무 데이터를 참고하여 사용자의 질문에 답해 주세요. 데이터: ${JSON.stringify(summary)}`;
+                setContextPrompt(currentContext);
+            } catch (e) {
+                currentContext = `당신은 ${persona}입니다. 사용자의 질문에 대해 조언해 주세요.`;
+            }
+        }
+
         try {
-            // 대화 히스토리 구성: [Context(User), Analysis(Model), ...History, Current(User)]
             const contents = [
-                { role: 'user', parts: [{ text: contextPrompt }] },
-                ...messages.map(m => ({ role: m.role, parts: [{ text: m.text }] })),
+                { role: 'user', parts: [{ text: currentContext }] },
+                ...newMessages.slice(1).map(m => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: m.text }] })),
                 { role: 'user', parts: [{ text: userMsg.text }] }
             ];
 
             await streamGeminiWithFallback(
-                (m) => `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${apiKey}`,
+                (m) => `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${trimmedKey}`,
                 { contents },
                 (text) => setMessages(prev => {
                     const updated = [...prev];
@@ -2678,160 +2816,166 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            {/* [수정] 모바일: 전체화면(h-[100dvh]) 및 마진 제거 / 데스크탑: 기존 스타일 유지 */}
-            <div className="bg-white dark:bg-gray-800 sm:rounded-xl shadow-2xl w-full max-w-2xl h-[100dvh] sm:h-[80vh] sm:m-4 flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl h-[90vh] sm:h-[80vh] flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden">
                 {/* Header */}
-                <div className="flex justify-between items-center mb-4 border-b dark:border-gray-700 pb-3">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">🤖 AI 자산 분석 <span className="text-xs font-normal text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">Powered by Gemini</span></h3>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                <div className="flex justify-between items-center p-4 border-b dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/40">
+                    <div className="flex items-center gap-2">
+                        <span className="text-2xl">🤖</span>
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                                AI 자산 플래너 챗봇
+                                <span className="text-[10px] text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full font-black">Gemini</span>
+                            </h3>
+                            <span className="text-[10px] text-gray-500">실시간 자산 분석 및 최적화 재무 상담</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button 
+                            onClick={() => setShowConfigDropdown(!showConfigDropdown)} 
+                            className={`p-2 rounded-lg text-xs font-bold transition-colors hover:bg-gray-200 dark:hover:bg-gray-800 ${showConfigDropdown ? 'text-indigo-600 bg-gray-100 dark:bg-gray-800' : 'text-gray-500 dark:text-gray-400'}`}
+                            title="분석 및 페르소나 설정"
+                        >
+                            ⚙️ 설정
+                        </button>
+                        <button onClick={onClose} className="p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-250">
+                            ✕
+                        </button>
+                    </div>
                 </div>
-                
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pt-0 space-y-4">
-                    {showSettings && (
-                        <>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">AI 페르소나 (자산 관리사 성격)</label>
-                                <div className="flex flex-col sm:flex-row gap-2">
-                                    <input 
-                                        type="text" 
-                                        className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                                        value={persona}
-                                        onChange={(e) => setPersona(e.target.value)}
-                                        placeholder="예: 100년 경력의 워렌 버핏, 냉철한 분석가, 친절한 이웃집 은행원"
-                                    />
-                                    <label className="flex items-center gap-2 px-3 border dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="체크 시 AI가 구체적인 리밸런싱/월납입금 변경 제안을 JSON 데이터로 함께 제공합니다.">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={requestProposal} 
-                                            onChange={(e) => setRequestProposal(e.target.checked)}
-                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                                        />
-                                        <span className="text-xs font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap">자산배분 설정 제안 받기</span>
-                                    </label>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">추가 요청사항 (선택)</label>
-                                <textarea 
-                                    className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 resize-none h-24"
-                                    value={additionalRequest}
-                                    onChange={(e) => setAdditionalRequest(e.target.value)}
-                                    placeholder="예: 은퇴 자금 마련을 위해 공격적인 투자가 필요할까요? 아니면 안전 자산을 늘려야 할까요?"
+
+                {/* Configuration Accordion/Dropdown */}
+                {showConfigDropdown && (
+                    <div className="p-4 border-b dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900/50 space-y-3 animate-in slide-in-from-top duration-300">
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <div className="flex-1">
+                                <label className="block text-[10px] font-bold text-gray-500 mb-1">AI 페르소나 (관리자 성격)</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full border dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={persona}
+                                    onChange={(e) => setPersona(e.target.value)}
+                                    placeholder="예: 냉철한 자산 관리사, 워렌 버핏, 친절한 은행원"
                                 />
                             </div>
-
-                            <button 
-                                onClick={handleAnalyze} 
-                                disabled={loading}
-                                className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white py-3 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg flex items-center justify-center gap-2"
-                            >
-                                {loading ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                        AI 분석 중...
-                                    </>
-                                ) : (
-                                    '⚡ AI 자산 분석 시작'
-                                )}
-                            </button>
+                            <div className="flex items-end">
+                                <label className="flex items-center gap-2 px-3 py-1.5 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors w-full h-[34px]">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={requestProposal} 
+                                        onChange={(e) => setRequestProposal(e.target.checked)}
+                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap">자산배분 설정 제안 받기</span>
+                                </label>
+                            </div>
                         </div>
-                        </>
-                    )}
-
-                    {error && <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
-
-                    {/* [수정] 채팅 인터페이스 구현 */}
-                    {!showSettings && (
-                        <>
-                        <div className="flex justify-end mb-2">
-                            <button onClick={() => { setShowSettings(true); setMessages([]); setProposal(null); }} className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 flex items-center gap-1">
-                                🔄 처음부터 다시 시작
-                            </button>
-                        </div>
-                        
-                        <div className="space-y-4 pb-4">
-                            {messages.map((msg, idx) => (
-                                <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[90%] rounded-2xl p-4 ${
-                                        msg.role === 'user' 
-                                            ? 'bg-blue-600 text-white rounded-tr-none' 
-                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-tl-none border dark:border-gray-600'
-                                    }`}>
-                                        {msg.role === 'user' ? (
-                                            <div className="whitespace-pre-wrap break-words">{msg.text}</div>
-                                        ) : (
-                                            <div className="prose dark:prose-invert prose-sm max-w-none">
-                                                <div className="whitespace-pre-wrap leading-relaxed break-words">
-                                                    {msg.text.replace(/---JSON_START---[\s\S]*?---JSON_END---/g, '').split('\n').map((line, i) => {
-                                                        if (line.startsWith('#')) return <h4 key={i} className="text-base font-bold mt-2 mb-1 text-indigo-600 dark:text-indigo-400">{line.replace(/^#+\s/, '')}</h4>;
-                                                        const parts = line.split(/(\*\*.*?\*\*)/g);
-                                                        return (
-                                                            <p key={i} className="mb-1">
-                                                                {parts.map((part, j) => (
-                                                                    part.startsWith('**') && part.endsWith('**') 
-                                                                        ? <strong key={j}>{part.slice(2, -2)}</strong> 
-                                                                        : part
-                                                                ))}
-                                                            </p>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                            {loading && (
-                                <div className="flex justify-start">
-                                    <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none p-4 flex items-center gap-2">
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-75"></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-150"></div>
-                                    </div>
-                                </div>
-                            )}
-                            {/* [추가] 제안 적용 버튼 */}
-                            {proposal && !loading && (
-                                <div className="flex justify-center mt-4 animate-in fade-in slide-in-from-bottom-4">
-                                    <button 
-                                        onClick={() => onApplyProposal(proposal)}
-                                        className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all font-bold flex items-center gap-2"
-                                    >
-                                        <span>✨</span> AI 제안 검토 및 적용하기
-                                    </button>
-                                </div>
-                            )}
-                            <div ref={messagesEndRef} />
-                        </div>
-                        </>
-                    )}
-                </div>
-
-                {/* [추가] 채팅 입력창 */}
-                {!showSettings && (
-                    <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800">
-                        <div className="flex gap-2">
-                            <input 
-                                type="text" 
-                                value={chatInput}
-                                onChange={(e) => setChatInput(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-                                placeholder="추가로 궁금한 점을 물어보세요..."
-                                className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none"
-                                disabled={loading}
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 mb-1">추가 분석 요청사항</label>
+                            <textarea 
+                                className="w-full border dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none resize-none h-12"
+                                value={additionalRequest}
+                                onChange={(e) => setAdditionalRequest(e.target.value)}
+                                placeholder="예: 은퇴 계획에 맞춰 위험도를 조금 덜고 싶어요."
                             />
-                            <button 
-                                onClick={handleSendMessage}
-                                disabled={loading || !chatInput.trim()}
-                                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
-                            </button>
                         </div>
                     </div>
                 )}
+
+                {/* Chat Messages */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4 bg-gray-50/30 dark:bg-gray-900/10">
+                    <div className="flex justify-center my-2">
+                        <button 
+                            onClick={handleAnalyze} 
+                            disabled={loading}
+                            className="bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            📊 현재 내 자산 분석하기
+                        </button>
+                    </div>
+
+                    {error && <div className="p-3 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-xl text-xs">{error}</div>}
+
+                    <div className="space-y-4">
+                        {messages.map((msg, idx) => (
+                            <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[85%] rounded-2xl p-3.5 shadow-sm leading-relaxed ${
+                                    msg.role === 'user' 
+                                        ? 'bg-indigo-600 text-white rounded-tr-none' 
+                                        : 'bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 rounded-tl-none border dark:border-gray-800'
+                                }`}>
+                                    {msg.role === 'user' ? (
+                                        <div className="whitespace-pre-wrap text-sm break-words">{msg.text}</div>
+                                    ) : (
+                                        <div className="prose dark:prose-invert prose-sm max-w-none text-sm">
+                                            <div className="whitespace-pre-wrap break-words">
+                                                {msg.text.replace(/---JSON_START---[\s\S]*?---JSON_END---/g, '').split('\n').map((line, i) => {
+                                                    if (line.startsWith('#')) return <h4 key={i} className="text-sm font-black mt-3 mb-1.5 text-indigo-600 dark:text-indigo-400">{line.replace(/^#+\s/, '')}</h4>;
+                                                    const parts = line.split(/(\*\*.*?\*\*)/g);
+                                                    return (
+                                                        <p key={i} className="mb-1 text-gray-700 dark:text-gray-300">
+                                                            {parts.map((part, j) => (
+                                                                part.startsWith('**') && part.endsWith('**') 
+                                                                    ? <strong key={j} className="font-extrabold text-gray-900 dark:text-white">{part.slice(2, -2)}</strong> 
+                                                                    : part
+                                                            ))}
+                                                        </p>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        
+                        {loading && (
+                            <div className="flex justify-start">
+                                <div className="bg-white dark:bg-gray-900 border dark:border-gray-800 rounded-2xl rounded-tl-none p-3.5 flex items-center gap-1.5 shadow-sm">
+                                    <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce"></div>
+                                    <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce delay-75"></div>
+                                    <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce delay-150"></div>
+                                </div>
+                            </div>
+                        )}
+
+                        {proposal && !loading && (
+                            <div className="flex justify-center mt-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                <button 
+                                    onClick={() => onApplyProposal(proposal)}
+                                    className="bg-gradient-to-r from-emerald-500 to-green-600 text-white px-5 py-2.5 rounded-full text-xs shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all font-bold flex items-center gap-1.5"
+                                >
+                                    <span>✨</span> AI 제안 설정 즉시 적용하기
+                                </button>
+                            </div>
+                        )}
+                        <div ref={messagesEndRef} />
+                    </div>
+                </div>
+
+                {/* Input Area */}
+                <div className="p-4 border-t dark:border-gray-800 bg-white dark:bg-gray-900">
+                    <div className="flex gap-2">
+                        <input 
+                            type="text" 
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
+                            placeholder={apiKey ? "AI에게 질문해 보세요..." : "먼저 API 키 설정을 완료해 주세요."}
+                            className="flex-1 border dark:border-gray-800 dark:bg-gray-800 dark:text-white rounded-xl px-4 py-2.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder-gray-400"
+                            disabled={loading || !apiKey}
+                        />
+                        <button 
+                            onClick={handleSendMessage}
+                            disabled={loading || !chatInput.trim() || !apiKey}
+                            className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl hover:bg-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center"
+                        >
+                            <svg className="w-4 h-4 transform rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     );

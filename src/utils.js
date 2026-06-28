@@ -1798,6 +1798,29 @@ const getPushSubscriptionStatus = async () => {
     }
 };
 
+const getDeviceMetadata = () => {
+    const ua = navigator.userAgent;
+    let os = "Unknown OS";
+    let browser = "Unknown Browser";
+
+    // OS 파싱
+    if (/Windows/i.test(ua)) os = "Windows";
+    else if (/Macintosh|Mac OS X/i.test(ua)) os = "macOS";
+    else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+    else if (/Android/i.test(ua)) os = "Android";
+    else if (/Linux/i.test(ua)) os = "Linux";
+
+    // 브라우저 파싱
+    if (/Chrome/i.test(ua) && !/Edge|Edg|OPR|Opera/i.test(ua)) browser = "Chrome";
+    else if (/Safari/i.test(ua) && !/Chrome|Chromium/i.test(ua)) browser = "Safari";
+    else if (/Firefox/i.test(ua)) browser = "Firefox";
+    else if (/Edge|Edg/i.test(ua)) browser = "Edge";
+    else if (/Opera|OPR/i.test(ua)) browser = "Opera";
+    else if (/Trident|MSIE/i.test(ua)) browser = "Internet Explorer";
+
+    return { os, browser };
+};
+
 const registerPushNotification = async (supabase, userId) => {
     if (!supabase || !userId) throw new Error("Supabase 클라이언트와 사용자 ID가 필요합니다.");
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -1824,13 +1847,19 @@ const registerPushNotification = async (supabase, userId) => {
         applicationServerKey: convertedVapidKey
     });
 
-    // 4. Supabase DB에 토큰 정보 업로드 (user_id를 기본키로 사용, push_consent 활성화)
+    // 4. Supabase DB에 토큰 정보 업로드 (user_id + endpoint 복합키로 기기별 구독 관리)
+    const subJson = subscription.toJSON();
+    const { os, browser } = getDeviceMetadata();
     const { error } = await supabase.from('users_push_tokens').upsert({
         user_id: userId,
-        subscription: subscription.toJSON(),
+        endpoint: subJson.endpoint,
+        subscription: subJson,
         push_consent: true,
+        os: os,
+        browser: browser,
+        last_active_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
-    });
+    }, { onConflict: 'user_id,endpoint' });
 
     if (error) {
         throw new Error(`백엔드에 푸시 토큰 등록 실패: ${error.message}`);
@@ -1841,25 +1870,48 @@ const registerPushNotification = async (supabase, userId) => {
 
 const unregisterPushNotification = async (supabase, userId) => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
-    
+
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
-    
+
     if (subscription) {
+        // Delete this device's subscription (by endpoint) from Supabase
+        if (supabase && userId) {
+            const { error } = await supabase.from('users_push_tokens')
+                .delete()
+                .eq('user_id', userId)
+                .eq('endpoint', subscription.endpoint);
+            if (error) console.error("Failed to delete push token from Supabase:", error);
+        }
         await subscription.unsubscribe();
     }
 
-    if (supabase && userId) {
-        const { error } = await supabase.from('users_push_tokens').delete().eq('user_id', userId);
-        if (error) console.error("Failed to delete push token from Supabase:", error);
-    }
-    
     return true;
+};
+
+
+const updatePushTokenActive = async (supabase, userId) => {
+    if (!supabase || !userId) return;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+            const { error } = await supabase.from('users_push_tokens')
+                .update({ last_active_at: new Date().toISOString() })
+                .eq('user_id', userId)
+                .eq('endpoint', subscription.endpoint);
+            if (error) console.error("Failed to update last_active_at:", error);
+        }
+    } catch (e) {
+        console.error("Error updating push token active status:", e);
+    }
 };
 
 window.getPushSubscriptionStatus = getPushSubscriptionStatus;
 window.registerPushNotification = registerPushNotification;
 window.unregisterPushNotification = unregisterPushNotification;
+window.updatePushTokenActive = updatePushTokenActive;
 
 // [추가] Global Deletion Sync: 현재 페이즈(Phase 0)에서 자산 삭제 시 미래 페이즈에서도 연쇄 삭제하여 유령 자산 방지
 const syncPhaseAssetDeletions = (appData, deletedAssetId) => {

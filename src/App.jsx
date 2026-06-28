@@ -907,7 +907,6 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             const [diffData, setDiffData] = useState(null); // [추가] Diff 데이터
             const [isGameModalOpen, setIsGameModalOpen] = useState(false); // [추가] 미니게임 모달 상태
             const [isScreenshotModalOpen, setIsScreenshotModalOpen] = useState(false); // [추가] 스크린샷 모달 상태
-            const [activeBanner, setActiveBanner] = useState('ai'); // [추가] 사이드바 배너 탭 상태
             const [scenarioToExport, setScenarioToExport] = useState(null); // [추가] 내보낼 시나리오 상태
             const [activeAssetTab, setActiveAssetTab] = useState('cash'); // [추가] 자산 상세 탭 상태
             const [assetTouchStart, setAssetTouchStart] = useState({ x: null, y: null }); // [추가] 자산 탭 스와이프 상태
@@ -6442,61 +6441,25 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                 ))}
                             </div>
                             
-                            {/* [추가] 배너 스와이프 영역 (AI 분석 / 가챠 게임) */}
+                            {/* [추가] 노후 인생 가챠 배너 단일 노출 */}
                             <div className="mt-4 relative group">
-                                {activeBanner === 'ai' ? (
-                                    <div className="p-4 bg-gradient-to-br from-indigo-600 to-violet-600 dark:from-indigo-900 dark:to-violet-950 rounded-xl shadow-lg text-white relative overflow-hidden cursor-pointer transition-transform hover:scale-[1.02]" onClick={handleOpenAIAnalysis}>
-                                        <div className="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-white opacity-10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
-                                        <div className="relative z-10 pb-2">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className="text-2xl">🤖</span>
-                                                <h3 className="font-bold text-lg">AI 자산 분석</h3>
-                                            </div>
-                                            <p className="text-indigo-100 text-xs leading-relaxed mb-3">
-                                                현재 포트폴리오를 분석하고<br/>맞춤형 조언을 받아보세요.
-                                            </p>
-                                            <button className="w-full py-2 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold transition-colors border border-white/10">
-                                                분석 시작하기 →
-                                            </button>
+                                <div className="p-4 bg-gradient-to-br from-fuchsia-500 via-purple-600 to-indigo-600 dark:from-fuchsia-950 dark:to-indigo-950 rounded-xl shadow-lg text-white relative overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_8px_20px_rgba(217,70,239,0.35)]" onClick={() => setIsGameModalOpen(true)}>
+                                    <div className="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-white opacity-10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
+                                    <div className="relative z-10 pb-1">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className="text-xl">🎰</span>
+                                            <h3 className="font-bold text-sm tracking-tight text-white flex items-center gap-1">
+                                                내 노후 인생 가챠
+                                            </h3>
                                         </div>
+                                        <p className="text-fuchsia-100 text-[10px] leading-relaxed mb-3">
+                                            내 저축률로 돌려보는 운명 가챠<br/>펜트하우스냐, 자연인 텐트냐?
+                                        </p>
+                                        <button className="w-full py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-[10px] font-bold transition-all border border-white/10 flex items-center justify-center gap-1">
+                                            가챠 돌리기 →
+                                        </button>
                                     </div>
-                                ) : (
-                                    <div className="p-4 bg-gradient-to-br from-fuchsia-500 to-purple-600 dark:from-fuchsia-900 dark:to-purple-950 rounded-xl shadow-lg text-white relative overflow-hidden cursor-pointer transition-transform hover:scale-[1.02]" onClick={() => setIsGameModalOpen(true)}>
-                                        <div className="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-white opacity-10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
-                                        <div className="relative z-10 pb-2">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className="text-2xl">🎰</span>
-                                                <h3 className="font-bold text-lg">내 노후 뽑기</h3>
-                                            </div>
-                                            <p className="text-fuchsia-100 text-xs leading-relaxed mb-3">
-                                                내 저축률로 돌려보는<br/>노후 인생 가챠
-                                            </p>
-                                            <button className="w-full py-2 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold transition-colors border border-white/10">
-                                                가챠 돌리기 →
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* 하단 인디케이터 (점) */}
-                                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-10 pointer-events-none">
-                                    <div className={`w-1.5 h-1.5 rounded-full transition-colors ${activeBanner === 'ai' ? 'bg-white' : 'bg-white/40'}`}></div>
-                                    <div className={`w-1.5 h-1.5 rounded-full transition-colors ${activeBanner === 'game' ? 'bg-white' : 'bg-white/40'}`}></div>
                                 </div>
-
-                                {/* 좌우 컨트롤 화살표 */}
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); setActiveBanner(prev => prev === 'ai' ? 'game' : 'ai'); }}
-                                    className="absolute top-1/2 -left-3 -translate-y-1/2 p-1.5 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full shadow-md border border-gray-200 dark:border-gray-700 hover:text-blue-600 dark:hover:text-blue-400 z-20 opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7" /></svg>
-                                </button>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); setActiveBanner(prev => prev === 'ai' ? 'game' : 'ai'); }}
-                                    className="absolute top-1/2 -right-3 -translate-y-1/2 p-1.5 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full shadow-md border border-gray-200 dark:border-gray-700 hover:text-blue-600 dark:hover:text-blue-400 z-20 opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7" /></svg>
-                                </button>
                             </div>
                             </div>
                         </aside>
@@ -6672,11 +6635,23 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         </div>
                     </div>
                     </div> {/* End of relative z-10 */}
-                    {/* ===== 블로그 배너 ===== */}
-                    {!isPro && (
-                        <a href="https://blog.naver.com/zocdoc" target="_blank" rel="noopener noreferrer" title="블로그 방문하기" className="hidden sm:block fixed bottom-5 right-5 z-50 p-3 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:shadow-xl transition-all transform hover:scale-110">
-                            <img src="https://blogpfthumb-phinf.pstatic.net/MjAyMzExMDlfMTY2/MDAxNjk5NTM1OTEzNTY2.eBsibH7tHEJ5FeB3gSWJ3hGqz6mbgqM2TsSKS7c2QRog.CNgc4PQL7zumVLSD72sVI_EB6tsPO_Cwd_LKNj0MiyAg.JPEG.whrekrdl/161.jpg/161.jpg?type=w161" alt="네이버 블로그" className="w-10 h-10"/>
-                        </a>
+                    {/* ===== AI 분석 플로팅 위젯 (기존 블로그 배너 위치) ===== */}
+                    {(!userProfile?.id || !isPro) && (
+                        <button 
+                            onClick={handleOpenAIAnalysis}
+                            title="AI 자산분석 챗봇" 
+                            className="flex fixed bottom-24 right-5 sm:bottom-5 sm:right-5 z-50 group bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 rounded-full shadow-[0_4px_20px_rgba(124,58,237,0.4)] hover:shadow-[0_4px_25px_rgba(124,58,237,0.7)] hover:scale-110 active:scale-95 transition-all duration-350 w-16 h-16 items-center justify-center border border-white/10 text-white"
+                        >
+                            <svg className="w-8 h-8 text-white transition-all duration-300 group-hover:rotate-12 group-hover:scale-105" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="3" y="11" width="18" height="10" rx="2" />
+                                <circle cx="12" cy="5" r="2" />
+                                <path d="M12 7v4M8 15h.01M16 15h.01M12 18H12.01" />
+                            </svg>
+                            <span className="absolute -top-1 -right-1 flex h-5 w-5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-5 w-5 bg-gradient-to-r from-pink-500 to-rose-500 text-[8px] font-black items-center justify-center text-white shadow-sm border border-white/20">AI</span>
+                            </span>
+                        </button>
                     )}
                     {window.DataExportImportModal && (
                         <window.DataExportImportModal 
@@ -6904,6 +6879,9 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         isOpen={isGameModalOpen}
                         onClose={() => setIsGameModalOpen(false)}
                         savingsRate={monthlySalary > 0 ? ((totalSectorMonthlyContrib + autoDepositAmount) / monthlySalary * 100) : 0}
+                        currentNetWorth={calculation.currentNet}
+                        monthlySalary={monthlySalary}
+                        monthlyExpense={calculation.totalMonthlyExpense}
                     />}
                     {window.StockLinkModal && stockLinkState && (
                         <window.StockLinkModal
