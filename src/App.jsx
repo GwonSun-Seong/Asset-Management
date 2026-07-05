@@ -6875,23 +6875,21 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                     </div>
                     </div> {/* End of relative z-10 */}
                     {/* ===== AI 분석 플로팅 위젯 (기존 블로그 배너 위치) ===== */}
-                    {(!userProfile?.id || !isPro) && (
-                        <button 
-                            onClick={handleOpenAIAnalysis}
-                            title="AI 자산분석 챗봇" 
-                            className="flex fixed bottom-24 right-5 sm:bottom-5 sm:right-5 z-50 group bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 rounded-full shadow-[0_4px_20px_rgba(124,58,237,0.4)] hover:shadow-[0_4px_25px_rgba(124,58,237,0.7)] hover:scale-110 active:scale-95 transition-all duration-350 w-16 h-16 items-center justify-center border border-white/10 text-white"
-                        >
-                            <svg className="w-8 h-8 text-white transition-all duration-300 group-hover:rotate-12 group-hover:scale-105" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="3" y="11" width="18" height="10" rx="2" />
-                                <circle cx="12" cy="5" r="2" />
-                                <path d="M12 7v4M8 15h.01M16 15h.01M12 18H12.01" />
-                            </svg>
-                            <span className="absolute -top-1 -right-1 flex h-5 w-5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-5 w-5 bg-gradient-to-r from-pink-500 to-rose-500 text-[8px] font-black items-center justify-center text-white shadow-sm border border-white/20">AI</span>
-                            </span>
-                        </button>
-                    )}
+                    <button 
+                        onClick={handleOpenAIAnalysis}
+                        title="AI 자산분석 챗봇" 
+                        className="flex fixed bottom-24 right-5 sm:bottom-5 sm:right-5 z-50 group bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 rounded-full shadow-[0_4px_20px_rgba(124,58,237,0.4)] hover:shadow-[0_4px_25px_rgba(124,58,237,0.7)] hover:scale-110 active:scale-95 transition-all duration-350 w-16 h-16 items-center justify-center border border-white/10 text-white"
+                    >
+                        <svg className="w-8 h-8 text-white transition-all duration-300 group-hover:rotate-12 group-hover:scale-105" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="11" width="18" height="10" rx="2" />
+                            <circle cx="12" cy="5" r="2" />
+                            <path d="M12 7v4M8 15h.01M16 15h.01M12 18H12.01" />
+                        </svg>
+                        <span className="absolute -top-1 -right-1 flex h-5 w-5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-5 w-5 bg-gradient-to-r from-pink-500 to-rose-500 text-[8px] font-black items-center justify-center text-white shadow-sm border border-white/20">AI</span>
+                        </span>
+                    </button>
                     {window.DataExportImportModal && (
                         <window.DataExportImportModal 
                             isOpen={isDataManageModalOpen} 
