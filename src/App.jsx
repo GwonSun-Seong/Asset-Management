@@ -793,6 +793,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
 
             // [개편] 탭 상태 및 분류 재정의
             const [activeTab, setActiveTab] = useState('input'); // 기본값은 데이터 입력
+            const [cashFlowReportPage, setCashFlowReportPage] = useState('receipt');
             const TAB_MAPPING = {
                 input: ['assets', 'expenses', 'events', 'memo', 'rebalance'], // 입력
                 visualization: ['budget', 'charts', 'history', 'scenario'], // 시각화 (요약은 항상 표시되므로 메뉴에서 제외)
@@ -4402,7 +4403,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
 
                         {/* 2. 예산 운용 게이지 */}
                         <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-lg border border-gray-100 dark:border-gray-700">
-                            <div className="flex flex-col sm:flex-row sm:itㄴems-end justify-between gap-4 mb-6">
+                            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
                                 <div>
                                     <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2 flex flex-wrap items-center gap-2">
                                         투자/저축 가능 예산
@@ -4498,81 +4499,308 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                             </div>
                         </div>
 
-                        {/* 3. 현금 흐름 상세 (영수증 스타일) */}
+                        {/* 3. 현금 흐름 상세 (영수증 vs 흐름도) */}
                         <div className="bg-gray-50 dark:bg-gray-800/50 rounded-3xl p-6 sm:p-8 border border-gray-200 dark:border-gray-700 relative overflow-hidden">
                             <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-700 dark:via-gray-600 dark:to-gray-700 opacity-50"></div>
                             
-                            <h4 className="text-base font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-                                <span>🧾</span> 월간 자금 흐름 리포트
+                            <h4 className="text-base font-bold text-gray-900 dark:text-white mb-6 flex items-center justify-between">
+                                <span className="flex items-center gap-2">
+                                    <span>🧾</span> 월간 자금 흐름 리포트
+                                </span>
+                                {/* Segment Control to toggle between Receipt and Flowchart */}
+                                <div className="flex bg-gray-200/50 dark:bg-gray-700/50 p-0.5 rounded-lg text-[10px] sm:text-xs">
+                                    <button 
+                                        onClick={() => setCashFlowReportPage('receipt')}
+                                        className={`px-2.5 py-1 rounded font-bold transition-all ${cashFlowReportPage !== 'flowchart' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                                    >
+                                        정리표
+                                    </button>
+                                    <button 
+                                        onClick={() => setCashFlowReportPage('flowchart')}
+                                        className={`px-2.5 py-1 rounded font-bold transition-all ${cashFlowReportPage === 'flowchart' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                                    >
+                                        흐름도
+                                    </button>
+                                </div>
                             </h4>
 
-                            <div className="space-y-3">
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-gray-500 dark:text-gray-400">월 고정 수입</span>
-                                    <span className="font-bold text-blue-600 dark:text-blue-400">
-                                        +{formatNumber(monthlySalary, displayMode, 1)}만원
-                                        <span className="text-xs font-normal text-gray-400 ml-1">(100%)</span>
-                                    </span>
-                                </div>
-                                <div className="flex flex-col gap-2">
+                            {cashFlowReportPage === 'flowchart' ? (
+                                /* Flowchart View */
+                                (() => {
+                                     const savingsAmount = Object.keys(assets).filter(k => k !== 'loan').reduce((sum, k) => sum + (assets[k] || []).reduce((s, a) => s + Number(a.monthlyContrib || 0), 0), 0);
+                                     const loanAmount = (assets['loan'] || []).reduce((s, a) => s + Number(a.monthlyContrib || 0), 0);
+                                     const totalInflow = monthlySalary || 1;
+
+                                     // 1. Generate Right Sub-items list
+                                     const rightItems = [];
+                                     monthlyExpenses.forEach(exp => {
+                                         if (exp.amount > 0) {
+                                             rightItems.push({ id: `exp-${exp.name}`, name: exp.name, amount: exp.amount, parentIdx: 0, color: 'text-red-500 border-red-150', strokeColor: '#ef4444' });
+                                         }
+                                     });
+                                     Object.keys(assets).forEach(key => {
+                                         if (key !== 'loan') {
+                                             (assets[key] || []).forEach(asset => {
+                                                 if (asset.monthlyContrib > 0) {
+                                                     rightItems.push({ id: `save-${asset.name}`, name: asset.name, amount: asset.monthlyContrib, parentIdx: 1, color: 'text-emerald-500 border-emerald-150', strokeColor: '#10b981' });
+                                                 }
+                                             });
+                                         }
+                                     });
+                                     (assets['loan'] || []).forEach(asset => {
+                                         if (asset.monthlyContrib > 0) {
+                                             rightItems.push({ id: `loan-${asset.name}`, name: asset.name, amount: asset.monthlyContrib, parentIdx: 2, color: 'text-orange-500 border-orange-150', strokeColor: '#f97316' });
+                                         }
+                                     });
+                                     if (autoDepositAmount > 0) {
+                                         rightItems.push({ id: `residual`, name: `${residualAccount}`, amount: autoDepositAmount, parentIdx: 3, color: 'text-indigo-500 border-indigo-150', strokeColor: '#6366f1' });
+                                     }
+
+                                     const N = rightItems.length;
+                                     // Spaced out height: 55px per item for spacious gaps, minimum 480px
+                                     const containerHeight = Math.max(480, N * 55);
+                                     
+                                     // Center Left card Y position
+                                     const leftY = containerHeight / 2;
+
+                                     // Space out middle category cards
+                                     const midInterval = (containerHeight - 100) / 3;
+                                     const mainCats = [
+                                         { name: '소비 지출', amount: totalMonthly, y: 50, color: '#ef4444', gradient: 'from-red-500 to-pink-600', strokeColor: 'url(#grad-red)' },
+                                         { name: '투자 / 저축', amount: savingsAmount, y: 50 + midInterval, color: '#10b981', gradient: 'from-emerald-500 to-teal-600', strokeColor: 'url(#grad-emerald)' },
+                                         { name: '대출 상환', amount: loanAmount, y: 50 + 2 * midInterval, color: '#f97316', gradient: 'from-orange-500 to-amber-600', strokeColor: 'url(#grad-orange)' },
+                                         { name: '최종 잔여액', amount: autoDepositAmount, y: 50 + 3 * midInterval, color: '#6366f1', gradient: 'from-indigo-500 to-purple-600', strokeColor: 'url(#grad-indigo)' }
+                                     ];
+
+                                     // 2. Stack Y positions for Left -> Middle paths (Y range: leftY - 90 to leftY + 90)
+                                     const activeCats = mainCats.filter(c => c.amount > 0);
+                                     const activeSum = activeCats.reduce((sum, c) => sum + c.amount, 0) || 1;
+                                     
+                                     let currentY = leftY - 90;
+                                     const exitHeight = 180;
+                                     
+                                     const leftFlows = mainCats.map(cat => {
+                                         const isActive = cat.amount > 0;
+                                         if (!isActive) {
+                                             return { ...cat, startY: leftY, flowHeight: 0, isActive };
+                                         }
+                                         const share = cat.amount / activeSum;
+                                         const flowHeight = Math.max(3, share * exitHeight);
+                                         const startY = currentY + flowHeight / 2;
+                                         currentY += flowHeight;
+                                         return { ...cat, startY, flowHeight, isActive };
+                                     });
+
+                                     // Calculate Y positions for Right Items
+                                     const rightInterval = N > 1 ? (containerHeight - 50) / (N - 1) : 0;
+                                     rightItems.forEach((item, idx) => {
+                                         item.y = N > 1 ? 25 + idx * rightInterval : leftY;
+                                     });
+
+                                     return (
+                                         <div className="w-full overflow-x-auto pb-2 scrollbar-thin">
+                                             <div className="w-[640px] mx-auto relative select-none" style={{ height: `${containerHeight}px` }}>
+                                                 <svg className="w-full h-full absolute inset-0" viewBox={`0 0 640 ${containerHeight}`} height={containerHeight}>
+                                                     <defs>
+                                                         <linearGradient id="grad-red" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                             <stop offset="0%" stopColor="#6366f1" stopOpacity="0.8" />
+                                                             <stop offset="100%" stopColor="#ef4444" stopOpacity="0.8" />
+                                                         </linearGradient>
+                                                         <linearGradient id="grad-emerald" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                             <stop offset="0%" stopColor="#6366f1" stopOpacity="0.8" />
+                                                             <stop offset="100%" stopColor="#10b981" stopOpacity="0.8" />
+                                                         </linearGradient>
+                                                         <linearGradient id="grad-orange" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                             <stop offset="0%" stopColor="#6366f1" stopOpacity="0.8" />
+                                                             <stop offset="100%" stopColor="#f97316" stopOpacity="0.8" />
+                                                         </linearGradient>
+                                                         <linearGradient id="grad-indigo" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                             <stop offset="0%" stopColor="#6366f1" stopOpacity="0.8" />
+                                                             <stop offset="100%" stopColor="#818cf8" stopOpacity="0.8" />
+                                                         </linearGradient>
+                                                     </defs>
+                                                     <style>{`
+                                                         @keyframes flow {
+                                                             to {
+                                                                 stroke-dashoffset: -20;
+                                                             }
+                                                         }
+                                                         .flow-line {
+                                                             stroke-dasharray: 6 4;
+                                                             animation: flow 1.5s linear infinite;
+                                                         }
+                                                     `}</style>
+
+                                                     {/* level 1: Left -> Middle Curves (No thick backgrounds, dynamic weighted lines) */}
+                                                     {leftFlows.map((cat, idx) => {
+                                                         if (!cat.isActive) return null;
+                                                         const strokeWidth = Math.max(1.8, Math.min(6.5, (cat.amount / totalInflow) * 9.5));
+                                                         return (
+                                                             <g key={`flow1-${idx}`}>
+                                                                 <path 
+                                                                     d={`M 120 ${cat.startY} C 170 ${cat.startY}, 180 ${cat.y}, 230 ${cat.y}`} 
+                                                                     fill="none" 
+                                                                     stroke={cat.strokeColor} 
+                                                                     strokeWidth={strokeWidth} 
+                                                                     opacity="0.25"
+                                                                 />
+                                                                 <path 
+                                                                     d={`M 120 ${cat.startY} C 170 ${cat.startY}, 180 ${cat.y}, 230 ${cat.y}`} 
+                                                                     fill="none" 
+                                                                     stroke={cat.strokeColor} 
+                                                                     strokeWidth={strokeWidth} 
+                                                                     opacity="0.95"
+                                                                     className="flow-line"
+                                                                 />
+                                                             </g>
+                                                         );
+                                                     })}
+
+                                                     {/* level 2: Middle -> Right Curves (Thinner & lighter, dynamic weighted lines) */}
+                                                     {rightItems.map((item, idx) => {
+                                                         const parentCat = mainCats[item.parentIdx];
+                                                         const strokeWidth = Math.max(1.2, Math.min(4, (item.amount / totalInflow) * 7.5));
+                                                         return (
+                                                             <g key={`flow2-${item.id}`}>
+                                                                 <path 
+                                                                     d={`M 360 ${parentCat.y} C 410 ${parentCat.y}, 420 ${item.y}, 470 ${item.y}`} 
+                                                                     fill="none" 
+                                                                     stroke={item.strokeColor} 
+                                                                     strokeWidth={strokeWidth} 
+                                                                     opacity="0.18"
+                                                                 />
+                                                                 <path 
+                                                                     d={`M 360 ${parentCat.y} C 410 ${parentCat.y}, 420 ${item.y}, 470 ${item.y}`} 
+                                                                     fill="none" 
+                                                                     stroke={item.strokeColor} 
+                                                                     strokeWidth={strokeWidth} 
+                                                                     opacity="0.9"
+                                                                     className="flow-line"
+                                                                 />
+                                                             </g>
+                                                         );
+                                                     })}
+
+                                                     {/* Left: Income Card */}
+                                                     <foreignObject x={0} y={leftY - 50} width={120} height={100}>
+                                                         <div className="w-full h-full p-3 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-600 text-white flex flex-col justify-center items-center shadow-md border border-indigo-400/25">
+                                                             <span className="text-xl mb-1">💰</span>
+                                                             <span className="text-[10px] font-bold text-white/80 uppercase tracking-wider text-center">월 고정 수입</span>
+                                                             <strong className="text-sm sm:text-base font-extrabold mt-0.5">{formatNumber(monthlySalary, displayMode, 1)}만</strong>
+                                                         </div>
+                                                     </foreignObject>
+
+                                                     {/* Middle: Main Categories Cards */}
+                                                     {mainCats.map((cat, idx) => {
+                                                         const isZero = cat.amount <= 0;
+                                                         return (
+                                                             <foreignObject key={idx} x={230} y={cat.y - 25} width={130} height={50}>
+                                                                 <div className={`w-full h-full p-2 rounded-xl border shadow-xs relative overflow-hidden flex flex-col justify-center ${
+                                                                     isZero 
+                                                                     ? 'bg-gray-50/20 dark:bg-gray-800/10 border-dashed border-gray-200 dark:border-gray-700 opacity-40' 
+                                                                     : 'bg-white dark:bg-gray-800 border-gray-150 dark:border-gray-700'
+                                                                 }`}>
+                                                                     {!isZero && <div className={`absolute left-0 top-0 h-full w-1 bg-gradient-to-b ${cat.gradient}`} />}
+                                                                     <div className="pl-1.5">
+                                                                         <div className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">{cat.name}</div>
+                                                                         <strong className={`text-xs font-black mt-0.5 block truncate ${isZero ? 'text-gray-450' : 'text-gray-900 dark:text-white'}`}>{formatNumber(cat.amount, displayMode, 1)}만</strong>
+                                                                     </div>
+                                                                 </div>
+                                                             </foreignObject>
+                                                         );
+                                                     })}
+
+                                                     {/* Right: Detailed Sub-items Cards */}
+                                                     {rightItems.map((item, idx) => (
+                                                         <foreignObject key={item.id} x={470} y={item.y - 18} width={170} height={36}>
+                                                             <div className="w-full h-full px-2.5 py-1.5 rounded-lg border bg-white dark:bg-gray-950 border-gray-150 dark:border-gray-750 flex items-center justify-between shadow-xs hover:border-indigo-400 dark:hover:border-indigo-650 transition-colors">
+                                                                 <span className="text-[10px] font-bold text-gray-700 dark:text-gray-300 truncate max-w-[100px]">{item.name}</span>
+                                                                 <span className={`text-[10px] font-black ${item.color.split(' ')[0]}`}>{formatNumber(item.amount, displayMode, 1)}만</span>
+                                                             </div>
+                                                         </foreignObject>
+                                                     ))}
+                                                     {N === 0 && (
+                                                         <foreignObject x={470} y={leftY - 20} width={170} height={40}>
+                                                             <div className="w-full h-full px-2 py-1.5 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg text-center text-[10px] text-gray-400 italic flex items-center justify-center">
+                                                                 세부 항목 없음
+                                                             </div>
+                                                         </foreignObject>
+                                                     )}
+                                                 </svg>
+                                             </div>
+                                         </div>
+                                     );
+                                 })()
+                            ) : (
+                                /* Receipt View (Original) */
+                                <div className="space-y-3">
                                     <div className="flex justify-between items-center text-sm">
-                                        <span className="text-gray-500 dark:text-gray-400">월 고정 지출</span>
-                                        <span className="font-bold text-red-500">
-                                            -{formatNumber(totalMonthly, displayMode, 1)}만원
-                                            <span className="text-xs font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (totalMonthly / monthlySalary * 100).toFixed(1) : 0}%)</span>
+                                        <span className="text-gray-500 dark:text-gray-400">월 고정 수입</span>
+                                        <span className="font-bold text-blue-600 dark:text-blue-400">
+                                            +{formatNumber(monthlySalary, displayMode, 1)}만원
+                                            <span className="text-xs font-normal text-gray-400 ml-1">(100%)</span>
                                         </span>
                                     </div>
-                                    {/* 개별 소비 내역 표시 */}
-                                    {monthlyExpenses.length > 0 && (
-                                        <div className="space-y-1.5 pl-3 border-l-2 border-red-100 dark:border-red-900/30">
-                                            {monthlyExpenses.map((exp, idx) => (
-                                                <div key={idx} className="flex justify-between items-center text-xs">
-                                                    <span className="text-gray-500 dark:text-gray-400">{exp.name}</span>
-                                                    <span className="text-red-400">
-                                                        -{formatNumber(exp.amount, displayMode, 1)}만원
-                                                        <span className="text-[10px] text-gray-400 ml-1">({monthlySalary > 0 ? (exp.amount / monthlySalary * 100).toFixed(1) : 0}%)</span>
-                                                    </span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                                
-                                <div className="border-b border-dashed border-gray-300 dark:border-gray-600 my-4"></div>
-
-                                <div className="space-y-2">
-                                    {autoDepositBreakdown.map((item, index) => (
-                                        <div key={index} className="flex justify-between items-center text-sm">
-                                            <span className="text-gray-600 dark:text-gray-300 flex items-center gap-2">
-                                                <span className="text-xs w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">{sectorInfo[item.sector]?.icon}</span>
-                                                {item.name}
-                                            </span>
-                                            <span className="font-medium text-gray-900 dark:text-gray-200">
-                                                -{formatNumber(item.amount, displayMode, 1)}만원
-                                                <span className="text-[10px] font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (item.amount / monthlySalary * 100).toFixed(1) : 0}%)</span>
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="text-gray-500 dark:text-gray-400">월 고정 지출</span>
+                                            <span className="font-bold text-red-500">
+                                                -{formatNumber(totalMonthly, displayMode, 1)}만원
+                                                <span className="text-xs font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (totalMonthly / monthlySalary * 100).toFixed(1) : 0}%)</span>
                                             </span>
                                         </div>
-                                    ))}
-                                    {autoDepositBreakdown.length === 0 && (
-                                        <div className="text-center text-xs text-gray-400 py-2 italic">설정된 월납입 내역이 없습니다.</div>
-                                    )}
-                                </div>
+                                        {/* 개별 소비 내역 표시 */}
+                                        {monthlyExpenses.length > 0 && (
+                                            <div className="space-y-1.5 pl-3 border-l-2 border-red-100 dark:border-red-900/30">
+                                                {monthlyExpenses.map((exp, idx) => (
+                                                    <div key={idx} className="flex justify-between items-center text-xs">
+                                                        <span className="text-gray-500 dark:text-gray-400">{exp.name}</span>
+                                                        <span className="text-red-400">
+                                                            -{formatNumber(exp.amount, displayMode, 1)}만원
+                                                            <span className="text-[10px] text-gray-400 ml-1">({monthlySalary > 0 ? (exp.amount / monthlySalary * 100).toFixed(1) : 0}%)</span>
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="border-b border-dashed border-gray-300 dark:border-gray-600 my-4"></div>
 
-                                <div className="border-b border-gray-300 dark:border-gray-600 my-4"></div>
+                                    <div className="space-y-2">
+                                        {autoDepositBreakdown.map((item, index) => (
+                                            <div key={index} className="flex justify-between items-center text-sm">
+                                                <span className="text-gray-600 dark:text-gray-300 flex items-center gap-2">
+                                                    <span className="text-xs w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">{sectorInfo[item.sector]?.icon}</span>
+                                                    {item.name}
+                                                </span>
+                                                <span className="font-medium text-gray-900 dark:text-gray-200">
+                                                    -{formatNumber(item.amount, displayMode, 1)}만원
+                                                    <span className="text-[10px] font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (item.amount / monthlySalary * 100).toFixed(1) : 0}%)</span>
+                                                </span>
+                                            </div>
+                                        ))}
+                                        {autoDepositBreakdown.length === 0 && (
+                                            <div className="text-center text-xs text-gray-400 py-2 italic">설정된 월납입 내역이 없습니다.</div>
+                                        )}
+                                    </div>
 
-                                <div className="flex justify-between items-center">
-                                    <span className="text-base font-bold text-gray-900 dark:text-white">최종 잔여액</span>
-                                    <div className="text-right">
-                                        <span className={`text-xl font-extrabold ${autoDepositAmount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
-                                            {autoDepositAmount > 0 ? '+' : ''}{formatNumber(autoDepositAmount, displayMode, 1)}만원
-                                            <span className="text-xs font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (autoDepositAmount / monthlySalary * 100).toFixed(1) : 0}%)</span>
-                                        </span>
-                                        <div className="text-[10px] text-gray-400 mt-1">
-                                            ➜ {residualAccount}
+                                    <div className="border-b border-gray-300 dark:border-gray-600 my-4"></div>
+
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-base font-bold text-gray-900 dark:text-white">최종 잔여액</span>
+                                        <div className="text-right">
+                                            <span className={`text-xl font-extrabold ${autoDepositAmount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
+                                                {autoDepositAmount > 0 ? '+' : ''}{formatNumber(autoDepositAmount, displayMode, 1)}만원
+                                                <span className="text-xs font-normal text-gray-400 ml-1">({monthlySalary > 0 ? (autoDepositAmount / monthlySalary * 100).toFixed(1) : 0}%)</span>
+                                            </span>
+                                            <div className="text-[10px] text-gray-400 mt-1">
+                                                ➜ {residualAccount}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
                 );
