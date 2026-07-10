@@ -918,6 +918,12 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 localStorage.setItem('assetDashboardAutoSaveHistoryOnSync', String(autoSaveHistoryOnSync));
             }, [autoSaveHistoryOnSync]);
 
+            const [flowchartScale, setFlowchartScale] = useState(1);
+            const [flowchartTranslate, setFlowchartTranslate] = useState({ x: 0, y: 0 });
+            const [isFlowchartDragging, setIsFlowchartDragging] = useState(false);
+            const [flowchartDragStart, setFlowchartDragStart] = useState({ x: 0, y: 0 });
+            const [flowchartTouchStartDist, setFlowchartTouchStartDist] = useState(0);
+
             const [draggedSectorId, setDraggedSectorId] = useState(null); // [추가] 드래그 중인 섹터 ID
 
             const handleSectorDragStart = (e, id) => { setDraggedSectorId(id); e.dataTransfer.effectAllowed = "move"; };
@@ -4659,10 +4665,120 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                          item.y = N > 1 ? 25 + idx * rightInterval : leftY;
                                      });
 
-                                     return (
-                                         <div className="w-full overflow-x-auto pb-2 scrollbar-thin">
-                                             <div className="w-[640px] mx-auto relative select-none" style={{ height: `${containerHeight}px` }}>
-                                                 <svg className="w-full h-full absolute inset-0" viewBox={`0 0 640 ${containerHeight}`} height={containerHeight}>
+                                     const handleMouseDown = (e) => {
+                                          if (e.button !== 0) return;
+                                          setIsFlowchartDragging(true);
+                                          setFlowchartDragStart({ x: e.clientX - flowchartTranslate.x, y: e.clientY - flowchartTranslate.y });
+                                      };
+
+                                      const handleMouseMove = (e) => {
+                                          if (!isFlowchartDragging) return;
+                                          setFlowchartTranslate({
+                                              x: e.clientX - flowchartDragStart.x,
+                                              y: e.clientY - flowchartDragStart.y
+                                          });
+                                      };
+
+                                      const handleMouseUpOrLeave = () => {
+                                          setIsFlowchartDragging(false);
+                                      };
+
+                                      const handleWheel = (e) => {
+                                          e.preventDefault();
+                                          const scaleFactor = 1.08;
+                                          let nextScale = flowchartScale;
+                                          if (e.deltaY < 0) {
+                                              nextScale = Math.min(3.0, flowchartScale * scaleFactor);
+                                          } else {
+                                              nextScale = Math.max(0.5, flowchartScale / scaleFactor);
+                                          }
+                                          setFlowchartScale(nextScale);
+                                      };
+
+                                      const handleTouchStart = (e) => {
+                                          if (e.touches.length === 1) {
+                                              setIsFlowchartDragging(true);
+                                              setFlowchartDragStart({ x: e.touches[0].clientX - flowchartTranslate.x, y: e.touches[0].clientY - flowchartTranslate.y });
+                                          } else if (e.touches.length === 2) {
+                                              setIsFlowchartDragging(false);
+                                              const dist = Math.hypot(
+                                                  e.touches[0].clientX - e.touches[1].clientX,
+                                                  e.touches[0].clientY - e.touches[1].clientY
+                                              );
+                                              setFlowchartTouchStartDist(dist);
+                                          }
+                                      };
+
+                                      const handleTouchMove = (e) => {
+                                          if (e.touches.length === 1 && isFlowchartDragging) {
+                                              setFlowchartTranslate({
+                                                  x: e.touches[0].clientX - flowchartDragStart.x,
+                                                  y: e.touches[0].clientY - flowchartDragStart.y
+                                              });
+                                          } else if (e.touches.length === 2) {
+                                              const dist = Math.hypot(
+                                                  e.touches[0].clientX - e.touches[1].clientX,
+                                                  e.touches[0].clientY - e.touches[1].clientY
+                                              );
+                                              if (flowchartTouchStartDist > 0) {
+                                                  const factor = dist / flowchartTouchStartDist;
+                                                  const nextScale = Math.max(0.5, Math.min(3.0, flowchartScale * factor));
+                                                  setFlowchartScale(nextScale);
+                                                  setFlowchartTouchStartDist(dist);
+                                              }
+                                          }
+                                      };
+
+                                      const handleTouchEnd = () => {
+                                          setIsFlowchartDragging(false);
+                                          setFlowchartTouchStartDist(0);
+                                      };
+
+                                      const zoomIn = (e) => {
+                                          e.stopPropagation();
+                                          setFlowchartScale(prev => Math.min(3.0, prev * 1.2));
+                                      };
+
+                                      const zoomOut = (e) => {
+                                          e.stopPropagation();
+                                          setFlowchartScale(prev => Math.max(0.5, prev / 1.2));
+                                      };
+
+                                      const resetZoom = (e) => {
+                                          e.stopPropagation();
+                                          setFlowchartScale(1);
+                                          setFlowchartTranslate({ x: 0, y: 0 });
+                                      };
+
+                                      return (
+                                          <div 
+                                              className="w-full relative overflow-hidden bg-gray-50/30 dark:bg-gray-900/10 rounded-2xl border dark:border-gray-700 select-none cursor-grab active:cursor-grabbing" 
+                                              style={{ height: `${containerHeight}px`, touchAction: 'none' }}
+                                              onMouseDown={handleMouseDown}
+                                              onMouseMove={handleMouseMove}
+                                              onMouseUp={handleMouseUpOrLeave}
+                                              onMouseLeave={handleMouseUpOrLeave}
+                                              onWheel={handleWheel}
+                                              onTouchStart={handleTouchStart}
+                                              onTouchMove={handleTouchMove}
+                                              onTouchEnd={handleTouchEnd}
+                                          >
+                                              {/* floating zoom controls */}
+                                              <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xs px-2 py-1 rounded-lg border dark:border-gray-700 shadow-xs pointer-events-auto">
+                                                  <button onClick={zoomIn} className="p-1 hover:text-blue-500 dark:hover:text-blue-400 font-bold text-sm active:scale-95 transition-transform" title="확대">＋</button>
+                                                  <button onClick={zoomOut} className="p-1 hover:text-blue-500 dark:hover:text-blue-400 font-bold text-sm active:scale-95 transition-transform" title="축소">－</button>
+                                                  <button onClick={resetZoom} className="px-1.5 py-0.5 hover:text-blue-500 dark:hover:text-blue-400 font-bold text-[10px] active:scale-95 transition-transform border dark:border-gray-750 rounded bg-gray-50 dark:bg-gray-900/80" title="초기화">초기화</button>
+                                              </div>
+
+                                              <div 
+                                                  className="w-[640px] mx-auto relative origin-center"
+                                                  style={{ 
+                                                      height: `${containerHeight}px`,
+                                                      transform: `translate(${flowchartTranslate.x}px, ${flowchartTranslate.y}px) scale(${flowchartScale})`,
+                                                      transition: isFlowchartDragging ? 'none' : 'transform 0.15s ease-out'
+                                                  }}
+                                              >
+                                                  <svg className="w-full h-full absolute inset-0" viewBox={`0 0 640 ${containerHeight}`} height={containerHeight}>
                                                      <defs>
                                                          <linearGradient id="grad-red" x1="0%" y1="0%" x2="100%" y2="0%">
                                                              <stop offset="0%" stopColor="#6366f1" stopOpacity="0.8" />
