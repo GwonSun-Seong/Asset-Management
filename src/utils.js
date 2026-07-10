@@ -1426,7 +1426,7 @@ const fetchBitcoinData = async () => {
 const fetchTossExchangeRate = async () => {
     const clientId = localStorage.getItem('toss_client_id');
     const clientSecret = localStorage.getItem('toss_client_secret');
-    if (!clientId || !clientSecret) return Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50;
+    if (!clientId || !clientSecret) return Number(localStorage.getItem('asset_last_usd_krw')) || 0;
     
     try {
         const token = await getTossToken(clientId, clientSecret);
@@ -1481,7 +1481,7 @@ const fetchTossExchangeRate = async () => {
     } catch (e) {
         console.warn("fetchTossExchangeRate failed, using cached/default:", e);
     }
-    return Number(localStorage.getItem('asset_last_usd_krw')) || 1340.50;
+    return Number(localStorage.getItem('asset_last_usd_krw')) || 0;
 };
 
 // [추가] 목표 달성 기간 계산 (Goal Seek)

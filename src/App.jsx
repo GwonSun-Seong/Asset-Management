@@ -758,6 +758,38 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
 
             // ===== 모든 상태를 먼저 선언 =====
             const { state: appData, setState: setAppData, undo, redo, canUndo, canRedo, reset: resetAppData } = useUndoRedo(null);
+            
+            // [추가] Web Worker 기반 비동기 시뮬레이션 상태를 Temporal Dead Zone 회피를 위해 최상단으로 이동
+            const [calculation, setCalculation] = useState(() => {
+                const initialAssets = appData?.assets || {};
+                return {
+                    initial: initialAssets,
+                    projected: initialAssets,
+                    currentTotal: 0,
+                    currentNet: 0,
+                    currentGross: 0,
+                    projectedTotal: 0,
+                    projectedNet: 0,
+                    projectedGross: 0,
+                    realValue: 0,
+                    growth: 0,
+                    grand: 0,
+                    monthlyProjections: [],
+                    warnings: [],
+                    fireMetrics: {
+                        runwayMonths: 0,
+                        debtFreeMonth: -1,
+                        swr4PercentCapital: 0
+                    },
+                    totalMonthlyExpense: 0,
+                    rebalanceInfo: {
+                        recs: {},
+                        budgetLimited: false,
+                        targetMonths: 12,
+                        itemRecs: {}
+                    }
+                };
+            });
             const [darkMode, setDarkMode] = useState(() => localStorage.getItem('assetDashboardDarkMode') === 'true');
             const [inflationRate, setInflationRate] = useState(2.5);
             const [scenarios, setScenarios] = useState([]);
@@ -878,6 +910,14 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             const [currentDrillDown, setCurrentDrillDown] = useState(null); // [수정] 현재 차트 드릴다운 상태
             const [projectedDrillDown, setProjectedDrillDown] = useState(null); // [수정] 예상 차트 드릴다운 상태
             
+            const [livePriceEnabled, setLivePriceEnabled] = useState(() => localStorage.getItem('toss_live_price_enabled') === 'true');
+            const [livePriceInterval, setLivePriceInterval] = useState(() => Number(localStorage.getItem('toss_live_price_interval')) || 60);
+            const [autoSaveHistoryOnSync, setAutoSaveHistoryOnSync] = useState(() => localStorage.getItem('assetDashboardAutoSaveHistoryOnSync') === 'true');
+            
+            useEffect(() => {
+                localStorage.setItem('assetDashboardAutoSaveHistoryOnSync', String(autoSaveHistoryOnSync));
+            }, [autoSaveHistoryOnSync]);
+
             const [draggedSectorId, setDraggedSectorId] = useState(null); // [추가] 드래그 중인 섹터 ID
 
             const handleSectorDragStart = (e, id) => { setDraggedSectorId(id); e.dataTransfer.effectAllowed = "move"; };
@@ -913,8 +953,6 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             const [historyChartInfo, setHistoryChartInfo] = useState(null); // [추가] 히스토리 차트 상단 정보바 상태
             const lastHistoryInfoRef = useRef(null); // [추가] 정보바 업데이트 최적화용 Ref
             
-            const [livePriceEnabled, setLivePriceEnabled] = useState(() => localStorage.getItem('toss_live_price_enabled') === 'true');
-            const [livePriceInterval, setLivePriceInterval] = useState(() => Number(localStorage.getItem('toss_live_price_interval')) || 60);
             const [isDiffModalOpen, setIsDiffModalOpen] = useState(false); // [추가] Diff 모달 상태
             const [diffData, setDiffData] = useState(null); // [추가] Diff 데이터
             const [isGameModalOpen, setIsGameModalOpen] = useState(false); // [추가] 미니게임 모달 상태
@@ -1058,16 +1096,26 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                                 return item;
                                             }
                                             const q = quotes[item.ticker];
-                                            const targetStatus = (q && q.price) ? 'online' : 'error';
+                                            let targetStatus = (q && q.price) ? 'online' : 'error';
+                                            let targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
                                             
                                             let targetPrice = item.currentPrice;
                                             if (q && q.price) {
                                                 const isUsStock = /^[A-Za-z]/.test(item.ticker);
-                                                const safeFxRate = Number(localStorage.getItem('asset_last_usd_krw')) || 1420;
-                                                targetPrice = isUsStock ? Math.round(q.price * safeFxRate) : q.price;
+                                                if (isUsStock) {
+                                                    const safeFxRate = Number(localStorage.getItem('asset_last_usd_krw'));
+                                                    if (!safeFxRate || isNaN(safeFxRate) || safeFxRate <= 0) {
+                                                        targetPrice = item.currentPrice;
+                                                        targetStatus = 'offline';
+                                                        targetError = '실시간 환율 데이터를 로드할 수 없어 오프라인 상태로 유지됩니다.';
+                                                    } else {
+                                                        targetPrice = Math.round(q.price * safeFxRate);
+                                                    }
+                                                } else {
+                                                    targetPrice = q.price;
+                                                }
                                             }
                                             const targetCurrency = 'KRW'; // Always store and sync in KRW
-                                            const targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
                                             
                                             if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError || item.currency !== targetCurrency) {
                                                 assetChanged = true;
@@ -1357,6 +1405,50 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             if (!force && currentDataStr === lastSavedDataRef.current) return;
 
             let payloadData = unifiedData;
+
+            // [추가] DB 동기화 시 히스토리 자동 저장 처리
+            if (autoSaveHistoryOnSync && unifiedData && unifiedData.assetHistory) {
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const day = String(now.getDate()).padStart(2, '0');
+                const currentDate = `${year}-${month}-${day}`;
+                const currentTime = now.toTimeString().split(' ')[0];
+                const netWorth = calculation?.currentNet || 0;
+                const grossWorth = calculation?.currentGross || 0;
+
+                const existingIndex = unifiedData.assetHistory.findIndex(item => item.date === currentDate);
+                const newPoint = { 
+                    date: currentDate, 
+                    time: currentTime,
+                    netWorth,
+                    grossWorth,
+                    timestamp: now.getTime()
+                };
+
+                let updatedHistory = [...unifiedData.assetHistory];
+                let isChanged = false;
+
+                if (existingIndex >= 0) {
+                    const existing = updatedHistory[existingIndex];
+                    if (existing.netWorth !== netWorth || existing.grossWorth !== grossWorth) {
+                        updatedHistory[existingIndex] = newPoint;
+                        isChanged = true;
+                    }
+                } else {
+                    updatedHistory.push(newPoint);
+                    updatedHistory.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                    isChanged = true;
+                }
+
+                if (isChanged) {
+                    payloadData = { ...unifiedData, assetHistory: updatedHistory };
+                    setTimeout(() => {
+                        setAssetHistory(updatedHistory);
+                    }, 0);
+                }
+            }
+
             // [수정] targetMode가 있으면 암호화 시도 (PRO 여부 무관)
             if (targetMode) {
                 let key = keyOverride;
@@ -1384,7 +1476,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                     return;
                 }
                 try {
-                    payloadData = await encryptData(unifiedData, key);
+                    payloadData = await encryptData(payloadData, key);
                 } catch (e) {
                     console.error("Encryption error:", e);
                     addToast('데이터 암호화 중 오류가 발생했습니다.', 'error');
@@ -1431,7 +1523,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 setSyncStatusError(error.message || '저장 실패');
                 setLastSyncTime(null);
             } // This finally block was removed as it was empty and unnecessary
-        }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded, withRetry, getEncryptionKey]);
+        }, [verifiedEmail, isPro, encryptionMode, userSecretKey, userProfile, isDemoMode, supabase, isInitialized, isCloudLoaded, withRetry, getEncryptionKey, autoSaveHistoryOnSync, calculation]);
 
         // 클라우드 데이터 불러오기
         const fetchFromCloud = React.useCallback(async (email = verifiedEmail, pro = isPro, isInitialLoad = false, isManual = false, localDataOverride = null) => {
@@ -1924,7 +2016,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                     symbolsToFetch.add('KRW=X'); // 환율 데이터
 
                     // [Fail-safe] 캐시된 환율 로드
-                    const cachedFx = Number(localStorage.getItem('asset_last_usd_krw')) || 1420;
+                    const cachedFx = Number(localStorage.getItem('asset_last_usd_krw')) || 0;
                     
                     /* [임시 주석 처리 - 추후 토스 API 연동 시 정식 복구 예정]
                     const quotes = await window.fetchYahooQuotes(Array.from(symbolsToFetch));
@@ -2861,37 +2953,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 setDraggedPanelId(null);
             }, [draggedPanelId]);
 
-            // [추가] Web Worker 기반 비동기 시뮬레이션 상태
-            const [calculation, setCalculation] = useState(() => {
-                const initialAssets = appData?.assets || {};
-                return {
-                    initial: initialAssets,
-                    projected: initialAssets,
-                    currentTotal: 0,
-                    currentNet: 0,
-                    currentGross: 0,
-                    projectedTotal: 0,
-                    projectedNet: 0,
-                    projectedGross: 0,
-                    realValue: 0,
-                    growth: 0,
-                    grand: 0,
-                    monthlyProjections: [],
-                    warnings: [],
-                    fireMetrics: {
-                        runwayMonths: 0,
-                        debtFreeMonth: -1,
-                        swr4PercentCapital: 0
-                    },
-                    totalMonthlyExpense: 0,
-                    rebalanceInfo: {
-                        recs: {},
-                        budgetLimited: false,
-                        targetMonths: 12,
-                        itemRecs: {}
-                    }
-                };
-            });
+            // [추가] Web Worker 기반 비동기 시뮬레이션 상태 (상단으로 이동됨)
             const [isCalculating, setIsCalculating] = useState(false);
 
             useEffect(() => {
@@ -6448,8 +6510,11 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                     <div className="flex items-center gap-1 mr-2 px-3 py-1 bg-gray-50 dark:bg-gray-900/50 rounded-full border dark:border-gray-700">
                                         <button onClick={() => setIsScreenshotModalOpen(true)} className="p-1.5 text-gray-500 hover:text-emerald-600 transition-colors" title="스크린샷으로 자산 업데이트"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
                                         <button onClick={saveToPDF} disabled={editingPhase !== null} className="p-1.5 text-gray-500 hover:text-blue-600 transition-colors" title="PDF 저장"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></button>
-                                        <button onClick={saveAsDefault} className="p-1.5 text-gray-500 hover:text-amber-500 transition-colors" title="기본값 저장"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5h14l-2 14H7L5 5z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v4M9 5v2M15 5v2" /></svg></button>
-                                        <button onClick={loadCustomDefault} className="p-1.5 text-gray-500 hover:text-indigo-500 transition-colors" title="기본값 불러오기"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
+                                        <button onClick={saveCurrentAsset} className="p-1.5 text-gray-500 hover:text-indigo-500 transition-colors" title="히스토리 저장">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                            </svg>
+                                        </button>
                                     </div>
 
                                     {/* [이동] 실행 취소/다시 실행 버튼 (우측으로 이동) */}
@@ -6510,8 +6575,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                             <button onClick={saveToPDF} disabled={editingPhase !== null} className={`w-full text-left px-3 py-2 rounded transition-colors ${editingPhase !== null ? 'text-gray-400 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200'}`}>📄 PDF 저장</button>
                                             <button onClick={handleOpenAIAnalysis} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-indigo-600 font-bold">🤖 AI 자산 분석</button>
                                             <button onClick={() => setIsScreenshotModalOpen(true)} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-emerald-600 font-bold">📷 스크린샷 자산 업데이트</button>
-                                            <button onClick={saveAsDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">⭐ 기본값 저장</button>
-                                            <button onClick={loadCustomDefault} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">↩️ 기본값 불러오기</button>
+                                            <button onClick={saveCurrentAsset} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 text-indigo-600 font-bold">📈 히스토리 저장</button>
                                         </div>
                                     </details>
                                 </div>
@@ -7050,6 +7114,8 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         }}
                         supabase={supabase}
                         userId={userProfile?.id}
+                        autoSaveHistoryOnSync={autoSaveHistoryOnSync}
+                        onAutoSaveHistoryOnSyncChange={setAutoSaveHistoryOnSync}
                     />}
                     {showSaveToast && (
                         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[99999] bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">

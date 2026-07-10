@@ -339,7 +339,9 @@ window.SettingsModal = ({
     liveEnabled, onLiveEnabledChange,
     liveInterval, onLiveIntervalChange,
     supabase,
-    userId
+    userId,
+    autoSaveHistoryOnSync,
+    onAutoSaveHistoryOnSyncChange
 }) => {
     if (!isOpen) return null;
 
@@ -481,6 +483,22 @@ window.SettingsModal = ({
                                 <span className="text-[10px] text-gray-500">통계 서비스 제공을 위해 익명화된 자산 데이터를 활용합니다.</span>
                             </div>
                             <input type="checkbox" checked={!!dataConsent} onChange={(e) => onToggleConsent(e.target.checked)} className="w-5 h-5 accent-indigo-600 cursor-pointer" />
+                        </div>
+                    </section>
+                    {/* 히스토리 설정 */}
+                    <section>
+                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">📈 히스토리 설정</h4>
+                        <div className="flex justify-between items-center p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700">
+                            <div>
+                                <span className="text-sm font-medium dark:text-white block">DB 동기화 시 히스토리 자동 저장</span>
+                                <span className="text-[10px] text-gray-500">클라우드 데이터 저장 시 자동으로 오늘 날짜의 자산 스냅샷을 기록합니다.</span>
+                            </div>
+                            <input 
+                                type="checkbox" 
+                                checked={!!autoSaveHistoryOnSync} 
+                                onChange={(e) => onAutoSaveHistoryOnSyncChange(e.target.checked)} 
+                                className="w-5 h-5 accent-indigo-600 cursor-pointer" 
+                            />
                         </div>
                     </section>
                     {/* 실시간 시세 연동 설정 */}
@@ -694,7 +712,7 @@ window.MobileQuickMenu = ({ isOpen, onClose, layoutOrder, scenarios, assetHistor
 window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
     const [baseAmount, setBaseAmount] = useState(0);
     const [linkedItems, setLinkedItems] = useState([]);
-    const [fxRate, setFxRate] = useState(() => Number(localStorage.getItem('asset_last_usd_krw')) || 1420); // 캐시 우선
+    const [fxRate, setFxRate] = useState(() => Number(localStorage.getItem('asset_last_usd_krw')) || 0); // 캐시 우선
     const [isInitialSyncing, setIsInitialSyncing] = useState(false); // [추가] 초기 동기화와 버튼 로딩 분리
     const [isLoading, setIsLoading] = useState(false);
     const [editingCell, setEditingCell] = useState(null); // [추가] { index, field } 인라인 편집 셀 추적
@@ -751,7 +769,14 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                 const q = quotes[item.ticker];
                                 if (q && q.price) {
                                     const isUsStock = /^[A-Za-z]/.test(item.ticker);
-                                    const activeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
+                                    const activeFxRate = fxRate > 0 ? fxRate : Number(localStorage.getItem('asset_last_usd_krw'));
+                                    if (isUsStock && (!activeFxRate || isNaN(activeFxRate) || activeFxRate <= 0)) {
+                                        return { 
+                                            ...item, 
+                                            syncStatus: 'offline', 
+                                            syncErrorReason: '환율 정보를 불러올 수 없어 오프라인 상태로 유지됩니다.' 
+                                        };
+                                    }
                                     const finalPrice = isUsStock ? Math.round(q.price * activeFxRate) : q.price;
                                     return { 
                                         ...item, 
@@ -953,7 +978,14 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             const q = quotes[item.ticker];
                             if (q && q.price) {
                                 const isUsStock = /^[A-Za-z]/.test(item.ticker);
-                                const activeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
+                                const activeFxRate = fxRate > 0 ? fxRate : Number(localStorage.getItem('asset_last_usd_krw'));
+                                if (isUsStock && (!activeFxRate || isNaN(activeFxRate) || activeFxRate <= 0)) {
+                                    return { 
+                                        ...item, 
+                                        syncStatus: 'offline', 
+                                        syncErrorReason: '환율 정보를 불러올 수 없어 오프라인 상태로 유지됩니다.' 
+                                    };
+                                }
                                 const finalPrice = isUsStock ? Math.round(q.price * activeFxRate) : q.price;
                                 return { ...item, currentPrice: finalPrice, currency: 'KRW', syncStatus: 'online', syncErrorReason: null };
                             } else {
@@ -1011,11 +1043,13 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                         avg = cur;
                     }
                 }
-            } else if (isUsStock && (s.currency === 'USD' || avg < 2000)) {
-                // If it is a US stock and the values are extracted in USD, convert to KRW
-                const activeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
-                avg = Math.round(avg * activeFxRate);
-                cur = Math.round(cur * activeFxRate);
+            } else if (isUsStock && ((avg > 0 && avg < 2000) || (cur > 0 && cur < 2000))) {
+                // 미국 주식이고 가격 범위가 달러 수준(< 2000)일 때만 원화로 환산 (이미 원화로 표시된 경우 뻥튀기 방지)
+                const activeFxRate = fxRate > 0 ? fxRate : Number(localStorage.getItem('asset_last_usd_krw'));
+                if (activeFxRate && !isNaN(activeFxRate) && activeFxRate > 0) {
+                    if (avg > 0 && avg < 2000) avg = Math.round(avg * activeFxRate);
+                    if (cur > 0 && cur < 2000) cur = Math.round(cur * activeFxRate);
+                }
             }
             return {
                 id: 'stock_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 5),
@@ -1076,7 +1110,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 ⚠️스크롤 중복 제거: 만약 여러 스크린샷에 걸쳐 겹쳐서 찍힌 동일한 종목이 있다면, 수량과 평단가가 가장 최신이거나 명확한 하나만 남기고 중복을 제거(Deduplicate)하여 하나만 포함시키세요.
 ⚠️말줄임 텍스트 복원: 화면 우측 끝에서 종목명이 잘려 있더라도(예: 'TIGER 미국S&P5...'), 문맥을 보고 원래 이름(TIGER 미국S&P500)으로 판단하여 올바른 티커를 찾아내세요.
 ⚠️주의: 절대 '매입금액(총투자액)'이나 '평가손익'의 숫자와 '매입단가(1주당 가격, 평단가)'를 혼동하여 추출하지 마세요. 매입단가(avgPrice)는 현재가(currentPrice)와 자릿수(액수 범위)가 비슷해야 합니다.
-⚠️금액은 해외 주식이어도 원화(KRW)로 변환하거나 표시된 값을 그대로 숫자로 추출하되, 통화 표기는 currency 필드로 명시하세요.
+⚠️금액 단위 주의: 매입단가(avgPrice)와 현재가(currentPrice)의 단위(원화 또는 달러)는 반드시 이미지에 표시된 원래의 숫자 크기 그대로 추출하고, currency 필드에는 이미지에 표기된 통화 단위('KRW' 또는 'USD')를 적으십시오. 예를 들어 미국 주식이어도 국내 증권사 스크린샷에 원화로 환산되어 표시되어 있다면(예: 180,000원), 절대 달러로 역산하지 말고 원래 수치 그대로 '180000'을 기입하고 currency는 'KRW'로 명시해야 합니다.
 
 결과는 오직 다음 형식의 JSON 객체로만 답해 주세요. 다른 설명 텍스트나 코드 블록 기호는 절대 적지 마세요:
 
@@ -1186,7 +1220,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
     const { totalValueKRW, totalPurchaseKRW, itemsWithMeta } = useMemo(() => {
         let linkedTotal = 0;
         let linkedPurchaseTotal = 0;
-        const safeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
+        const safeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 0);
 
         const mapped = linkedItems.map((item, idx) => {
             const curPrice = parseFloat(item.currentPrice) || 0;
@@ -1390,22 +1424,35 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
             if (q && q.price) {
                 const isUsStock = /^[A-Za-z]/.test(ticker);
-                const activeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
-                const finalPrice = isUsStock ? Math.round(q.price * activeFxRate) : q.price;
-                
-                setLinkedItems(prev => prev.map(item => 
-                    item.id === itemId 
-                    ? { 
-                        ...item, 
-                        ticker, 
-                        name: (item.name === item.ticker || !item.name || /^[A-Z0-9\s-]+$/i.test(item.name)) ? resolvedName : item.name, 
-                        currentPrice: finalPrice, 
-                        currency: 'KRW', 
-                        syncStatus: 'online', 
-                        syncErrorReason: null 
-                      }
-                    : item
-                ));
+                const activeFxRate = fxRate > 0 ? fxRate : Number(localStorage.getItem('asset_last_usd_krw'));
+                if (isUsStock && (!activeFxRate || isNaN(activeFxRate) || activeFxRate <= 0)) {
+                    setLinkedItems(prev => prev.map(item => 
+                        item.id === itemId 
+                        ? { 
+                            ...item, 
+                            ticker, 
+                            name: (item.name === item.ticker || !item.name || /^[A-Z0-9\s-]+$/i.test(item.name)) ? resolvedName : item.name, 
+                            syncStatus: 'offline', 
+                            syncErrorReason: '환율 정보를 불러올 수 없어 오프라인 상태로 유지됩니다.' 
+                          }
+                        : item
+                    ));
+                } else {
+                    const finalPrice = isUsStock ? Math.round(q.price * activeFxRate) : q.price;
+                    setLinkedItems(prev => prev.map(item => 
+                        item.id === itemId 
+                        ? { 
+                            ...item, 
+                            ticker, 
+                            name: (item.name === item.ticker || !item.name || /^[A-Z0-9\s-]+$/i.test(item.name)) ? resolvedName : item.name, 
+                            currentPrice: finalPrice, 
+                            currency: 'KRW', 
+                            syncStatus: 'online', 
+                            syncErrorReason: null 
+                          }
+                        : item
+                    ));
+                }
                 
                 if (window.addToast) {
                     window.addToast(`티커가 변경되었으며 시세를 갱신했습니다: ${resolvedName} (₩${finalPrice.toLocaleString()})`, 'success');
@@ -1477,16 +1524,26 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                         return item;
                     }
                     const q = quotes[item.ticker];
-                    const targetStatus = (q && q.price) ? 'online' : 'error';
+                    let targetStatus = (q && q.price) ? 'online' : 'error';
+                    let targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
                     
                     let targetPrice = item.currentPrice;
                     if (q && q.price) {
                         const isUsStock = /^[A-Za-z]/.test(item.ticker);
-                        const activeFxRate = fxRate > 0 ? fxRate : (Number(localStorage.getItem('asset_last_usd_krw')) || 1420);
-                        targetPrice = isUsStock ? Math.round(q.price * activeFxRate) : q.price;
+                        if (isUsStock) {
+                            const activeFxRate = fxRate > 0 ? fxRate : Number(localStorage.getItem('asset_last_usd_krw'));
+                            if (!activeFxRate || isNaN(activeFxRate) || activeFxRate <= 0) {
+                                targetPrice = item.currentPrice;
+                                targetStatus = 'offline';
+                                targetError = '실시간 환율 데이터를 로드할 수 없어 오프라인 상태로 유지됩니다.';
+                            } else {
+                                targetPrice = Math.round(q.price * activeFxRate);
+                            }
+                        } else {
+                            targetPrice = q.price;
+                        }
                     }
                     const targetCurrency = 'KRW'; // Always store and sync in KRW
-                    const targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
                     
                     if (item.currentPrice !== targetPrice || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError || item.currency !== targetCurrency) {
                         hasChanges = true;
@@ -2402,6 +2459,40 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
         }
     };
 
+    const handleSaveAsDefault = () => {
+        if (confirm('현재 설정 데이터를 브라우저 기본값으로 저장하시겠습니까?\n(추후 초기화 시 이 데이터를 불러올 수 있습니다)')) {
+            const dataToSave = currentData.appData || currentData;
+            localStorage.setItem('assetDashboardCustomDefault', JSON.stringify(dataToSave));
+            if (window.addToast) {
+                window.addToast('현재 설정이 기본값으로 저장되었습니다.', 'success');
+            } else {
+                alert('현재 설정이 기본값으로 저장되었습니다.');
+            }
+        }
+    };
+
+    const handleLoadDefault = () => {
+        try {
+            const customDefault = localStorage.getItem('assetDashboardCustomDefault');
+            if (customDefault) {
+                if (confirm('저장된 기본값 데이터로 현재 데이터를 덮어쓰시겠습니까?')) {
+                    const data = JSON.parse(customDefault);
+                    const importData = data.appData ? data : { appData: data };
+                    onImport(importData, 'json');
+                    onClose();
+                }
+            } else {
+                if (confirm('저장된 사용자 기본값이 없습니다. 사이트 초기 기본값으로 초기화하시겠습니까?')) {
+                    onImport({ appData: window.publicDefaultData || {} }, 'json');
+                    onClose();
+                }
+            }
+        } catch (err) {
+            console.error(err);
+            alert('기본값 불러오기 중 오류가 발생했습니다.');
+        }
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -2459,6 +2550,14 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
                                     💾 파일 저장
                                 </button>
                             </div>
+                            {format === 'json' && (
+                                <button 
+                                    onClick={handleSaveAsDefault} 
+                                    className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-colors flex items-center justify-center gap-2 border border-amber-400/20 shadow-lg shadow-amber-500/20 active:scale-95"
+                                >
+                                    ⭐ 현재 설정을 브라우저 기본값으로 저장
+                                </button>
+                            )}
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -2476,6 +2575,14 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
                             <button onClick={handleImport} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">
                                 📥 {format === 'json' ? 'JSON 데이터 복구하기' : 'CSV 데이터 복구하기'}
                             </button>
+                            {format === 'json' && (
+                                <button 
+                                    onClick={handleLoadDefault} 
+                                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors flex items-center justify-center gap-2 border border-indigo-500/20 shadow-lg shadow-indigo-600/20 active:scale-95"
+                                >
+                                    ⭐ 저장된 브라우저 기본값 불러오기
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -3860,6 +3967,7 @@ ${JSON.stringify(currentAssetsList, null, 2)}
 - avgPrice: 매입단가 (숫자, 평단가)
 - currentPrice: 현재단가 (숫자)
 - currency: 화폐 단위 ('KRW' 또는 'USD')
+  ⚠️금액 단위 주의: 매입단가(avgPrice)와 현재가(currentPrice)의 단위(원화 또는 달러)는 반드시 이미지에 표시된 원래의 숫자 크기 그대로 추출하고, currency 필드에는 이미지에 표기된 통화 단위('KRW' 또는 'USD')를 적으십시오. 예를 들어 미국 주식이어도 국내 증권사 스크린샷에 원화로 환산되어 표시되어 있다면(예: 180,000원), 절대 달러로 역산하지 말고 원래 수치 그대로 '180000'을 기입하고 currency는 'KRW'로 명시해야 합니다.
 
 결과는 오직 다음 형식의 JSON 객체로만 답해 주세요. 다른 설명 텍스트나 코드 블록 기호는 절대 적지 마세요:
 
