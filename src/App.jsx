@@ -923,6 +923,8 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             const [isFlowchartDragging, setIsFlowchartDragging] = useState(false);
             const [flowchartDragStart, setFlowchartDragStart] = useState({ x: 0, y: 0 });
             const [flowchartTouchStartDist, setFlowchartTouchStartDist] = useState(0);
+            const [isEditingFiTarget, setIsEditingFiTarget] = useState(false);
+            const [tempFiTarget, setTempFiTarget] = useState('');
 
             const [draggedSectorId, setDraggedSectorId] = useState(null); // [추가] 드래그 중인 섹터 ID
 
@@ -6058,6 +6060,12 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 const sleepIncome = (monthlyIncomeWon / 30 / 24) * 7; // 7시간 수면 기준
                 const hourlyIncome = monthlyIncomeWon / 30 / 24;
                 
+                const totalMonthlyExpenses = monthlyExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+                const targetCapitalIncome = appData?.fiTargetCapitalIncome !== undefined ? appData.fiTargetCapitalIncome : (monthlySalary > 0 ? monthlySalary : 200);
+                const monthlyCapitalIncome = totalCapitalNetIncome; // in 만원
+                const selfSufficiencyPct = totalMonthlyExpenses > 0 ? (monthlyCapitalIncome / totalMonthlyExpenses) * 100 : 0;
+                const targetAchievementPct = targetCapitalIncome > 0 ? (monthlyCapitalIncome / targetCapitalIncome) * 100 : 0;
+
                 const getFunItems = (income) => {
                     if (income < 100000) return [ // 월 10만원 미만
                         { name: '츄파춥스', price: 500, icon: '🍭', color: 'pink' },
@@ -6410,6 +6418,124 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                             </div>
                                         ));
                                     })()}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 아이디어 1: 경제적 자유(FI) 2채널 자급자족 및 목표 자본소득 분석 */}
+                        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm space-y-4">
+                            <div className="flex justify-between items-center border-b dark:border-slate-700 pb-3">
+                                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                                    <span>🎯</span> 자본 소득 분석 지표 (자급자족율 & 목표 달성도)
+                                </h4>
+                                <span className="text-[11px] font-bold text-slate-400">실시간 순자본 소득 기준</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-2">
+                                {/* 좌측 게이지: 자급자족율 */}
+                                <div className="space-y-3 bg-slate-50/30 dark:bg-slate-900/10 p-4 rounded-xl border dark:border-slate-700/50">
+                                    <div className="flex justify-between items-baseline">
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">자급자족율</span>
+                                            <span className="text-[10px] text-slate-400 font-medium">현재 월 자본 소득 / 월 고정 소비금</span>
+                                        </div>
+                                        <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+                                            {selfSufficiencyPct.toFixed(1)}%
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="w-full h-3.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden p-0.5 border dark:border-slate-650">
+                                        <div 
+                                            className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500" 
+                                            style={{ width: `${Math.min(100, selfSufficiencyPct)}%` }}
+                                        ></div>
+                                    </div>
+                                    
+                                    <div className="text-[11px] text-slate-400 dark:text-slate-500 font-medium flex justify-between">
+                                        <span>월 고정 소비금: <strong>{totalMonthlyExpenses.toLocaleString()}만원</strong></span>
+                                        <span>월 자본 소득: <strong>{monthlyCapitalIncome.toFixed(1)}만원</strong></span>
+                                    </div>
+                                </div>
+
+                                {/* 우측 게이지: 목표 월 자본소득 달성율 */}
+                                <div className="space-y-3 bg-slate-50/30 dark:bg-slate-900/10 p-4 rounded-xl border dark:border-slate-700/50 relative">
+                                    <div className="flex justify-between items-baseline">
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">목표 월 자본소득 달성율</span>
+                                            <span className="text-[10px] text-slate-400 font-medium">현재 월 자본 소득 / 설정한 목표 자본소득</span>
+                                        </div>
+                                        <div className="text-lg font-black text-indigo-600 dark:text-indigo-400 tabular-nums">
+                                            {targetAchievementPct.toFixed(1)}%
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="w-full h-3.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden p-0.5 border dark:border-slate-650">
+                                        <div 
+                                            className="h-full bg-gradient-to-r from-indigo-500 to-purple-400 rounded-full transition-all duration-500" 
+                                            style={{ width: `${Math.min(100, targetAchievementPct)}%` }}
+                                        ></div>
+                                    </div>
+
+                                    {/* 목표 자본소득 인라인 수정 폼 */}
+                                    <div className="text-[11px] font-medium flex justify-between items-center h-5">
+                                        <div className="text-slate-400 dark:text-slate-500">
+                                            월 자본 소득: <strong>{monthlyCapitalIncome.toFixed(1)}만원</strong>
+                                        </div>
+                                        
+                                        {!isEditingFiTarget ? (
+                                            <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                                                <span>목표: <strong>{targetCapitalIncome.toLocaleString()}만원</strong></span>
+                                                <button 
+                                                    onClick={() => {
+                                                        setTempFiTarget(String(targetCapitalIncome));
+                                                        setIsEditingFiTarget(true);
+                                                    }}
+                                                    className="p-0.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                                                    title="목표 월 자본소득 수정"
+                                                >
+                                                    ✏️
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-1">
+                                                <div className="relative w-24">
+                                                    <input 
+                                                        type="number" 
+                                                        value={tempFiTarget}
+                                                        onChange={(e) => setTempFiTarget(e.target.value)}
+                                                        className="w-full bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-slate-800 dark:text-slate-100 outline-hidden focus:ring-1 focus:ring-indigo-500"
+                                                        placeholder="금액 입력"
+                                                        autoFocus
+                                                    />
+                                                    <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">만</span>
+                                                </div>
+                                                <button 
+                                                    onClick={() => {
+                                                        const val = Number(tempFiTarget);
+                                                        if (!isNaN(val) && val >= 0) {
+                                                            setAppData(prev => {
+                                                                const newData = { ...prev, fiTargetCapitalIncome: val };
+                                                                saveToCloud(newData);
+                                                                return newData;
+                                                            });
+                                                            setIsEditingFiTarget(false);
+                                                        }
+                                                    }}
+                                                    className="p-0.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded transition-colors font-bold text-[10px]"
+                                                    title="저장"
+                                                >
+                                                    ✔️
+                                                </button>
+                                                <button 
+                                                    onClick={() => setIsEditingFiTarget(false)}
+                                                    className="p-0.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded transition-colors font-bold text-[10px]"
+                                                    title="취소"
+                                                >
+                                                    ❌
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
