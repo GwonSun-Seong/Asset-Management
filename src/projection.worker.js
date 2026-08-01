@@ -717,17 +717,26 @@ function runAllCalculations({ appData, projectionMonths, inflationRate, baseDate
 
     const disposableIncome = Math.max(0, (appData.monthlySalary || 0) - localTotalMonthlyExpense);
     const targetMonths = appData.rebalanceMonths || 12;
-    const futureValue = currentTotal + (disposableIncome * targetMonths);
+    const excludedSectors = Array.isArray(appData.excludedSectors) ? appData.excludedSectors : [];
+    
+    // 제외된 섹터의 현재 자산 총액 계산
+    let excludedTotalAmount = 0;
+    excludedSectors.forEach(sec => {
+        excludedTotalAmount += sectorSums[sec] || 0;
+    });
+
+    // 리밸런싱 계산용 미래 총자산액 (제외된 섹터 자산액 차감)
+    const rebalanceFutureValue = Math.max(0, currentTotal - excludedTotalAmount + (disposableIncome * targetMonths));
     const sectorGaps = {};
     let totalGap = 0;
-    const validSectors = Object.keys(sectorInfo).filter(k => k !== 'loan');
+    const validSectors = Object.keys(sectorInfo).filter(k => k !== 'loan' && !excludedSectors.includes(k));
     const itemRecs = {};
     
     validSectors.forEach(sector => {
         const targetPct = (appData.rebalancingTargets && appData.rebalancingTargets[sector] !== undefined) 
             ? appData.rebalancingTargets[sector] 
             : Math.round(100 / validSectors.length);
-        const targetBalance = futureValue * (targetPct / 100);
+        const targetBalance = rebalanceFutureValue * (targetPct / 100);
         const currentBalance = sectorSums[sector] || 0;
         const gap = Math.max(0, targetBalance - currentBalance);
         sectorGaps[sector] = gap;
@@ -751,7 +760,7 @@ function runAllCalculations({ appData, projectionMonths, inflationRate, baseDate
         
         const sectorMonthlyContrib = sectorRecs[sector] || 0;
         const sectorTargetPct = (appData.rebalancingTargets && appData.rebalancingTargets[sector] !== undefined) ? appData.rebalancingTargets[sector] : Math.round(100 / validSectors.length);
-        const sectorFutureValue = futureValue * (sectorTargetPct / 100);
+        const sectorFutureValue = rebalanceFutureValue * (sectorTargetPct / 100);
         
         let totalItemWeight = 0;
         const currentItemTargets = appData.itemTargets || {};

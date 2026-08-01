@@ -311,7 +311,8 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         
                         const checkAndAdd = (key) => { if (asset[key] !== pureAsset[key]) { diff[key] = asset[key]; hasChanges = true; } };
 
-                        if (Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.001) {
+                        // [Fix] 사용자가 명시적으로 금액을 수정한 경우에만 isAmountOverridden 적용 (소수점 미세 반올림 오차 및 자동 시뮬레이션 금액 고정 버그 완전 방지)
+                        if (asset.isAmountOverridden && Math.abs((asset.amount || 0) - (pureAsset.amount || 0)) > 0.01) {
                             diff.amount = asset.amount;
                             diff.isAmountOverridden = true;
                             hasChanges = true;
@@ -2239,7 +2240,8 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 expenseEvents = [],
                 salaryDay = 25,
                 baseDate = localDateStr, // [수정] UTC 대신 로컬 시간 사용
-                autoUpdateBaseDate = false
+                autoUpdateBaseDate = false,
+                excludedSectors = [] // [추가] 비중/리밸런싱 제외 섹터 목록
             } = appData || {};
 
             // ===== Setter 함수들 =====
@@ -2273,6 +2275,10 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             const setRebalancingGlobal = React.useCallback((value) => setAppData(prev => ({ ...prev, rebalancingGlobal: typeof value === 'function' ? value(prev.rebalancingGlobal) : value })), [setAppData]);
             const setMemo = React.useCallback((value) => setAppData(prev => ({ ...prev, memo: value })), [setAppData]);
             const setSalaryDay = React.useCallback((value) => setAppData(prev => ({ ...prev, salaryDay: Math.min(31, Math.max(1, Number(value))) })), [setAppData]);
+            const setExcludedSectors = React.useCallback((value) => setAppData(prev => ({
+                ...prev,
+                excludedSectors: typeof value === 'function' ? value(Array.isArray(prev.excludedSectors) ? prev.excludedSectors : []) : value
+            })), [setAppData]);
             const setBaseDate = React.useCallback((value) => setAppData(prev => ({ ...prev, baseDate: value })), [setAppData]); // [변경] setBaseMonth -> setBaseDate
             const setAutoUpdateBaseDate = React.useCallback((value) => setAppData(prev => ({ ...prev, autoUpdateBaseDate: value })), [setAppData]);
 
@@ -2997,18 +3003,41 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
 
 
             const { currentGrossTotal, projectedGrossTotal, currentSectorTotals, projectedSectorTotals } = useMemo(() => {
-                const cGross = calculateGrossTotal(calculation.initial);
-                const pGross = calculateGrossTotal(calculation.projected);
+                const cGross = calculateGrossTotal(calculation.initial, excludedSectors);
+                const pGross = calculateGrossTotal(calculation.projected, excludedSectors);
                 return {
                     currentGrossTotal: cGross,
                     projectedGrossTotal: pGross,
-                    currentSectorTotals: getSectorTotals(calculation.initial, cGross),
-                    projectedSectorTotals: getSectorTotals(calculation.projected, pGross)
+                    currentSectorTotals: getSectorTotals(calculation.initial, cGross, excludedSectors),
+                    projectedSectorTotals: getSectorTotals(calculation.projected, pGross, excludedSectors)
                 };
-            }, [calculation]);
+            }, [calculation, excludedSectors]);
 
-            const filteredKeys = useMemo(() => Object.keys(currentSectorTotals).filter(k => k !== 'loan'), [currentSectorTotals]);
-            const projectedKeys = useMemo(() => Object.keys(projectedSectorTotals).filter(k => k !== 'loan'), [projectedSectorTotals]);
+            const filteredKeys = useMemo(() => {
+                const order = Array.isArray(assetSectorOrder) ? assetSectorOrder : [];
+                return Object.keys(currentSectorTotals)
+                    .filter(k => k !== 'loan' && !excludedSectors.includes(k))
+                    .sort((a, b) => {
+                        const idxA = order.indexOf(a);
+                        const idxB = order.indexOf(b);
+                        if (idxA === -1) return 1;
+                        if (idxB === -1) return -1;
+                        return idxA - idxB;
+                    });
+            }, [currentSectorTotals, excludedSectors, assetSectorOrder]);
+
+            const projectedKeys = useMemo(() => {
+                const order = Array.isArray(assetSectorOrder) ? assetSectorOrder : [];
+                return Object.keys(projectedSectorTotals)
+                    .filter(k => k !== 'loan' && !excludedSectors.includes(k))
+                    .sort((a, b) => {
+                        const idxA = order.indexOf(a);
+                        const idxB = order.indexOf(b);
+                        if (idxA === -1) return 1;
+                        if (idxB === -1) return -1;
+                        return idxA - idxB;
+                    });
+            }, [projectedSectorTotals, excludedSectors, assetSectorOrder]);
 
             // ===== 리밸런싱 경고 함수 (목표 비중 기준 편차) =====
             const getRebalanceStatus = (key, percentage, isItem = false, itemId = null, sectorKey = null) => {
@@ -4276,8 +4305,132 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 </div>
             );
 
-            const renderHistoryPanel = () => (
+            const renderHistoryPanel = () => {
+                // [ATH & MoM/YoY 델타 분석 연산]
+                const historyMetrics = (() => {
+                    if (!assetHistory || assetHistory.length === 0) return null;
+                    const key = historyViewMode === 'gross' ? 'grossTotal' : 'netWorth';
+                    
+                    let athItem = assetHistory[0];
+                    assetHistory.forEach(item => {
+                        if ((item[key] || 0) > (athItem[key] || 0)) athItem = item;
+                    });
+                    
+                    const latestItem = assetHistory[assetHistory.length - 1] || {};
+                    const latestVal = latestItem[key] || 0;
+                    const athVal = athItem[key] || 0;
+                    const athDiff = latestVal - athVal;
+                    const athDiffPct = athVal > 0 ? (athDiff / athVal) * 100 : 0;
+                    
+                    const momItem = assetHistory.length >= 2 ? assetHistory[assetHistory.length - 2] : null;
+                    const momVal = momItem ? (momItem[key] || 0) : latestVal;
+                    const momDiff = latestVal - momVal;
+                    const momDiffPct = momVal > 0 ? (momDiff / momVal) * 100 : 0;
+
+                    let yoyItem = null;
+                    if (assetHistory.length > 2) {
+                        const latestDate = new Date(latestItem.date || new Date());
+                        const targetYoyDateStr = new Date(latestDate.getFullYear() - 1, latestDate.getMonth(), latestDate.getDate()).toISOString().slice(0, 10);
+                        yoyItem = assetHistory.reduce((prev, curr) => {
+                            const prevDiff = Math.abs(new Date(prev.date || 0) - new Date(targetYoyDateStr));
+                            const currDiff = Math.abs(new Date(curr.date || 0) - new Date(targetYoyDateStr));
+                            return currDiff < prevDiff ? curr : prev;
+                        });
+                    }
+                    const yoyVal = yoyItem ? (yoyItem[key] || 0) : latestVal;
+                    const yoyDiff = latestVal - yoyVal;
+                    const yoyDiffPct = yoyVal > 0 ? (yoyDiff / yoyVal) * 100 : 0;
+
+                    return {
+                        latestVal,
+                        athVal,
+                        athDate: athItem.date,
+                        athDiff,
+                        athDiffPct,
+                        momDiff,
+                        momDiffPct,
+                        yoyDiff,
+                        yoyDiffPct
+                    };
+                })();
+
+                return (
                 <>
+                    {/* [추가] 깔끔한 역대 최고 자산 및 MoM/YoY 성과 지표 대시보드 */}
+                    {historyMetrics && (
+                        <div className="mb-6 px-4">
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                <div className="bg-white dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm relative group cursor-help">
+                                    <div className="text-[11px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                        <span>👑 역대 최고 자산</span>
+                                        <span className="text-slate-300 dark:text-slate-600">ⓘ</span>
+                                    </div>
+                                    <div className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100">{formatNumber(historyMetrics.athVal, displayMode)}만원</div>
+                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">달성일: {historyMetrics.athDate || '-'}</div>
+                                    <div className="absolute top-full left-0 mt-2 hidden group-hover:block bg-slate-900 text-white text-[11px] p-3 rounded-xl shadow-2xl z-50 w-64 leading-relaxed border border-slate-700">
+                                        💡 <strong>역대 최고 자산</strong><br/>
+                                        기록된 전체 히스토리 중 내 자산이 가장 높았던 최고점 수치입니다.
+                                    </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm relative group cursor-help">
+                                    <div className="text-[11px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                        <span>🎯 최고점 대비 이격률</span>
+                                        <span className="text-slate-300 dark:text-slate-600">ⓘ</span>
+                                    </div>
+                                    <div className={`text-base sm:text-lg font-black ${historyMetrics.athDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                        {historyMetrics.athDiff >= 0 ? '🏆 최고점 유지 중!' : `${historyMetrics.athDiffPct.toFixed(1)}%`}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">
+                                        {historyMetrics.athDiff >= 0 ? '신고가 갱신 상태' : `${formatNumber(historyMetrics.athDiff, displayMode)}만원`}
+                                    </div>
+                                    <div className="absolute top-full left-0 mt-2 hidden group-hover:block bg-slate-900 text-white text-[11px] p-3 rounded-xl shadow-2xl z-50 w-64 leading-relaxed border border-slate-700">
+                                        💡 <strong>최고점 대비 이격률</strong><br/>
+                                        역대 최고 자산 대비 현재 자산의 비율 차이입니다.
+                                    </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm relative group cursor-help">
+                                    <div className="text-[11px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                        <span>⚡ 지난달 대비 (MoM)</span>
+                                        <span className="text-slate-300 dark:text-slate-600">ⓘ</span>
+                                    </div>
+                                    <div className={`text-base sm:text-lg font-black ${historyMetrics.momDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                        {historyMetrics.momDiff >= 0 ? '+' : ''}{formatNumber(historyMetrics.momDiff, displayMode)}만원
+                                    </div>
+                                    <div className="text-[10px] font-semibold mt-0.5">
+                                        <span className={historyMetrics.momDiffPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                                            {historyMetrics.momDiffPct >= 0 ? '▲' : '▼'} {Math.abs(historyMetrics.momDiffPct).toFixed(1)}%
+                                        </span>
+                                    </div>
+                                    <div className="absolute top-full left-0 mt-2 hidden group-hover:block bg-slate-900 text-white text-[11px] p-3 rounded-xl shadow-2xl z-50 w-64 leading-relaxed border border-slate-700">
+                                        💡 <strong>지난달 대비 (MoM)</strong><br/>
+                                        직전 월 대비 자산 증가폭입니다.
+                                    </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm relative group cursor-help">
+                                    <div className="text-[11px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                        <span>🚀 작년 대비 (YoY)</span>
+                                        <span className="text-slate-300 dark:text-slate-600">ⓘ</span>
+                                    </div>
+                                    <div className={`text-base sm:text-lg font-black ${historyMetrics.yoyDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                        {historyMetrics.yoyDiff >= 0 ? '+' : ''}{formatNumber(historyMetrics.yoyDiff, displayMode)}만원
+                                    </div>
+                                    <div className="text-[10px] font-semibold mt-0.5">
+                                        <span className={historyMetrics.yoyDiffPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                                            {historyMetrics.yoyDiffPct >= 0 ? '▲' : '▼'} {Math.abs(historyMetrics.yoyDiffPct).toFixed(1)}%
+                                        </span>
+                                    </div>
+                                    <div className="absolute top-full right-0 mt-2 hidden group-hover:block bg-slate-900 text-white text-[11px] p-3 rounded-xl shadow-2xl z-50 w-64 leading-relaxed border border-slate-700">
+                                        💡 <strong>작년 대비 (YoY)</strong><br/>
+                                        1년 전 동시점 대비 자산 성장 폭입니다.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 px-4 pt-2 gap-4">
                         <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                             총 {assetHistory.length}개의 기록 <span className="hidden sm:inline">| 최근: {assetHistory[assetHistory.length - 1]?.date} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth, displayMode)}만원)</span>
@@ -4439,6 +4592,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                     </div>
                 </>
             );
+            };
 
             const renderBudgetPanel = () => {
                 const totalMonthly = monthlyExpenses.reduce((sum, e) => sum + Number(e.amount||0), 0);
@@ -5210,7 +5364,16 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             };
 
             const renderRebalancePanel = () => {
-                const validSectors = Object.keys(sectorInfo).filter(k=>k!=='loan');
+                const order = Array.isArray(assetSectorOrder) ? assetSectorOrder : [];
+                const validSectors = Object.keys(sectorInfo)
+                    .filter(k => k !== 'loan' && !excludedSectors.includes(k))
+                    .sort((a, b) => {
+                        const idxA = order.indexOf(a);
+                        const idxB = order.indexOf(b);
+                        if (idxA === -1) return 1;
+                        if (idxB === -1) return -1;
+                        return idxA - idxB;
+                    });
                 const defaultPct = Math.round(100 / validSectors.length);
                 const rebalancingGlobal = appData.rebalancingGlobal || { sector: { warning: 5, danger: 10 }, item: { warning: 5, danger: 10 } };
                 const currentItemTargets = appData.itemTargets || {};
@@ -5270,7 +5433,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                             </div>
                         </div>
 
-                        <StackedBarDisplay targets={rebalancingTargets} sectorInfo={sectorInfo} />
+                        <StackedBarDisplay targets={rebalancingTargets} sectorInfo={sectorInfo} excludedSectors={excludedSectors} darkMode={darkMode} assetSectorOrder={assetSectorOrder} />
                         <div className="mb-6 flex flex-col sm:flex-row justify-between items-center gap-4 bg-amber-50/50 dark:bg-amber-900/10 p-4 rounded-xl border-4 border-amber-200 dark:border-amber-900/40">                                        
                             <div className="flex items-center gap-4">
                                 <div>
@@ -5514,6 +5677,11 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                                     <span className="text-xs font-normal bg-white/20 px-2 py-0.5 rounded-full border border-white/10">
                                                         {assets[sectorKey]?.length || 0}개
                                                     </span>
+                                                    {excludedSectors.includes(sectorKey) && (
+                                                        <span className="text-[10px] font-black bg-rose-500/30 text-rose-100 px-2 py-0.5 rounded-full border border-rose-500/20">
+                                                            비중 제외됨
+                                                        </span>
+                                                    )}
                                                 </h3>
                                                 <p className="text-xs sm:text-sm text-white/90 font-medium mt-0.5">
                                                     총 {formatNumber(currentSectorTotals[sectorKey]?.amount || 0)}만원 ({formatPercent(currentSectorTotals[sectorKey]?.percentage || 0)}%)
@@ -5526,6 +5694,36 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2 self-end sm:self-auto">
+                                            {/* 포폴 비중 및 리밸런싱 제외 토글 버튼 */}
+                                            {!isLoan && (
+                                                <button 
+                                                    onClick={() => {
+                                                        const isExcluded = excludedSectors.includes(sectorKey);
+                                                        setExcludedSectors(prev => 
+                                                            isExcluded 
+                                                                ? prev.filter(k => k !== sectorKey) 
+                                                                : [...prev, sectorKey]
+                                                        );
+                                                    }}
+                                                    className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all border active:scale-95 flex items-center gap-1 ${
+                                                        excludedSectors.includes(sectorKey)
+                                                            ? 'bg-rose-500/20 text-rose-200 border-rose-500/30 hover:bg-rose-500/30'
+                                                            : 'bg-white/10 text-white/90 border-white/15 hover:bg-white/20'
+                                                    }`}
+                                                >
+                                                    {excludedSectors.includes(sectorKey) ? (
+                                                        <>
+                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                                            비중 포함
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13.828 10.172a4 4 0 00-5.656 0m-4 4a8 8 0 0011.314 0M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 3l18 18" /></svg>
+                                                            비중 제외
+                                                        </>
+                                                    )}
+                                                </button>
+                                            )}
                                             <button onClick={() => addAsset(sectorKey)} className={`bg-white text-${sectorColor}-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-${sectorColor}-50 transition-all shadow-lg hover:shadow-xl flex items-center gap-1.5 active:scale-95`}>
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" /></svg>
                                                 추가

@@ -63,20 +63,22 @@ const getMonthDiff = (start, end) => {
     return (eY - sY) * 12 + (eM - sM);
 };
 
-// 총 자산 계산 (부채 제외)
-const calculateGrossTotal = (assetData) => {
+// 총 자산 계산 (부채 제외 및 제외 섹터 처리)
+const calculateGrossTotal = (assetData, excludedSectors = []) => {
     if (!assetData || typeof assetData !== 'object') return 0;
+    const excluded = Array.isArray(excludedSectors) ? excludedSectors : [];
     let sum = 0;
     Object.keys(assetData).forEach(sector => {
         if (sector === 'loan') return; // 부채 제외
+        if (excluded.includes(sector)) return; // 제외 섹터 제외
         const arr = assetData[sector] || [];
         sum += arr.reduce((s,a)=> s + (a.amount||0), 0);
     });
     return sum;
 };
 
-// 섹터별 총액 계산
-const getSectorTotals = (assetData, total) => {
+// 섹터별 총액 계산 (제외 섹터 반영)
+const getSectorTotals = (assetData, total, excludedSectors = []) => {
     const totals = {
         deposit: { amount: 0, percentage: 0 },
         savings: { amount: 0, percentage: 0 },
@@ -88,13 +90,15 @@ const getSectorTotals = (assetData, total) => {
         misc: { amount: 0, percentage: 0 }
     };
     if (!assetData || typeof assetData !== 'object') return totals;
+    const excluded = Array.isArray(excludedSectors) ? excludedSectors : [];
 
     Object.keys(assetData).forEach(sector => {
         if (Array.isArray(assetData[sector])) {
             const sectorTotal = assetData[sector].reduce((sum, asset) => sum + (asset.amount || 0), 0);
+            const isExcluded = excluded.includes(sector);
             totals[sector] = { 
                 amount: sectorTotal, 
-                percentage: (sector !== 'loan' && total > 0) ? (sectorTotal / total * 100) : 0 
+                percentage: (sector !== 'loan' && !isExcluded && total > 0) ? (sectorTotal / total * 100) : 0 
             };
         }
     });
