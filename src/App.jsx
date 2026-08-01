@@ -291,6 +291,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
 
             const original = currentEditingPhase.originalAppData;
             const pureProjectedAssets = currentEditingPhase.pureProjectedState;
+            if (!currentAppData || !currentAppData.assets) return original || currentAppData || {};
             const currentAssets = currentAppData.assets;
             const modifiedAssetsToSave = {};
 
@@ -2011,7 +2012,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                     if (enableLiveQuotes === false) return; // [추가] 실시간 시세 연동 비활성화 시 즉시 중단
                     const symbolsToFetch = new Set();
                     let hasLinked = false;
-                    Object.keys(appData.assets).forEach(sector => {
+                    Object.keys(appData?.assets || {}).forEach(sector => {
                         (appData.assets[sector] || []).forEach(a => {
                             if (a.linkedItems && a.linkedItems.length > 0) {
                                 hasLinked = true;
@@ -2241,7 +2242,8 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 salaryDay = 25,
                 baseDate = localDateStr, // [수정] UTC 대신 로컬 시간 사용
                 autoUpdateBaseDate = false,
-                excludedSectors = [] // [추가] 비중/리밸런싱 제외 섹터 목록
+                excludedSectors = [], // [추가] 비중/리밸런싱 제외 섹터 목록
+                excludedAssetIds = [] // [추가] 개별 자산 비중 제외 ID 목록
             } = appData || {};
 
             // ===== Setter 함수들 =====
@@ -2279,6 +2281,72 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 ...prev,
                 excludedSectors: typeof value === 'function' ? value(Array.isArray(prev.excludedSectors) ? prev.excludedSectors : []) : value
             })), [setAppData]);
+            const setExcludedAssetIds = React.useCallback((value) => setAppData(prev => ({
+                ...prev,
+                excludedAssetIds: typeof value === 'function' ? value(Array.isArray(prev.excludedAssetIds) ? prev.excludedAssetIds : []) : value
+            })), [setAppData]);
+
+            // [스마트 연동] 개별 항목 제외/포함 토글 함수 (모두 제외 시 섹터 자동 제외)
+            const toggleAssetExclusion = React.useCallback((assetId, sectorKey) => {
+                setAppData(prev => {
+                    const currentExcludedIds = Array.isArray(prev.excludedAssetIds) ? prev.excludedAssetIds : [];
+                    const currentExcludedSectors = Array.isArray(prev.excludedSectors) ? prev.excludedSectors : [];
+                    
+                    const isCurrentlyExcluded = currentExcludedIds.includes(assetId);
+                    const nextExcludedIds = isCurrentlyExcluded 
+                        ? currentExcludedIds.filter(id => id !== assetId)
+                        : [...currentExcludedIds, assetId];
+
+                    // 해당 섹터의 모든 자산 항목이 제외되었는지 체크
+                    const sectorAssetList = (prev && prev.assets && prev.assets[sectorKey]) || [];
+                    const allItemsExcluded = sectorAssetList.length > 0 && sectorAssetList.every(a => nextExcludedIds.includes(a.id));
+
+                    let nextExcludedSectors = currentExcludedSectors;
+                    if (allItemsExcluded && !currentExcludedSectors.includes(sectorKey)) {
+                        nextExcludedSectors = [...currentExcludedSectors, sectorKey];
+                    } else if (!allItemsExcluded && currentExcludedSectors.includes(sectorKey)) {
+                        nextExcludedSectors = currentExcludedSectors.filter(k => k !== sectorKey);
+                    }
+
+                    return {
+                        ...prev,
+                        excludedAssetIds: nextExcludedIds,
+                        excludedSectors: nextExcludedSectors
+                    };
+                });
+            }, [setAppData]);
+
+            // [스마트 연동] 섹터 전체 제외/포함 토글 함수 (섹터 내 모든 항목 일괄 처리)
+            const toggleSectorExclusion = React.useCallback((sectorKey) => {
+                setAppData(prev => {
+                    const currentExcludedIds = Array.isArray(prev.excludedAssetIds) ? prev.excludedAssetIds : [];
+                    const currentExcludedSectors = Array.isArray(prev.excludedSectors) ? prev.excludedSectors : [];
+                    const isSectorExcluded = currentExcludedSectors.includes(sectorKey);
+
+                    const sectorAssetList = (prev && prev.assets && prev.assets[sectorKey]) || [];
+                    const sectorAssetIds = sectorAssetList.map(a => a.id).filter(Boolean);
+
+                    let nextExcludedSectors;
+                    let nextExcludedIds;
+
+                    if (isSectorExcluded) {
+                        // 섹터 포함 ➡️ 해당 섹터 및 포함된 모든 개별 항목 제외 해제
+                        nextExcludedSectors = currentExcludedSectors.filter(k => k !== sectorKey);
+                        nextExcludedIds = currentExcludedIds.filter(id => !sectorAssetIds.includes(id));
+                    } else {
+                        // 섹터 제외 ➡️ 해당 섹터 및 포함된 모든 개별 항목 일괄 제외
+                        nextExcludedSectors = [...currentExcludedSectors, sectorKey];
+                        const idSet = new Set([...currentExcludedIds, ...sectorAssetIds]);
+                        nextExcludedIds = Array.from(idSet);
+                    }
+
+                    return {
+                        ...prev,
+                        excludedSectors: nextExcludedSectors,
+                        excludedAssetIds: nextExcludedIds
+                    };
+                });
+            }, [setAppData]);
             const setBaseDate = React.useCallback((value) => setAppData(prev => ({ ...prev, baseDate: value })), [setAppData]); // [변경] setBaseMonth -> setBaseDate
             const setAutoUpdateBaseDate = React.useCallback((value) => setAppData(prev => ({ ...prev, autoUpdateBaseDate: value })), [setAppData]);
 
@@ -2505,7 +2573,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
             futurePhases: (appData.futurePhases || []).map((p, i) => i === index ? { ...p, data: {} } : p)
         };
         const result = calculateMonthlyProjection(pureAppData, targetMonth);
-        const projectedState = result.projections[targetMonth]?.assets || pureAppData.assets;
+        const projectedState = result.projections[targetMonth]?.assets || (pureAppData?.assets || {});
 
         // [Fix] 현재 편집하려는 분기점 이전의 페이즈들로부터 설정(급여, 소비 등)을 상속받음
         const prevPhases = (appData.futurePhases || [])
@@ -2538,8 +2606,8 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
         };
 
                     // [수정] 분기 시점의 예상 금액을 소수점 둘째 자리에서 반올림
-                    Object.keys(editingData.assets).forEach(sector => {
-                        editingData.assets[sector].forEach(asset => {
+                    Object.keys((editingData?.assets || {})).forEach(sector => {
+                        (editingData?.assets || {})[sector].forEach(asset => {
                             if (asset.amount !== undefined) {
                                 asset.amount = Math.round(asset.amount * 100) / 100;
                             }
@@ -2548,9 +2616,9 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
 
         if (phase.data.assets) {
             Object.keys(phase.data.assets).forEach(sector => {
-                if (!editingData.assets[sector]) editingData.assets[sector] = [];
+                if (!(editingData?.assets || {})[sector]) (editingData?.assets || {})[sector] = [];
                 phase.data.assets[sector].forEach(pAsset => {
-                    const ex = editingData.assets[sector].find(a => a.id === pAsset.id);
+                    const ex = (editingData?.assets || {})[sector].find(a => a.id === pAsset.id);
                     if (ex) {
                         if (pAsset.name !== undefined) ex.name = pAsset.name;
                         if (pAsset.icon !== undefined) ex.icon = pAsset.icon;
@@ -2564,7 +2632,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                         if (pAsset.repaymentAccount !== undefined) ex.repaymentAccount = pAsset.repaymentAccount;
                         if (pAsset.loanStartDate !== undefined) ex.loanStartDate = pAsset.loanStartDate;
                     } else {
-                        editingData.assets[sector].push(pAsset);
+                        (editingData?.assets || {})[sector].push(pAsset);
                     }
                 });
             });
@@ -2575,7 +2643,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
         if (phase.data.assets) {
             Object.keys(phase.data.assets).forEach(sector => {
                 phase.data.assets[sector].forEach(pAsset => {
-                    const ex = editingData.assets[sector].find(a => a.id === pAsset.id);
+                    const ex = (editingData?.assets || {})[sector].find(a => a.id === pAsset.id);
                     if (ex && pAsset.isAmountOverridden && pAsset.amount !== undefined) {
                         ex.amount = pAsset.amount;
                         ex.isAmountOverridden = true;
@@ -3003,15 +3071,16 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
 
 
             const { currentGrossTotal, projectedGrossTotal, currentSectorTotals, projectedSectorTotals } = useMemo(() => {
-                const cGross = calculateGrossTotal(calculation.initial, excludedSectors);
-                const pGross = calculateGrossTotal(calculation.projected, excludedSectors);
+                const currentAssetsInput = (editingPhase ? appData?.assets : assets) || assets || {};
+                const cGross = calculateGrossTotal(currentAssetsInput, excludedSectors, excludedAssetIds);
+                const pGross = calculateGrossTotal(calculation.projected, excludedSectors, excludedAssetIds);
                 return {
                     currentGrossTotal: cGross,
                     projectedGrossTotal: pGross,
-                    currentSectorTotals: getSectorTotals(calculation.initial, cGross, excludedSectors),
-                    projectedSectorTotals: getSectorTotals(calculation.projected, pGross, excludedSectors)
+                    currentSectorTotals: getSectorTotals(currentAssetsInput || {}, cGross, excludedSectors, excludedAssetIds),
+                    projectedSectorTotals: getSectorTotals(calculation.projected, pGross, excludedSectors, excludedAssetIds)
                 };
-            }, [calculation, excludedSectors]);
+            }, [assets, appData?.assets, editingPhase, calculation, excludedSectors, excludedAssetIds]);
 
             const filteredKeys = useMemo(() => {
                 const order = Array.isArray(assetSectorOrder) ? assetSectorOrder : [];
@@ -3176,7 +3245,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                     if (!currentPieRef.current) return;
                     let labels, data, colors;
                     if (currentDrillDown) {
-                        const sectorAssets = assets[currentDrillDown] || [];
+                        const sectorAssets = (assets[currentDrillDown] || []).filter(a => !excludedAssetIds.includes(a.id));
                         labels = sectorAssets.map(a => a.name);
                         data = sectorAssets.map(a => a.amount);
                         // [수정] 전역 getRGB 함수를 사용하여 드릴다운 색상 일관성 유지
@@ -3243,7 +3312,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 };
                     const timerId = setTimeout(renderCurrentPie, 150);
                 return () => clearTimeout(timerId);
-                }, [currentDrillDown, currentSectorTotals, filteredKeys, assets, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting]);
+                }, [currentDrillDown, currentSectorTotals, filteredKeys, assets, excludedAssetIds, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting]);
 
             useEffect(() => {
                 if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
@@ -3252,7 +3321,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                     if (!projectedPieRef.current) return;
                     let labels, data, colors;
                     if (projectedDrillDown) {
-                        const projAssets = calculation.projected[projectedDrillDown] || [];
+                        const projAssets = (calculation.projected[projectedDrillDown] || []).filter(a => !excludedAssetIds.includes(a.id));
                         labels = projAssets.map(a => a.name);
                         data = projAssets.map(a => a.amount);
                         // [수정] 전역 getRGB 함수를 사용하여 드릴다운 색상 일관성 유지
@@ -3324,7 +3393,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                 };
                     const timerId = setTimeout(renderProjectedPie, 150);
                 return () => clearTimeout(timerId);
-                }, [projectedDrillDown, projectedSectorTotals, projectedKeys, calculation.projected, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting]);
+                }, [projectedDrillDown, projectedSectorTotals, projectedKeys, calculation.projected, excludedAssetIds, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting]);
 
             useEffect(() => {
                 if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
@@ -5697,14 +5766,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                             {/* 포폴 비중 및 리밸런싱 제외 토글 버튼 */}
                                             {!isLoan && (
                                                 <button 
-                                                    onClick={() => {
-                                                        const isExcluded = excludedSectors.includes(sectorKey);
-                                                        setExcludedSectors(prev => 
-                                                            isExcluded 
-                                                                ? prev.filter(k => k !== sectorKey) 
-                                                                : [...prev, sectorKey]
-                                                        );
-                                                    }}
+                                                    onClick={() => toggleSectorExclusion(sectorKey)}
                                                     className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all border active:scale-95 flex items-center gap-1 ${
                                                         excludedSectors.includes(sectorKey)
                                                             ? 'bg-rose-500/20 text-rose-200 border-rose-500/30 hover:bg-rose-500/30'
@@ -5743,7 +5805,9 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                                     onDragStart={(e) => handleAssetDragStart(e, sectorKey, idx)}
                                                     onDragOver={handleAssetDragOver}
                                                     onDrop={(e) => handleAssetDrop(e, sectorKey, idx)}
-                                                    className={'group relative bg-white dark:bg-gray-800 rounded-xl p-5 pl-11 shadow-sm border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md transition-all duration-200 ' + (draggedAssetSector === sectorKey && draggedAssetIndex === idx ? 'opacity-40 border-dashed border-indigo-400' : '')}
+                                                    className={'group relative bg-white dark:bg-gray-800 rounded-xl p-5 pl-11 shadow-sm border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md transition-all duration-200 ' + 
+                                                        (excludedAssetIds.includes(asset.id) ? 'opacity-60 bg-rose-50/20 dark:bg-rose-950/10 border-rose-200 dark:border-rose-900/40 ' : '') +
+                                                        (draggedAssetSector === sectorKey && draggedAssetIndex === idx ? 'opacity-40 border-dashed border-indigo-400' : '')}
                                                 >
                                                     {/* Drag handle */}
                                                     <div 
@@ -5786,6 +5850,30 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                                         </div>
 
                                                         <div className="flex items-center gap-2">
+                                                            {/* [추가] 세부 자산 항목 개별 비중 제외/포함 토글 버튼 */}
+                                                            {sectorKey !== 'loan' && asset.id && (
+                                                                <button
+                                                                    onClick={() => toggleAssetExclusion(asset.id, sectorKey)}
+                                                                    className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all border flex items-center gap-1 active:scale-95 ${
+                                                                        excludedAssetIds.includes(asset.id)
+                                                                            ? 'bg-rose-500/15 border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/25'
+                                                                            : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                                                    }`}
+                                                                    title={excludedAssetIds.includes(asset.id) ? '비중 포함시키기' : '포트폴리오 비중에서 제외하기'}
+                                                                >
+                                                                    {excludedAssetIds.includes(asset.id) ? (
+                                                                        <>
+                                                                            <span className="text-[10px]">🚫</span>
+                                                                            <span className="line-through text-rose-500">비중 제외됨</span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <span className="text-[10px]">👁️</span>
+                                                                            <span>비중 포함</span>
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                            )}
                                                             {sectorKey !== 'loan' && (
                                                                 <button 
                                                                     onClick={() => setStockLinkState({ sectorKey, index: idx, asset })} 

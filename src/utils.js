@@ -64,21 +64,23 @@ const getMonthDiff = (start, end) => {
 };
 
 // 총 자산 계산 (부채 제외 및 제외 섹터 처리)
-const calculateGrossTotal = (assetData, excludedSectors = []) => {
+// 총 자산 계산 (부채 제외 및 제외 섹터 / 개별 제외 항목 처리)
+const calculateGrossTotal = (assetData, excludedSectors = [], excludedAssetIds = []) => {
     if (!assetData || typeof assetData !== 'object') return 0;
     const excluded = Array.isArray(excludedSectors) ? excludedSectors : [];
+    const excludedIds = Array.isArray(excludedAssetIds) ? excludedAssetIds : [];
     let sum = 0;
     Object.keys(assetData).forEach(sector => {
         if (sector === 'loan') return; // 부채 제외
         if (excluded.includes(sector)) return; // 제외 섹터 제외
         const arr = assetData[sector] || [];
-        sum += arr.reduce((s,a)=> s + (a.amount||0), 0);
+        sum += arr.reduce((s, a) => s + (excludedIds.includes(a.id) ? 0 : (a.amount || 0)), 0);
     });
     return sum;
 };
 
-// 섹터별 총액 계산 (제외 섹터 반영)
-const getSectorTotals = (assetData, total, excludedSectors = []) => {
+// 섹터별 총액 계산 (제외 섹터 및 개별 제외 항목 반영)
+const getSectorTotals = (assetData, total, excludedSectors = [], excludedAssetIds = []) => {
     const totals = {
         deposit: { amount: 0, percentage: 0 },
         savings: { amount: 0, percentage: 0 },
@@ -91,10 +93,11 @@ const getSectorTotals = (assetData, total, excludedSectors = []) => {
     };
     if (!assetData || typeof assetData !== 'object') return totals;
     const excluded = Array.isArray(excludedSectors) ? excludedSectors : [];
+    const excludedIds = Array.isArray(excludedAssetIds) ? excludedAssetIds : [];
 
     Object.keys(assetData).forEach(sector => {
         if (Array.isArray(assetData[sector])) {
-            const sectorTotal = assetData[sector].reduce((sum, asset) => sum + (asset.amount || 0), 0);
+            const sectorTotal = assetData[sector].reduce((sum, asset) => sum + (excludedIds.includes(asset.id) ? 0 : (asset.amount || 0)), 0);
             const isExcluded = excluded.includes(sector);
             totals[sector] = { 
                 amount: sectorTotal, 

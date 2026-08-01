@@ -53,7 +53,12 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         monthlySalary = 0, assets = {}, monthlyExpenses = [],
         mainCashFlowAccount, residualAccount, baseDate,
         salaryDay = 25,
+        excludedSectors = [],
+        excludedAssetIds = []
     } = data;
+
+    const excludedSectorList = Array.isArray(excludedSectors) ? excludedSectors : [];
+    const excludedAssetIdList = Array.isArray(excludedAssetIds) ? excludedAssetIds : [];
 
     const futurePhases = Array.isArray(data.futurePhases) ? data.futurePhases : [];
     const baseMonthYYYYMM = baseDate ? baseDate.slice(0, 7) : new Date().toISOString().slice(0, 7);
@@ -84,10 +89,19 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
         if (Array.isArray(assets[sector])) {
             currentAssets[sector] = assets[sector].map(asset => {
                 const newAsset = { ...asset, _sector: sector };
-                if (newAsset.extraContrib > 0) {
-                    newAsset.monthlyContrib = (newAsset.monthlyContrib || 0) + newAsset.extraContrib;
-                    delete newAsset.extraContrib;
+                
+                // [Fix] 섹터 제외 또는 개별 자산 비중 제외 시 초기 금액 및 납입액을 0으로 처리하여 포트폴리오 차트 및 잔액에 정확히 반영
+                if (excludedSectorList.includes(sector) || (asset.id && excludedAssetIdList.includes(asset.id))) {
+                    newAsset.amount = 0;
+                    newAsset.monthlyContrib = 0;
+                    newAsset.isExcluded = true;
+                } else {
+                    if (newAsset.extraContrib > 0) {
+                        newAsset.monthlyContrib = (newAsset.monthlyContrib || 0) + newAsset.extraContrib;
+                        delete newAsset.extraContrib;
+                    }
                 }
+
                 if (!newAsset.monthlyContributionFrom) {
                     newAsset.monthlyContributionFrom = MONTHLY_INCOME_SOURCE;
                 }
@@ -718,11 +732,23 @@ function runAllCalculations({ appData, projectionMonths, inflationRate, baseDate
     const disposableIncome = Math.max(0, (appData.monthlySalary || 0) - localTotalMonthlyExpense);
     const targetMonths = appData.rebalanceMonths || 12;
     const excludedSectors = Array.isArray(appData.excludedSectors) ? appData.excludedSectors : [];
+    const excludedAssetIds = Array.isArray(appData.excludedAssetIds) ? appData.excludedAssetIds : [];
     
-    // 제외된 섹터의 현재 자산 총액 계산
+    // 제외된 섹터 및 개별 제외 항목의 현재 자산 총액 계산
     let excludedTotalAmount = 0;
     excludedSectors.forEach(sec => {
         excludedTotalAmount += sectorSums[sec] || 0;
+    });
+    
+    // 섹터 내에서 개별 제외된 항목들의 금액 추가 합산
+    Object.keys(appData.assets || {}).forEach(sec => {
+        if (!excludedSectors.includes(sec)) {
+            (appData.assets[sec] || []).forEach(a => {
+                if (a.id && excludedAssetIds.includes(a.id)) {
+                    excludedTotalAmount += (a.amount || 0);
+                }
+            });
+        }
     });
 
     // 리밸런싱 계산용 미래 총자산액 (제외된 섹터 자산액 차감)
