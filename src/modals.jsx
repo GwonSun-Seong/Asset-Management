@@ -721,6 +721,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
     const [ocrPendingData, setOcrPendingData] = useState(null);
     const [duplicateActions, setDuplicateActions] = useState({});
     
+    const [currencyMode, setCurrencyMode] = useState(() => localStorage.getItem('asset_stock_currency_mode') || 'BOTH');
+    const toggleCurrencyMode = (mode) => {
+        setCurrencyMode(mode);
+        localStorage.setItem('asset_stock_currency_mode', mode);
+    };
     const [draftTicker, setDraftTicker] = useState('');
     const [draftShares, setDraftShares] = useState('');
     const [draftAvgPrice, setDraftAvgPrice] = useState('');
@@ -1831,7 +1836,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                         </div>
                     </section>
 
-                    {/* 3. Input Form (임시 주석 처리 - 스크린샷 연동만 허용)
+                    {/* 3. 종목 퀵 수동 등록 폼 */}
                     <section className="space-y-3">
                         <div className="flex justify-between items-center px-1">
                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -1850,6 +1855,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                         placeholder="삼성전자, TSLA, AAPL..." 
                                         value={draftTicker} 
                                         onChange={(e) => setDraftTicker(e.target.value)} 
+                                        autoComplete="off"
                                         className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" 
                                     />
                                     {(isSearching || searchResults.length > 0) && (
@@ -1877,12 +1883,12 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
                                 <div className="w-24">
                                     <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">주식 수</label>
-                                    <input type="number" placeholder="0" value={draftShares} onChange={(e) => setDraftShares(e.target.value)} className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" />
+                                    <input type="number" placeholder="0" value={draftShares} onChange={(e) => setDraftShares(e.target.value)} autoComplete="off" className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" />
                                 </div>
 
                                 <div className="w-32">
                                     <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">매입가</label>
-                                    <input type="number" placeholder="단가" value={draftAvgPrice} onChange={(e) => setDraftAvgPrice(e.target.value)} className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" />
+                                    <input type="number" placeholder="단가" value={draftAvgPrice} onChange={(e) => setDraftAvgPrice(e.target.value)} autoComplete="off" className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" />
                                 </div>
 
                                 <button 
@@ -1894,12 +1900,38 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             </div>
                         </div>
                     </section>
-                    */}
 
                     {/* 4. Stock List Table */}
                     <section className="space-y-3">
                         <div className="flex items-center justify-between px-1">
-                            <h4 className="text-xs font-black text-slate-500 dark:text-slate-400">📋 연동 종목 리스트</h4>
+                            <div className="flex items-center gap-3">
+                                <h4 className="text-xs font-black text-slate-500 dark:text-slate-400">📋 연동 종목 리스트</h4>
+                                {/* 통화 표시 설정 토글 */}
+                                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                                    <button
+                                        onClick={() => toggleCurrencyMode('KRW_ONLY')}
+                                        className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${
+                                            currencyMode === 'KRW_ONLY'
+                                                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm border border-slate-200 dark:border-slate-600'
+                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                        }`}
+                                        title="모든 주식 시세를 원화(₩)로 통일하여 표시"
+                                    >
+                                        🇰🇷 원화만 보기 (₩)
+                                    </button>
+                                    <button
+                                        onClick={() => toggleCurrencyMode('BOTH')}
+                                        className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${
+                                            currencyMode === 'BOTH'
+                                                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm border border-slate-200 dark:border-slate-600'
+                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                        }`}
+                                        title="해외주식은 원화(₩)와 원본 달러($)를 병행 표시"
+                                    >
+                                        🌐 원화 + 달러 병행 (₩ / $)
+                                    </button>
+                                </div>
+                            </div>
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => {
@@ -1994,6 +2026,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                                     }
                                                                 }}
                                                             />
+
                                                         ) : (
                                                             <div 
                                                                 onClick={() => setEditingCell({ id: item.id, field: 'ticker' })} 
@@ -2064,7 +2097,17 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                                 className="text-[10px] text-slate-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
                                                                 title="클릭하여 매입단가 수정"
                                                             >
-                                                                {item.currency==='USD' ? `₩${Math.round(Number(item.avgPrice) * safeFxRate).toLocaleString()} ($${Number(item.avgPrice).toLocaleString()})` : `₩${Number(item.avgPrice).toLocaleString()}`} ✏️
+                                                                {(() => {
+                                                                    // 자동시세는 항상 currency='KRW'로 저장 → ticker 패턴으로 해외주식 여부 판별
+                                                                    const isOverseas = /^[A-Za-z]/.test(item.ticker || '') && !/\.KS$/i.test(item.ticker || '');
+                                                                    const krwAvg = Math.round(Number(item.avgPrice) || 0);
+                                                                    if (currencyMode === 'KRW_ONLY' || !isOverseas) {
+                                                                        return `₩${krwAvg.toLocaleString()}`;
+                                                                    }
+                                                                    // KRW → USD 역산
+                                                                    const usdAvg = safeFxRate > 0 ? (krwAvg / safeFxRate) : 0;
+                                                                    return `₩${krwAvg.toLocaleString()} ($${usdAvg.toLocaleString('en-US', { maximumFractionDigits: 2 })})`;
+                                                                })()} ✏️
                                                             </span>
                                                         )}
                                                     </div>
@@ -2098,7 +2141,17 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                                     className="text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-855 rounded px-1 w-fit block"
                                                                     title="클릭하여 현재단가 수정"
                                                                 >
-                                                                    {item.currency==='USD' ? `₩${Math.round(Number(item.currentPrice) * safeFxRate).toLocaleString()} ($${Number(item.currentPrice).toLocaleString()})` : `₩${Number(item.currentPrice).toLocaleString()}`} ✏️
+                                                                    {(() => {
+                                                                    // 자동시세는 항상 currency='KRW'로 저장 → ticker 패턴으로 해외주식 여부 판별
+                                                                    const isOverseas = /^[A-Za-z]/.test(item.ticker || '') && !/\.KS$/i.test(item.ticker || '');
+                                                                    const krwCur = Math.round(Number(item.currentPrice) || 0);
+                                                                    if (currencyMode === 'KRW_ONLY' || !isOverseas) {
+                                                                        return `₩${krwCur.toLocaleString()}`;
+                                                                    }
+                                                                    // KRW → USD 역산
+                                                                    const usdCur = safeFxRate > 0 ? (krwCur / safeFxRate) : 0;
+                                                                    return `₩${krwCur.toLocaleString()} ($${usdCur.toLocaleString('en-US', { maximumFractionDigits: 2 })})`;
+                                                                })()} ✏️
                                                                 </span>
                                                             )}
                                                             

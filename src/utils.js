@@ -1241,6 +1241,37 @@ const getTossToken = async (clientId, clientSecret) => {
 };
 
 // [추가] 토스증권 OpenAPI 다중 현재가 조회
+// 단일 심볼 토스 시세 조회 헬퍼 (400 발생 시 단건 해체 fallback 용)
+const fetchSingleTossQuote = async (symbol, token) => {
+    try {
+        if (!symbol || typeof symbol !== 'string') return null;
+        const cleaned = symbol.trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
+        if (!cleaned || cleaned === '사용자 입력 필요') return null;
+
+        const url = `https://openapi.tossinvest.com/api/v1/prices?symbols=${encodeURIComponent(cleaned)}`;
+        const response = await fetchTossWithProxy(url, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        const item = (data.result || [])[0];
+        if (item && item.lastPrice) {
+            return {
+                symbol: symbol,
+                price: Number(item.lastPrice),
+                currency: item.currency || 'KRW',
+                name: item.symbol,
+                changePct: 0
+            };
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
+};
+
+// [추가/수정] 토스증권 OpenAPI 다중 현재가 조회 (Chunking + Self-Healing Fallback)
 const fetchTossQuotes = async (symbols) => {
     if (!symbols || symbols.length === 0) return {};
     
@@ -1255,49 +1286,85 @@ const fetchTossQuotes = async (symbols) => {
     try {
         const token = await getTossToken(clientId, clientSecret);
         
-        const cleanedSymbols = [...new Set(symbols.map(s => {
-            let sym = s.trim().toUpperCase();
-            sym = sym.replace(/\.[A-Z]+$/i, '');
-            return sym;
-        }))];
-        
-        const symbolsParam = cleanedSymbols.join(',');
-        const url = `https://openapi.tossinvest.com/api/v1/prices?symbols=${encodeURIComponent(symbolsParam)}`;
-        
-        const response = await fetchTossWithProxy(url, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
+        // 1. 사전 유효성 검사 및 정제: 빈값, 공백, '사용자 입력 필요', 순수 한글 필터링
+        const validSymbols = symbols.filter(s => {
+            if (!s || typeof s !== 'string') return false;
+            const trimmed = s.trim();
+            return trimmed.length > 0 && trimmed !== '사용자 입력 필요' && !/^[ㄱ-ㅎ|가-힣]+$/.test(trimmed);
         });
-        
-        if (!response.ok) {
-            throw new Error(`Toss prices API error: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        const resultList = data.result || [];
+
+        if (validSymbols.length === 0) return {};
+
+        // 2. 중복 제거 및 8개 단위 청크(Chunk) 분할
+        const uniqueSymbols = [...new Set(validSymbols)];
+        const chunkSize = 8;
         const quotesMap = {};
-        
-        resultList.forEach(item => {
-            const priceNum = Number(item.lastPrice);
-            quotesMap[item.symbol] = {
-                symbol: item.symbol,
-                price: priceNum,
-                currency: item.currency || 'KRW',
-                name: item.symbol,
-                changePct: 0
-            };
-        });
+
+        for (let i = 0; i < uniqueSymbols.length; i += chunkSize) {
+            const chunk = uniqueSymbols.slice(i, i + chunkSize);
+            const cleanedChunk = chunk.map(s => s.trim().toUpperCase().replace(/\.[A-Z]+$/i, ''));
+            const symbolsParam = cleanedChunk.join(',');
+            const url = `https://openapi.tossinvest.com/api/v1/prices?symbols=${encodeURIComponent(symbolsParam)}`;
+            
+            try {
+                const response = await fetchTossWithProxy(url, {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const resultList = data.result || [];
+                    resultList.forEach(item => {
+                        const priceNum = Number(item.lastPrice);
+                        if (priceNum > 0) {
+                            quotesMap[item.symbol] = {
+                                symbol: item.symbol,
+                                price: priceNum,
+                                currency: item.currency || 'KRW',
+                                name: item.symbol,
+                                changePct: 0
+                            };
+                        }
+                    });
+                } else {
+                    // 400 Bad Request 등 다건 청크 요청 실패 시 2차 Self-Healing: 1개씩 단건 분해 재시도
+                    console.warn(`Toss batch prices API error (${response.status}) for chunk [${symbolsParam}]. Fallback to single requests...`);
+                    const singleResults = await Promise.allSettled(chunk.map(s => fetchSingleTossQuote(s, token)));
+                    singleResults.forEach(res => {
+                        if (res.status === 'fulfilled' && res.value) {
+                            const q = res.value;
+                            quotesMap[q.symbol] = q;
+                            const cleanedSym = q.symbol.trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
+                            quotesMap[cleanedSym] = q;
+                        }
+                    });
+                }
+            } catch (chunkErr) {
+                console.warn("Chunk fetch error, falling back to single requests:", chunkErr);
+                const singleResults = await Promise.allSettled(chunk.map(s => fetchSingleTossQuote(s, token)));
+                singleResults.forEach(res => {
+                    if (res.status === 'fulfilled' && res.value) {
+                        const q = res.value;
+                        quotesMap[q.symbol] = q;
+                        const cleanedSym = q.symbol.trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
+                        quotesMap[cleanedSym] = q;
+                    }
+                });
+            }
+        }
         
         const finalMap = {};
         symbols.forEach(originalSymbol => {
-            const cleaned = originalSymbol.trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
+            if (!originalSymbol) return;
+            const cleaned = String(originalSymbol).trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
             if (quotesMap[cleaned]) {
                 finalMap[originalSymbol] = {
                     ...quotesMap[cleaned],
                     symbol: originalSymbol
                 };
+            } else if (quotesMap[originalSymbol]) {
+                finalMap[originalSymbol] = quotesMap[originalSymbol];
             }
         });
         
