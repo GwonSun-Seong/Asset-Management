@@ -10,15 +10,53 @@ const calculateMedian = (arr) => {
     return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
 
-window.TooltipGuide = ({ tip }) => (
-    <span className="group relative inline-block ml-1 align-middle">
-        <svg className="w-4 h-4 text-gray-400 cursor-help hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-        <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-56 p-2.5 bg-gray-800/95 backdrop-blur text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 text-center leading-relaxed border border-gray-700 font-normal block">
-            {tip}
-            <span className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800/95"></span>
+window.TooltipGuide = ({ tip, preferredPosition = 'auto' }) => {
+    const [isHovered, setIsHovered] = React.useState(false);
+    const [placement, setPlacement] = React.useState('top');
+    const triggerRef = React.useRef(null);
+
+    const handleMouseEnter = () => {
+        if (triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect();
+            // 화면 상단 여백이 100px 미만이거나 상단 잘림 위험 시 자동으로 아래쪽에 렌더링
+            if (preferredPosition === 'bottom' || rect.top < 110) {
+                setPlacement('bottom');
+            } else if (preferredPosition === 'top') {
+                setPlacement('top');
+            } else {
+                setPlacement(rect.top < 130 ? 'bottom' : 'top');
+            }
+        }
+        setIsHovered(true);
+    };
+
+    return (
+        <span 
+            ref={triggerRef} 
+            className="group relative inline-block ml-1 align-middle"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={() => setIsHovered(false)}
+        >
+            <svg className="w-4 h-4 text-gray-400 cursor-help hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span 
+                className={`absolute left-1/2 transform -translate-x-1/2 w-56 p-2.5 bg-gray-800/95 backdrop-blur text-white text-xs rounded-lg shadow-xl transition-all duration-150 pointer-events-none z-[200] text-center leading-relaxed border border-gray-700 font-normal ${
+                    isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+                } ${
+                    placement === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'
+                }`}
+            >
+                {tip}
+                <span 
+                    className={`absolute left-1/2 transform -translate-x-1/2 border-4 border-transparent ${
+                        placement === 'bottom' ? 'bottom-full border-b-gray-800/95' : 'top-full border-t-gray-800/95'
+                    }`}
+                ></span>
+            </span>
         </span>
-    </span>
-);
+    );
+};
 
 window.Toast = ({ message, type, onClose }) => {
     useEffect(() => {

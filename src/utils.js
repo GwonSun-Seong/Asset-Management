@@ -1198,14 +1198,17 @@ const fetchTossWithProxy = async (targetUrl, options = {}) => {
     return await fetch(proxiedUrl, options);
 };
 
-// [추가] 토스증권 OpenAPI OAuth 2.0 access token 발급 및 캐싱
-const getTossToken = async (clientId, clientSecret) => {
+// [추가] 토스증권 OpenAPI OAuth 2.0 access token 발급 및 캐싱 (401 만료 시 자동 갱신 지원)
+const getTossToken = async (clientId, clientSecret, forceRefresh = false) => {
     const cachedToken = localStorage.getItem('toss_access_token');
     const expiry = localStorage.getItem('toss_token_expiry');
     
-    if (cachedToken && expiry && Number(expiry) > Date.now() + 300000) {
+    if (!forceRefresh && cachedToken && expiry && Number(expiry) > Date.now() + 300000) {
         return cachedToken;
     }
+    
+    localStorage.removeItem('toss_access_token');
+    localStorage.removeItem('toss_token_expiry');
     
     try {
         const response = await fetchTossWithProxy('https://openapi.tossinvest.com/oauth2/token', {
@@ -1215,8 +1218,8 @@ const getTossToken = async (clientId, clientSecret) => {
             },
             body: new URLSearchParams({
                 grant_type: 'client_credentials',
-                client_id: clientId,
-                client_secret: clientSecret
+                client_id: clientId.trim(),
+                client_secret: clientSecret.trim()
             })
         });
         
@@ -1559,21 +1562,31 @@ const fetchTossExchangeRate = async () => {
 };
 
 
-// [추가] 토스증권 OpenAPI 환율 상세 정보 조회
+// [추가] 토스증권 OpenAPI 환율 상세 정보 조회 (401 토큰 자동 갱신 및 재시도)
 const fetchTossExchangeRateDetails = async () => {
     const clientId = localStorage.getItem('toss_client_id');
     const clientSecret = localStorage.getItem('toss_client_secret');
-    if (!clientId || !clientSecret) {
+    if (!clientId || !clientSecret || !clientId.trim() || !clientSecret.trim()) {
         const cached = Number(localStorage.getItem('asset_last_usd_krw')) || 0;
         return cached > 0 ? { rate: cached, baseCurrency: 'USD', quoteCurrency: 'KRW', isCached: true } : null;
     }
     
     try {
-        const token = await getTossToken(clientId, clientSecret);
-        const response = await fetchTossWithProxy('https://openapi.tossinvest.com/api/v1/exchange-rate?baseCurrency=USD&quoteCurrency=KRW', {
+        let token = await getTossToken(clientId, clientSecret);
+        let response = await fetchTossWithProxy('https://openapi.tossinvest.com/api/v1/exchange-rate?baseCurrency=USD&quoteCurrency=KRW', {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${token}` }
         });
+        
+        if (response.status === 401) {
+            console.warn("fetchTossExchangeRateDetails got 401 Unauthorized, refreshing token...");
+            token = await getTossToken(clientId, clientSecret, true);
+            response = await fetchTossWithProxy('https://openapi.tossinvest.com/api/v1/exchange-rate?baseCurrency=USD&quoteCurrency=KRW', {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+        }
+
         if (response.ok) {
             const data = await response.json();
             const res = data.result || {};
@@ -1601,18 +1614,28 @@ const fetchTossExchangeRateDetails = async () => {
     return cached > 0 ? { rate: cached, baseCurrency: 'USD', quoteCurrency: 'KRW', isCached: true } : null;
 };
 
-// [추가] 토스증권 OpenAPI 장 운영 정보 조회 (KR / US)
+// [추가] 토스증권 OpenAPI 장 운영 정보 조회 (KR / US) (401 토큰 자동 갱신 및 재시도)
 const fetchTossMarketCalendar = async (market = 'KR') => {
     const clientId = localStorage.getItem('toss_client_id');
     const clientSecret = localStorage.getItem('toss_client_secret');
-    if (!clientId || !clientSecret) return null;
+    if (!clientId || !clientSecret || !clientId.trim() || !clientSecret.trim()) return null;
     
     try {
-        const token = await getTossToken(clientId, clientSecret);
-        const response = await fetchTossWithProxy(`https://openapi.tossinvest.com/api/v1/market-calendar/${market.toUpperCase()}`, {
+        let token = await getTossToken(clientId, clientSecret);
+        let response = await fetchTossWithProxy(`https://openapi.tossinvest.com/api/v1/market-calendar/${market.toUpperCase()}`, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${token}` }
         });
+        
+        if (response.status === 401) {
+            console.warn(`fetchTossMarketCalendar(${market}) got 401 Unauthorized, refreshing token...`);
+            token = await getTossToken(clientId, clientSecret, true);
+            response = await fetchTossWithProxy(`https://openapi.tossinvest.com/api/v1/market-calendar/${market.toUpperCase()}`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+        }
+
         if (response.ok) {
             const data = await response.json();
             const result = data.result || {};

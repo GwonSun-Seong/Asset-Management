@@ -112,7 +112,7 @@ const AssetSummaryCard = (props) => {
                 {!isEditing ? (
                     <div className="p-4 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40">
                         <p className="text-[10px] font-black text-amber-500 dark:text-amber-400 uppercase tracking-widest mb-1 flex items-center gap-1">
-                            생존 가능 기간 <TooltipGuide tip="추가 소득 없이 현재 자산으로 생활 가능한 예상 기간입니다." />
+                            생존 가능 기간 <TooltipGuide tip="추가 소득 없이 현재 자산으로 생활 가능한 예상 기간입니다." preferredPosition="bottom" />
                         </p>
                         <p className="text-xl sm:text-2xl font-black text-amber-700 dark:text-amber-300 leading-none">
                             {fireRunwayText ?? <span className="text-sm text-gray-400">지출 설정 필요</span>}
