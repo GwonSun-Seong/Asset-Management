@@ -856,6 +856,16 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
             const [assetHistory, setAssetHistory] = useState([]);
             const [showProjectionInHistory, setShowProjectionInHistory] = useState(false);
+            const [isManualHistoryModalOpen, setIsManualHistoryModalOpen] = useState(false);
+            const [editingManualHistoryData, setEditingManualHistoryData] = useState(null);
+            const [snowballStep, setSnowballStep] = useState(() => {
+                const saved = localStorage.getItem('asset_snowball_step');
+                return saved ? Number(saved) : 1000;
+            });
+            const [showSnowballAnalysis, setShowSnowballAnalysis] = useState(() => {
+                return localStorage.getItem('asset_show_snowball_analysis') === 'true';
+            });
+
             const [referenceScenarios, setReferenceScenarios] = useState([]); // [수정] 다중 비교 기준 시나리오 {id, color}
             const [logoutBehavior, setLogoutBehavior] = useState(() => localStorage.getItem('assetLogoutBehavior') || 'keep');
             useEffect(() => { localStorage.setItem('assetLogoutBehavior', logoutBehavior); }, [logoutBehavior]);
@@ -1043,10 +1053,15 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                 localStorage.setItem('assetDashboardAssetSectorOrder', JSON.stringify(assetSectorOrder));
             }, [assetSectorOrder]);
 
+            // [추가] 토스 실시간 시세 연동 동시 요청 방지 가드 (In-Flight Guard)
+            const isSyncingRef = useRef(false);
+
             // [추가] 토스 실시간 시세 연동 타이머 & AI 분석 모달 오픈 핸들러
             const runTossLivePriceSync = async () => {
                 const enabled = localStorage.getItem('toss_live_price_enabled') === 'true';
                 if (!enabled) return;
+                if (isSyncingRef.current) return;
+                isSyncingRef.current = true;
                 
                 const clientId = localStorage.getItem('toss_client_id');
                 const clientSecret = localStorage.getItem('toss_client_secret');
@@ -1080,6 +1095,17 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                 if (symbolsToFetch.size === 0 && !hasUnresolvedTickers) return;
 
                 try {
+                    // 해외 종목이 있을 경우 실시간 환율 동기 호출 (과거 캐시값 사용 불허)
+                    let currentLiveFx = 0;
+                    const hasUsStocks = Array.from(symbolsToFetch).some(s => /^[A-Za-z]/.test(s));
+                    if (hasUsStocks && window.fetchTossExchangeRate) {
+                        try {
+                            currentLiveFx = await window.fetchTossExchangeRate();
+                        } catch (fxErr) {
+                            console.warn("Realtime FX fetch failed during auto-sync:", fxErr);
+                        }
+                    }
+
                     const quotes = symbolsToFetch.size > 0 ? await window.fetchTossQuotes(Array.from(symbolsToFetch)) : {};
                     
                     setAppData(prevData => {
@@ -1107,8 +1133,9 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                 return item;
                                             }
                                             const q = quotes[item.ticker];
-                                            let targetStatus = (q && q.price) ? 'online' : 'error';
-                                            let targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
+                                            // 이전 상태가 이미 online이고 유효한 단가가 있을 때 일시적 통신 지연/백그라운드 스킵 시 에러로 덮어쓰지 않음
+                                            let targetStatus = (q && q.price) ? 'online' : (item.syncStatus === 'online' && Number(item.currentPrice) > 0 ? 'online' : 'error');
+                                            let targetError = (q && q.price) ? null : (item.syncStatus === 'online' && Number(item.currentPrice) > 0 ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.');
                                             
                                             let targetPrice = item.currentPrice;
                                             if (q && q.price) {
@@ -1203,6 +1230,8 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         }
                         return prevData;
                     });
+                } finally {
+                    isSyncingRef.current = false;
                 }
             };
 
@@ -1799,6 +1828,35 @@ import MarketTickerSlide from './components/MarketTickerSlide';
             setIsHistoryActionModalOpen(false);
             setPendingHistoryData(null);
         };
+
+        const addManualHistoryPoint = React.useCallback((manualData) => {
+            const { date, netWorth, grossWorth, memo } = manualData;
+            if (!date || isNaN(netWorth)) return;
+
+            setAssetHistory(prev => {
+                const existingIdx = prev.findIndex(item => item.date === date);
+                const newPoint = {
+                    date,
+                    time: '12:00:00',
+                    netWorth: Number(netWorth),
+                    grossWorth: Number(grossWorth || netWorth),
+                    timestamp: new Date(date).getTime(),
+                    memo: memo || '과거 기록 (수동 입력)',
+                    isManual: true
+                };
+
+                let updated = [...prev];
+                if (existingIdx >= 0) {
+                    updated[existingIdx] = { ...updated[existingIdx], ...newPoint };
+                } else {
+                    updated.push(newPoint);
+                }
+                updated.sort((a, b) => new Date(a.date) - new Date(b.date));
+                return updated;
+            });
+
+            addToast(`${date} 자산 기록이 안전하게 저장되었습니다.`, 'success');
+        }, [addToast]);
 
         const deleteHistoryPoint = React.useCallback((targetDate) => {
             if (!confirm(`${targetDate} 기록을 삭제하시겠습니까?\n(서버 데이터는 유지되며, 로컬 히스토리 목록에서만 제외됩니다)`)) return;
@@ -3731,6 +3789,32 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     });
                 }
 
+                // [추가] ⚡ 스노우볼 분석 활성화 시 마일스톤 구간선 차트 오버레이
+                if (showSnowballAnalysis && assetHistory.length > 0) {
+                    const key = historyViewMode === 'gross' ? 'grossTotal' : 'netWorth';
+                    const sorted = [...assetHistory].sort((a, b) => new Date(a.date) - new Date(b.date));
+                    const baseVal = sorted[0] ? (sorted[0][key] || 0) : 0;
+                    const latestVal = sorted[sorted.length - 1] ? (sorted[sorted.length - 1][key] || 0) : 0;
+                    const step = snowballStep > 0 ? snowballStep : 1000;
+                    
+                    let curM = baseVal + step;
+                    let mCount = 1;
+                    while (curM <= latestVal + step && mCount <= 10) {
+                        datasets.push({
+                            label: `⚡ 마일스톤 ${mCount} (+${formatNumber(curM - baseVal, displayMode)}만)`,
+                            data: new Array(finalLabels.length).fill(curM),
+                            borderColor: darkMode ? 'rgba(245, 158, 11, 0.55)' : 'rgba(217, 119, 6, 0.5)',
+                            borderDash: [4, 4],
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            fill: false,
+                            order: 15
+                        });
+                        curM += step;
+                        mCount++;
+                    }
+                }
+
                 const handleChartClick = (evt, elements, chart) => {
                     if (!elements || elements.length === 0) {
                         setHistoryPopover(null);
@@ -3755,7 +3839,8 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                 netWorth: point.netWorth,
                                 grossWorth: point.grossWorth,
                                 index: index,
-                                memo: point.memo
+                                memo: point.memo,
+                                isManual: !!point.isManual
                             });
                         }
                     } else {
@@ -3989,7 +4074,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                     const timerId = setTimeout(renderHistoryChart, 150);
                 return () => clearTimeout(timerId); 
-                }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo, scenarioSortOrder, historyViewMode, activeTab, isExporting]);
+                }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo, scenarioSortOrder, historyViewMode, activeTab, isExporting, showSnowballAnalysis, snowballStep]);
 
             const addAsset = (sector) => {
                 // [보안/개선] 미래 시점 편집 중일 경우, 새 대출의 시작일을 해당 페이즈 시작월로 똑똑하게 자동 맞춤
@@ -4381,27 +4466,29 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     if (!assetHistory || assetHistory.length === 0) return null;
                     const key = historyViewMode === 'gross' ? 'grossTotal' : 'netWorth';
                     
-                    let athItem = assetHistory[0];
-                    assetHistory.forEach(item => {
+                    const sorted = [...assetHistory].sort((a, b) => new Date(a.date) - new Date(b.date));
+                    
+                    let athItem = sorted[0];
+                    sorted.forEach(item => {
                         if ((item[key] || 0) > (athItem[key] || 0)) athItem = item;
                     });
                     
-                    const latestItem = assetHistory[assetHistory.length - 1] || {};
+                    const latestItem = sorted[sorted.length - 1] || {};
                     const latestVal = latestItem[key] || 0;
                     const athVal = athItem[key] || 0;
                     const athDiff = latestVal - athVal;
                     const athDiffPct = athVal > 0 ? (athDiff / athVal) * 100 : 0;
                     
-                    const momItem = assetHistory.length >= 2 ? assetHistory[assetHistory.length - 2] : null;
+                    const momItem = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
                     const momVal = momItem ? (momItem[key] || 0) : latestVal;
                     const momDiff = latestVal - momVal;
                     const momDiffPct = momVal > 0 ? (momDiff / momVal) * 100 : 0;
 
                     let yoyItem = null;
-                    if (assetHistory.length > 2) {
+                    if (sorted.length > 2) {
                         const latestDate = new Date(latestItem.date || new Date());
                         const targetYoyDateStr = new Date(latestDate.getFullYear() - 1, latestDate.getMonth(), latestDate.getDate()).toISOString().slice(0, 10);
-                        yoyItem = assetHistory.reduce((prev, curr) => {
+                        yoyItem = sorted.reduce((prev, curr) => {
                             const prevDiff = Math.abs(new Date(prev.date || 0) - new Date(targetYoyDateStr));
                             const currDiff = Math.abs(new Date(curr.date || 0) - new Date(targetYoyDateStr));
                             return currDiff < prevDiff ? curr : prev;
@@ -4410,6 +4497,125 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     const yoyVal = yoyItem ? (yoyItem[key] || 0) : latestVal;
                     const yoyDiff = latestVal - yoyVal;
                     const yoyDiffPct = yoyVal > 0 ? (yoyDiff / yoyVal) * 100 : 0;
+
+                    // ⚡ 스노우볼 가속도 계산 엔진 (Snowball Engine)
+                    const step = snowballStep > 0 ? snowballStep : 1000;
+                    const baseVal = sorted[0] ? (sorted[0][key] || 0) : 0;
+                    const baseDate = sorted[0] ? sorted[0].date : '';
+
+                    // 1. 현재 자산 기준 직전 -step 지점부터 오늘까지 걸린 일수
+                    const targetRecentBaseline = latestVal - step;
+                    let recentCrossItem = sorted[0];
+                    for (let i = sorted.length - 1; i >= 0; i--) {
+                        if ((sorted[i][key] || 0) <= targetRecentBaseline) {
+                            recentCrossItem = sorted[i];
+                            break;
+                        }
+                    }
+                    
+                    let snowballRecentDays = 0;
+                    if (latestItem.date && recentCrossItem && recentCrossItem.date) {
+                        const d1 = new Date(recentCrossItem.date);
+                        const d2 = new Date(latestItem.date);
+                        snowballRecentDays = Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+                    }
+
+                    // 2. 직전 구간과의 가속도 비교
+                    const targetPrevBaseline = latestVal - (step * 2);
+                    let prevCrossItem = null;
+                    if (targetPrevBaseline >= baseVal) {
+                        for (let i = sorted.length - 1; i >= 0; i--) {
+                            if ((sorted[i][key] || 0) <= targetPrevBaseline) {
+                                prevCrossItem = sorted[i];
+                                break;
+                            }
+                        }
+                    }
+                    let snowballPrevDays = null;
+                    let snowballSpeedDiff = null;
+                    if (prevCrossItem && recentCrossItem) {
+                        const dp1 = new Date(prevCrossItem.date);
+                        const dp2 = new Date(recentCrossItem.date);
+                        snowballPrevDays = Math.max(1, Math.round((dp2 - dp1) / (1000 * 60 * 60 * 24)));
+                        snowballSpeedDiff = snowballPrevDays - snowballRecentDays;
+                    }
+
+                    // 3. 첫 기록일(baseVal)부터 +step 단위로 돌파한 전체 마일스톤 단계 산출
+                    const stages = [];
+                    let currentMilestoneVal = baseVal + step;
+                    let lastDate = baseDate;
+                    let stageIndex = 1;
+                    let prevStageDays = null;
+
+                    while (currentMilestoneVal <= latestVal) {
+                        const reachedItem = sorted.find(item => (item[key] || 0) >= currentMilestoneVal);
+                        if (reachedItem) {
+                            const dStart = new Date(lastDate);
+                            const dEnd = new Date(reachedItem.date);
+                            const days = Math.max(1, Math.round((dEnd - dStart) / (1000 * 60 * 60 * 24)));
+                            const speedDiff = prevStageDays !== null ? (prevStageDays - days) : null;
+                            
+                            stages.push({
+                                stage: stageIndex,
+                                fromVal: currentMilestoneVal - step,
+                                toVal: currentMilestoneVal,
+                                startDate: lastDate,
+                                dateReached: reachedItem.date,
+                                days,
+                                speedDiff,
+                                isCompleted: true
+                            });
+
+                            lastDate = reachedItem.date;
+                            prevStageDays = days;
+                            stageIndex++;
+                            currentMilestoneVal += step;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    const inProgressFrom = currentMilestoneVal - step;
+                    const inProgressTo = currentMilestoneVal;
+                    const progressGain = latestVal - inProgressFrom;
+                    const progressPct = Math.min(100, Math.max(0, (progressGain / step) * 100));
+                    const inProgressDays = lastDate ? Math.max(1, Math.round((new Date(latestItem.date) - new Date(lastDate)) / (1000 * 60 * 60 * 24))) : 0;
+                    
+                    const completedStages = stages.filter(s => s.isCompleted);
+                    let averageDays = completedStages.length > 0 ? Math.round(completedStages.reduce((acc, s) => acc + s.days, 0) / completedStages.length) : (snowballRecentDays || 30);
+                    let fastestStage = completedStages.length > 0 ? [...completedStages].sort((a, b) => a.days - b.days)[0] : null;
+
+                    // 가속 콤보 (Acceleration Streak) 계산
+                    let accelerationStreak = 0;
+                    for (let i = completedStages.length - 1; i >= 0; i--) {
+                        if (completedStages[i].speedDiff && completedStages[i].speedDiff > 0) {
+                            accelerationStreak++;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    // 월평균 페이스 계산
+                    const totalDaysSpan = sorted.length >= 2 ? Math.max(1, Math.round((new Date(latestItem.date) - new Date(baseDate)) / (1000 * 60 * 60 * 24))) : 30;
+                    const monthlyPace = totalDaysSpan > 0 ? Math.round(((latestVal - baseVal) / totalDaysSpan) * 30.4) : momDiff;
+
+                    // 다음 마일스톤 예상 D-Day 계산
+                    const dailySpeed = inProgressDays > 0 && progressGain > 0 ? (progressGain / inProgressDays) : (monthlyPace / 30.4);
+                    const remainingGain = inProgressTo - latestVal;
+                    const nextDDay = dailySpeed > 0 ? Math.max(1, Math.round(remainingGain / dailySpeed)) : Math.round(averageDays * (1 - progressPct / 100));
+
+                    stages.push({
+                        stage: stageIndex,
+                        fromVal: inProgressFrom,
+                        toVal: inProgressTo,
+                        currentVal: latestVal,
+                        startDate: lastDate,
+                        dateReached: latestItem.date,
+                        progressPct,
+                        days: inProgressDays,
+                        isCompleted: false,
+                        isCurrent: true
+                    });
 
                     return {
                         latestVal,
@@ -4420,16 +4626,28 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         momDiff,
                         momDiffPct,
                         yoyDiff,
-                        yoyDiffPct
+                        yoyDiffPct,
+                        snowballStep: step,
+                        snowballRecentDays,
+                        snowballSpeedDiff,
+                        snowballPrevDays,
+                        recentCrossDate: recentCrossItem ? recentCrossItem.date : '',
+                        stages,
+                        averageDays,
+                        fastestStage,
+                        accelerationStreak,
+                        monthlyPace,
+                        nextDDay
                     };
                 })();
 
                 return (
                 <>
-                    {/* [추가] 깔끔한 역대 최고 자산 및 MoM/YoY 성과 지표 대시보드 */}
+                    {/* [추가] 5열 성과 지표 대시보드 (역대 최고 / 이격률 / ⚡ 스노우볼 속도 / MoM / YoY) */}
                     {historyMetrics && (
                         <div className="mb-6 px-4">
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                                {/* 1. 역대 최고 자산 */}
                                 <div className="bg-white dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm relative group cursor-help">
                                     <div className="text-[11px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
                                         <span>👑 역대 최고 자산</span>
@@ -4443,13 +4661,14 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                     </div>
                                 </div>
 
+                                {/* 2. 최고점 대비 이격률 */}
                                 <div className="bg-white dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm relative group cursor-help">
                                     <div className="text-[11px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-                                        <span>🎯 최고점 대비 이격률</span>
+                                        <span>🎯 최고점 대비</span>
                                         <span className="text-slate-300 dark:text-slate-600">ⓘ</span>
                                     </div>
                                     <div className={`text-base sm:text-lg font-black ${historyMetrics.athDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                        {historyMetrics.athDiff >= 0 ? '🏆 최고점 유지 중!' : `${historyMetrics.athDiffPct.toFixed(1)}%`}
+                                        {historyMetrics.athDiff >= 0 ? '🏆 신고가 유지' : `${historyMetrics.athDiffPct.toFixed(1)}%`}
                                     </div>
                                     <div className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">
                                         {historyMetrics.athDiff >= 0 ? '신고가 갱신 상태' : `${formatNumber(historyMetrics.athDiff, displayMode)}만원`}
@@ -4460,6 +4679,63 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                     </div>
                                 </div>
 
+                                {/* 3. ⚡ 스노우볼 구간 속도 (지난달 대비 좌측 배치 & 금액 수정 지원) */}
+                                <div className="bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent bg-white dark:bg-slate-800/80 p-3.5 rounded-xl border border-amber-500/30 dark:border-amber-500/30 shadow-sm relative group">
+                                    <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                        <span className="flex items-center gap-1">
+                                            <span>⚡ 최근 +{formatNumber(historyMetrics.snowballStep, displayMode)}만</span>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const input = prompt('구간 분석 기준 금액(만원 단위)을 입력하세요:', historyMetrics.snowballStep);
+                                                    if (input !== null) {
+                                                        const num = parseInt(input.replace(/[^0-9]/g, ''), 10);
+                                                        if (num > 0) {
+                                                            setSnowballStep(num);
+                                                            localStorage.setItem('asset_snowball_step', num.toString());
+                                                            if (window.addToast) window.addToast(`⚡ 스노우볼 구간이 ${num.toLocaleString()}만원으로 설정되었습니다.`, 'success');
+                                                        }
+                                                    }
+                                                }}
+                                                className="p-0.5 hover:bg-amber-500/20 rounded text-amber-600 dark:text-amber-300 transition-colors"
+                                                title="구간 기준 금액 변경"
+                                            >
+                                                ✏️
+                                            </button>
+                                        </span>
+                                        <span className="text-amber-400 dark:text-amber-500 cursor-help">ⓘ</span>
+                                    </div>
+                                    <div className="text-base sm:text-lg font-black text-amber-700 dark:text-amber-300 tabular-nums">
+                                        {historyMetrics.snowballRecentDays}일 소요
+                                    </div>
+                                    <div className="text-[10px] font-semibold mt-0.5">
+                                        {historyMetrics.snowballSpeedDiff !== null ? (
+                                            historyMetrics.snowballSpeedDiff > 0 ? (
+                                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                                                    🚀 직전보다 {historyMetrics.snowballSpeedDiff}일 단축!
+                                                </span>
+                                            ) : historyMetrics.snowballSpeedDiff < 0 ? (
+                                                <span className="text-slate-400 dark:text-slate-500">
+                                                    ⏳ 직전보다 {Math.abs(historyMetrics.snowballSpeedDiff)}일 지연
+                                                </span>
+                                            ) : (
+                                                <span className="text-slate-400">직전 구간과 동일 속도</span>
+                                            )
+                                        ) : (
+                                            <span className="text-slate-400 dark:text-slate-500">
+                                                기준점: {historyMetrics.recentCrossDate || '기록 시작일'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="absolute top-full left-0 mt-2 hidden group-hover:block bg-slate-900 text-white text-[11px] p-3 rounded-xl shadow-2xl z-50 w-72 leading-relaxed border border-slate-700">
+                                        💡 <strong>스노우볼 구간 가속도</strong><br/>
+                                        현재 자산에서 <strong>{formatNumber(historyMetrics.snowballStep, displayMode)}만원</strong>을 모으는 데 걸린 실제 일수입니다.<br/>
+                                        (연필 아이콘을 눌러 기준 금액을 자유롭게 변경할 수 있습니다.)
+                                    </div>
+                                </div>
+
+                                {/* 4. 지난달 대비 (MoM) */}
                                 <div className="bg-white dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm relative group cursor-help">
                                     <div className="text-[11px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
                                         <span>⚡ 지난달 대비 (MoM)</span>
@@ -4479,6 +4755,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                     </div>
                                 </div>
 
+                                {/* 5. 작년 대비 (YoY) */}
                                 <div className="bg-white dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm relative group cursor-help">
                                     <div className="text-[11px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
                                         <span>🚀 작년 대비 (YoY)</span>
@@ -4502,10 +4779,43 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     )}
 
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 px-4 pt-2 gap-4">
-                        <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                            총 {assetHistory.length}개의 기록 <span className="hidden sm:inline">| 최근: {assetHistory[assetHistory.length - 1]?.date} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth, displayMode)}만원)</span>
+                        <div className="flex items-center gap-3">
+                            <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                                총 {assetHistory.length}개의 기록 <span className="hidden sm:inline">| 최근: {assetHistory[assetHistory.length - 1]?.date} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth, displayMode)}만원)</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setEditingManualHistoryData(null);
+                                    setIsManualHistoryModalOpen(true);
+                                }}
+                                className="px-2.5 py-1 text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all flex items-center gap-1 active:scale-95 shadow-sm"
+                                title="프로젝트 시작 이전(과거) 특정 날짜의 자산 수기 추가"
+                            >
+                                <span>➕</span>
+                                <span>과거 기록 추가</span>
+                            </button>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            {/* [추가] ⚡ 스노우볼 구간 분석 토글 버튼 */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const next = !showSnowballAnalysis;
+                                    setShowSnowballAnalysis(next);
+                                    localStorage.setItem('asset_show_snowball_analysis', next ? 'true' : 'false');
+                                }}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] sm:text-xs font-black transition-all active:scale-95 ${
+                                    showSnowballAnalysis
+                                        ? 'bg-amber-500 border-amber-400 text-white shadow-md shadow-amber-500/20'
+                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-amber-300'
+                                }`}
+                                title="설정한 금액 단위별 마일스톤 돌파 소요 일수 및 가속도 상세 타임라인 분석"
+                            >
+                                <span>⚡</span>
+                                <span>스노우볼 구간 분석</span>
+                            </button>
+
                             <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-full border transition-colors ${!isPro ? 'bg-gray-100 border-gray-200' : 'bg-blue-50 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800 hover:bg-blue-100'}`}>
                             <input 
                                 type="checkbox" 
@@ -4558,7 +4868,229 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     </div>
                     
                     {/* 설정 패널과 그래프 영역 사이의 구분선 (캡처 간섭 및 레이아웃 깨짐 방지) */}
-                    <div className="border-t border-slate-200/80 dark:border-slate-800 my-4"></div>
+                    {/* [추가] ⚡ 스노우볼 구간 가속도 분석 (소요 일수 추세 차트 전용 뷰) */}
+                    {showSnowballAnalysis && historyMetrics && historyMetrics.stages && historyMetrics.stages.length > 0 && (
+                        <div className="mb-4 mx-4 p-4 sm:p-5 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-amber-500/5 dark:from-amber-950/50 dark:via-orange-950/30 dark:to-slate-900/50 rounded-2xl border border-amber-500/30 dark:border-amber-600/40 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 space-y-4">
+                            
+                            {/* 1. 상단 타이틀 & 기준 금액 변경 버튼 */}
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200/60 dark:border-amber-800/40 pb-3">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-base sm:text-lg font-black text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
+                                            <span>⚡</span>
+                                            <span>스노우볼 구간 가속도 추세</span>
+                                        </span>
+                                        <span className="text-[10px] font-black bg-amber-500 text-white px-2 py-0.5 rounded-full shadow-sm">
+                                            +{formatNumber(historyMetrics.snowballStep, displayMode)}만 단위
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+                                        자산이 불어나는 복리 가속도와 각 구간별 돌파 소요 일수를 분석합니다.
+                                    </p>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const input = prompt('구간 분석 기준 금액(만원 단위)을 입력하세요:', historyMetrics.snowballStep);
+                                        if (input !== null) {
+                                            const num = parseInt(input.replace(/[^0-9]/g, ''), 10);
+                                            if (num > 0) {
+                                                setSnowballStep(num);
+                                                localStorage.setItem('asset_snowball_step', num.toString());
+                                                if (window.addToast) window.addToast(`⚡ 스노우볼 구간이 ${num.toLocaleString()}만원으로 설정되었습니다.`, 'success');
+                                            }
+                                        }
+                                    }}
+                                    className="px-3 py-1.5 bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60 rounded-xl text-xs font-black shadow-sm hover:bg-amber-50 dark:hover:bg-slate-700 transition-all flex items-center gap-1.5"
+                                >
+                                    <span>✏️</span>
+                                    <span>구간 기준 변경 (+{formatNumber(historyMetrics.snowballStep, displayMode)}만)</span>
+                                </button>
+                            </div>
+
+                            {/* 2. 도파민 4대 핵심 요약 바 (현재 페이스 / D-Day / PB 역대 최단 / 🔥 가속 콤보) */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                                {/* 현재 성장 속도 */}
+                                <div className="bg-white/80 dark:bg-slate-800/80 p-2.5 rounded-xl border border-amber-200/60 dark:border-slate-700/60 flex items-center gap-2.5 shadow-sm">
+                                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center text-base flex-shrink-0">
+                                        🚀
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400">현재 성장 속도</div>
+                                        <div className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-100 truncate">
+                                            월평균 +{formatNumber(historyMetrics.monthlyPace, displayMode)}만
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 다음 마일스톤 D-Day */}
+                                <div className="bg-white/80 dark:bg-slate-800/80 p-2.5 rounded-xl border border-amber-200/60 dark:border-slate-700/60 flex items-center gap-2.5 shadow-sm">
+                                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-base flex-shrink-0">
+                                        🎯
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400">다음 돌파 예상</div>
+                                        <div className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 truncate">
+                                            D-{historyMetrics.nextDDay}일 ({historyMetrics.stages[historyMetrics.stages.length - 1]?.progressPct.toFixed(0)}%)
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 👑 역대 최고 신기록 (Personal Best) */}
+                                <div className="bg-white/80 dark:bg-slate-800/80 p-2.5 rounded-xl border border-amber-200/60 dark:border-slate-700/60 flex items-center gap-2.5 shadow-sm">
+                                    <div className="w-8 h-8 rounded-lg bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 flex items-center justify-center text-base flex-shrink-0">
+                                        👑
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400">역대 최고기록 (최단)</div>
+                                        <div className="text-xs sm:text-sm font-black text-amber-600 dark:text-amber-300 truncate">
+                                            {historyMetrics.fastestStage ? `단 ${historyMetrics.fastestStage.days}일 돌파` : '-'}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 🔥 가속 콤보 (Streak) */}
+                                <div className="bg-white/80 dark:bg-slate-800/80 p-2.5 rounded-xl border border-amber-200/60 dark:border-slate-700/60 flex items-center gap-2.5 shadow-sm">
+                                    <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center text-base flex-shrink-0">
+                                        🔥
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400">가속 콤보</div>
+                                        <div className="text-xs sm:text-sm font-black text-orange-600 dark:text-orange-400 truncate">
+                                            {historyMetrics.accelerationStreak >= 2 ? `${historyMetrics.accelerationStreak}연속 단축 중! 🚀` : (historyMetrics.accelerationStreak === 1 ? '1구간 가속 중' : '안정 유지 페이스')}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 3. 소요 일수 추세 미니 차트 (Speed Velocity Bar Chart) */}
+                            <div className="bg-white dark:bg-slate-800/95 p-4 rounded-xl border border-amber-200/60 dark:border-slate-700 shadow-inner space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+                                    <span className="flex items-center gap-1.5">
+                                        <span>📊 구간별 소요 일수 추세 (막대가 낮을수록 초고속 돌파 🚀)</span>
+                                    </span>
+                                    <span className="text-[11px] text-amber-600 dark:text-amber-400 font-mono font-bold">
+                                        전체 구간 평균: {historyMetrics.averageDays}일
+                                    </span>
+                                </div>
+
+                                {/* CSS 기반 인터랙티브 막대 차트 (가로 스크롤 대응 & 툴팁 짤림 방지 패딩) */}
+                                <div className="overflow-x-auto custom-scrollbar pt-28 pb-3">
+                                    <div className="flex items-end gap-2 sm:gap-3 min-w-[520px] h-44 px-4 border-b border-slate-200 dark:border-slate-700">
+                                        {(() => {
+                                            const maxDays = Math.max(...historyMetrics.stages.map(s => s.days), 60);
+                                            const totalCount = historyMetrics.stages.length;
+
+                                            return historyMetrics.stages.map((st, idx) => {
+                                                const heightPercent = Math.min(100, Math.max(15, (st.days / maxDays) * 100));
+                                                const isFast = st.days <= historyMetrics.averageDays * 0.75;
+                                                const isSlow = st.days >= historyMetrics.averageDays * 1.3;
+                                                const isFastest = historyMetrics.fastestStage && st.isCompleted && st.stage === historyMetrics.fastestStage.stage;
+
+                                                // 툴팁 화면 짤림 방지 스마트 위치 정렬
+                                                const tooltipPosClass = idx <= 1 
+                                                    ? 'left-0' 
+                                                    : idx >= totalCount - 2 
+                                                        ? 'right-0' 
+                                                        : 'left-1/2 -translate-x-1/2';
+
+                                                return (
+                                                    <div key={idx} className="flex-1 min-w-[36px] flex flex-col items-center gap-1.5 h-full justify-end group relative cursor-pointer">
+                                                        
+                                                        {/* 👑 역대 최단기록 골드 왕관 마커 (줄바꿈 방지 및 중앙 정렬) */}
+                                                        {isFastest && (
+                                                            <div className="absolute -top-7 left-1/2 -translate-x-1/2 animate-bounce flex items-center justify-center pointer-events-none z-10 whitespace-nowrap" title="역대 가장 빠르게 돌파한 최고기록">
+                                                                <span className="bg-yellow-400 text-yellow-950 font-black px-1.5 py-0.5 rounded-full shadow-md flex items-center gap-0.5 text-[9px] whitespace-nowrap">
+                                                                    <span>👑</span>
+                                                                    <span>최고기록</span>
+                                                                </span>
+                                                            </div>
+                                                        )}
+
+                                                        {/* 스마트 위치 보정 툴팁 (실제 달성 날짜 포함) */}
+                                                        <div className={`absolute bottom-full mb-2 hidden group-hover:block bg-slate-900/95 text-white text-[11px] p-2.5 rounded-xl shadow-2xl z-50 w-52 pointer-events-none border border-slate-700 text-center backdrop-blur-sm ${tooltipPosClass}`}>
+                                                            <div className="font-black text-amber-400 flex items-center justify-center gap-1">
+                                                                {isFastest && <span>👑</span>}
+                                                                <span>{st.isCurrent ? `[${st.stage}단계 진행 중]` : `[${st.stage}단계 마일스톤]`}</span>
+                                                            </div>
+                                                            <div className="text-[10px] text-slate-300 font-bold mt-0.5">
+                                                                {formatNumber(st.fromVal, displayMode)}만 ➡️ {formatNumber(st.toVal, displayMode)}만
+                                                            </div>
+                                                            
+                                                            {/* 실제 달성 날짜 구간 */}
+                                                            <div className="text-[9px] font-mono text-slate-400 mt-1 border-t border-slate-700/60 pt-1">
+                                                                📅 {st.startDate || st.dateReached} ~ {st.dateReached}
+                                                            </div>
+
+                                                            <div className="mt-1 font-black text-emerald-400 text-xs">
+                                                                {st.isCurrent ? `현재 ${st.days}일째 진행 중` : `⏱️ 소요: ${st.days}일`}
+                                                            </div>
+                                                            {st.speedDiff !== null && (
+                                                                <div className="text-[10px] text-slate-300 font-medium">
+                                                                    {st.speedDiff > 0 ? `🚀 이전보다 ${st.speedDiff}일 단축` : `⏳ 이전보다 ${Math.abs(st.speedDiff)}일 지연`}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* 일수 뱃지 */}
+                                                        <span className={`text-[10px] font-black tabular-nums transition-all group-hover:scale-110 ${
+                                                            st.isCurrent ? 'text-amber-500 animate-pulse' : isFast ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-600 dark:text-slate-300'
+                                                        }`}>
+                                                            {st.days}일
+                                                        </span>
+
+                                                        {/* 막대 바 */}
+                                                        <div 
+                                                            className={`w-full max-w-[36px] rounded-t-lg transition-all duration-300 group-hover:brightness-110 ${
+                                                                st.isCurrent
+                                                                    ? 'bg-gradient-to-t from-amber-400/50 to-amber-500 border-2 border-dashed border-amber-400'
+                                                                    : isFastest
+                                                                        ? 'bg-gradient-to-t from-yellow-500 via-amber-400 to-amber-300 shadow-md ring-2 ring-yellow-400/50'
+                                                                        : isFast
+                                                                            ? 'bg-gradient-to-t from-emerald-500 to-teal-400 shadow-sm'
+                                                                            : isSlow
+                                                                                ? 'bg-gradient-to-t from-slate-400 to-slate-300 dark:from-slate-600 dark:to-slate-500'
+                                                                                : 'bg-gradient-to-t from-amber-500 to-orange-400'
+                                                            }`}
+                                                            style={{ height: `${heightPercent}%` }}
+                                                        />
+
+                                                        {/* X축 라벨 (마일스톤 금액) */}
+                                                        <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 truncate max-w-[40px] text-center">
+                                                            {formatNumber(st.toVal, displayMode)}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            });
+                                        })()}
+                                    </div>
+                                </div>
+
+                                {/* 4. 막대 색상 범례 가이드 */}
+                                <div className="flex flex-wrap items-center justify-center gap-4 text-[10px] text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-700/60">
+                                    <span className="flex items-center gap-1.5 font-bold">
+                                        <span className="w-2.5 h-2.5 rounded-sm bg-gradient-to-r from-emerald-500 to-teal-400"></span>
+                                        <span className="text-emerald-700 dark:text-emerald-300">초고속 돌파 (평균 대비 25% 이상 빠름)</span>
+                                    </span>
+                                    <span className="flex items-center gap-1.5 font-bold">
+                                        <span className="w-2.5 h-2.5 rounded-sm bg-gradient-to-r from-amber-500 to-orange-400"></span>
+                                        <span className="text-amber-700 dark:text-amber-300">안정 돌파 (평균 수준)</span>
+                                    </span>
+                                    <span className="flex items-center gap-1.5 font-bold">
+                                        <span className="w-2.5 h-2.5 rounded-sm bg-gradient-to-r from-slate-400 to-slate-300 dark:from-slate-600 dark:to-slate-500"></span>
+                                        <span className="text-slate-600 dark:text-slate-400">완만 돌파 (평균 대비 30% 이상 소요)</span>
+                                    </span>
+                                    <span className="flex items-center gap-1.5 font-bold">
+                                        <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 border border-dashed border-amber-600"></span>
+                                        <span className="text-amber-600 dark:text-amber-400">현재 진행 중</span>
+                                    </span>
+                                </div>
+
+                            </div>
+
+                        </div>
+                    )}
                     
                     <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 h-[600px] relative">
                         <canvas ref={historyChartRef} onContextMenu={handleHistoryContextMenu}></canvas>
@@ -4603,15 +5135,37 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                         <button onClick={() => setHistoryPopover(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
                                     </div>
                                     <div className="space-y-1">
-                                        <button onClick={() => { loadHistorySnapshot(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
-                                            <span>📂</span> 데이터 불러오기
-                                        </button>
-                                        <button onClick={() => { 
-                                            const memo = prompt('메모를 입력하세요:', historyPopover.memo || '');
-                                            if (memo !== null) { updateHistoryMemo(historyPopover.index, memo); setHistoryPopover(null); }
-                                        }} className="w-full text-left px-3 py-2 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
-                                            <span>📝</span> {historyPopover.memo ? '메모 수정' : '메모 남기기'}
-                                        </button>
+                                        {historyPopover.isManual ? (
+                                            <>
+                                                <div className="text-[10px] text-amber-700 dark:text-amber-300 font-bold px-2 py-1 bg-amber-50 dark:bg-amber-950/40 rounded-lg border border-amber-200/60 dark:border-amber-800/40 text-center">
+                                                    ℹ️ 수동 추가 기록 (단순 기록용)
+                                                </div>
+                                                <button onClick={() => {
+                                                    setEditingManualHistoryData({
+                                                        date: historyPopover.date,
+                                                        netWorth: historyPopover.netWorth,
+                                                        grossWorth: historyPopover.grossWorth,
+                                                        memo: historyPopover.memo
+                                                    });
+                                                    setIsManualHistoryModalOpen(true);
+                                                    setHistoryPopover(null);
+                                                }} className="w-full text-left px-3 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
+                                                    <span>✏️</span> 금액 / 메모 수정
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <button onClick={() => { loadHistorySnapshot(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
+                                                <span>📂</span> 데이터 불러오기
+                                            </button>
+                                        )}
+                                        {!historyPopover.isManual && (
+                                            <button onClick={() => { 
+                                                const memo = prompt('메모를 입력하세요:', historyPopover.memo || '');
+                                                if (memo !== null) { updateHistoryMemo(historyPopover.index, memo); setHistoryPopover(null); }
+                                            }} className="w-full text-left px-3 py-2 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
+                                                <span>📝</span> {historyPopover.memo ? '메모 수정' : '메모 남기기'}
+                                            </button>
+                                        )}
                                         <button onClick={() => { deleteHistoryPoint(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left px-3 py-2 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors">
                                             <span>🗑️</span> 기록 삭제
                                         </button>
@@ -4635,15 +5189,37 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                 <button onClick={() => setHistoryPopover(null)} className="p-2 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500">✕</button>
                                             </div>
                                             <div className="space-y-3">
-                                                <button onClick={() => { loadHistorySnapshot(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-xl flex items-center gap-3 transition-colors">
-                                                    <span className="text-xl">📂</span> 데이터 불러오기
-                                                </button>
-                                                <button onClick={() => { 
-                                                    const memo = prompt('메모를 입력하세요:', historyPopover.memo || '');
-                                                    if (memo !== null) { updateHistoryMemo(historyPopover.index, memo); setHistoryPopover(null); }
-                                                }} className="w-full text-left p-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 text-sm font-bold rounded-xl flex items-center gap-3 transition-colors">
-                                                    <span className="text-xl">📝</span> {historyPopover.memo ? '메모 수정' : '메모 남기기'}
-                                                </button>
+                                                {historyPopover.isManual ? (
+                                                    <>
+                                                        <div className="text-xs text-amber-700 dark:text-amber-300 font-bold p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200/60 dark:border-amber-800/40 text-center">
+                                                            ℹ️ 수동 추가 기록 (단순 기록용)
+                                                        </div>
+                                                        <button onClick={() => {
+                                                            setEditingManualHistoryData({
+                                                                date: historyPopover.date,
+                                                                netWorth: historyPopover.netWorth,
+                                                                grossWorth: historyPopover.grossWorth,
+                                                                memo: historyPopover.memo
+                                                            });
+                                                            setIsManualHistoryModalOpen(true);
+                                                            setHistoryPopover(null);
+                                                        }} className="w-full text-left p-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-sm font-bold rounded-xl flex items-center gap-3 transition-colors">
+                                                            <span className="text-xl">✏️</span> 금액 / 메모 수정
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <button onClick={() => { loadHistorySnapshot(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-xl flex items-center gap-3 transition-colors">
+                                                        <span className="text-xl">📂</span> 데이터 불러오기
+                                                    </button>
+                                                )}
+                                                {!historyPopover.isManual && (
+                                                    <button onClick={() => { 
+                                                        const memo = prompt('메모를 입력하세요:', historyPopover.memo || '');
+                                                        if (memo !== null) { updateHistoryMemo(historyPopover.index, memo); setHistoryPopover(null); }
+                                                    }} className="w-full text-left p-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 text-sm font-bold rounded-xl flex items-center gap-3 transition-colors">
+                                                        <span className="text-xl">📝</span> {historyPopover.memo ? '메모 수정' : '메모 남기기'}
+                                                    </button>
+                                                )}
                                                 <button onClick={() => { deleteHistoryPoint(historyPopover.date); setHistoryPopover(null); }} className="w-full text-left p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-bold rounded-xl flex items-center gap-3 transition-colors">
                                                     <span className="text-xl">🗑️</span> 기록 삭제
                                                 </button>
@@ -7695,6 +8271,15 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         appData={appData} 
                         setAppData={setAppData} 
                         addToast={addToast} 
+                    />}
+                    {window.ManualHistoryModal && <window.ManualHistoryModal
+                        isOpen={isManualHistoryModalOpen}
+                        onClose={() => {
+                            setIsManualHistoryModalOpen(false);
+                            setEditingManualHistoryData(null);
+                        }}
+                        onSave={addManualHistoryPoint}
+                        existingData={editingManualHistoryData}
                     />}
                     {window.HistoryActionModal && <window.HistoryActionModal 
                         isOpen={isHistoryActionModalOpen}

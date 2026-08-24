@@ -1247,16 +1247,18 @@ const getTossToken = async (clientId, clientSecret, forceRefresh = false) => {
 // 단일 심볼 토스 시세 조회 헬퍼 (400 발생 시 단건 해체 fallback 용)
 const fetchSingleTossQuote = async (symbol, token) => {
     try {
-        if (!symbol || typeof symbol !== 'string') return null;
+        if (!symbol || typeof symbol !== 'string') return { symbol, isError: true, errorReason: '잘못된 종목 형식' };
         const cleaned = symbol.trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
-        if (!cleaned || cleaned === '사용자 입력 필요') return null;
+        if (!cleaned || cleaned === '사용자 입력 필요') return { symbol, isError: true, errorReason: '티커 입력 필요' };
 
         const url = `https://openapi.tossinvest.com/api/v1/prices?symbols=${encodeURIComponent(cleaned)}`;
         const response = await fetchTossWithProxy(url, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        if (!response.ok) return null;
+        if (!response.ok) {
+            return { symbol, isError: true, errorReason: `미등록 또는 지원하지 않는 종목 (${response.status})` };
+        }
         const data = await response.json();
         const item = (data.result || [])[0];
         if (item && item.lastPrice) {
@@ -1268,26 +1270,26 @@ const fetchSingleTossQuote = async (symbol, token) => {
                 changePct: 0
             };
         }
-        return null;
+        return { symbol, isError: true, errorReason: '시세 데이터 없음' };
     } catch (e) {
-        return null;
+        return { symbol, isError: true, errorReason: e.message || '통신 오류' };
     }
 };
 
-// [추가/수정] 토스증권 OpenAPI 다중 현재가 조회 (Chunking + Self-Healing Fallback)
+// [추가/수정] 토스증권 OpenAPI 다중 현재가 조회 (Chunking + 401 토큰 자동 갱신 + Self-Healing Fallback)
 const fetchTossQuotes = async (symbols) => {
     if (!symbols || symbols.length === 0) return {};
     
     const clientId = localStorage.getItem('toss_client_id');
     const clientSecret = localStorage.getItem('toss_client_secret');
     
-    if (!clientId || !clientSecret) {
+    if (!clientId || !clientSecret || !clientId.trim() || !clientSecret.trim()) {
         console.warn("Toss API Client ID or Secret is missing in localStorage");
         return {};
     }
     
     try {
-        const token = await getTossToken(clientId, clientSecret);
+        let token = await getTossToken(clientId, clientSecret);
         
         // 1. 사전 유효성 검사 및 정제: 빈값, 공백, '사용자 입력 필요', 순수 한글 필터링
         const validSymbols = symbols.filter(s => {
@@ -1310,10 +1312,19 @@ const fetchTossQuotes = async (symbols) => {
             const url = `https://openapi.tossinvest.com/api/v1/prices?symbols=${encodeURIComponent(symbolsParam)}`;
             
             try {
-                const response = await fetchTossWithProxy(url, {
+                let response = await fetchTossWithProxy(url, {
                     method: 'GET',
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+                
+                if (response.status === 401) {
+                    console.warn("fetchTossQuotes got 401, refreshing token...");
+                    token = await getTossToken(clientId, clientSecret, true);
+                    response = await fetchTossWithProxy(url, {
+                        method: 'GET',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                }
                 
                 if (response.ok) {
                     const data = await response.json();

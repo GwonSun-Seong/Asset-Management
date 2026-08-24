@@ -105,6 +105,128 @@ window.HistoryActionModal = ({ isOpen, onClose, date, onAction }) => {
     );
 };
 
+window.ManualHistoryModal = ({ isOpen, onClose, onSave, existingData = null }) => {
+    if (!isOpen) return null;
+    const [date, setDate] = useState(existingData?.date || '');
+    const [grossWorth, setGrossWorth] = useState(
+        existingData?.grossWorth !== undefined 
+            ? existingData.grossWorth.toString() 
+            : (existingData?.netWorth !== undefined ? existingData.netWorth.toString() : '')
+    );
+    const [memo, setMemo] = useState(existingData?.memo || '');
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!date) {
+            alert('날짜를 입력해 주세요.');
+            return;
+        }
+        const amountNum = parseFloat(grossWorth.replace(/,/g, ''));
+        if (isNaN(amountNum) || amountNum <= 0) {
+            alert('총자산 금액을 0보다 큰 숫자로 올바르게 입력해 주세요.');
+            return;
+        }
+
+        onSave({
+            date,
+            netWorth: amountNum,
+            grossWorth: amountNum,
+            memo: memo.trim() || '과거 기록 (수동 입력)',
+            isManual: true
+        });
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[130] p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md p-6 border border-slate-200 dark:border-slate-700 space-y-4 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xl">📅</span>
+                        <div>
+                            <h3 className="text-base font-black text-slate-900 dark:text-white">
+                                {existingData ? '과거 자산 기록 수정' : '과거 자산 기록 수동 추가'}
+                            </h3>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                프로젝트 시작 이전의 과거 특정 시점 자산을 히스토리에 추가합니다.
+                            </p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg">✕</button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-3.5">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                            기록 날짜 <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                            type="date"
+                            max={todayStr}
+                            value={date}
+                            disabled={!!existingData}
+                            onChange={(e) => setDate(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-60"
+                            required
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                            총자산 (만원) <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                            type="number"
+                            step="any"
+                            placeholder="예: 5400"
+                            value={grossWorth}
+                            onChange={(e) => setGrossWorth(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                            required
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                            메모 / 비고 (선택)
+                        </label>
+                        <input
+                            type="text"
+                            placeholder="예: 2023 상반기 시드머니 회고"
+                            value={memo}
+                            onChange={(e) => setMemo(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                    </div>
+
+                    <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800/40 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                        💡 <strong>안내</strong>: 수동 추가된 과거 기록은 자산 히스토리 곡선 및 스노우볼 가속도 분석에 즉시 반영되며, DB(클라우드 및 로컬)에 안전하게 영구 보존됩니다.
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                        >
+                            취소
+                        </button>
+                        <button
+                            type="submit"
+                            className="px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1"
+                        >
+                            <span>💾</span>
+                            <span>{existingData ? '수정 완료' : '기록 저장'}</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 window.PrivacyPolicyModal = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
     return (
@@ -781,8 +903,9 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         if (!isOpen || !asset) return;
         setApiKey(localStorage.getItem('asset_gemini_api_key') || '');
         // 데이터 초기화
+        const initialItems = Array.isArray(asset.linkedItems) ? asset.linkedItems : [];
         setBaseAmount(asset.baseAmount !== undefined ? asset.baseAmount : (asset.amount || 0));
-        setLinkedItems(Array.isArray(asset.linkedItems) ? asset.linkedItems : []);
+        setLinkedItems(initialItems);
         
         const initFetch = async () => {
             setIsInitialSyncing(true);
@@ -792,7 +915,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                     setFxRate(rate);
                 }
 
-                const tickersToFetch = linkedItems
+                const tickersToFetch = initialItems
                     .filter(item => item.autoUpdate !== false && item.ticker && item.ticker !== '사용자 입력 필요')
                     .map(item => item.ticker);
 
@@ -1242,22 +1365,6 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         }
     };
 
-    // [추가] 티커 검색 로직 (Debounced)
-    useEffect(() => {
-        if (!draftTicker || draftTicker.length < 2) {
-            setSearchResults([]);
-            return;
-        }
-        const timer = setTimeout(async () => {
-            setIsSearching(true);
-            try {
-                const results = await window.fetchTossSearch(draftTicker);
-                setSearchResults(results || []);
-            } catch (e) { console.error(e); }
-            finally { setIsSearching(false); }
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [draftTicker]);
 
     // 실시간 총합, 수익률 및 비중 계산 로직
     const { totalValueKRW, totalPurchaseKRW, itemsWithMeta } = useMemo(() => {
@@ -1564,24 +1671,35 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                         return item;
                     }
                     const q = quotes[item.ticker];
-                    let targetStatus = (q && q.price) ? 'online' : 'error';
-                    let targetError = (q && q.price) ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.';
-                    
+                    let targetStatus = 'online';
+                    let targetError = null;
                     let targetPrice = item.currentPrice;
-                    if (q && q.price) {
+                    
+                    if (q && q.isError) {
+                        targetStatus = 'error';
+                        targetError = q.errorReason || '미등록 또는 지원하지 않는 종목입니다.';
+                    } else if (q && q.price) {
                         const isUsStock = /^[A-Za-z]/.test(item.ticker);
                         if (isUsStock) {
                             const activeFxRate = fxRate > 0 ? fxRate : Number(localStorage.getItem('asset_last_usd_krw'));
                             if (!activeFxRate || isNaN(activeFxRate) || activeFxRate <= 0) {
                                 targetPrice = item.currentPrice;
                                 targetStatus = 'offline';
-                                targetError = '실시간 환율 데이터를 로드할 수 없어 오프라인 상태로 유지됩니다.';
+                                targetError = '실시간 환율 수신 실패로 오프라인 유지';
                             } else {
                                 targetPrice = Math.round(q.price * activeFxRate);
+                                targetStatus = 'online';
                             }
                         } else {
                             targetPrice = q.price;
+                            targetStatus = 'online';
                         }
+                    } else if (item.syncStatus === 'online' && Number(item.currentPrice) > 0) {
+                        targetStatus = 'online';
+                        targetError = null;
+                    } else {
+                        targetStatus = 'error';
+                        targetError = '시세 데이터 없음';
                     }
                     const targetCurrency = 'KRW'; // Always store and sync in KRW
                     
@@ -1882,55 +2000,34 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                         </div>
 
                         <div className="bg-slate-50 dark:bg-slate-900/30 p-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 shadow-sm relative">
-                            <div className="flex flex-wrap items-end gap-3">
-                                <div className="flex-[2] min-w-[140px] relative">
-                                    <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">Search Ticker</label>
+                            <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-end gap-2.5 sm:gap-3">
+                                <div className="col-span-2 sm:flex-[2] sm:min-w-[140px] relative">
+                                    <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">종목코드 / 티커</label>
                                     <input 
                                         type="text" 
-                                        placeholder="삼성전자, TSLA, AAPL..." 
+                                        placeholder="예: 005930, TSLA, AAPL" 
                                         value={draftTicker} 
                                         onChange={(e) => setDraftTicker(e.target.value)} 
                                         autoComplete="off"
-                                        className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" 
+                                        className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm font-mono" 
                                     />
-                                    {(isSearching || searchResults.length > 0) && (
-                                        <div className="absolute top-[105%] left-0 w-full bg-white dark:bg-slate-800 border-2 border-indigo-100 dark:border-slate-700 rounded-xl shadow-2xl z-[160] max-h-60 overflow-y-auto">
-                                            {isSearching ? (
-                                                <div className="p-4 text-xs text-slate-400 flex items-center gap-2 font-bold"><div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> 야후에서 찾는 중...</div>
-                                            ) : (
-                                                searchResults.map(res => (
-                                                    <button 
-                                                        key={res.symbol}
-                                                        onClick={() => { setDraftTicker(res.symbol); setSearchResults([]); }}
-                                                        className="w-full text-left px-4 py-3 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 border-b last:border-0 dark:border-slate-700 transition-colors"
-                                                    >
-                                                        <div className="flex justify-between items-start">
-                                                            <span className="text-sm font-black text-slate-800 dark:text-slate-100">{res.name}</span>
-                                                            <span className="text-[10px] bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono font-bold">{res.symbol}</span>
-                                                        </div>
-                                                        <div className="text-[10px] text-slate-400 mt-0.5 font-medium">{res.exch} · {res.symbol.endsWith('.KS') ? '코스피' : res.symbol.endsWith('.KQ') ? '코스닥' : '해외시장'}</div>
-                                                    </button>
-                                                ))
-                                            )}
-                                        </div>
-                                    )}
                                 </div>
 
-                                <div className="w-24">
+                                <div className="col-span-1 sm:w-24">
                                     <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">주식 수</label>
                                     <input type="number" placeholder="0" value={draftShares} onChange={(e) => setDraftShares(e.target.value)} autoComplete="off" className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" />
                                 </div>
 
-                                <div className="w-32">
+                                <div className="col-span-1 sm:w-32">
                                     <label className="text-[10px] font-black text-slate-400 mb-1 block ml-1 uppercase">매입가</label>
                                     <input type="number" placeholder="단가" value={draftAvgPrice} onChange={(e) => setDraftAvgPrice(e.target.value)} autoComplete="off" className="w-full bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-600 rounded-xl px-3 py-2 text-sm font-bold focus:border-indigo-500 outline-none transition-all shadow-sm" />
                                 </div>
 
                                 <button 
                                     onClick={handleAddStock} 
-                                    className="bg-indigo-600 text-white font-black rounded-xl px-5 py-2.5 text-sm hover:bg-indigo-700 transition-all shadow-md active:scale-95 flex items-center gap-2"
+                                    className="col-span-2 sm:w-auto w-full bg-indigo-600 text-white font-black rounded-xl px-5 py-2.5 text-sm hover:bg-indigo-700 transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
                                 >
-                                    추가
+                                    ➕ 종목 추가
                                 </button>
                             </div>
                         </div>
@@ -1938,47 +2035,46 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
                     {/* 4. Stock List Table */}
                     <section className="space-y-3">
-                        <div className="flex items-center justify-between px-1">
-                            <div className="flex items-center gap-3">
-                                <h4 className="text-xs font-black text-slate-500 dark:text-slate-400">📋 연동 종목 리스트</h4>
-                                {/* 통화 표시 설정 토글 */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                            <div className="flex items-center gap-2">
+                                <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 flex-shrink-0">📋 리스트</h4>
+                                {/* 통화 표시 설정 초간결 토글 (₩ / ₩ / $) */}
                                 {(() => {
-                                    const hasValidFx = (Number(fxRate) > 0) || ((Number(localStorage.getItem('asset_last_usd_krw')) || 0) > 0);
+                                    const hasValidFx = Number(fxRate) > 0;
                                     return (
-                                        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                                        <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-900/60 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-inner">
                                             <button
                                                 type="button"
                                                 onClick={() => toggleCurrencyMode('KRW_ONLY')}
-                                                className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${
+                                                className={`px-2 py-0.5 text-[10px] font-black rounded transition-all ${
                                                     currencyMode === 'KRW_ONLY' || !hasValidFx
                                                         ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm border border-slate-200 dark:border-slate-600'
                                                         : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                                                 }`}
-                                                title="모든 주식 시세를 원화(₩)로 통일하여 표시"
+                                                title="원화만 보기 (₩)"
                                             >
-                                                🇰🇷 원화만 보기 (₩)
+                                                ₩
                                             </button>
                                             <button
                                                 type="button"
                                                 disabled={!hasValidFx}
                                                 onClick={() => hasValidFx && toggleCurrencyMode('BOTH')}
-                                                className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${
+                                                className={`px-2 py-0.5 text-[10px] font-black rounded transition-all ${
                                                     !hasValidFx
                                                         ? 'opacity-40 cursor-not-allowed text-slate-400'
                                                         : currencyMode === 'BOTH'
                                                             ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm border border-slate-200 dark:border-slate-600'
                                                             : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                                                 }`}
-                                                title={hasValidFx ? "해외주식은 원화(₩)와 원본 달러($)를 병행 표시" : "실시간 환율(API/캐시) 데이터가 정상 로드된 후 활성화됩니다."}
+                                                title={hasValidFx ? "원화/달러 병행 보기 (₩ / $)" : "실시간 환율 수신 중"}
                                             >
-                                                🌐 원화 + 달러 병행 (₩ / $)
-                                                {!hasValidFx && <span className="ml-1 text-[9px] text-amber-500 font-bold">(환율 수신 중)</span>}
+                                                ₩ / $
                                             </button>
                                         </div>
                                     );
                                 })()}
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
                                 <button
                                     onClick={() => {
                                         if (confirm("정말로 모든 연동 종목을 삭제하시겠습니까?")) {
@@ -1986,26 +2082,27 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                             if (window.addToast) window.addToast("🗑️ 모든 연동 종목이 일괄 삭제되었습니다.", "info");
                                         }
                                     }}
-                                    className="text-[10px] font-black text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2.5 py-1 rounded-lg border border-red-100 dark:border-red-900/40 flex items-center gap-1 hover:bg-red-100 dark:hover:bg-red-950/40 transition-all active:scale-95"
+                                    className="text-[10px] font-black text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2 py-1 rounded-lg border border-red-100 dark:border-red-900/40 flex items-center gap-1 hover:bg-red-100 dark:hover:bg-red-950/40 transition-all active:scale-95"
                                 >
                                     <span>🗑️</span>
-                                    <span>종목 일괄삭제</span>
+                                    <span>전체삭제</span>
                                 </button>
                                 <button
                                     onClick={handleManualRefresh}
                                     disabled={isRefreshing}
-                                    className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2.5 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800 flex items-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-850 transition-all active:scale-95 disabled:opacity-50"
+                                    className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800 flex items-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-850 transition-all active:scale-95 disabled:opacity-50"
                                 >
                                     {isRefreshing ? (
                                         <span className="w-2.5 h-2.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></span>
                                     ) : (
                                         <span>🔄</span>
                                     )}
-                                    <span>실시간 시세 새로고침</span>
+                                    <span>새로고침</span>
                                 </button>
                             </div>
                         </div>
-                        <div className="overflow-x-auto">
+                        {/* 데스크톱 전용 테이블 (md 이상) */}
+                        <div className="hidden md:block overflow-x-auto">
                             <table className="w-full text-left border-separate border-spacing-y-2 min-w-[600px]">
                                 <thead className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4">
                                     <tr>
@@ -2274,11 +2371,171 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                     );})}
                                 </tbody>
                             </table>
-                            {linkedItems.length === 0 && (
-                                <div className="text-center py-10 bg-slate-50/50 dark:bg-slate-900/20 rounded-2xl border-2 border-dashed dark:border-slate-700 text-slate-400 text-xs font-bold italic">연동된 종목이 없습니다.</div>
-                            )}
-                            
-                            {/* [추가] 중복 제거된 연동 오류 사유 리스트를 테이블 하단에 출력 */}
+                        </div>
+
+                        {/* 모바일 전용 카드 리스트 (md 미만 - 좌우 스크롤 없이 한눈에 카드 뷰) */}
+                        <div className="block md:hidden space-y-2.5">
+                            {sortedItemsWithMeta.map((item) => {
+                                const isProfit = item.profitManwon >= 0;
+                                const isTossConfigured = !!localStorage.getItem('toss_client_id') && !!localStorage.getItem('toss_client_secret');
+                                const profitColor = isProfit ? 'text-red-500 dark:text-red-400' : 'text-blue-500 dark:text-blue-400';
+                                const safeFxRate = fxRate || 1300;
+                                const isOverseas = /^[A-Za-z]/.test(item.ticker || '') && !/\.KS$/i.test(item.ticker || '');
+
+                                return (
+                                    <div key={item.id} className="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-2.5">
+                                        {/* 상단: 종목명, 티커, 평가금액 & 손익 */}
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="font-black text-sm text-slate-800 dark:text-slate-100 truncate" title={item.name}>{item.name}</span>
+                                                    <span className="text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded">
+                                                        {item.ticker || '티커 없음'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    {item.autoUpdate === false || !isTossConfigured ? (
+                                                        <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700">OFFLINE</span>
+                                                    ) : item.syncStatus === 'error' ? (
+                                                        <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400" title={item.syncErrorReason || ''}>ERROR</span>
+                                                    ) : (
+                                                        <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400">ONLINE</span>
+                                                    )}
+                                                    <span className="text-[10px] text-slate-400">비중 {(item.weight || 0).toFixed(1)}%</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="text-right flex-shrink-0">
+                                                <div className="font-black text-indigo-600 dark:text-indigo-400 text-sm tabular-nums">
+                                                    {Math.round(item.valueManwon).toLocaleString()}<span className="text-[10px] font-bold ml-0.5">만</span>
+                                                </div>
+                                                <div className={`text-[11px] font-black tabular-nums ${profitColor}`}>
+                                                    {isProfit ? '+' : ''}{Math.round(item.profitManwon).toLocaleString()}만
+                                                    <span className="text-[9px] ml-1 font-bold">({isProfit ? '▲' : '▼'}{Math.abs(item.profitRate).toFixed(1)}%)</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* 중단: 수량/매입가 및 현재가 그리드 */}
+                                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800 text-xs">
+                                            {/* 수량 및 매입단가 */}
+                                            <div className="bg-white dark:bg-slate-800/80 p-2 rounded-xl border border-slate-100 dark:border-slate-700/60">
+                                                <div className="text-[9px] font-black text-slate-400 uppercase mb-0.5">수량 / 매입단가</div>
+                                                <div className="flex items-center justify-between">
+                                                    {editingCell && editingCell.id === item.id && editingCell.field === 'shares' ? (
+                                                        <input 
+                                                            type="number" 
+                                                            className="w-16 bg-slate-100 dark:bg-slate-700 border border-indigo-400 rounded px-1 text-xs font-bold"
+                                                            defaultValue={item.shares}
+                                                            autoFocus
+                                                            onBlur={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
+                                                                setEditingCell(null);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
+                                                                    setEditingCell(null);
+                                                                }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <span onClick={() => setEditingCell({ id: item.id, field: 'shares' })} className="font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+                                                            {item.shares}주 ✏️
+                                                        </span>
+                                                    )}
+
+                                                    {editingCell && editingCell.id === item.id && editingCell.field === 'avgPrice' ? (
+                                                        <input 
+                                                            type="number" 
+                                                            className="w-20 bg-slate-100 dark:bg-slate-700 border border-indigo-400 rounded px-1 text-xs font-bold text-right"
+                                                            defaultValue={item.avgPrice}
+                                                            autoFocus
+                                                            onBlur={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
+                                                                setEditingCell(null);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
+                                                                    setEditingCell(null);
+                                                                }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <span onClick={() => setEditingCell({ id: item.id, field: 'avgPrice' })} className="text-[10px] text-slate-500 font-mono cursor-pointer">
+                                                            {(() => {
+                                                                const krwAvg = Math.round(Number(item.avgPrice) || 0);
+                                                                if (currencyMode === 'KRW_ONLY' || !isOverseas) return `₩${krwAvg.toLocaleString()}`;
+                                                                const usdAvg = safeFxRate > 0 ? (krwAvg / safeFxRate) : 0;
+                                                                return `₩${krwAvg.toLocaleString()} (${usdAvg.toFixed(1)})`;
+                                                            })()} ✏️
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* 현재단가 */}
+                                            <div className="bg-white dark:bg-slate-800/80 p-2 rounded-xl border border-slate-100 dark:border-slate-700/60">
+                                                <div className="text-[9px] font-black text-slate-400 uppercase mb-0.5">현재단가</div>
+                                                <div>
+                                                    {editingCell && editingCell.id === item.id && editingCell.field === 'currentPrice' ? (
+                                                        <input 
+                                                            type="number" 
+                                                            className="w-full bg-slate-100 dark:bg-slate-700 border border-indigo-400 rounded px-1 text-xs font-bold"
+                                                            defaultValue={item.currentPrice}
+                                                            autoFocus
+                                                            onBlur={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, currentPrice: val } : li));
+                                                                setEditingCell(null);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, currentPrice: val } : li));
+                                                                    setEditingCell(null);
+                                                                }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <span onClick={() => setEditingCell({ id: item.id, field: 'currentPrice' })} className="font-bold text-slate-800 dark:text-slate-100 cursor-pointer block truncate">
+                                                            {(() => {
+                                                                const krwCur = Math.round(Number(item.currentPrice) || 0);
+                                                                if (currencyMode === 'KRW_ONLY' || !isOverseas) return `₩${krwCur.toLocaleString()}`;
+                                                                const usdCur = safeFxRate > 0 ? (krwCur / safeFxRate) : 0;
+                                                                return `₩${krwCur.toLocaleString()} (${usdCur.toFixed(1)})`;
+                                                            })()} ✏️
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* 하단: 삭제 버튼 */}
+                                        <div className="flex justify-end pt-1">
+                                            <button 
+                                                onClick={() => setLinkedItems(prev => prev.filter(li => li.id !== item.id))} 
+                                                className="text-[10px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-all"
+                                            >
+                                                <span>🗑️</span>
+                                                <span>종목 삭제</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {linkedItems.length === 0 && (
+                            <div className="text-center py-10 bg-slate-50/50 dark:bg-slate-900/20 rounded-2xl border-2 border-dashed dark:border-slate-700 text-slate-400 text-xs font-bold italic">연동된 종목이 없습니다.</div>
+                        )}
+                        
+                        {/* [추가] 중복 제거된 연동 오류 사유 리스트를 테이블 하단에 출력 */}
                             {(() => {
                                 const uniqueErrors = Array.from(new Set(
                                     linkedItems
@@ -2296,7 +2553,6 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                     </div>
                                 );
                             })()}
-                        </div>
                     </section>
                 </div>
 
