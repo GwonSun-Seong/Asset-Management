@@ -1233,12 +1233,9 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
             const shares = parseFloat(item.shares) || 0;
             const id = item.id || `stock_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 5)}`;
             
-            let evalVal = curPrice * shares;
-            let purVal = avgPrice * shares;
-            if (item.currency === 'USD') { 
-                evalVal *= safeFxRate; 
-                purVal *= safeFxRate; 
-            }
+            // 모든 단가는 이미 KRW 기준으로 저장 및 관리되므로 추가 환율 곱셈을 엄격히 금지함 (중복 곱셈 버그 영구 차단)
+            const evalVal = curPrice * shares;
+            const purVal = avgPrice * shares;
 
             const evalManwon = evalVal / 10000;
             const purManwon = purVal / 10000;
@@ -1907,30 +1904,41 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                             <div className="flex items-center gap-3">
                                 <h4 className="text-xs font-black text-slate-500 dark:text-slate-400">📋 연동 종목 리스트</h4>
                                 {/* 통화 표시 설정 토글 */}
-                                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
-                                    <button
-                                        onClick={() => toggleCurrencyMode('KRW_ONLY')}
-                                        className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${
-                                            currencyMode === 'KRW_ONLY'
-                                                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm border border-slate-200 dark:border-slate-600'
-                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                                        }`}
-                                        title="모든 주식 시세를 원화(₩)로 통일하여 표시"
-                                    >
-                                        🇰🇷 원화만 보기 (₩)
-                                    </button>
-                                    <button
-                                        onClick={() => toggleCurrencyMode('BOTH')}
-                                        className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${
-                                            currencyMode === 'BOTH'
-                                                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm border border-slate-200 dark:border-slate-600'
-                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                                        }`}
-                                        title="해외주식은 원화(₩)와 원본 달러($)를 병행 표시"
-                                    >
-                                        🌐 원화 + 달러 병행 (₩ / $)
-                                    </button>
-                                </div>
+                                {(() => {
+                                    const hasValidFx = (Number(fxRate) > 0) || ((Number(localStorage.getItem('asset_last_usd_krw')) || 0) > 0);
+                                    return (
+                                        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleCurrencyMode('KRW_ONLY')}
+                                                className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${
+                                                    currencyMode === 'KRW_ONLY' || !hasValidFx
+                                                        ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm border border-slate-200 dark:border-slate-600'
+                                                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                }`}
+                                                title="모든 주식 시세를 원화(₩)로 통일하여 표시"
+                                            >
+                                                🇰🇷 원화만 보기 (₩)
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={!hasValidFx}
+                                                onClick={() => hasValidFx && toggleCurrencyMode('BOTH')}
+                                                className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${
+                                                    !hasValidFx
+                                                        ? 'opacity-40 cursor-not-allowed text-slate-400'
+                                                        : currencyMode === 'BOTH'
+                                                            ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm border border-slate-200 dark:border-slate-600'
+                                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                }`}
+                                                title={hasValidFx ? "해외주식은 원화(₩)와 원본 달러($)를 병행 표시" : "실시간 환율(API/캐시) 데이터가 정상 로드된 후 활성화됩니다."}
+                                            >
+                                                🌐 원화 + 달러 병행 (₩ / $)
+                                                {!hasValidFx && <span className="ml-1 text-[9px] text-amber-500 font-bold">(환율 수신 중)</span>}
+                                            </button>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                             <div className="flex items-center gap-2">
                                 <button

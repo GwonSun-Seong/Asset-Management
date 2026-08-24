@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import AssetSummaryCard from './components/AssetSummaryCard';
 import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioComponents';
+import MarketTickerSlide from './components/MarketTickerSlide';
 
         const CoreSettingsCard = ({
             monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
@@ -5799,30 +5800,11 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                             {assets[sectorKey]?.map((asset, idx) => {
                                                 const itemRec = calculation.rebalanceInfo?.itemRecs?.[asset.id] || 0;
                                                 return (
-                                                <div 
+                                                                                                <div 
                                                     key={asset.id || idx} 
-                                                    draggable={true}
-                                                    onDragStart={(e) => handleAssetDragStart(e, sectorKey, idx)}
-                                                    onDragOver={handleAssetDragOver}
-                                                    onDrop={(e) => handleAssetDrop(e, sectorKey, idx)}
-                                                    className={'group relative bg-white dark:bg-gray-800 rounded-xl p-5 pl-11 shadow-sm border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md transition-all duration-200 ' + 
-                                                        (excludedAssetIds.includes(asset.id) ? 'opacity-60 bg-rose-50/20 dark:bg-rose-950/10 border-rose-200 dark:border-rose-900/40 ' : '') +
-                                                        (draggedAssetSector === sectorKey && draggedAssetIndex === idx ? 'opacity-40 border-dashed border-indigo-400' : '')}
+                                                    className={'group relative bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md transition-all duration-200 ' + 
+                                                        (excludedAssetIds.includes(asset.id) ? 'opacity-60 bg-rose-50/20 dark:bg-rose-950/10 border-rose-200 dark:border-rose-900/40 ' : '')}
                                                 >
-                                                    {/* Drag handle */}
-                                                    <div 
-                                                        className="absolute left-2.5 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing text-gray-300 dark:text-gray-600 hover:text-indigo-500 dark:hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-6 h-12 select-none"
-                                                        title="드래그하여 순서 변경"
-                                                    >
-                                                        <svg className="w-4 h-6" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                                                            <circle cx="9" cy="5" r="1.5" fill="currentColor"/>
-                                                            <circle cx="15" cy="5" r="1.5" fill="currentColor"/>
-                                                            <circle cx="9" cy="12" r="1.5" fill="currentColor"/>
-                                                            <circle cx="15" cy="12" r="1.5" fill="currentColor"/>
-                                                            <circle cx="9" cy="19" r="1.5" fill="currentColor"/>
-                                                            <circle cx="15" cy="19" r="1.5" fill="currentColor"/>
-                                                        </svg>
-                                                    </div>
 
                                                     {/* Card Header (Icon, Name Input, Actions) */}
                                                     <div className="flex items-center justify-between gap-4 mb-4">
@@ -5850,6 +5832,36 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                                         </div>
 
                                                         <div className="flex items-center gap-2">
+                                                            {/* [추가] 항목 순서 이동 버튼 (위/아래) */}
+                                                            {(assets[sectorKey]?.length || 0) > 1 && (
+                                                                <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-700/60 p-0.5 rounded-lg border border-gray-200 dark:border-gray-600">
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={idx === 0}
+                                                                        onClick={() => moveAsset(sectorKey, idx, 'up')}
+                                                                        className="p-1 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-white dark:hover:bg-gray-600 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
+                                                                        title="위로 이동"
+                                                                        aria-label="위로 이동"
+                                                                    >
+                                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                                                                        </svg>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={idx === (assets[sectorKey]?.length || 0) - 1}
+                                                                        onClick={() => moveAsset(sectorKey, idx, 'down')}
+                                                                        className="p-1 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-white dark:hover:bg-gray-600 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
+                                                                        title="아래로 이동"
+                                                                        aria-label="아래로 이동"
+                                                                    >
+                                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                                                        </svg>
+                                                                    </button>
+                                                                </div>
+                                                            )}
+
                                                             {/* [추가] 세부 자산 항목 개별 비중 제외/포함 토글 버튼 */}
                                                             {sectorKey !== 'loan' && asset.id && (
                                                                 <button
@@ -7272,6 +7284,9 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
                                 ))}
                             </div>
                             
+                            {/* [추가] 토스 실시간 장 운영 캘린더 & 환율 좌우 슬라이더 위젯 (API 키 미등록 시 자동 숨김) */}
+                            <MarketTickerSlide />
+
                             {/* [추가] 노후 인생 가챠 배너 단일 노출 */}
                             <div className="mt-4 relative group">
                                 <div className="p-4 bg-gradient-to-br from-fuchsia-500 via-purple-600 to-indigo-600 dark:from-fuchsia-950 dark:to-indigo-950 rounded-xl shadow-lg text-white relative overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_8px_20px_rgba(217,70,239,0.35)]" onClick={() => setIsGameModalOpen(true)}>

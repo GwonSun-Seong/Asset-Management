@@ -1504,7 +1504,7 @@ const fetchTossExchangeRate = async () => {
     
     try {
         const token = await getTossToken(clientId, clientSecret);
-        const response = await fetchTossWithProxy('https://openapi.tossinvest.com/api/v1/exchange-rate', {
+        const response = await fetchTossWithProxy('https://openapi.tossinvest.com/api/v1/exchange-rate?baseCurrency=USD&quoteCurrency=KRW', {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -1556,6 +1556,179 @@ const fetchTossExchangeRate = async () => {
         console.warn("fetchTossExchangeRate failed, using cached/default:", e);
     }
     return Number(localStorage.getItem('asset_last_usd_krw')) || 0;
+};
+
+
+// [추가] 토스증권 OpenAPI 환율 상세 정보 조회
+const fetchTossExchangeRateDetails = async () => {
+    const clientId = localStorage.getItem('toss_client_id');
+    const clientSecret = localStorage.getItem('toss_client_secret');
+    if (!clientId || !clientSecret) {
+        const cached = Number(localStorage.getItem('asset_last_usd_krw')) || 0;
+        return cached > 0 ? { rate: cached, baseCurrency: 'USD', quoteCurrency: 'KRW', isCached: true } : null;
+    }
+    
+    try {
+        const token = await getTossToken(clientId, clientSecret);
+        const response = await fetchTossWithProxy('https://openapi.tossinvest.com/api/v1/exchange-rate?baseCurrency=USD&quoteCurrency=KRW', {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            const res = data.result || {};
+            const rateNum = parseFloat(res.rate);
+            if (!isNaN(rateNum) && rateNum > 0) {
+                localStorage.setItem('asset_last_usd_krw', rateNum.toString());
+                return {
+                    rate: rateNum,
+                    midRate: parseFloat(res.midRate) || null,
+                    basisPoint: parseFloat(res.basisPoint) || 0,
+                    rateChangeType: res.rateChangeType || 'FLAT',
+                    validFrom: res.validFrom || null,
+                    validUntil: res.validUntil || null,
+                    baseCurrency: res.baseCurrency || 'USD',
+                    quoteCurrency: res.quoteCurrency || 'KRW',
+                    updatedAt: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                    isLive: true
+                };
+            }
+        }
+    } catch (e) {
+        console.warn("fetchTossExchangeRateDetails failed:", e);
+    }
+    const cached = Number(localStorage.getItem('asset_last_usd_krw')) || 0;
+    return cached > 0 ? { rate: cached, baseCurrency: 'USD', quoteCurrency: 'KRW', isCached: true } : null;
+};
+
+// [추가] 토스증권 OpenAPI 장 운영 정보 조회 (KR / US)
+const fetchTossMarketCalendar = async (market = 'KR') => {
+    const clientId = localStorage.getItem('toss_client_id');
+    const clientSecret = localStorage.getItem('toss_client_secret');
+    if (!clientId || !clientSecret) return null;
+    
+    try {
+        const token = await getTossToken(clientId, clientSecret);
+        const response = await fetchTossWithProxy(`https://openapi.tossinvest.com/api/v1/market-calendar/${market.toUpperCase()}`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            const result = data.result || {};
+            const now = new Date();
+
+            if (market.toUpperCase() === 'KR') {
+                const today = result.today || {};
+                const integrated = today.integrated;
+                if (!integrated) {
+                    return { market: 'KR', marketName: '국내 증시', isHoliday: true, sessionLabel: '휴장일', statusColor: 'gray', today, previousBusinessDay: result.previousBusinessDay, nextBusinessDay: result.nextBusinessDay, raw: result };
+                }
+                const { preMarket, regularMarket, afterMarket } = integrated;
+                
+                const isBetween = (session) => {
+                    if (!session || !session.startTime || !session.endTime) return false;
+                    const start = new Date(session.startTime);
+                    const end = new Date(session.endTime);
+                    return now >= start && now <= end;
+                };
+
+                let currentSession = 'CLOSED';
+                let sessionLabel = '장 마감';
+                let statusColor = 'gray';
+
+                if (isBetween(regularMarket)) {
+                    currentSession = 'REGULAR';
+                    sessionLabel = '정규장';
+                    statusColor = 'emerald';
+                } else if (isBetween(preMarket)) {
+                    currentSession = 'PRE';
+                    sessionLabel = '장전 시간외';
+                    statusColor = 'amber';
+                } else if (isBetween(afterMarket)) {
+                    currentSession = 'AFTER';
+                    sessionLabel = '장후 시간외';
+                    statusColor = 'indigo';
+                }
+
+                const formatTime = (iso) => iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
+
+                return {
+                    market: 'KR',
+                    marketName: '국내 증시',
+                    isHoliday: false,
+                    currentSession,
+                    sessionLabel,
+                    statusColor,
+                    regularTime: `${formatTime(regularMarket?.startTime)} ~ ${formatTime(regularMarket?.endTime)}`,
+                    preTime: `${formatTime(preMarket?.startTime)} ~ ${formatTime(preMarket?.endTime)}`,
+                    afterTime: `${formatTime(afterMarket?.startTime)} ~ ${formatTime(afterMarket?.endTime)}`,
+                    today,
+                    previousBusinessDay: result.previousBusinessDay,
+                    nextBusinessDay: result.nextBusinessDay,
+                    raw: result
+                };
+            } else {
+                // US Market
+                const today = result.today || {};
+                const { dayMarket, preMarket, regularMarket, afterMarket } = today;
+                if (!regularMarket && !preMarket && !dayMarket && !afterMarket) {
+                    return { market: 'US', marketName: '미국 증시', isHoliday: true, sessionLabel: '휴장일', statusColor: 'gray', today, previousBusinessDay: result.previousBusinessDay, nextBusinessDay: result.nextBusinessDay, raw: result };
+                }
+
+                const isBetween = (session) => {
+                    if (!session || !session.startTime || !session.endTime) return false;
+                    const start = new Date(session.startTime);
+                    const end = new Date(session.endTime);
+                    return now >= start && now <= end;
+                };
+
+                let currentSession = 'CLOSED';
+                let sessionLabel = '장 마감';
+                let statusColor = 'gray';
+
+                if (isBetween(regularMarket)) {
+                    currentSession = 'REGULAR';
+                    sessionLabel = '정규장';
+                    statusColor = 'emerald';
+                } else if (isBetween(preMarket)) {
+                    currentSession = 'PRE';
+                    sessionLabel = '프리마켓';
+                    statusColor = 'amber';
+                } else if (isBetween(afterMarket)) {
+                    currentSession = 'AFTER';
+                    sessionLabel = '애프터마켓';
+                    statusColor = 'indigo';
+                } else if (isBetween(dayMarket)) {
+                    currentSession = 'DAY';
+                    sessionLabel = '데이마켓';
+                    statusColor = 'sky';
+                }
+
+                const formatTime = (iso) => iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
+
+                return {
+                    market: 'US',
+                    marketName: '미국 증시',
+                    isHoliday: false,
+                    currentSession,
+                    sessionLabel,
+                    statusColor,
+                    regularTime: `${formatTime(regularMarket?.startTime)} ~ ${formatTime(regularMarket?.endTime)}`,
+                    preTime: `${formatTime(preMarket?.startTime)} ~ ${formatTime(preMarket?.endTime)}`,
+                    afterTime: `${formatTime(afterMarket?.startTime)} ~ ${formatTime(afterMarket?.endTime)}`,
+                    dayTime: `${formatTime(dayMarket?.startTime)} ~ ${formatTime(dayMarket?.endTime)}`,
+                    today,
+                    previousBusinessDay: result.previousBusinessDay,
+                    nextBusinessDay: result.nextBusinessDay,
+                    raw: result
+                };
+            }
+        }
+    } catch (e) {
+        console.warn(`fetchTossMarketCalendar(${market}) failed:`, e);
+    }
+    return null;
 };
 
 // [추가] 목표 달성 기간 계산 (Goal Seek)
@@ -1830,6 +2003,8 @@ window.fetchTossQuotes = fetchTossQuotes;
 window.fetchTossCandles = fetchTossCandles;
 window.fetchTossSearch = fetchTossSearch;
 window.fetchTossExchangeRate = fetchTossExchangeRate;
+window.fetchTossExchangeRateDetails = fetchTossExchangeRateDetails;
+window.fetchTossMarketCalendar = fetchTossMarketCalendar;
 window.fetchBitcoinData = fetchBitcoinData;
 window.calculateGoalReachMonth = calculateGoalReachMonth;
 window.normalizeTargets = normalizeTargets;
