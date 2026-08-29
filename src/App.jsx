@@ -856,6 +856,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
             const [assetHistory, setAssetHistory] = useState([]);
             const [showProjectionInHistory, setShowProjectionInHistory] = useState(false);
+            const [historyPeriod, setHistoryPeriod] = useState(() => localStorage.getItem('asset_history_period') || 'ALL');
             const [isManualHistoryModalOpen, setIsManualHistoryModalOpen] = useState(false);
             const [editingManualHistoryData, setEditingManualHistoryData] = useState(null);
             const [snowballStep, setSnowballStep] = useState(() => {
@@ -3545,20 +3546,64 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     let sortedMonthKeys = []; // [추가] 클릭 이벤트 핸들링을 위해 키 저장
                     let refDatasetsData = []; // [추가] 평균 계산을 위한 참조 데이터 수집
 
-                    // 항상 원본 날짜 그대로 사용
-                    finalLabels = assetHistory.map(item => {
+                    const rawSorted = [...assetHistory].sort((a, b) => new Date(a.date) - new Date(b.date));
+                    
+                    // 기간 필터 (1년 / 3년 / 전체) 적용
+                    let sortedHistory = rawSorted;
+                    if (rawSorted.length > 0 && historyPeriod !== 'ALL') {
+                        const latestDate = new Date(rawSorted[rawSorted.length - 1].date);
+                        const yearsBack = historyPeriod === '1Y' ? 1 : 3;
+                        const cutoff = new Date(latestDate.getFullYear() - yearsBack, latestDate.getMonth(), latestDate.getDate()).toISOString().slice(0, 10);
+                        const filtered = rawSorted.filter(h => h.date >= cutoff);
+                        if (filtered.length >= 2) {
+                            sortedHistory = filtered;
+                        }
+                    }
+
+                    let historyDates = [];
+                    let pointRadii = [];
+
+                    // ⏱️ 진짜 시간 비례(True Time-Scale) 단일 엔진: 날짜 공백을 정직한 시간비율로 보간
+                    sortedHistory.forEach((item, idx) => {
                         const [y, m, d] = item.date.split('-');
-                        return `${Number(m)}/${Number(d)}`;
+                        const val = historyViewMode === 'gross' ? Number(item.grossWorth || item.netWorth) : Number(item.netWorth);
+                        
+                        // 직전 기록과의 시간 차이가 25일 이상이면 중간 시간비례 보간점 추가 (왜곡 0% 정직한 기울기)
+                        if (idx > 0) {
+                            const prev = sortedHistory[idx - 1];
+                            const prevVal = historyViewMode === 'gross' ? Number(prev.grossWorth || prev.netWorth) : Number(prev.netWorth);
+                            const d1 = new Date(prev.date);
+                            const d2 = new Date(item.date);
+                            const diffDays = Math.round((d2 - d1) / 86400000);
+                            
+                            if (diffDays >= 25) {
+                                const steps = Math.min(12, Math.floor(diffDays / 20));
+                                for (let s = 1; s <= steps; s++) {
+                                    const interpTime = d1.getTime() + (d2.getTime() - d1.getTime()) * (s / (steps + 1));
+                                    const interpDate = new Date(interpTime);
+                                    const iy = String(interpDate.getFullYear()).slice(-2);
+                                    const im = interpDate.getMonth() + 1;
+                                    const id = interpDate.getDate();
+                                    
+                                    historyDates.push(interpDate.toISOString().slice(0, 10));
+                                    finalLabels.push(`'${iy}. ${im}/${id}`);
+                                    finalHistoryData.push(Math.round(prevVal + (val - prevVal) * (s / (steps + 1))));
+                                    pointRadii.push(0); // 중간 보간점은 포인트 숨김 (매끄러운 선 유지)
+                                }
+                            }
+                        }
+                        
+                        historyDates.push(item.date);
+                        finalLabels.push(`'${y.slice(-2)}. ${Number(m)}/${Number(d)}`);
+                        finalHistoryData.push(val);
+                        pointRadii.push(4);
                     });
-                    finalHistoryData = assetHistory.map(item => historyViewMode === 'gross' ? Number(item.grossWorth || item.netWorth) : Number(item.netWorth));
                 
                     let projectionData = new Array(finalHistoryData.length).fill(null);
-                    // [추가] 범위 데이터 초기화 (히스토리 구간은 null)
                     optimisticData = new Array(finalHistoryData.length).fill(null);
                     pessimisticData = new Array(finalHistoryData.length).fill(null);
 
                 if (historyProjectionData && historyProjectionData.projections && historyProjectionData.projections.length > 0) {
-                    // 마지막 히스토리 지점과 연결하여 연속성 확보
                     if (finalHistoryData.length > 0) {
                         const lastVal = finalHistoryData[finalHistoryData.length - 1];
                         projectionData[finalHistoryData.length - 1] = lastVal;
@@ -3569,23 +3614,17 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     historyProjectionData.projections.forEach((p, idx) => {
                         if (idx === 0) return;
                         
-                        // 미래 날짜 라벨 생성
                         const [y, m] = (historyProjectionData.baseDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
                         const d = new Date(y, m - 1 + idx);
-                        const label = `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth() + 1).padStart(2, '0')}월`; // 미래는 항상 월 단위
+                        const label = `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth() + 1).padStart(2, '0')}월`;
                         
-                        // 라벨 중복 체크 (히스토리와 겹치지 않게)
                         if (!finalLabels.includes(label)) {
                             finalLabels.push(label);
-                            
-                            // [추가] 불확실성 범위 계산 (매월 0.5%씩 변동성 누적 가정)
                             const volatility = 0.005 * idx; 
-                            
                             const val = historyViewMode === 'gross' ? p.gross : p.net;
                             projectionData.push(Math.floor(val));
                             optimisticData.push(Math.floor(val * (1 + volatility)));
                             pessimisticData.push(Math.floor(val * (1 - volatility)));
-                            
                             finalHistoryData.push(null);
                         }
                     });
@@ -3646,7 +3685,13 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         pointHoverBackgroundColor: 'rgb(255, 255, 255)',
                         pointHoverBorderWidth: 2,
                         pointHoverBorderColor: 'rgb(79, 70, 229)', // [수정] 콤마 추가
-                        pointRadius: getDynamicPointRadius // [적용] 동적 포인트 크기
+                        pointRadius: (ctx) => {
+                            if (pointRadii[ctx.dataIndex] !== undefined) {
+                                if (pointRadii[ctx.dataIndex] === 0) return 0;
+                                return getDynamicPointRadius(ctx);
+                            }
+                            return getDynamicPointRadius(ctx);
+                        }
                         ,order: 1 // [추가] 순서 명시 (맨 위)
                         ,pointHitRadius: getDynamicInteractionRadius // [추가] 숨겨진 점 클릭 방지
                     }
@@ -3700,23 +3745,19 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     
                     if (refBaseDate) {
                         const { projections: refProjections } = calculateMonthlyProjection(refData, 120);
-                        const refDatasetData = finalLabels.map(label => {
+                        const refDatasetData = finalLabels.map((label, labelIdx) => {
                             let targetDate;
-                            if (label.includes('년')) {
+                            if (labelIdx < historyDates.length) {
+                                targetDate = new Date(historyDates[labelIdx]);
+                            } else {
                                 const parts = label.match(/(\d+)년 (\d+)월/);
                                 if (parts) targetDate = new Date(Number('20' + parts[1]), Number(parts[2]) - 1, 1);
-                            } else {
-                                const historyItem = assetHistory.find(h => {
-                                    const [y, m, d] = h.date.split('-');
-                                    return `${Number(m)}/${Number(d)}` === label;
-                                });
-                                if (historyItem) targetDate = new Date(historyItem.date);
                             }
 
-                            if (!targetDate) return null;
+                            if (!targetDate || isNaN(targetDate.getTime())) return null;
 
                             const [bY, bM, bD] = refBaseDate.split('-').map(Number);
-                            const base = new Date(bY, bM - 1, bD);
+                            const base = new Date(bY, bM - 1, bD || 1);
                             
                             // 월 차이 계산 (소수점 포함하여 보간)
                             const diffTime = targetDate - base;
@@ -3789,31 +3830,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     });
                 }
 
-                // [추가] ⚡ 스노우볼 분석 활성화 시 마일스톤 구간선 차트 오버레이
-                if (showSnowballAnalysis && assetHistory.length > 0) {
-                    const key = historyViewMode === 'gross' ? 'grossTotal' : 'netWorth';
-                    const sorted = [...assetHistory].sort((a, b) => new Date(a.date) - new Date(b.date));
-                    const baseVal = sorted[0] ? (sorted[0][key] || 0) : 0;
-                    const latestVal = sorted[sorted.length - 1] ? (sorted[sorted.length - 1][key] || 0) : 0;
-                    const step = snowballStep > 0 ? snowballStep : 1000;
-                    
-                    let curM = baseVal + step;
-                    let mCount = 1;
-                    while (curM <= latestVal + step && mCount <= 10) {
-                        datasets.push({
-                            label: `⚡ 마일스톤 ${mCount} (+${formatNumber(curM - baseVal, displayMode)}만)`,
-                            data: new Array(finalLabels.length).fill(curM),
-                            borderColor: darkMode ? 'rgba(245, 158, 11, 0.55)' : 'rgba(217, 119, 6, 0.5)',
-                            borderDash: [4, 4],
-                            borderWidth: 1.5,
-                            pointRadius: 0,
-                            fill: false,
-                            order: 15
-                        });
-                        curM += step;
-                        mCount++;
-                    }
-                }
+// [정리] 메인 차트 마일스톤 가로 점선 제거 (상단 전용 속도 차트 집중)
 
                 const handleChartClick = (evt, elements, chart) => {
                     if (!elements || elements.length === 0) {
@@ -4074,7 +4091,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                     const timerId = setTimeout(renderHistoryChart, 150);
                 return () => clearTimeout(timerId); 
-                }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo, scenarioSortOrder, historyViewMode, activeTab, isExporting, showSnowballAnalysis, snowballStep]);
+                }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo, scenarioSortOrder, historyViewMode, activeTab, isExporting, showSnowballAnalysis, snowballStep, historyPeriod]);
 
             const addAsset = (sector) => {
                 // [보안/개선] 미래 시점 편집 중일 경우, 새 대출의 시작일을 해당 페이즈 시작월로 똑똑하게 자동 맞춤
@@ -4548,25 +4565,39 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     let prevStageDays = null;
 
                     while (currentMilestoneVal <= latestVal) {
-                        const reachedItem = sorted.find(item => (item[key] || 0) >= currentMilestoneVal);
-                        if (reachedItem) {
-                            const dStart = new Date(lastDate);
-                            const dEnd = new Date(reachedItem.date);
-                            const days = Math.max(1, Math.round((dEnd - dStart) / (1000 * 60 * 60 * 24)));
+                        const reachedIdx = sorted.findIndex(item => (item[key] || 0) >= currentMilestoneVal);
+                        if (reachedIdx >= 0) {
+                            const reachedItem = sorted[reachedIdx];
+                            const prevItem = reachedIdx > 0 ? sorted[reachedIdx - 1] : sorted[0];
+                            const v0 = prevItem[key] || 0;
+                            const v1 = reachedItem[key] || 0;
+                            const t0 = new Date(prevItem.date).getTime();
+                            const t1 = new Date(reachedItem.date).getTime();
+                            
+                            // 거대 공백(예: 수년 만의 기록) 시 각 마일스톤 도달 날짜를 정확한 시간비율로 보간
+                            let milestoneTimestamp = t1;
+                            if (v1 > v0) {
+                                const ratio = Math.max(0, Math.min(1, (currentMilestoneVal - v0) / (v1 - v0)));
+                                milestoneTimestamp = Math.round(t0 + (t1 - t0) * ratio);
+                            }
+                            
+                            const dStart = new Date(lastDate).getTime();
+                            const days = Math.max(1, Math.round((milestoneTimestamp - dStart) / (1000 * 60 * 60 * 24)));
                             const speedDiff = prevStageDays !== null ? (prevStageDays - days) : null;
+                            const reachedDateStr = new Date(milestoneTimestamp).toISOString().slice(0, 10);
                             
                             stages.push({
                                 stage: stageIndex,
                                 fromVal: currentMilestoneVal - step,
                                 toVal: currentMilestoneVal,
                                 startDate: lastDate,
-                                dateReached: reachedItem.date,
+                                dateReached: reachedDateStr,
                                 days,
                                 speedDiff,
                                 isCompleted: true
                             });
 
-                            lastDate = reachedItem.date;
+                            lastDate = reachedDateStr;
                             prevStageDays = days;
                             stageIndex++;
                             currentMilestoneVal += step;
@@ -4778,10 +4809,11 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         </div>
                     )}
 
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 px-4 pt-2 gap-4">
-                        <div className="flex items-center gap-3">
-                            <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                                총 {assetHistory.length}개의 기록 <span className="hidden sm:inline">| 최근: {assetHistory[assetHistory.length - 1]?.date} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth, displayMode)}만원)</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 mb-5 px-4 pt-1 border-b border-slate-200/60 dark:border-slate-800/60 pb-3">
+                        {/* 좌측: 기록 카운트 & 과거 기록 추가 버튼 */}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 truncate">
+                                총 <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{assetHistory.length}</span>개 <span className="hidden md:inline font-normal text-slate-400">| 최근: {assetHistory[assetHistory.length - 1]?.date} ({formatNumber(assetHistory[assetHistory.length - 1]?.netWorth, displayMode)}만)</span>
                             </div>
                             <button
                                 type="button"
@@ -4789,15 +4821,42 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                     setEditingManualHistoryData(null);
                                     setIsManualHistoryModalOpen(true);
                                 }}
-                                className="px-2.5 py-1 text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all flex items-center gap-1 active:scale-95 shadow-sm"
+                                className="px-2.5 py-1 text-[11px] sm:text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all flex items-center gap-1 active:scale-95 shadow-sm whitespace-nowrap"
                                 title="프로젝트 시작 이전(과거) 특정 날짜의 자산 수기 추가"
                             >
                                 <span>➕</span>
-                                <span>과거 기록 추가</span>
+                                <span>과거 기록</span>
                             </button>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                            {/* [추가] ⚡ 스노우볼 구간 분석 토글 버튼 */}
+
+                        {/* 우측: [ 1년 | 3년 | 전체 ] 기간 필터 세그먼트 & 스노우볼 & 미래예상 & 지표 */}
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                            {/* 📅 표준 기간 세그먼트 탭 [ 1년 | 3년 | 전체 ] */}
+                            <div className="inline-flex rounded-lg p-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                {[
+                                    { id: '1Y', label: '1년' },
+                                    { id: '3Y', label: '3년' },
+                                    { id: 'ALL', label: '전체' }
+                                ].map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setHistoryPeriod(tab.id);
+                                            localStorage.setItem('asset_history_period', tab.id);
+                                        }}
+                                        className={`px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-black transition-all ${
+                                            historyPeriod === tab.id
+                                                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm'
+                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* ⚡ 스노우볼 구간 분석 토글 버튼 */}
                             <button
                                 type="button"
                                 onClick={() => {
@@ -4805,65 +4864,52 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                     setShowSnowballAnalysis(next);
                                     localStorage.setItem('asset_show_snowball_analysis', next ? 'true' : 'false');
                                 }}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] sm:text-xs font-black transition-all active:scale-95 ${
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] sm:text-xs font-black transition-all active:scale-95 whitespace-nowrap ${
                                     showSnowballAnalysis
-                                        ? 'bg-amber-500 border-amber-400 text-white shadow-md shadow-amber-500/20'
+                                        ? 'bg-amber-500 border-amber-400 text-white shadow-sm shadow-amber-500/20'
                                         : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-amber-300'
                                 }`}
                                 title="설정한 금액 단위별 마일스톤 돌파 소요 일수 및 가속도 상세 타임라인 분석"
                             >
                                 <span>⚡</span>
-                                <span>스노우볼 구간 분석</span>
+                                <span>스노우볼</span>
                             </button>
 
-                            <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-full border transition-colors ${!isPro ? 'bg-gray-100 border-gray-200' : 'bg-blue-50 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800 hover:bg-blue-100'}`}>
-                            <input 
-                                type="checkbox" 
-                                checked={showProjectionInHistory} 
-                                onChange={(e) => {
-                                    if (!isPro) {
-                                        if (!verifiedEmail) {
-                                            if (confirm('PRO 기능(미래 예상 자산 표시)을 확인하거나 후원하려면 로그인이 필요합니다.\n로그인하시겠습니까?')) {
-                                                handleLogin();
+                            {/* 미래 예상 체크박스 */}
+                            <label className={`flex items-center gap-1.5 cursor-pointer px-2.5 py-1 rounded-lg border transition-colors whitespace-nowrap ${!isPro ? 'bg-gray-100 border-gray-200' : 'bg-blue-50 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800 hover:bg-blue-100'}`}>
+                                <input 
+                                    type="checkbox" 
+                                    checked={showProjectionInHistory} 
+                                    onChange={(e) => {
+                                        if (!isPro) {
+                                            if (!verifiedEmail) {
+                                                if (confirm('PRO 기능(미래 예상 자산 표시)을 확인하거나 후원하려면 로그인이 필요합니다.\n로그인하시겠습니까?')) {
+                                                    handleLogin();
+                                                }
+                                                return;
                                             }
+                                            setIsProModalOpen(true);
                                             return;
                                         }
-                                        setIsProModalOpen(true); // PRO 기능 안내 모달 띄우기
-                                        return;
-                                    }
-                                    setShowProjectionInHistory(e.target.checked);
-                                }}
-                                className={`w-4 h-4 rounded focus:ring-blue-500 ${!isPro ? 'text-gray-400' : 'text-blue-600'}`}
-                            />
-                                <span className={`text-[11px] sm:text-xs font-bold flex items-center gap-1 select-none whitespace-nowrap ${!isPro ? 'text-gray-500' : 'text-blue-700'}`}>
-                                {!isPro && <span>🔒</span>}
-                                    <span className="hidden sm:inline">미래 예상 자산 표시</span>
-                                    <span className="sm:hidden">미래 예상</span>
-                            </span>
-                        </label>
-                            <div className="flex items-center gap-1.5">
-                                <span className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400">지표:</span>
+                                        setShowProjectionInHistory(e.target.checked);
+                                    }}
+                                    className={`w-3.5 h-3.5 rounded focus:ring-blue-500 ${!isPro ? 'text-gray-400' : 'text-blue-600'}`}
+                                />
+                                <span className={`text-[11px] sm:text-xs font-bold flex items-center gap-1 select-none ${!isPro ? 'text-gray-500' : 'text-blue-700'}`}>
+                                    {!isPro && <span>🔒</span>}
+                                    <span>미래예상</span>
+                                </span>
+                            </label>
+
+                            {/* 지표 선택 (순자산 / 총자산) */}
                             <select 
                                 value={historyViewMode} 
                                 onChange={(e) => setHistoryViewMode(e.target.value)}
-                                    className="text-[11px] sm:text-xs font-bold border rounded-lg px-2 py-1.5 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
+                                className="text-[11px] sm:text-xs font-bold border rounded-lg px-2 py-1 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm cursor-pointer"
                             >
                                 <option value="net">순자산</option>
                                 <option value="gross">총자산</option>
                             </select>
-                        </div>
-                            <div className="flex items-center gap-1.5">
-                                <span className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400">정렬:</span>
-                            <select 
-                                value={scenarioSortOrder} 
-                                onChange={(e) => setScenarioSortOrder(e.target.value)}
-                                    className="text-[11px] sm:text-xs font-bold border rounded-lg px-2 py-1.5 bg-white dark:bg-gray-800 dark:text-white dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
-                            >
-                                <option value="default">기본</option>
-                                <option value="high">높은순</option>
-                                <option value="low">낮은순</option>
-                            </select>
-                        </div>
                         </div>
                     </div>
                     
