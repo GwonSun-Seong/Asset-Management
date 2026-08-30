@@ -1021,11 +1021,18 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                             return assetItemChanged ? { ...asset, linkedItems: updatedLinked } : asset;
                         });
                     });
-                    return changed ? { ...prev, assets: newAssets } : prev;
+                    if (changed) {
+                        try {
+                            const merged = { ...prev, assets: newAssets };
+                            localStorage.setItem('assetDashboardDataV3', JSON.stringify(merged));
+                        } catch (e) {
+                            console.error("Local save error:", e);
+                        }
+                        return { ...prev, assets: newAssets };
+                    }
+                    return prev;
                 });
-            }, []);
-
-            // 🤖 [AI 마켓 브리핑: 1시간 자동 캐싱 & 백그라운드 실행 엔진 (v2 무결점 검증)]
+            }, []);// 🤖 [AI 마켓 브리핑: 1시간 자동 캐싱 & 백그라운드 실행 엔진 (v2 무결점 검증)]
             const [marketBriefingText, setMarketBriefingText] = useState(() => {
                 const cached = localStorage.getItem('today_market_briefing_text_v2') || '';
                 const lines = cached.split('\n').filter(l => l.trim().length > 5);
@@ -3646,7 +3653,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                 return () => clearTimeout(timerId);
                 }, [projectedDrillDown, projectedSectorTotals, projectedKeys, calculation.projected, excludedAssetIds, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting]);
 
-            // 🍩 [투자자산 이중 드릴다운 도넛 차트: 완벽한 무지개 팔레트 & 금/원자재 지원]
+            // 🍩 [투자자산 이중 드릴다운 도넛 차트: 완벽한 무지개 팔레트 & 금/원자재/현금 통합 집계]
             useEffect(() => {
                 if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
 
@@ -3689,6 +3696,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                     const name = item.name || '';
                                     if (/GOLD|IAU|GLD|411060|금현물|금\s*99/i.test(ticker) || /금현물|금\s*99|골드/i.test(name)) cat = '금';
                                     else if (/BTC|ETH|SOL|XRP|DOGE|코인|가상자산|비트코인|이더리움/i.test(ticker) || /비트코인|이더리움/i.test(name)) cat = '코인';
+                                    else if (/CD금리|KOFR|머니마켓|단기채|MMF/i.test(name)) cat = '현금';
                                     else if (/S&P500|SP500|나스닥|NASDAQ|코스피|200|VOO|QQQ|SPY|IVV|SCHD|379800|360750|449180|ETF/i.test(name) || /^(VOO|QQQ|SPY|IVV|SCHD|JEPI|JEPQ|VT|VTI|TLT)$/i.test(ticker)) cat = '지수';
                                     else cat = '개별주';
                                 }
@@ -3704,8 +3712,21 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         });
                     });
 
-                    const totalCashManwon = totalKrwCashManwon + ((totalUsdCashDollars * safeFxRate) / 10000);
                     const aggregatedList = Array.from(tickerMap.values());
+                    let totalCashFromItems = 0;
+                    const categoryTotals = { '지수': 0, '개별주': 0, '코인': 0, '금': 0 };
+
+                    aggregatedList.forEach(item => {
+                        const cat = item.category || '개별주';
+                        if (cat === '현금' || cat === '원화' || cat === '달러') {
+                            totalCashFromItems += item.totalValueManwon;
+                        } else {
+                            if (categoryTotals[cat] !== undefined) categoryTotals[cat] += item.totalValueManwon;
+                            else categoryTotals['개별주'] += item.totalValueManwon;
+                        }
+                    });
+
+                    const totalCashManwon = totalKrwCashManwon + ((totalUsdCashDollars * safeFxRate) / 10000) + totalCashFromItems;
 
                     let labels = [];
                     let data = [];
@@ -3730,9 +3751,14 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     if (investmentDrillDown) {
                         chartTitle = `${investmentDrillDown} 세부 비중`;
                         if (investmentDrillDown === '현금') {
-                            labels = ['원화 예수금', '달러 예수금'];
-                            data = [Math.round(totalKrwCashManwon), Math.round((totalUsdCashDollars * safeFxRate) / 10000)];
-                            bgColors = [trueRainbowPalette[0], trueRainbowPalette[1]];
+                            const cashItems = aggregatedList.filter(i => i.category === '현금' || i.category === '원화' || i.category === '달러');
+                            labels = ['원화 예수금', '달러 예수금', ...cashItems.map(i => i.name || i.ticker)];
+                            data = [
+                                Math.round(totalKrwCashManwon), 
+                                Math.round((totalUsdCashDollars * safeFxRate) / 10000),
+                                ...cashItems.map(i => Math.round(i.totalValueManwon))
+                            ];
+                            bgColors = trueRainbowPalette.slice(0, labels.length);
                         } else {
                             const categoryItems = aggregatedList
                                 .filter(i => (i.category || '개별주') === investmentDrillDown)
@@ -3753,13 +3779,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                             }
                         }
                     } else {
-                        const categoryTotals = { '지수': 0, '개별주': 0, '코인': 0, '금': 0 };
-                        aggregatedList.forEach(item => {
-                            const cat = item.category || '개별주';
-                            if (categoryTotals[cat] !== undefined) categoryTotals[cat] += item.totalValueManwon;
-                            else categoryTotals['개별주'] += item.totalValueManwon;
-                        });
-
                         const topCategories = [
                             { key: '지수', name: '📈 지수/ETF', val: Math.round(categoryTotals['지수']) },
                             { key: '개별주', name: '🏢 개별주', val: Math.round(categoryTotals['개별주']) },
@@ -5118,7 +5137,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                             Object.keys(assetsObj).forEach(sectorKey => {
                                 const assetList = assetsObj[sectorKey] || [];
                                 assetList.forEach(asset => {
-                                    // 종목연동/증권/연금/코인 계좌의 예수금만 정확히 집계
                                     const hasLinked = (asset.linkedItems || []).some(i => i.ticker && i.shares > 0);
                                     const isInvestSector = ['investment', 'pension', 'crypto'].includes(sectorKey) || /증권|투자|연금|ISA|코인|업비트|빗썸/i.test(asset.name);
 
@@ -5151,6 +5169,8 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                 defaultCategory = '금';
                                             } else if (/BTC|ETH|SOL|XRP|DOGE|코인|가상자산|비트코인|이더리움/i.test(ticker) || /비트코인|이더리움/i.test(name)) {
                                                 defaultCategory = '코인';
+                                            } else if (/CD금리|KOFR|머니마켓|단기채|MMF/i.test(name)) {
+                                                defaultCategory = '현금';
                                             } else if (/S&P500|SP500|나스닥|NASDAQ|코스피|200|VOO|QQQ|SPY|IVV|SCHD|379800|360750|449180|ETF/i.test(name) || /^(VOO|QQQ|SPY|IVV|SCHD|JEPI|JEPQ|VT|VTI|TLT)$/i.test(ticker)) {
                                                 defaultCategory = '지수';
                                             } else {
@@ -5182,7 +5202,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                             const totalCashConvertedManwon = totalKrwCashManwon + ((totalUsdCashDollars * safeFxRate) / 10000);
                             const totalPortfolioAssetsManwon = totalInvestedValueManwon + totalCashConvertedManwon;
 
-                            // 억/만 단위 포맷팅 (예: 1억 2,680만원)
                             const formattedTotalText = (() => {
                                 if (totalPortfolioAssetsManwon >= 10000) {
                                     const eok = Math.floor(totalPortfolioAssetsManwon / 10000);
@@ -5199,10 +5218,15 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                             aggregatedList.sort((a, b) => b.totalValueManwon - a.totalValueManwon);
 
+                            // 카테고리별 합산 시 현금/원화/달러 모두 '현금'으로 안전하게 합산
                             const categoryTotals = { '지수': 0, '개별주': 0, '코인': 0, '금': 0, '현금': totalCashConvertedManwon };
                             aggregatedList.forEach(item => {
                                 const cat = item.category || '개별주';
-                                categoryTotals[cat] = (categoryTotals[cat] || 0) + item.totalValueManwon;
+                                if (cat === '현금' || cat === '원화' || cat === '달러') {
+                                    categoryTotals['현금'] += item.totalValueManwon;
+                                } else {
+                                    categoryTotals[cat] = (categoryTotals[cat] || 0) + item.totalValueManwon;
+                                }
                             });
 
                             const filteredList = aggregatedList.filter(item => {
@@ -5275,7 +5299,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                         >
                                             <div className="text-[10px] text-slate-400 font-bold">💵 현금/예수금</div>
                                             <div className="text-sm font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
-                                                {formatNumber(totalCashConvertedManwon, displayMode)}만 ({totalPortfolioAssetsManwon > 0 ? ((totalCashConvertedManwon / totalPortfolioAssetsManwon) * 100).toFixed(1) : 0}%)
+                                                {formatNumber(categoryTotals['현금'], displayMode)}만 ({totalPortfolioAssetsManwon > 0 ? ((categoryTotals['현금'] / totalPortfolioAssetsManwon) * 100).toFixed(1) : 0}%)
                                             </div>
                                         </div>
                                     </div>
@@ -5289,7 +5313,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                                         {/* 우측: 컴팩트 종목 카드 그리드 (한 줄에 여러 개 카드 배치) */}
                                         <div className="lg:col-span-7 space-y-3">
-                                            {/* 필터 탭 바 (금 추가) */}
+                                            {/* 필터 탭 바 */}
                                             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
                                                 {[
                                                     { id: 'ALL', label: '전체', count: aggregatedList.length },
@@ -5360,7 +5384,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                                 </div>
                                                             </div>
 
-                                                            {/* 2. 분류 드롭다운 (금 추가) */}
+                                                            {/* 2. 분류 드롭다운 (현금/원화/달러 완벽 매핑) */}
                                                             <div className="flex-shrink-0">
                                                                 <select
                                                                     value={item.category || '개별주'}
@@ -5371,6 +5395,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                                     <option value="개별주">🏢 개별주</option>
                                                                     <option value="코인">🪙 코인</option>
                                                                     <option value="금">🟡 금</option>
+                                                                    <option value="현금">💵 현금</option>
                                                                     <option value="원화">💵 원화</option>
                                                                     <option value="달러">💲 달러</option>
                                                                 </select>
