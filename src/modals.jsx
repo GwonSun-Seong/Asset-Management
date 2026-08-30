@@ -1647,9 +1647,14 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
         setIsRefreshing(true);
         try {
+            let liveRate = 0;
             if (window.fetchTossExchangeRate) {
-                const rate = await window.fetchTossExchangeRate();
-                setFxRate(rate);
+                try {
+                    liveRate = await window.fetchTossExchangeRate();
+                    setFxRate(liveRate);
+                } catch (e) {
+                    console.warn("Manual refresh FX error:", e);
+                }
             }
 
             const fetchFn = window.fetchTossQuotes;
@@ -1681,7 +1686,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                     } else if (q && q.price) {
                         const isUsStock = /^[A-Za-z]/.test(item.ticker);
                         if (isUsStock) {
-                            const activeFxRate = fxRate > 0 ? fxRate : Number(localStorage.getItem('asset_last_usd_krw'));
+                            const activeFxRate = liveRate > 0 ? liveRate : (fxRate > 0 ? fxRate : Number(localStorage.getItem('asset_last_usd_krw')));
                             if (!activeFxRate || isNaN(activeFxRate) || activeFxRate <= 0) {
                                 targetPrice = item.currentPrice;
                                 targetStatus = 'offline';

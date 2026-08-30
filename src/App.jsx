@@ -1057,46 +1057,46 @@ import MarketTickerSlide from './components/MarketTickerSlide';
             // [추가] 토스 실시간 시세 연동 동시 요청 방지 가드 (In-Flight Guard)
             const isSyncingRef = useRef(false);
 
-            // [추가] 토스 실시간 시세 연동 타이머 & AI 분석 모달 오픈 핸들러
+            // [수정] 토스 실시간 시세 연동 타이머 & 락 해제 보장 엔진
             const runTossLivePriceSync = async () => {
                 const enabled = localStorage.getItem('toss_live_price_enabled') === 'true';
                 if (!enabled) return;
                 if (isSyncingRef.current) return;
                 isSyncingRef.current = true;
                 
-                const clientId = localStorage.getItem('toss_client_id');
-                const clientSecret = localStorage.getItem('toss_client_secret');
-                if (!clientId || !clientSecret) return;
-
-                // 백그라운드 탭 지연 방지 (비활성 시 스킵)
-                if (document.hidden) return;
-
-                const appDataCur = appDataRef.current;
-                if (!appDataCur || !appDataCur.assets) return;
-
-                const symbolsToFetch = new Set();
-                let hasUnresolvedTickers = false;
-                Object.keys(appDataCur.assets).forEach(sector => {
-                    const list = appDataCur.assets[sector] || [];
-                    list.forEach(asset => {
-                        if (asset.linkedItems && Array.isArray(asset.linkedItems)) {
-                            asset.linkedItems.forEach(item => {
-                                if (item.autoUpdate !== false && item.ticker) {
-                                    if (item.ticker === '사용자 입력 필요') {
-                                        hasUnresolvedTickers = true;
-                                    } else {
-                                        symbolsToFetch.add(item.ticker);
-                                    }
-                                }
-                            });
-                        }
-                    });
-                });
-
-                if (symbolsToFetch.size === 0 && !hasUnresolvedTickers) return;
-
                 try {
-                    // 해외 종목이 있을 경우 실시간 환율 동기 호출 (과거 캐시값 사용 불허)
+                    const clientId = localStorage.getItem('toss_client_id');
+                    const clientSecret = localStorage.getItem('toss_client_secret');
+                    if (!clientId || !clientSecret || !clientId.trim() || !clientSecret.trim()) return;
+
+                    // 백그라운드 탭 지연 방지 (비활성 시 스킵)
+                    if (document.hidden) return;
+
+                    const appDataCur = appDataRef.current;
+                    if (!appDataCur || !appDataCur.assets) return;
+
+                    const symbolsToFetch = new Set();
+                    let hasUnresolvedTickers = false;
+                    Object.keys(appDataCur.assets).forEach(sector => {
+                        const list = appDataCur.assets[sector] || [];
+                        list.forEach(asset => {
+                            if (asset.linkedItems && Array.isArray(asset.linkedItems)) {
+                                asset.linkedItems.forEach(item => {
+                                    if (item.autoUpdate !== false && item.ticker) {
+                                        if (item.ticker === '사용자 입력 필요') {
+                                            hasUnresolvedTickers = true;
+                                        } else {
+                                            symbolsToFetch.add(item.ticker);
+                                        }
+                                    }
+                                });
+                            }
+                        });
+                    });
+
+                    if (symbolsToFetch.size === 0 && !hasUnresolvedTickers) return;
+
+                    // 해외 종목이 있을 경우 실시간 환율 동기 호출 (과거 캐시값 우선 방지)
                     let currentLiveFx = 0;
                     const hasUsStocks = Array.from(symbolsToFetch).some(s => /^[A-Za-z]/.test(s));
                     if (hasUsStocks && window.fetchTossExchangeRate) {
@@ -1134,7 +1134,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                 return item;
                                             }
                                             const q = quotes[item.ticker];
-                                            // 이전 상태가 이미 online이고 유효한 단가가 있을 때 일시적 통신 지연/백그라운드 스킵 시 에러로 덮어쓰지 않음
                                             let targetStatus = (q && q.price) ? 'online' : (item.syncStatus === 'online' && Number(item.currentPrice) > 0 ? 'online' : 'error');
                                             let targetError = (q && q.price) ? null : (item.syncStatus === 'online' && Number(item.currentPrice) > 0 ? null : '종목 코드를 찾을 수 없거나 데이터가 비어 있습니다.');
                                             
@@ -1142,7 +1141,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                             if (q && q.price) {
                                                 const isUsStock = /^[A-Za-z]/.test(item.ticker);
                                                 if (isUsStock) {
-                                                    const safeFxRate = Number(localStorage.getItem('asset_last_usd_krw'));
+                                                    const safeFxRate = currentLiveFx > 0 ? currentLiveFx : Number(localStorage.getItem('asset_last_usd_krw'));
                                                     if (!safeFxRate || isNaN(safeFxRate) || safeFxRate <= 0) {
                                                         targetPrice = item.currentPrice;
                                                         targetStatus = 'offline';
@@ -1447,14 +1446,11 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
             let payloadData = unifiedData;
 
-            // [추가] DB 동기화 시 히스토리 자동 저장 처리
+            // [추가] DB 동기화 시 히스토리 자동 저장 처리 (KST 한국 표준시 보장)
             if (autoSaveHistoryOnSync && unifiedData && unifiedData.assetHistory) {
                 const now = new Date();
-                const year = now.getFullYear();
-                const month = String(now.getMonth() + 1).padStart(2, '0');
-                const day = String(now.getDate()).padStart(2, '0');
-                const currentDate = `${year}-${month}-${day}`;
-                const currentTime = now.toTimeString().split(' ')[0];
+                const currentDate = typeof getKSTTodayString === 'function' ? getKSTTodayString(now) : (window.getKSTTodayString ? window.getKSTTodayString(now) : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
+                const currentTime = typeof getKSTTimeString === 'function' ? getKSTTimeString(now) : (window.getKSTTimeString ? window.getKSTTimeString(now) : '12:00:00');
                 const netWorth = calculation?.currentNet || 0;
                 const grossWorth = calculation?.currentGross || 0;
 
@@ -1478,7 +1474,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     }
                 } else {
                     updatedHistory.push(newPoint);
-                    updatedHistory.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                    updatedHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
                     isChanged = true;
                 }
 
@@ -1852,7 +1848,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                 } else {
                     updated.push(newPoint);
                 }
-                updated.sort((a, b) => new Date(a.date) - new Date(b.date));
+                updated.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
                 return updated;
             });
 
@@ -2236,12 +2232,8 @@ import MarketTickerSlide from './components/MarketTickerSlide';
             const saveCurrentAsset = () => {
                 try {
                     const now = new Date();
-                    // [수정] UTC 대신 로컬 시간 기준으로 날짜 생성 (새벽 시간대 날짜 불일치 해결)
-                    const year = now.getFullYear();
-                    const month = String(now.getMonth() + 1).padStart(2, '0');
-                    const day = String(now.getDate()).padStart(2, '0');
-                    const currentDate = `${year}-${month}-${day}`;
-                    const currentTime = now.toTimeString().split(' ')[0]; // HH:MM:SS
+                    const currentDate = typeof getKSTTodayString === 'function' ? getKSTTodayString(now) : (window.getKSTTodayString ? window.getKSTTodayString(now) : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
+                    const currentTime = typeof getKSTTimeString === 'function' ? getKSTTimeString(now) : (window.getKSTTimeString ? window.getKSTTimeString(now) : '12:00:00');
                     const netWorth = calculation?.currentNet || 0;
                     const grossWorth = calculation?.currentGross || 0;
                     
@@ -2250,7 +2242,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         const existingIndex = newHistory.findIndex(item => item.date === currentDate);
                         
                         if (existingIndex >= 0) {
-                            // 같은 날짜가 있으면 시간 정보와 함께 업데이트 (마지막 시간대만 유지)
                             newHistory[existingIndex] = { 
                                 date: currentDate, 
                                 time: currentTime,
@@ -2259,7 +2250,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                 timestamp: now.getTime()
                             };
                         } else {
-                            // 새로운 날짜면 추가
                             newHistory.push({ 
                                 date: currentDate, 
                                 time: currentTime,
@@ -2269,8 +2259,8 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                             });
                         }
                         
-                        // 타임스탬프순으로 정렬 (최신이 마지막)
-                        return newHistory.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                        // 날짜순으로 정확히 정렬 (수동 기록 누락 방지)
+                        return newHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
                     });
                     
                     addToast(`현재 순자산 ${formatNumber(netWorth, displayMode)}만원이 히스토리에 저장되었습니다.`, 'success');

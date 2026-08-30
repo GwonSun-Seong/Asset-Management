@@ -1,3 +1,32 @@
+// [추가] 한국 표준시(KST, UTC+9) 전용 불변 날짜/시간 포맷 헬퍼
+const getKSTTodayString = (dateInput = new Date()) => {
+    const d = typeof dateInput === 'string' || typeof dateInput === 'number' ? new Date(dateInput) : dateInput;
+    if (!d || isNaN(d.getTime())) return '';
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+    return formatter.format(d); // 항상 YYYY-MM-DD 반환 (Asia/Seoul 보장)
+};
+
+const getKSTTimeString = (dateInput = new Date()) => {
+    const d = typeof dateInput === 'string' || typeof dateInput === 'number' ? new Date(dateInput) : dateInput;
+    if (!d || isNaN(d.getTime())) return '12:00:00';
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Seoul',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+    return formatter.format(d); // 항상 HH:MM:SS 반환 (Asia/Seoul 보장)
+};
+
+window.getKSTTodayString = getKSTTodayString;
+window.getKSTTimeString = getKSTTimeString;
+
 // utils.js - 유틸리티 함수들
 
 // [추가] 납입 출처 기본값 상수 정의
@@ -1625,7 +1654,7 @@ const fetchTossExchangeRateDetails = async () => {
     return cached > 0 ? { rate: cached, baseCurrency: 'USD', quoteCurrency: 'KRW', isCached: true } : null;
 };
 
-// [추가] 토스증권 OpenAPI 장 운영 정보 조회 (KR / US) (401 토큰 자동 갱신 및 재시도)
+// [수정] 토스증권 OpenAPI 장 운영 정보 조회 (KST 및 뉴욕 현지 요일 완벽 동기화)
 const fetchTossMarketCalendar = async (market = 'KR') => {
     const clientId = localStorage.getItem('toss_client_id');
     const clientSecret = localStorage.getItem('toss_client_secret');
@@ -1639,7 +1668,6 @@ const fetchTossMarketCalendar = async (market = 'KR') => {
         });
         
         if (response.status === 401) {
-            console.warn(`fetchTossMarketCalendar(${market}) got 401 Unauthorized, refreshing token...`);
             token = await getTossToken(clientId, clientSecret, true);
             response = await fetchTossWithProxy(`https://openapi.tossinvest.com/api/v1/market-calendar/${market.toUpperCase()}`, {
                 method: 'GET',
@@ -1653,10 +1681,18 @@ const fetchTossMarketCalendar = async (market = 'KR') => {
             const now = new Date();
 
             if (market.toUpperCase() === 'KR') {
+                // 한국 표준시 요일 판별
+                const kstWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(now);
+                const isKstWeekend = kstWeekday === 'Sat' || kstWeekday === 'Sun';
+
+                if (isKstWeekend) {
+                    return { market: 'KR', marketName: '국내 증시', isHoliday: true, currentSession: 'WEEKEND', sessionLabel: '주말 휴장', statusColor: 'gray', today: result.today, previousBusinessDay: result.previousBusinessDay, nextBusinessDay: result.nextBusinessDay, raw: result };
+                }
+
                 const today = result.today || {};
                 const integrated = today.integrated;
-                if (!integrated) {
-                    return { market: 'KR', marketName: '국내 증시', isHoliday: true, sessionLabel: '휴장일', statusColor: 'gray', today, previousBusinessDay: result.previousBusinessDay, nextBusinessDay: result.nextBusinessDay, raw: result };
+                if (!integrated || today.isHoliday) {
+                    return { market: 'KR', marketName: '국내 증시', isHoliday: true, currentSession: 'HOLIDAY', sessionLabel: '공휴일 휴장', statusColor: 'gray', today, previousBusinessDay: result.previousBusinessDay, nextBusinessDay: result.nextBusinessDay, raw: result };
                 }
                 const { preMarket, regularMarket, afterMarket } = integrated;
                 
@@ -1673,7 +1709,7 @@ const fetchTossMarketCalendar = async (market = 'KR') => {
 
                 if (isBetween(regularMarket)) {
                     currentSession = 'REGULAR';
-                    sessionLabel = '정규장';
+                    sessionLabel = '정규장 (장중)';
                     statusColor = 'emerald';
                 } else if (isBetween(preMarket)) {
                     currentSession = 'PRE';
@@ -1685,7 +1721,7 @@ const fetchTossMarketCalendar = async (market = 'KR') => {
                     statusColor = 'indigo';
                 }
 
-                const formatTime = (iso) => iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
+                const formatTime = (iso) => iso ? new Date(iso).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
 
                 return {
                     market: 'KR',
@@ -1703,11 +1739,18 @@ const fetchTossMarketCalendar = async (market = 'KR') => {
                     raw: result
                 };
             } else {
-                // US Market
+                // 미국 뉴욕 현지 요일 판별
+                const nyWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(now);
+                const isNyWeekend = nyWeekday === 'Sat' || nyWeekday === 'Sun';
+
+                if (isNyWeekend) {
+                    return { market: 'US', marketName: '미국 증시', isHoliday: true, currentSession: 'WEEKEND', sessionLabel: '주말 휴장', statusColor: 'gray', today: result.today, previousBusinessDay: result.previousBusinessDay, nextBusinessDay: result.nextBusinessDay, raw: result };
+                }
+
                 const today = result.today || {};
                 const { dayMarket, preMarket, regularMarket, afterMarket } = today;
-                if (!regularMarket && !preMarket && !dayMarket && !afterMarket) {
-                    return { market: 'US', marketName: '미국 증시', isHoliday: true, sessionLabel: '휴장일', statusColor: 'gray', today, previousBusinessDay: result.previousBusinessDay, nextBusinessDay: result.nextBusinessDay, raw: result };
+                if (!regularMarket && !preMarket && !dayMarket && !afterMarket || today.isHoliday) {
+                    return { market: 'US', marketName: '미국 증시', isHoliday: true, currentSession: 'HOLIDAY', sessionLabel: '현지 휴장일', statusColor: 'gray', today, previousBusinessDay: result.previousBusinessDay, nextBusinessDay: result.nextBusinessDay, raw: result };
                 }
 
                 const isBetween = (session) => {
@@ -1723,7 +1766,7 @@ const fetchTossMarketCalendar = async (market = 'KR') => {
 
                 if (isBetween(regularMarket)) {
                     currentSession = 'REGULAR';
-                    sessionLabel = '정규장';
+                    sessionLabel = '정규장 (장중)';
                     statusColor = 'emerald';
                 } else if (isBetween(preMarket)) {
                     currentSession = 'PRE';
@@ -1735,11 +1778,11 @@ const fetchTossMarketCalendar = async (market = 'KR') => {
                     statusColor = 'indigo';
                 } else if (isBetween(dayMarket)) {
                     currentSession = 'DAY';
-                    sessionLabel = '데이마켓';
+                    sessionLabel = '데이마켓 (주간)';
                     statusColor = 'sky';
                 }
 
-                const formatTime = (iso) => iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
+                const formatTime = (iso) => iso ? new Date(iso).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
 
                 return {
                     market: 'US',
