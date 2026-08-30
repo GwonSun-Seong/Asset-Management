@@ -1291,12 +1291,18 @@ const fetchSingleTossQuote = async (symbol, token) => {
         const data = await response.json();
         const item = (data.result || [])[0];
         if (item && item.lastPrice) {
+            const priceNum = Number(item.lastPrice);
+            const basePriceNum = Number(item.basePrice) || (priceNum - (Number(item.change) || 0));
+            const changeNum = Number(item.change) || (priceNum - basePriceNum);
+            const changeRateNum = Number(item.changeRate) || (basePriceNum > 0 ? (priceNum - basePriceNum) / basePriceNum : 0);
             return {
                 symbol: symbol,
-                price: Number(item.lastPrice),
+                price: priceNum,
+                basePrice: basePriceNum > 0 ? basePriceNum : priceNum,
+                change: changeNum,
+                changePct: changeRateNum * 100,
                 currency: item.currency || 'KRW',
-                name: item.symbol,
-                changePct: 0
+                name: item.symbol
             };
         }
         return { symbol, isError: true, errorReason: '시세 데이터 없음' };
@@ -1360,13 +1366,18 @@ const fetchTossQuotes = async (symbols) => {
                     const resultList = data.result || [];
                     resultList.forEach(item => {
                         const priceNum = Number(item.lastPrice);
+                        const basePriceNum = Number(item.basePrice) || (priceNum - (Number(item.change) || 0));
+                        const changeNum = Number(item.change) || (priceNum - basePriceNum);
+                        const changeRateNum = Number(item.changeRate) || (basePriceNum > 0 ? (priceNum - basePriceNum) / basePriceNum : 0);
                         if (priceNum > 0) {
                             quotesMap[item.symbol] = {
                                 symbol: item.symbol,
                                 price: priceNum,
+                                basePrice: basePriceNum > 0 ? basePriceNum : priceNum,
+                                change: changeNum,
+                                changePct: changeRateNum * 100,
                                 currency: item.currency || 'KRW',
-                                name: item.symbol,
-                                changePct: 0
+                                name: item.symbol
                             };
                         }
                     });

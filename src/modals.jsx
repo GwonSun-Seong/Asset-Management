@@ -1310,7 +1310,7 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                 ]
             };
 
-            const models = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
+            const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
             
             const tryModel = (index) => {
                 if (index >= models.length) {
@@ -2951,7 +2951,8 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
     );
 };
 
-const streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) => {
+window.GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+window.streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) => {
     try {
         const response = await fetch(url, {
             method: 'POST',
@@ -3061,7 +3062,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
     };
 
     const streamGeminiWithFallback = async (urlGenerator, body, onUpdate, onComplete, onError) => {
-        const models = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
+        const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
         
         const tryModel = (index) => {
             if (index >= models.length) {
@@ -4361,7 +4362,7 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                 ]
             };
 
-            const models = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
+            const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
             
             const tryModel = (index) => {
                 if (index >= models.length) {

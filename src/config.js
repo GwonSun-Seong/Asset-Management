@@ -47,7 +47,7 @@ const sectorInfo = {
 window.ONBOARDING_STEPS = [
     { id: 'header-actions', title: '기본값 및 시나리오 관리', content: '설정한 데이터를 저장하거나 불러오고, PDF로 내보낼 수 있습니다.', isPro: true },
     { id: 'summary', title: '요약 및 설정', content: '현재 자산 상황과 물가 상승을 고려한 실질 가치를 한눈에 파악할 수 있습니다.', isPro: true },
-    { id: 'charts', title: '포트폴리오 차트', content: '자산 구성과 미래 성장 곡선을 시각적 그래프로 확인할 수 있습니다.' },
+    { id: 'charts', title: "포트폴리오", content: '자산 구성과 미래 성장 곡선을 시각적 그래프로 확인할 수 있습니다.' },
     { id: 'budget', title: '월납입 예산 관리', content: '월급과 지출을 기반으로 매달 저축 가능한 금액을 계산하고 관리할 수 있습니다.' },
     { id: 'rebalance', title: '리밸런싱', content: '목표 비중과 현재 비중의 차이를 체크하여 목표한 최적의 비중을 유지할 수 있습니다.', isPro: true },
     { id: 'assets', title: '자산 상세 입력', content: '주식, 통장 등 보유한 모든 자산 항목을 섹터별로 상세히 기록할 수 있습니다.' },
@@ -63,7 +63,7 @@ window.sectorInfo = sectorInfo;
 window.navLabels = {
     summary: { title: "요약 및 설정", icon: "📊" },
     scenario: { title: "시나리오 비교", icon: "🔀" },
-    charts: { title: "포트폴리오 차트", icon: "🍩" },
+    charts: { title: "포트폴리오", icon: "🍩" },
     history: { title: "자산 히스토리", icon: "📈" },
     budget: { title: "예산 관리", icon: "💰" },
     memo: { title: "메모", icon: "📝" },
@@ -81,7 +81,7 @@ window.TEXTS = {
     titles: {
         summary: "요약 및 설정",
         scenario: "시나리오 비교",
-        charts: "포트폴리오 차트",
+        charts: "포트폴리오",
         history: "자산 히스토리",
         budget: "월납입 예산 관리",
         memo: "메모",
