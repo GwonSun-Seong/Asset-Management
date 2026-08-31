@@ -1237,9 +1237,10 @@ const getTossToken = async (clientId, clientSecret, forceRefresh = false) => {
     }
     
     localStorage.removeItem('toss_access_token');
-    localStorage.removeItem('toss_token_expiry');
-    
     try {
+        const cleanId = String(clientId || '').replace(/[\s\u200B\uFEFF]/g, '');
+        const cleanSecret = String(clientSecret || '').replace(/[\s\u200B\uFEFF]/g, '');
+
         const response = await fetchTossWithProxy('https://openapi.tossinvest.com/oauth2/token', {
             method: 'POST',
             headers: {
@@ -1247,8 +1248,8 @@ const getTossToken = async (clientId, clientSecret, forceRefresh = false) => {
             },
             body: new URLSearchParams({
                 grant_type: 'client_credentials',
-                client_id: clientId.trim(),
-                client_secret: clientSecret.trim()
+                client_id: cleanId,
+                client_secret: cleanSecret
             })
         });
         

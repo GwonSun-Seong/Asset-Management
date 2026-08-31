@@ -4805,21 +4805,43 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
     const [geminiKey, setGeminiKey] = React.useState(() => localStorage.getItem('asset_gemini_api_key') || '');
     const [tossId, setTossId] = React.useState(() => localStorage.getItem('toss_client_id') || '');
     const [tossSecret, setTossSecret] = React.useState(() => localStorage.getItem('toss_client_secret') || '');
+    const [liveEnabled, setLiveEnabled] = React.useState(() => {
+        const saved = localStorage.getItem('toss_live_price_enabled');
+        if (saved !== null) return saved === 'true';
+        return Boolean(localStorage.getItem('toss_client_id'));
+    });
+    const [intervalSec, setIntervalSec] = React.useState(() => Number(localStorage.getItem('toss_live_price_interval')) || 60);
 
     if (!isOpen) return null;
 
     const handleSave = () => {
-        localStorage.setItem('asset_gemini_api_key', geminiKey.trim());
-        localStorage.setItem('toss_client_id', tossId.trim());
-        localStorage.setItem('toss_client_secret', tossSecret.trim());
+        const cleanGemini = geminiKey.trim();
+        const cleanTossId = tossId.replace(/[\s\u200B\uFEFF]/g, '');
+        const cleanTossSecret = tossSecret.replace(/[\s\u200B\uFEFF]/g, '');
+
+        localStorage.setItem('asset_gemini_api_key', cleanGemini);
+        localStorage.setItem('toss_client_id', cleanTossId);
+        localStorage.setItem('toss_client_secret', cleanTossSecret);
+        
+        // 토스 키가 등록되어 있으면 기본적으로 활성화 상태 저장
+        const finalEnabled = cleanTossId && cleanTossSecret ? liveEnabled : false;
+        localStorage.setItem('toss_live_price_enabled', String(finalEnabled));
+        localStorage.setItem('toss_live_price_interval', String(Math.max(2, intervalSec)));
         
         // 토스 인증 캐시 강제 만료
         localStorage.removeItem('toss_access_token');
         localStorage.removeItem('toss_token_expiry');
         
-        onClose();
         if (window.dispatchEvent) {
+            window.dispatchEvent(new CustomEvent('toss-settings-updated', {
+                detail: { enabled: finalEnabled, interval: intervalSec }
+            }));
             window.dispatchEvent(new Event('storage'));
+        }
+        
+        onClose();
+        if (window.addToast) {
+            window.addToast('API 키 및 실시간 시세 연동 설정이 저장되었습니다.', 'success');
         }
     };
 
@@ -4835,7 +4857,7 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                     <button onClick={onClose} className="p-2 hover:bg-indigo-100 dark:hover:bg-indigo-800 rounded-full text-indigo-400 transition-colors">✕</button>
                 </div>
 
-                <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto custom-scrollbar">
                     {/* Google Gemini AI Key */}
                     <div className="space-y-2">
                         <label className="text-xs font-black text-slate-700 dark:text-slate-200 flex justify-between items-center">
@@ -4854,10 +4876,10 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                         <p className="text-[10px] text-slate-400">자산 분석 조언 기능 및 스크린샷 이미지 종목 일괄 추출에 사용됩니다.</p>
                     </div>
 
-                    <div className="border-t dark:border-slate-700 my-4"></div>
+                    <div className="border-t dark:border-slate-700 my-2"></div>
 
                     {/* Toss Securities API */}
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                         <div className="flex justify-between items-center">
                             <label className="text-xs font-black text-slate-700 dark:text-slate-200">
                                 📈 토스증권 Open API 연동
@@ -4865,8 +4887,8 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                             <span className="text-[9px] font-bold text-slate-400">{"토스 WTS > 설정 > Open API 발급"}</span>
                         </div>
 
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">API Key</label>
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">API Key (Client ID)</label>
                             <input
                                 type="text"
                                 placeholder="Toss API Key 입력"
@@ -4876,7 +4898,7 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                             />
                         </div>
 
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Secret Key</label>
                             <input
                                 type="password"
@@ -4885,7 +4907,44 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                                 onChange={(e) => setTossSecret(e.target.value)}
                                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 transition-all shadow-sm"
                             />
-                        </div>                    </div>
+                        </div>
+
+                        {/* 실시간 시세 자동 갱신 스위치 & 주기 */}
+                        <div className="p-3.5 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 rounded-2xl space-y-3 mt-3">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <div className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                                        <span>⚡</span>
+                                        <span>실시간 시세 자동 갱신</span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">백그라운드에서 주기적으로 주가 및 환율을 동기화합니다.</p>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={liveEnabled}
+                                    onChange={(e) => setLiveEnabled(e.target.checked)}
+                                    className="w-5 h-5 accent-indigo-600 rounded cursor-pointer"
+                                />
+                            </div>
+
+                            {liveEnabled && (
+                                <div className="flex items-center justify-between pt-2 border-t border-indigo-100/70 dark:border-indigo-900/30">
+                                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">갱신 주기</span>
+                                    <div className="flex items-center gap-1.5">
+                                        <input
+                                            type="number"
+                                            min="5"
+                                            max="3600"
+                                            value={intervalSec}
+                                            onChange={(e) => setIntervalSec(Number(e.target.value))}
+                                            className="w-16 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs font-black text-center text-slate-800 dark:text-slate-100 outline-none"
+                                        />
+                                        <span className="text-[11px] font-bold text-slate-500">초</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
                 {/* Footer buttons */}
@@ -4898,7 +4957,7 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                     </button>
                     <button
                         onClick={handleSave}
-                        className="px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow transition-colors"
+                        className="px-5 py-2.5 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md shadow-indigo-600/30 transition-all active:scale-95"
                     >
                         설정 저장
                     </button>

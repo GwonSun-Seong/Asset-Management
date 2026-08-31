@@ -927,7 +927,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
             const [currentDrillDown, setCurrentDrillDown] = useState(null); // [수정] 현재 차트 드릴다운 상태
             const [projectedDrillDown, setProjectedDrillDown] = useState(null); // [수정] 예상 차트 드릴다운 상태
             
-            const [livePriceEnabled, setLivePriceEnabled] = useState(() => localStorage.getItem('toss_live_price_enabled') === 'true');
+            const [livePriceEnabled, setLivePriceEnabled] = useState(() => localStorage.getItem('toss_live_price_enabled') !== 'false');
             const [livePriceInterval, setLivePriceInterval] = useState(() => Number(localStorage.getItem('toss_live_price_interval')) || 60);
             const [autoSaveHistoryOnSync, setAutoSaveHistoryOnSync] = useState(() => localStorage.getItem('assetDashboardAutoSaveHistoryOnSync') === 'true');
             
@@ -1032,148 +1032,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     }
                     return prev;
                 });
-            }, []);// 🤖 [AI 마켓 브리핑: 1시간 자동 캐싱 & 백그라운드 실행 엔진 (v2 무결점 검증)]
-            const [marketBriefingText, setMarketBriefingText] = useState(() => {
-                const cached = localStorage.getItem('today_market_briefing_text_v2') || '';
-                const lines = cached.split('\n').filter(l => l.trim().length > 5);
-                return lines.length >= 3 ? cached : '';
-            });
-            const [isBriefingLoading, setIsBriefingLoading] = useState(false);
-            const isBriefingRunningRef = useRef(false);
-
-            const generateMarketBriefing = React.useCallback(async (force = false) => {
-                if (isBriefingRunningRef.current) return;
-                const apiKey = localStorage.getItem('asset_gemini_api_key');
-                if (!apiKey || !apiKey.trim()) return;
-
-                const lastUpdateTime = Number(localStorage.getItem('today_market_briefing_time_v2')) || 0;
-                const cachedText = localStorage.getItem('today_market_briefing_text_v2');
-                const now = Date.now();
-
-                // 유효한 3줄 이상의 캐시가 1시간(3,600,000ms) 이내에 존재할 때만 재사용
-                if (!force && cachedText && (now - lastUpdateTime < 60 * 60 * 1000)) {
-                    const lines = cachedText.split('\n').filter(l => l.trim().length > 5);
-                    if (lines.length >= 3) {
-                        setMarketBriefingText(cachedText);
-                        return;
-                    }
-                }
-
-                isBriefingRunningRef.current = true;
-                setIsBriefingLoading(true);
-
-                const kstToday = typeof getKSTTodayString === 'function' ? getKSTTodayString() : (window.getKSTTodayString ? window.getKSTTodayString() : new Date().toISOString().slice(0, 10));
-
-                // 종목 리스트 및 상승/하락 종목 수집
-                const stockItems = [];
-                const curAssets = appDataRef.current?.assets || {};
-                Object.keys(curAssets).forEach(sector => {
-                    (curAssets[sector] || []).forEach(asset => {
-                        (asset.linkedItems || []).forEach(item => {
-                            if (item.ticker && item.shares > 0) {
-                                stockItems.push({
-                                    name: item.name || item.ticker,
-                                    ticker: item.ticker,
-                                    changePct: item.changePct || 0
-                                });
-                            }
-                        });
-                    });
-                });
-
-                const sortedGainers = [...stockItems].filter(i => Math.abs(i.changePct) > 0.01).sort((a, b) => b.changePct - a.changePct);
-                const topGainer = sortedGainers.length > 0 && sortedGainers[0].changePct > 0 ? sortedGainers[0] : null;
-                const topLoser = sortedGainers.length > 0 && sortedGainers[sortedGainers.length - 1].changePct < 0 ? sortedGainers[sortedGainers.length - 1] : null;
-                const stockNames = stockItems.map(s => s.name);
-
-                const prompt = `[오늘의 금융 데이터]
-- 기준 날짜: ${kstToday}
-- 최고 상승 종목: ${topGainer ? `${topGainer.name} (+${topGainer.changePct.toFixed(1)}%)` : '엔비디아, 애플'}
-- 최저 하락 종목: ${topLoser ? `${topLoser.name} (${topLoser.changePct.toFixed(1)}%)` : '삼성전자, 테슬라'}
-- 보유 주요 종목: ${stockNames.slice(0, 6).join(', ') || '엔비디아, 애플, 마이크로소프트, 삼성전자'}
-
-[출력 형식 예시 (반드시 이 형식 그대로 정확히 5줄 완성 문장만 출력)]
-• 📰 미 연준의 금리 인하 기대감 지속으로 나스닥 및 S&P500 지수가 견고한 상승 흐름을 보였습니다.
-• 📰 원/달러 환율이 1,380원 초반에서 안정세를 유지하며 국내 증시의 외국인 수급 개선에 기여했습니다.
-• 🚀 ${topGainer ? topGainer.name : '엔비디아'} : 차세대 AI 가속기 수요 폭증과 빅테크 실적 호조에 힘입어 주가가 강하게 상승했습니다.
-• 📉 ${topLoser ? topLoser.name : '구글'} : AI 인프라 투자 비용(CapEx) 증가 및 시장 기대치 부담으로 단기 조정을 받았습니다.
-• 📉 ${stockNames[2] || '삼성전자'} : 업황 불확실성과 반도체 수요 회복 지연 우려로 소폭 약세를 나타냈습니다.
-
-[절대 규칙]
-1. 반드시 위의 형식처럼 총 5개의 완성된 한국어 불렛(•) 문장으로 출력하세요 (절대로 도중에 문장이 끊기면 안 됩니다).
-2. 'Line 4', 메타 설명, 영문 주석, 제목, 인사말 등은 절대로 출력하지 마세요.`;
-
-                const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
-
-                const body = {
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.2, maxOutputTokens: 2048 }
-                };
-
-                const tryModel = async (index) => {
-                    if (index >= models.length) {
-                        setIsBriefingLoading(false);
-                        isBriefingRunningRef.current = false;
-                        return;
-                    }
-                    const currentModel = models[index];
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey.trim()}`;
-                    try {
-                        const response = await fetch(url, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(body)
-                        });
-                        if (!response.ok) throw new Error(`API status ${response.status}`);
-                        const data = await response.json();
-                        const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                        if (resultText && resultText.trim()) {
-                            const trimmedResult = resultText.trim();
-                            const lines = trimmedResult.split('\n').filter(l => l.trim().length > 5);
-                            if (lines.length >= 3) {
-                                setMarketBriefingText(trimmedResult);
-                                localStorage.setItem('today_market_briefing_time_v2', Date.now().toString());
-                                localStorage.setItem('today_market_briefing_text_v2', trimmedResult);
-                                setIsBriefingLoading(false);
-                                isBriefingRunningRef.current = false;
-                            } else {
-                                tryModel(index + 1);
-                            }
-                        } else {
-                            tryModel(index + 1);
-                        }
-                    } catch (e) {
-                        console.warn(`Market briefing failed with ${currentModel}, trying next fallback:`, e);
-                        tryModel(index + 1);
-                    }
-                };
-
-                tryModel(0);
             }, []);
-
-            // 🤖 [AI 마켓 브리핑 1시간 주기 백그라운드 자동 실행 훅]
-            useEffect(() => {
-                const apiKey = localStorage.getItem('asset_gemini_api_key');
-                if (!apiKey || !apiKey.trim()) return;
-
-                const lastTime = Number(localStorage.getItem('today_market_briefing_time_v2')) || 0;
-                const cached = localStorage.getItem('today_market_briefing_text_v2');
-                const validLines = cached ? cached.split('\n').filter(l => l.trim().length > 5) : [];
-
-                // 1시간 지났거나 온전한 3줄 이상 데이터가 없으면 백그라운드 생성
-                if (Date.now() - lastTime >= 60 * 60 * 1000 || validLines.length < 3) {
-                    generateMarketBriefing(true);
-                }
-
-                const timer = setInterval(() => {
-                    const checkTime = Number(localStorage.getItem('today_market_briefing_time_v2')) || 0;
-                    if (Date.now() - checkTime >= 60 * 60 * 1000) {
-                        generateMarketBriefing(true);
-                    }
-                }, 5 * 60 * 1000);
-
-                return () => clearInterval(timer);
-            }, [generateMarketBriefing]);
 
             const isLocal = useMemo(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1', []);
 
@@ -1248,16 +1107,15 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
             // [수정] 토스 실시간 시세 연동 타이머 & 락 해제 보장 엔진
             const runTossLivePriceSync = async () => {
-                const enabled = localStorage.getItem('toss_live_price_enabled') === 'true';
-                if (!enabled) return;
+                const clientId = localStorage.getItem('toss_client_id');
+                const clientSecret = localStorage.getItem('toss_client_secret');
+                const isExplicitlyDisabled = localStorage.getItem('toss_live_price_enabled') === 'false';
+                if (isExplicitlyDisabled || !clientId || !clientSecret || !clientId.trim() || !clientSecret.trim()) return;
+                
                 if (isSyncingRef.current) return;
                 isSyncingRef.current = true;
                 
                 try {
-                    const clientId = localStorage.getItem('toss_client_id');
-                    const clientSecret = localStorage.getItem('toss_client_secret');
-                    if (!clientId || !clientSecret || !clientId.trim() || !clientSecret.trim()) return;
-
                     // 백그라운드 탭 지연 방지 (비활성 시 스킵)
                     if (document.hidden) return;
 
@@ -1291,12 +1149,19 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     if (hasUsStocks && window.fetchTossExchangeRate) {
                         try {
                             currentLiveFx = await window.fetchTossExchangeRate();
+                            if (currentLiveFx > 0) {
+                                localStorage.setItem('asset_last_usd_krw', String(currentLiveFx));
+                            }
                         } catch (fxErr) {
-                            console.warn("Realtime FX fetch failed during auto-sync:", fxErr);
+                            console.warn("Live FX fetch error during sync, fallback to cached FX:", fxErr);
                         }
                     }
 
-                    const quotes = symbolsToFetch.size > 0 ? await window.fetchTossQuotes(Array.from(symbolsToFetch)) : {};
+                    // 종목 현재가 일괄 조회
+                    let quotes = {};
+                    if (symbolsToFetch.size > 0 && window.fetchTossQuotes) {
+                        quotes = await window.fetchTossQuotes(Array.from(symbolsToFetch));
+                    }
                     
                     setAppData(prevData => {
                         if (!prevData || !prevData.assets) return prevData;
@@ -1352,7 +1217,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                     targetChangePct = q.changePct || 0;
                                                 }
                                             }
-                                            const targetCurrency = 'KRW'; // Always store and sync in KRW
+                                            const targetCurrency = 'KRW';
                                             
                                             if (item.currentPrice !== targetPrice || item.basePrice !== targetBasePrice || item.change !== targetChange || item.changePct !== targetChangePct || item.syncStatus !== targetStatus || item.syncErrorReason !== targetError || item.currency !== targetCurrency) {
                                                 assetChanged = true;
@@ -1393,6 +1258,12 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         });
 
                         if (hasChanges) {
+                            try {
+                                const merged = { ...prevData, assets: newAssets };
+                                localStorage.setItem('assetDashboardDataV3', JSON.stringify(merged));
+                            } catch (e) {
+                                console.error("Local save error during live sync:", e);
+                            }
                             return { ...prevData, assets: newAssets };
                         }
                         return prevData;
@@ -1442,6 +1313,24 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     isSyncingRef.current = false;
                 }
             };
+
+            useEffect(() => {
+                const handleTossSettingsUpdated = (e) => {
+                    const enabled = e?.detail?.enabled ?? (localStorage.getItem('toss_live_price_enabled') === 'true');
+                    const interval = e?.detail?.interval ?? (Number(localStorage.getItem('toss_live_price_interval')) || 60);
+                    setLivePriceEnabled(enabled);
+                    setLivePriceInterval(interval);
+                    if (enabled) {
+                        setTimeout(runTossLivePriceSync, 100);
+                    }
+                };
+                window.addEventListener('toss-settings-updated', handleTossSettingsUpdated);
+                window.addEventListener('storage', handleTossSettingsUpdated);
+                return () => {
+                    window.removeEventListener('toss-settings-updated', handleTossSettingsUpdated);
+                    window.removeEventListener('storage', handleTossSettingsUpdated);
+                };
+            }, []);
 
             useEffect(() => {
                 if (!livePriceEnabled) return;
@@ -1627,6 +1516,12 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     setIsGuideOpen(true);
                 }
             }, [isLoading]);
+
+            useEffect(() => {
+                if (isInitialized && livePriceEnabled) {
+                    runTossLivePriceSync();
+                }
+            }, [isInitialized, livePriceEnabled]);
 
             const appDataRef = useRef(appData);
             useEffect(() => { appDataRef.current = appData; }, [appData]);
@@ -5060,66 +4955,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                             {todayStats.topLoser ? `${todayStats.topLoser.name} (${todayStats.topLoser.changePct.toFixed(1)}%)` : '-'}
                                         </span>
                                     </div>
-                                </div>
-                            )}
-
-                            {/* ⚡ AI 증시 핵심 이슈 & 등락 원인 브리핑 (API 키 있을 때만 백그라운드 자동 노출) */}
-                            {Boolean(localStorage.getItem('asset_gemini_api_key')) && (
-                                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/60 relative z-10">
-                                    <div className="flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-slate-200 mb-2">
-                                        <span>⚡</span>
-                                        <span>AI 마켓 브리핑 & 핵심 이슈</span>
-                                        {isBriefingLoading && (
-                                            <span className="w-2.5 h-2.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin ml-1.5" title="백그라운드 동기화 중"></span>
-                                        )}
-                                    </div>
-
-                                    {marketBriefingText ? (
-                                        <div className="p-3.5 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-200/70 dark:border-slate-700/70 text-xs text-slate-700 dark:text-slate-300 space-y-2 leading-relaxed font-sans shadow-inner">
-                                            {marketBriefingText
-                                                .split('\n')
-                                                .map(line => line.trim())
-                                                .filter(line => line.length > 3 && !/^Line\s*\d/i.test(line) && !/^\*Line/i.test(line) && line !== '•')
-                                                .slice(0, 5)
-                                                .map((line, idx) => {
-                                                    const cleanText = line.replace(/^[•\-\*\d\.]+\s*/, '').replace(/^\*+|\*+$/g, '');
-                                                    const redKeywords = /^(상승세|상승|급등|호재|순매수|어닝\s*서프라이즈|서프라이즈|수요\s*폭증|폭증|신고가|강세|개선|성장|반등|우상향|확대|매수세|호실적|돌파|강세장)$/;
-                                                    const blueKeywords = /^(하락세|하락|급락|악재|순매도|어닝\s*쇼크|쇼크|약세|우려|단기\s*조정|조정|축소|둔화|매물\s*출회|지연|변동성|하회|매도세|약세장|침체)$/;
-                                                    const tokenRegex = /(상승세|상승|급등|호재|순매수|어닝\s*서프라이즈|서프라이즈|수요\s*폭증|폭증|신고가|강세|개선|성장|반등|우상향|확대|매수세|호실적|돌파|강세장|하락세|하락|급락|악재|순매도|어닝\s*쇼크|쇼크|약세|우려|단기\s*조정|조정|축소|둔화|매물\s*출회|지연|변동성|하회|매도세|약세장|침체)/g;
-                                                    const parts = cleanText.split(tokenRegex);
-
-                                                    return (
-                                                        <div key={idx} className="flex items-start gap-2">
-                                                            <span className="text-indigo-500 font-black flex-shrink-0 leading-relaxed">•</span>
-                                                            <span className="font-medium text-slate-700 dark:text-slate-300 leading-relaxed">
-                                                                {parts.map((part, pIdx) => {
-                                                                    if (!part) return null;
-                                                                    if (redKeywords.test(part)) {
-                                                                        return (
-                                                                            <span key={pIdx} className="text-red-600 dark:text-red-400 font-black px-0.5">
-                                                                                {part}
-                                                                            </span>
-                                                                        );
-                                                                    }
-                                                                    if (blueKeywords.test(part)) {
-                                                                        return (
-                                                                            <span key={pIdx} className="text-blue-600 dark:text-blue-400 font-black px-0.5">
-                                                                                {part}
-                                                                            </span>
-                                                                        );
-                                                                    }
-                                                                    return <span key={pIdx}>{part}</span>;
-                                                                })}
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })}
-                                        </div>
-                                    ) : isBriefingLoading ? (
-                                        <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-700/60 text-xs text-slate-400 animate-pulse">
-                                            오늘 시장 주요 이슈 및 보유 종목 동향을 백그라운드에서 분석 중입니다...
-                                        </div>
-                                    ) : null}
                                 </div>
                             )}
                         </div>
