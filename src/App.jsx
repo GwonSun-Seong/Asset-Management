@@ -1000,6 +1000,14 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                 try { localStorage.setItem('asset_investment_view_mode', mode); } catch {}
             }, []);
 
+            // 🌐 [투자자산 한눈에보기: 예수금 목적 연동 토글 상태 & 계좌별 예수금 분류 콜백]
+            const [includeCashInTargetSectors, setIncludeCashInTargetSectors] = useState(() => localStorage.getItem('asset_include_cash_in_targets') !== 'false');
+
+            const handleToggleIncludeCashInTargets = React.useCallback((val) => {
+                setIncludeCashInTargetSectors(val);
+                try { localStorage.setItem('asset_include_cash_in_targets', String(val)); } catch {}
+            }, []);
+
             const handleUpdateTickerMeta = React.useCallback((targetTicker, field, value) => {
                 if (!targetTicker) return;
                 const cleanTicker = targetTicker.trim().toUpperCase();
@@ -1021,6 +1029,33 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                             return assetItemChanged ? { ...asset, linkedItems: updatedLinked } : asset;
                         });
                     });
+                    if (changed) {
+                        try {
+                            const merged = { ...prev, assets: newAssets };
+                            localStorage.setItem('assetDashboardDataV3', JSON.stringify(merged));
+                        } catch (e) {
+                            console.error("Local save error:", e);
+                        }
+                        return { ...prev, assets: newAssets };
+                    }
+                    return prev;
+                });
+            }, []);
+
+            const handleUpdateAssetCashCategory = React.useCallback((sectorKey, assetId, newCategory) => {
+                setAppData(prev => {
+                    if (!prev || !prev.assets) return prev;
+                    const newAssets = { ...prev.assets };
+                    let changed = false;
+                    if (newAssets[sectorKey]) {
+                        newAssets[sectorKey] = newAssets[sectorKey].map(asset => {
+                            if (asset.id === assetId) {
+                                changed = true;
+                                return { ...asset, cashCategory: newCategory };
+                            }
+                            return asset;
+                        });
+                    }
                     if (changed) {
                         try {
                             const merged = { ...prev, assets: newAssets };
@@ -3557,9 +3592,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     const ctx = investmentDonutRef.current.getContext('2d');
 
                     const tickerMap = new Map();
-                    let totalInvestedValueManwon = 0;
-                    let totalKrwCashManwon = 0;
-                    let totalUsdCashDollars = 0;
+                    const accountCashList = [];
                     const assetsObj = appData?.assets || {};
                     const safeFxRate = Number(localStorage.getItem('asset_last_usd_krw')) || 1350;
 
@@ -3573,8 +3606,16 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                 const baseAmt = parseFloat(asset.baseAmount) || 0;
                                 if (baseAmt > 0) {
                                     const isUsd = /달러|USD|\$|해외/i.test(asset.name) || /달러|USD|\$|해외/i.test(sectorKey);
-                                    if (isUsd) totalUsdCashDollars += (baseAmt * 10000) / safeFxRate;
-                                    else totalKrwCashManwon += baseAmt;
+                                    const cashVal = isUsd ? (baseAmt * 10000) / safeFxRate : baseAmt;
+                                    accountCashList.push({
+                                        ticker: `CASH_ACCT_${asset.id || asset.name}`,
+                                        name: `${asset.name} 예수금`,
+                                        category: asset.cashCategory || '현금',
+                                        isAccountCash: true,
+                                        assetId: asset.id,
+                                        sectorKey: sectorKey,
+                                        totalValueManwon: cashVal
+                                    });
                                 }
                             }
 
@@ -3584,7 +3625,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                 if (!ticker || ticker === '사용자 입력 필요' || shares <= 0) return;
                                 const curPrice = parseFloat(item.currentPrice) || 0;
                                 const itemVal = (curPrice * shares) / 10000;
-                                totalInvestedValueManwon += itemVal;
 
                                 let cat = item.category;
                                 if (!cat) {
@@ -3607,21 +3647,21 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         });
                     });
 
-                    const aggregatedList = Array.from(tickerMap.values());
-                    let totalCashFromItems = 0;
-                    const categoryTotals = { '지수': 0, '개별주': 0, '코인': 0, '금': 0 };
+                    const combinedList = [...Array.from(tickerMap.values()), ...accountCashList];
+                    const categoryTotals = { '지수': 0, '개별주': 0, '코인': 0, '금': 0, '현금': 0 };
 
-                    aggregatedList.forEach(item => {
-                        const cat = item.category || '개별주';
+                    combinedList.forEach(item => {
+                        let cat = item.category || '개별주';
+                        if (item.isAccountCash && !includeCashInTargetSectors) {
+                            cat = '현금';
+                        }
                         if (cat === '현금' || cat === '원화' || cat === '달러') {
-                            totalCashFromItems += item.totalValueManwon;
+                            categoryTotals['현금'] += item.totalValueManwon;
                         } else {
                             if (categoryTotals[cat] !== undefined) categoryTotals[cat] += item.totalValueManwon;
                             else categoryTotals['개별주'] += item.totalValueManwon;
                         }
                     });
-
-                    const totalCashManwon = totalKrwCashManwon + ((totalUsdCashDollars * safeFxRate) / 10000) + totalCashFromItems;
 
                     let labels = [];
                     let data = [];
@@ -3645,33 +3685,27 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                     if (investmentDrillDown) {
                         chartTitle = `${investmentDrillDown} 세부 비중`;
-                        if (investmentDrillDown === '현금') {
-                            const cashItems = aggregatedList.filter(i => i.category === '현금' || i.category === '원화' || i.category === '달러');
-                            labels = ['원화 예수금', '달러 예수금', ...cashItems.map(i => i.name || i.ticker)];
-                            data = [
-                                Math.round(totalKrwCashManwon), 
-                                Math.round((totalUsdCashDollars * safeFxRate) / 10000),
-                                ...cashItems.map(i => Math.round(i.totalValueManwon))
-                            ];
-                            bgColors = trueRainbowPalette.slice(0, labels.length);
+                        const categoryItems = combinedList
+                            .filter(i => {
+                                let c = i.category || '개별주';
+                                if (i.isAccountCash && !includeCashInTargetSectors) c = '현금';
+                                if (investmentDrillDown === '현금') return c === '현금' || c === '원화' || c === '달러';
+                                return c === investmentDrillDown;
+                            })
+                            .sort((a, b) => b.totalValueManwon - a.totalValueManwon);
+
+                        if (categoryItems.length > 8) {
+                            const topItems = categoryItems.slice(0, 7);
+                            const otherItems = categoryItems.slice(7);
+                            const otherSum = otherItems.reduce((acc, curr) => acc + curr.totalValueManwon, 0);
+
+                            labels = [...topItems.map(i => i.name || i.ticker), `기타 (${otherItems.length}개 항목)`];
+                            data = [...topItems.map(i => Math.round(i.totalValueManwon)), Math.round(otherSum)];
+                            bgColors = [...trueRainbowPalette.slice(0, 7), '#94a3b8'];
                         } else {
-                            const categoryItems = aggregatedList
-                                .filter(i => (i.category || '개별주') === investmentDrillDown)
-                                .sort((a, b) => b.totalValueManwon - a.totalValueManwon);
-
-                            if (categoryItems.length > 8) {
-                                const topItems = categoryItems.slice(0, 7);
-                                const otherItems = categoryItems.slice(7);
-                                const otherSum = otherItems.reduce((acc, curr) => acc + curr.totalValueManwon, 0);
-
-                                labels = [...topItems.map(i => i.name || i.ticker), `기타 (${otherItems.length}개 종목)`];
-                                data = [...topItems.map(i => Math.round(i.totalValueManwon)), Math.round(otherSum)];
-                                bgColors = [...trueRainbowPalette.slice(0, 7), '#94a3b8'];
-                            } else {
-                                labels = categoryItems.map(i => i.name || i.ticker);
-                                data = categoryItems.map(i => Math.round(i.totalValueManwon));
-                                bgColors = trueRainbowPalette.slice(0, categoryItems.length);
-                            }
+                            labels = categoryItems.map(i => i.name || i.ticker);
+                            data = categoryItems.map(i => Math.round(i.totalValueManwon));
+                            bgColors = trueRainbowPalette.slice(0, categoryItems.length);
                         }
                     } else {
                         const topCategories = [
@@ -3679,7 +3713,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                             { key: '개별주', name: '🏢 개별주', val: Math.round(categoryTotals['개별주']) },
                             { key: '코인', name: '🪙 코인', val: Math.round(categoryTotals['코인']) },
                             { key: '금', name: '🟡 금', val: Math.round(categoryTotals['금']) },
-                            { key: '현금', name: '💵 현금/예수금', val: Math.round(totalCashManwon) }
+                            { key: '현금', name: '💵 현금/예수금', val: Math.round(categoryTotals['현금']) }
                         ].filter(c => c.val > 0);
 
                         labels = topCategories.map(c => c.name);
@@ -3754,7 +3788,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                 const timerId = setTimeout(renderInvestmentDonut, 50);
                 return () => clearTimeout(timerId);
-            }, [investmentDrillDown, appData, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting]);
+            }, [investmentDrillDown, includeCashInTargetSectors, appData, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting]);
 
             useEffect(() => {
                 if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
@@ -4962,10 +4996,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         {/* 🌐 [신규] 투자자산 한눈에보기 (이중 드릴다운 도넛 차트 & 컴팩트 그리드 리스트) */}
                         {(() => {
                             const tickerMap = new Map();
-                            let totalInvestedValueManwon = 0;
-                            let totalKrwCashManwon = 0;
-                            let totalUsdCashDollars = 0;
-
+                            const accountCashList = [];
                             const assetsObj = appData?.assets || {};
                             const safeFxRate = Number(localStorage.getItem('asset_last_usd_krw')) || 1350;
 
@@ -4979,11 +5010,16 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                         const baseAmt = parseFloat(asset.baseAmount) || 0;
                                         if (baseAmt > 0) {
                                             const isUsdAccount = /달러|USD|\$|해외/i.test(asset.name) || /달러|USD|\$|해외/i.test(sectorKey);
-                                            if (isUsdAccount) {
-                                                totalUsdCashDollars += (baseAmt * 10000) / safeFxRate;
-                                            } else {
-                                                totalKrwCashManwon += baseAmt;
-                                            }
+                                            const cashValManwon = isUsdAccount ? ((baseAmt * 10000) / safeFxRate) : baseAmt;
+                                            accountCashList.push({
+                                                ticker: `CASH_ACCT_${asset.id || asset.name}`,
+                                                name: `${asset.name} 예수금`,
+                                                category: asset.cashCategory || '현금',
+                                                isAccountCash: true,
+                                                assetId: asset.id,
+                                                sectorKey: sectorKey,
+                                                totalValueManwon: cashValManwon
+                                            });
                                         }
                                     }
 
@@ -4995,7 +5031,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                                         const curPrice = parseFloat(item.currentPrice) || 0;
                                         const itemValManwon = (curPrice * shares) / 10000;
-                                        totalInvestedValueManwon += itemValManwon;
 
                                         let defaultCategory = item.category;
                                         if (!defaultCategory) {
@@ -5034,8 +5069,8 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                 });
                             });
 
-                            const totalCashConvertedManwon = totalKrwCashManwon + ((totalUsdCashDollars * safeFxRate) / 10000);
-                            const totalPortfolioAssetsManwon = totalInvestedValueManwon + totalCashConvertedManwon;
+                            const combinedList = [...Array.from(tickerMap.values()), ...accountCashList];
+                            const totalPortfolioAssetsManwon = combinedList.reduce((sum, i) => sum + i.totalValueManwon, 0);
 
                             const formattedTotalText = (() => {
                                 if (totalPortfolioAssetsManwon >= 10000) {
@@ -5046,17 +5081,20 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                 return `${Math.round(totalPortfolioAssetsManwon).toLocaleString()}만원`;
                             })();
 
-                            const aggregatedList = Array.from(tickerMap.values()).map(item => {
+                            const aggregatedList = combinedList.map(item => {
                                 const weightPct = totalPortfolioAssetsManwon > 0 ? (item.totalValueManwon / totalPortfolioAssetsManwon) * 100 : 0;
                                 return { ...item, weightPct };
                             });
 
                             aggregatedList.sort((a, b) => b.totalValueManwon - a.totalValueManwon);
 
-                            // 카테고리별 합산 시 현금/원화/달러 모두 '현금'으로 안전하게 합산
-                            const categoryTotals = { '지수': 0, '개별주': 0, '코인': 0, '금': 0, '현금': totalCashConvertedManwon };
+                            // 카테고리별 합산 시 예수금 목적자금 연동 반영
+                            const categoryTotals = { '지수': 0, '개별주': 0, '코인': 0, '금': 0, '현금': 0 };
                             aggregatedList.forEach(item => {
-                                const cat = item.category || '개별주';
+                                let cat = item.category || '개별주';
+                                if (item.isAccountCash && !includeCashInTargetSectors) {
+                                    cat = '현금';
+                                }
                                 if (cat === '현금' || cat === '원화' || cat === '달러') {
                                     categoryTotals['현금'] += item.totalValueManwon;
                                 } else {
@@ -5066,13 +5104,15 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                             const filteredList = aggregatedList.filter(item => {
                                 if (assetCategoryFilter === 'ALL') return true;
-                                if (assetCategoryFilter === '현금') return item.category === '현금' || item.category === '원화' || item.category === '달러';
-                                return (item.category || '개별주') === assetCategoryFilter;
+                                let cat = item.category || '개별주';
+                                if (item.isAccountCash && !includeCashInTargetSectors) cat = '현금';
+                                if (assetCategoryFilter === '현금') return cat === '현금' || cat === '원화' || cat === '달러';
+                                return cat === assetCategoryFilter;
                             });
 
                             return (
                                 <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 border border-slate-200/90 dark:border-slate-700 shadow-sm space-y-5">
-                                    {/* 헤더: 투자자산(총금액) 한눈에보기 */}
+                                    {/* 헤더: 투자자산(총금액) 한눈에보기 & 예수금 목적자금 연동 토글 */}
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700/60 pb-4">
                                         <div>
                                             <div className="flex items-center gap-2 flex-wrap">
@@ -5081,12 +5121,31 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                     <span>투자자산({formattedTotalText}) 한눈에보기</span>
                                                 </h3>
                                                 <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                                                    통합 {aggregatedList.length}개 종목
+                                                    통합 {aggregatedList.length}개 항목
                                                 </span>
                                             </div>
                                             <p className="text-xs text-slate-400 dark:text-slate-500 font-medium mt-1">
-                                                연금, ISA, 직투 등 전 계좌의 보유 종목과 예수금을 실시간 통합 집계합니다.
+                                                연금, ISA, 직투 등 전 계좌의 보유 종목과 계좌별 예수금을 통합 집계합니다.
                                             </p>
+                                        </div>
+
+                                        {/* 우상단: 예수금 목적자금 연동 ON/OFF 토글 */}
+                                        <div className="flex items-center gap-2 self-start sm:self-auto bg-slate-100 dark:bg-slate-900/60 px-3 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+                                            <span className="text-xs font-black text-slate-700 dark:text-slate-200 flex items-center gap-1">
+                                                <span>🎯</span>
+                                                <span>예수금 목적자금 연동</span>
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleToggleIncludeCashInTargets(!includeCashInTargetSectors)}
+                                                className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${
+                                                    includeCashInTargetSectors
+                                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                                        : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                                                }`}
+                                            >
+                                                {includeCashInTargetSectors ? 'ON' : 'OFF'}
+                                            </button>
                                         </div>
                                     </div>
 
@@ -5152,11 +5211,11 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
                                                 {[
                                                     { id: 'ALL', label: '전체', count: aggregatedList.length },
-                                                    { id: '지수', label: '📈 지수', count: aggregatedList.filter(i => (i.category || '개별주') === '지수').length },
-                                                    { id: '개별주', label: '🏢 개별주', count: aggregatedList.filter(i => (i.category || '개별주') === '개별주').length },
-                                                    { id: '코인', label: '🪙 코인', count: aggregatedList.filter(i => (i.category || '개별주') === '코인').length },
-                                                    { id: '금', label: '🟡 금', count: aggregatedList.filter(i => (i.category || '개별주') === '금').length },
-                                                    { id: '현금', label: '💵 현금', count: aggregatedList.filter(i => i.category === '현금' || i.category === '원화' || i.category === '달러').length }
+                                                    { id: '지수', label: '📈 지수', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '지수'; }).length },
+                                                    { id: '개별주', label: '🏢 개별주', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '개별주'; }).length },
+                                                    { id: '코인', label: '🪙 코인', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '코인'; }).length },
+                                                    { id: '금', label: '🟡 금', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '금'; }).length },
+                                                    { id: '현금', label: '💵 현금', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '현금' || c === '원화' || c === '달러'; }).length }
                                                 ].map(tab => (
                                                     <button
                                                         key={tab.id}
@@ -5175,11 +5234,15 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                                             <div className="space-y-1.5 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
                                                 {filteredList.map((item, idx) => {
-                                                    const isEditing = editingTickerName?.ticker === item.ticker;
+                                                    const isEditing = !item.isAccountCash && editingTickerName?.ticker === item.ticker;
                                                     return (
                                                         <div 
                                                             key={item.ticker} 
-                                                            className="group flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900/50 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 border border-slate-200/60 dark:border-slate-800 transition-all shadow-sm"
+                                                            className={`group flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl border transition-all shadow-sm ${
+                                                                item.isAccountCash 
+                                                                    ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40'
+                                                                    : 'bg-slate-50 dark:bg-slate-900/50 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 border-slate-200/60 dark:border-slate-800'
+                                                            }`}
                                                         >
                                                             {/* 1. 순위 번호 & 종목명 (인라인 수정) & 티커 */}
                                                             <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -5187,7 +5250,15 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                                     {idx + 1}
                                                                 </span>
                                                                 <div className="min-w-0 flex-1">
-                                                                    {isEditing ? (
+                                                                    {item.isAccountCash ? (
+                                                                        <div className="font-extrabold text-xs text-emerald-800 dark:text-emerald-300 truncate flex items-center gap-1.5">
+                                                                            <span>💵</span>
+                                                                            <span className="truncate">{item.name}</span>
+                                                                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold flex-shrink-0">
+                                                                                대기자금
+                                                                            </span>
+                                                                        </div>
+                                                                    ) : isEditing ? (
                                                                         <input
                                                                             type="text"
                                                                             autoFocus
@@ -5215,16 +5286,28 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                                             <span className="text-[9px] text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">✏️</span>
                                                                         </div>
                                                                     )}
-                                                                    <span className="text-[9px] font-mono text-slate-400 uppercase">{item.ticker}</span>
+                                                                    <span className="text-[9px] font-mono text-slate-400 uppercase">
+                                                                        {item.isAccountCash ? '예수금 / 대기자금' : item.ticker}
+                                                                    </span>
                                                                 </div>
                                                             </div>
 
                                                             {/* 2. 분류 드롭다운 (현금/원화/달러 완벽 매핑) */}
                                                             <div className="flex-shrink-0">
                                                                 <select
-                                                                    value={item.category || '개별주'}
-                                                                    onChange={(e) => handleUpdateTickerMeta(item.ticker, 'category', e.target.value)}
-                                                                    className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 outline-none cursor-pointer"
+                                                                    value={item.category || '현금'}
+                                                                    onChange={(e) => {
+                                                                        if (item.isAccountCash) {
+                                                                            handleUpdateAssetCashCategory(item.sectorKey, item.assetId, e.target.value);
+                                                                        } else {
+                                                                            handleUpdateTickerMeta(item.ticker, 'category', e.target.value);
+                                                                        }
+                                                                    }}
+                                                                    className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-lg border outline-none cursor-pointer ${
+                                                                        item.isAccountCash && item.category && item.category !== '현금'
+                                                                            ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                                                                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                                                    }`}
                                                                 >
                                                                     <option value="지수">📈 지수</option>
                                                                     <option value="개별주">🏢 개별주</option>
