@@ -3668,20 +3668,21 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     let bgColors = [];
                     let chartTitle = '투자자산 분류 비중';
 
-                    const trueRainbowPalette = [
-                        '#ef4444', // 1. 빨강 (Red)
-                        '#f97316', // 2. 주황 (Orange)
-                        '#facc15', // 3. 노랑 (Yellow)
-                        '#22c55e', // 4. 초록 (Green)
-                        '#06b6d4', // 5. 하늘/시안 (Cyan)
-                        '#3b82f6', // 6. 파랑 (Blue)
-                        '#8b5cf6', // 7. 남색/바이올렛 (Indigo/Violet)
-                        '#d946ef', // 8. 보라/마젠타 (Magenta)
-                        '#ec4899', // 9. 핑크 (Pink)
-                        '#14b8a6', // 10. 틸 (Teal)
-                        '#84cc16', // 11. 라임 (Lime)
-                        '#e11d48'  // 12. 딥레드 (Deep Red)
-                    ];
+                    const categoryColorMap = {
+                        '지수': '#ef4444', // 빨강 (지수/ETF 배너)
+                        '개별주': '#f97316', // 주황 (개별주 배너)
+                        '코인': '#eab308', // 노랑 (코인 배너)
+                        '금': '#f59e0b', // 앰버/골드 (금 배너)
+                        '현금': '#10b981'  // 에메랄드 (현금/예수금 배너)
+                    };
+
+                    const drillDownPalettes = {
+                        '지수': ['#ef4444', '#dc2626', '#b91c1c', '#f87171', '#fca5a5', '#991b1b', '#f43f5e', '#e11d48'],
+                        '개별주': ['#f97316', '#ea580c', '#c2410c', '#fb923c', '#fdba74', '#9a3412', '#ea580c', '#c2410c'],
+                        '코인': ['#eab308', '#ca8a04', '#a16207', '#fde047', '#fef08a', '#854d0e', '#d97706', '#b45309'],
+                        '금': ['#f59e0b', '#d97706', '#b45309', '#fbbf24', '#fde68a', '#92400e', '#78350f', '#eab308'],
+                        '현금': ['#10b981', '#059669', '#047857', '#34d399', '#6ee7b7', '#065f46', '#14b8a6', '#0d9488']
+                    };
 
                     if (investmentDrillDown) {
                         chartTitle = `${investmentDrillDown} 세부 비중`;
@@ -3694,6 +3695,8 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                             })
                             .sort((a, b) => b.totalValueManwon - a.totalValueManwon);
 
+                        const currentPalette = drillDownPalettes[investmentDrillDown] || drillDownPalettes['개별주'];
+
                         if (categoryItems.length > 8) {
                             const topItems = categoryItems.slice(0, 7);
                             const otherItems = categoryItems.slice(7);
@@ -3701,24 +3704,24 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                             labels = [...topItems.map(i => i.name || i.ticker), `기타 (${otherItems.length}개 항목)`];
                             data = [...topItems.map(i => Math.round(i.totalValueManwon)), Math.round(otherSum)];
-                            bgColors = [...trueRainbowPalette.slice(0, 7), '#94a3b8'];
+                            bgColors = [...currentPalette.slice(0, 7), '#94a3b8'];
                         } else {
                             labels = categoryItems.map(i => i.name || i.ticker);
                             data = categoryItems.map(i => Math.round(i.totalValueManwon));
-                            bgColors = trueRainbowPalette.slice(0, categoryItems.length);
+                            bgColors = currentPalette.slice(0, categoryItems.length);
                         }
                     } else {
                         const topCategories = [
-                            { key: '지수', name: '📈 지수/ETF', val: Math.round(categoryTotals['지수']) },
-                            { key: '개별주', name: '🏢 개별주', val: Math.round(categoryTotals['개별주']) },
-                            { key: '코인', name: '🪙 코인', val: Math.round(categoryTotals['코인']) },
-                            { key: '금', name: '🟡 금', val: Math.round(categoryTotals['금']) },
-                            { key: '현금', name: '💵 현금/예수금', val: Math.round(categoryTotals['현금']) }
+                            { key: '지수', name: '📈 지수/ETF', val: Math.round(categoryTotals['지수']), color: categoryColorMap['지수'] },
+                            { key: '개별주', name: '🏢 개별주', val: Math.round(categoryTotals['개별주']), color: categoryColorMap['개별주'] },
+                            { key: '코인', name: '🪙 코인', val: Math.round(categoryTotals['코인']), color: categoryColorMap['코인'] },
+                            { key: '금', name: '🟡 금', val: Math.round(categoryTotals['금']), color: categoryColorMap['금'] },
+                            { key: '현금', name: '💵 현금/예수금', val: Math.round(categoryTotals['현금']), color: categoryColorMap['현금'] }
                         ].filter(c => c.val > 0);
 
                         labels = topCategories.map(c => c.name);
                         data = topCategories.map(c => c.val);
-                        bgColors = topCategories.map((_, idx) => trueRainbowPalette[idx % trueRainbowPalette.length]);
+                        bgColors = topCategories.map(c => c.color);
                     }
 
                     const chartConfig = {
@@ -3866,24 +3869,22 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                 if (panelCollapseState['history'] || assetHistory.length === 0) return;
                 
                 const renderHistoryChart = () => {
-                    if (!historyChartRef.current) return; // [수정] 렌더링 시점에 ref 확인 (비동기 처리)
+                    if (!historyChartRef.current) return;
 
                     const textColor = darkMode ? '#e5e7eb' : '#111827';
                     const gridColor = darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
 
-                    // [수정] 줌 레벨에 따른 동적 디테일 구현 (항상 일별 데이터 사용)
                     const useMonthlyAverage = false;
 
                     let finalLabels = [];
                     let finalHistoryData = [];
-                    let optimisticData = []; // [추가] 낙관적 시나리오 데이터
-                    let pessimisticData = []; // [추가] 비관적 시나리오 데이터
-                    let sortedMonthKeys = []; // [추가] 클릭 이벤트 핸들링을 위해 키 저장
-                    let refDatasetsData = []; // [추가] 평균 계산을 위한 참조 데이터 수집
+                    let optimisticData = [];
+                    let pessimisticData = [];
+                    let sortedMonthKeys = [];
+                    let refDatasetsData = [];
 
                     const rawSorted = [...assetHistory].sort((a, b) => new Date(a.date) - new Date(b.date));
                     
-                    // 기간 필터 (1년 / 3년 / 전체) 적용
                     let sortedHistory = rawSorted;
                     if (rawSorted.length > 0 && historyPeriod !== 'ALL') {
                         const latestDate = new Date(rawSorted[rawSorted.length - 1].date);
@@ -3898,12 +3899,10 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     let historyDates = [];
                     let pointRadii = [];
 
-                    // ⏱️ 진짜 시간 비례(True Time-Scale) 단일 엔진: 날짜 공백을 정직한 시간비율로 보간
                     sortedHistory.forEach((item, idx) => {
                         const [y, m, d] = item.date.split('-');
                         const val = historyViewMode === 'gross' ? Number(item.grossWorth || item.netWorth) : Number(item.netWorth);
                         
-                        // 직전 기록과의 시간 차이가 25일 이상이면 중간 시간비례 보간점 추가 (왜곡 0% 정직한 기울기)
                         if (idx > 0) {
                             const prev = sortedHistory[idx - 1];
                             const prevVal = historyViewMode === 'gross' ? Number(prev.grossWorth || prev.netWorth) : Number(prev.netWorth);
@@ -3923,7 +3922,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                     historyDates.push(interpDate.toISOString().slice(0, 10));
                                     finalLabels.push(`'${iy}. ${im}/${id}`);
                                     finalHistoryData.push(Math.round(prevVal + (val - prevVal) * (s / (steps + 1))));
-                                    pointRadii.push(0); // 중간 보간점은 포인트 숨김 (매끄러운 선 유지)
+                                    pointRadii.push(0);
                                 }
                             }
                         }
@@ -3938,243 +3937,239 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     optimisticData = new Array(finalHistoryData.length).fill(null);
                     pessimisticData = new Array(finalHistoryData.length).fill(null);
 
-                if (historyProjectionData && historyProjectionData.projections && historyProjectionData.projections.length > 0) {
-                    if (finalHistoryData.length > 0) {
-                        const lastVal = finalHistoryData[finalHistoryData.length - 1];
-                        projectionData[finalHistoryData.length - 1] = lastVal;
-                        optimisticData[finalHistoryData.length - 1] = lastVal;
-                        pessimisticData[finalHistoryData.length - 1] = lastVal;
-                    }
-                    
-                    historyProjectionData.projections.forEach((p, idx) => {
-                        if (idx === 0) return;
-                        
-                        const [y, m] = (historyProjectionData.baseDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
-                        const d = new Date(y, m - 1 + idx);
-                        const label = `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth() + 1).padStart(2, '0')}월`;
-                        
-                        if (!finalLabels.includes(label)) {
-                            finalLabels.push(label);
-                            const volatility = 0.005 * idx; 
-                            const val = historyViewMode === 'gross' ? p.gross : p.net;
-                            projectionData.push(Math.floor(val));
-                            optimisticData.push(Math.floor(val * (1 + volatility)));
-                            pessimisticData.push(Math.floor(val * (1 - volatility)));
-                            finalHistoryData.push(null);
+                    if (historyProjectionData && historyProjectionData.projections && historyProjectionData.projections.length > 0) {
+                        if (finalHistoryData.length > 0) {
+                            const lastVal = finalHistoryData[finalHistoryData.length - 1];
+                            projectionData[finalHistoryData.length - 1] = lastVal;
+                            optimisticData[finalHistoryData.length - 1] = lastVal;
+                            pessimisticData[finalHistoryData.length - 1] = lastVal;
                         }
-                    });
-                }
-
-                // [수정] 월말 데이터 판별 함수 (날짜 문자열 기준)
-                const isMonthEnd = (index) => {
-                    if (index >= assetHistory.length) return false; // [Fix] 히스토리 범위를 벗어난 경우(예상 데이터) 처리
-                    if (index === assetHistory.length - 1) return true; // 마지막 데이터는 항상 표시
-                    const currDate = assetHistory[index].date;
-                    const nextDate = assetHistory[index + 1].date;
-                    // 다음 데이터의 월이 다르면 현재 데이터가 해당 월의 마지막 데이터임
-                    return currDate.substring(0, 7) !== nextDate.substring(0, 7);
-                };
-
-                // [수정] 줌 레벨 및 월말 여부에 따른 동적 포인트 설정
-                const getDynamicPointRadius = (context) => {
-                    const chart = context.chart;
-                    if (!chart.scales.x) return 3; // 초기 로딩 시 기본값
-                    
-                    // 현재 뷰포트에 보이는 데이터 개수 계산
-                    const min = chart.scales.x.min;
-                    const max = chart.scales.x.max;
-                    const visibleCount = max - min;
-                    
-                    // 기준: 25개
-                    if (visibleCount > 25) {
-                        // 25개보다 많이 보일 때는 '월말 데이터'만 표시 (나머지는 숨김)
-                        return isMonthEnd(context.dataIndex) ? 4 : 0;
-                    } else {
-                        // 25개 이하로 확대되었을 때는 '모든 일자별 데이터' 표시
-                        return 4;
-                    }
-                };
-
-                // [추가] 숨겨진 포인트는 클릭/호버도 안 되게 처리
-                const getDynamicInteractionRadius = (context) => {
-                    return getDynamicPointRadius(context) > 0 ? 6 : 0;
-                };
-
-                const datasets = [
-                    {
-                        label: historyViewMode === 'gross' ? '총자산 (만원)' : '순자산 (만원)',
-                        data: finalHistoryData,
-                        borderColor: 'rgb(79, 70, 229)',
-                        _originalBorder: 'rgb(79, 70, 229)', // [추가] 원본 색상 보존
-                        backgroundColor: (context) => {
-                            const ctx = context.chart.ctx;
-                            const gradient = ctx.createLinearGradient(0, 0, 0, 200);
-                            gradient.addColorStop(0, 'rgba(79, 70, 229, 0.3)');
-                            gradient.addColorStop(1, 'rgba(79, 70, 229, 0)');
-                            return gradient;
-                        },
-                        tension: 0.3,
-                        fill: true,
-                        pointBackgroundColor: 'rgb(79, 70, 229)',
-                        pointHoverRadius: getDynamicInteractionRadius, // [적용] 동적 호버 크기
-                        pointHoverBackgroundColor: 'rgb(255, 255, 255)',
-                        pointHoverBorderWidth: 2,
-                        pointHoverBorderColor: 'rgb(79, 70, 229)', // [수정] 콤마 추가
-                        pointRadius: (ctx) => {
-                            if (pointRadii[ctx.dataIndex] !== undefined) {
-                                if (pointRadii[ctx.dataIndex] === 0) return 0;
-                                return getDynamicPointRadius(ctx);
-                            }
-                            return getDynamicPointRadius(ctx);
-                        }
-                        ,order: 1 // [추가] 순서 명시 (맨 위)
-                        ,pointHitRadius: getDynamicInteractionRadius // [추가] 숨겨진 점 클릭 방지
-                    }
-                ];
-
-                if (showProjectionInHistory) {
-                    // [추가] 낙관적 시나리오 (범위 상단)
-                    datasets.push({
-                        label: '낙관적 예상 (+)',
-                        data: optimisticData,
-                        borderColor: 'transparent',
-                        backgroundColor: darkMode ? 'rgba(34, 197, 94, 0.1)' : 'rgba(34, 197, 94, 0.1)',
-                        fill: '+1', // 다음 데이터셋(예상 자산)까지 채움 (순서 중요)
-                        pointRadius: 0,
-                        tension: 0.4,
-                        order: 10
-                    });
-
-                    datasets.push({
-                        label: '예상 자산 (만원)',
-                        data: projectionData,
-                        borderColor: 'rgba(79, 70, 229, 0.5)',
-                        borderDash: [5, 5], // 점선 표시
-                        tension: 0.3,
-                        fill: '-1', // 이전 데이터셋(낙관적)까지 채움 -> 실제로는 아래 비관적과 샌드위치 효과를 위해 조정 필요하나 Chart.js fill 로직상 단색 처리
-                        pointRadius: 2,
-                        pointBackgroundColor: 'rgba(79, 70, 229, 0.5)',
-                        order: 10
-                    });
-
-                    // [추가] 비관적 시나리오 (범위 하단)
-                    datasets.push({
-                        label: '비관적 예상 (-)',
-                        data: pessimisticData,
-                        borderColor: 'transparent',
-                        backgroundColor: darkMode ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                        fill: '-1', // 바로 위 데이터셋(예상 자산)까지 채움
-                        pointRadius: 0,
-                        tension: 0.4,
-                        order: 10
-                    });
-                }
-
-                // [수정] 기준 시나리오 오버레이 (다중 지원)
-                referenceScenarios.forEach(refConfig => {
-                    const scenario = scenarios.find(s => s.id === refConfig.id);
-                    if (!scenario) return;
-
-                    const refData = scenario.data;
-                    const refBaseDate = refData.baseDate || (refData.baseMonth ? `${refData.baseMonth}-01` : null);
-                    
-                    if (refBaseDate) {
-                        const { projections: refProjections } = calculateMonthlyProjection(refData, 120);
-                        const refDatasetData = finalLabels.map((label, labelIdx) => {
-                            let targetDate;
-                            if (labelIdx < historyDates.length) {
-                                targetDate = new Date(historyDates[labelIdx]);
-                            } else {
-                                const parts = label.match(/(\d+)년 (\d+)월/);
-                                if (parts) targetDate = new Date(Number('20' + parts[1]), Number(parts[2]) - 1, 1);
-                            }
-
-                            if (!targetDate || isNaN(targetDate.getTime())) return null;
-
-                            const [bY, bM, bD] = refBaseDate.split('-').map(Number);
-                            const base = new Date(bY, bM - 1, bD || 1);
+                        
+                        historyProjectionData.projections.forEach((p, idx) => {
+                            if (idx === 0) return;
                             
-                            // 월 차이 계산 (소수점 포함하여 보간)
-                            const diffTime = targetDate - base;
-                            const diffMonths = diffTime / (1000 * 60 * 60 * 24 * 30.44); // 평균 월 일수
+                            const [y, m] = (historyProjectionData.baseDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
+                            const d = new Date(y, m - 1 + idx);
+                            const label = `${String(d.getFullYear()).slice(2)}년 ${String(d.getMonth() + 1).padStart(2, '0')}월`;
                             
-                            if (diffMonths >= 0 && diffMonths < refProjections.length - 1) {
-                                const idx = Math.floor(diffMonths);
-                                const fraction = diffMonths - idx;
-                                const val1 = historyViewMode === 'gross' ? (refProjections[idx]?.gross || 0) : (refProjections[idx]?.net || 0);
-                                const val2 = historyViewMode === 'gross' ? (refProjections[idx + 1]?.gross || val1) : (refProjections[idx + 1]?.net || val1);
-                                return Math.floor(val1 + (val2 - val1) * fraction);
+                            if (!finalLabels.includes(label)) {
+                                finalLabels.push(label);
+                                const volatility = 0.005 * idx; 
+                                const val = historyViewMode === 'gross' ? p.gross : p.net;
+                                projectionData.push(Math.floor(val));
+                                optimisticData.push(Math.floor(val * (1 + volatility)));
+                                pessimisticData.push(Math.floor(val * (1 - volatility)));
+                                finalHistoryData.push(null);
                             }
-                            return null;
                         });
-                        refDatasetsData.push(refDatasetData);
+                    }
+
+                    const isMonthEnd = (index) => {
+                        if (index >= assetHistory.length) return false;
+                        if (index === assetHistory.length - 1) return true;
+                        const currDate = assetHistory[index].date;
+                        const nextDate = assetHistory[index + 1].date;
+                        return currDate.substring(0, 7) !== nextDate.substring(0, 7);
+                    };
+
+                    const getDynamicPointRadius = (context) => {
+                        const chart = context.chart;
+                        if (!chart.scales.x) return 3;
+                        const min = chart.scales.x.min;
+                        const max = chart.scales.x.max;
+                        const visibleCount = max - min;
+                        if (visibleCount > 25) {
+                            return isMonthEnd(context.dataIndex) ? 4 : 0;
+                        } else {
+                            return 4;
+                        }
+                    };
+
+                    const getDynamicInteractionRadius = (context) => {
+                        return getDynamicPointRadius(context) > 0 ? 6 : 0;
+                    };
+
+                    const datasets = [
+                        {
+                            label: historyViewMode === 'gross' ? '총자산 (만원)' : '순자산 (만원)',
+                            data: finalHistoryData,
+                            borderColor: '#6366f1',
+                            _originalBorder: '#6366f1',
+                            borderWidth: 3,
+                            backgroundColor: (context) => {
+                                const chart = context.chart;
+                                const { ctx, chartArea } = chart;
+                                if (!chartArea) return 'rgba(99, 102, 241, 0.2)';
+                                const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                                if (darkMode) {
+                                    gradient.addColorStop(0, 'rgba(99, 102, 241, 0.45)');
+                                    gradient.addColorStop(0.5, 'rgba(99, 102, 241, 0.12)');
+                                    gradient.addColorStop(1, 'rgba(99, 102, 241, 0.0)');
+                                } else {
+                                    gradient.addColorStop(0, 'rgba(99, 102, 241, 0.35)');
+                                    gradient.addColorStop(0.6, 'rgba(99, 102, 241, 0.06)');
+                                    gradient.addColorStop(1, 'rgba(99, 102, 241, 0.0)');
+                                }
+                                return gradient;
+                            },
+                            tension: 0.35,
+                            fill: true,
+                            pointBackgroundColor: darkMode ? '#1e1b4b' : '#ffffff',
+                            pointBorderColor: '#6366f1',
+                            pointBorderWidth: 2,
+                            pointHoverRadius: 6,
+                            pointHoverBackgroundColor: '#ffffff',
+                            pointHoverBorderColor: '#4f46e5',
+                            pointHoverBorderWidth: 3,
+                            pointRadius: (ctx) => {
+                                if (pointRadii[ctx.dataIndex] !== undefined) {
+                                    if (pointRadii[ctx.dataIndex] === 0) return 0;
+                                    return getDynamicPointRadius(ctx);
+                                }
+                                return getDynamicPointRadius(ctx);
+                            },
+                            order: 1,
+                            pointHitRadius: getDynamicInteractionRadius
+                        }
+                    ];
+
+                    if (showProjectionInHistory) {
+                        datasets.push({
+                            label: '낙관적 예상 (+)',
+                            data: optimisticData,
+                            borderColor: 'transparent',
+                            backgroundColor: darkMode ? 'rgba(34, 197, 94, 0.12)' : 'rgba(34, 197, 94, 0.12)',
+                            fill: '+1',
+                            pointRadius: 0,
+                            tension: 0.35,
+                            order: 10
+                        });
 
                         datasets.push({
-                            label: `기준: ${scenario.name}`,
-                            data: refDatasetData,
-                            borderColor: refConfig.color, // 사용자 지정 색상 사용
-                            _originalBorder: refConfig.color, // [추가] 원본 색상 보존
-                            borderDash: [2, 2],
-                            pointRadius: 0,
+                            label: '예상 자산 (만원)',
+                            data: projectionData,
+                            borderColor: 'rgba(99, 102, 241, 0.7)',
                             borderWidth: 2,
+                            borderDash: [6, 6],
+                            tension: 0.35,
+                            fill: '-1',
+                            pointRadius: 2,
+                            pointBackgroundColor: 'rgba(99, 102, 241, 0.7)',
+                            order: 10
+                        });
+
+                        datasets.push({
+                            label: '비관적 예상 (-)',
+                            data: pessimisticData,
+                            borderColor: 'transparent',
+                            backgroundColor: darkMode ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                            fill: '-1',
+                            pointRadius: 0,
+                            tension: 0.35,
+                            order: 10
+                        });
+                    }
+
+                    referenceScenarios.forEach(refConfig => {
+                        const scenario = scenarios.find(s => s.id === refConfig.id);
+                        if (!scenario) return;
+
+                        const refData = scenario.data;
+                        const refBaseDate = refData.baseDate || (refData.baseMonth ? `${refData.baseMonth}-01` : null);
+                        
+                        if (refBaseDate) {
+                            const { projections: refProjections } = calculateMonthlyProjection(refData, 120);
+                            const refDatasetData = finalLabels.map((label, labelIdx) => {
+                                let targetDate;
+                                if (labelIdx < historyDates.length) {
+                                    targetDate = new Date(historyDates[labelIdx]);
+                                } else {
+                                    const parts = label.match(/(\d+)년 (\d+)월/);
+                                    if (parts) targetDate = new Date(Number('20' + parts[1]), Number(parts[2]) - 1, 1);
+                                }
+
+                                if (!targetDate || isNaN(targetDate.getTime())) return null;
+
+                                const [bY, bM, bD] = refBaseDate.split('-').map(Number);
+                                const base = new Date(bY, bM - 1, bD || 1);
+                                
+                                const diffTime = targetDate - base;
+                                const diffMonths = diffTime / (1000 * 60 * 60 * 24 * 30.44);
+                                
+                                if (diffMonths >= 0 && diffMonths < refProjections.length - 1) {
+                                    const idx = Math.floor(diffMonths);
+                                    const fraction = diffMonths - idx;
+                                    const val1 = historyViewMode === 'gross' ? (refProjections[idx]?.gross || 0) : (refProjections[idx]?.net || 0);
+                                    const val2 = historyViewMode === 'gross' ? (refProjections[idx + 1]?.gross || val1) : (refProjections[idx + 1]?.net || val1);
+                                    return Math.floor(val1 + (val2 - val1) * fraction);
+                                }
+                                return null;
+                            });
+                            refDatasetsData.push(refDatasetData);
+
+                            datasets.push({
+                                label: `기준: ${scenario.name}`,
+                                data: refDatasetData,
+                                borderColor: refConfig.color,
+                                _originalBorder: refConfig.color,
+                                borderDash: [3, 3],
+                                pointRadius: 0,
+                                borderWidth: 2,
+                                fill: false,
+                                tension: 0.35,
+                                order: 5,
+                                createdAt: scenario.createdAt
+                            });
+                        }
+                    });
+
+                    if (refDatasetsData.length >= 2) {
+                        const averageData = finalLabels.map((_, idx) => {
+                            let sum = 0;
+                            let count = 0;
+                            refDatasetsData.forEach(data => {
+                                if (data[idx] !== null && data[idx] !== undefined) {
+                                    sum += data[idx];
+                                    count++;
+                                }
+                            });
+                            return count > 0 ? Math.floor(sum / count) : null;
+                        });
+
+                        datasets.push({
+                            label: '시나리오 평균',
+                            data: averageData,
+                            borderColor: '#a855f7',
+                            _originalBorder: '#a855f7',
+                            borderWidth: 2,
+                            pointRadius: 0,
                             fill: false,
-                            tension: 0.4,
-                            order: 5,
-                            createdAt: scenario.createdAt // [추가] 정렬을 위한 메타데이터
+                            tension: 0.35,
+                            order: 2
                         });
                     }
-                });
 
-                // [추가] 시나리오 평균선 (2개 이상일 때만 표시)
-                if (refDatasetsData.length >= 2) {
-                    const averageData = finalLabels.map((_, idx) => {
-                        let sum = 0;
-                        let count = 0;
-                        refDatasetsData.forEach(data => {
-                            if (data[idx] !== null && data[idx] !== undefined) {
-                                sum += data[idx];
-                                count++;
-                            }
+                    if (historyTargetData && historyTargetData > 0) {
+                        datasets.push({
+                            label: `목표 자산 (${formatNumber(historyTargetData, displayMode)}만원)`,
+                            data: new Array(finalLabels.length).fill(historyTargetData),
+                            borderColor: 'rgba(239, 68, 68, 0.85)',
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false,
+                            borderWidth: 2,
+                            order: 20
                         });
-                        return count > 0 ? Math.floor(sum / count) : null;
-                    });
-
-                    datasets.push({
-                        label: '시나리오 평균',
-                        data: averageData,
-                        borderColor: '#8b5cf6', // Purple (Solid Line)
-                        _originalBorder: '#8b5cf6', // [추가] 원본 색상 보존
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        fill: false,
-                        tension: 0.4,
-                        order: 2 // 순자산 다음으로 중요
-                    });
-                }
-
-                if (historyTargetData && historyTargetData > 0) {
-                    datasets.push({
-                        label: `목표 자산 (${formatNumber(historyTargetData, displayMode)}만원)`,
-                        data: new Array(finalLabels.length).fill(historyTargetData),
-                        borderColor: 'rgba(239, 68, 68, 0.8)',
-                        borderDash: [5, 5],
-                        pointRadius: 0,
-                        fill: false,
-                        borderWidth: 2,
-                        order: 20
-                    });
-                }
-
-// [정리] 메인 차트 마일스톤 가로 점선 제거 (상단 전용 속도 차트 집중)
-
-                const handleChartClick = (evt, elements, chart) => {
-                    if (!elements || elements.length === 0) {
-                        setHistoryPopover(null);
-                        return;
                     }
-                    const element = elements[0];
-                    const index = element.index;
-                    const datasetIndex = element.datasetIndex;
+
+                    const handleChartClick = (evt, elements, chart) => {
+                        if (!elements || elements.length === 0) {
+                            setHistoryPopover(null);
+                            return;
+                        }
+                        const element = elements[0];
+                        const index = element.index;
+                        const datasetIndex = element.datasetIndex;
 
                     // 히스토리 데이터셋(0번)인 경우에만 팝오버 표시
                     if (datasetIndex === 0) {
@@ -4273,9 +4268,9 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                 const crosshairPlugin = {
                     id: 'crosshair',
                     defaults: {
-                        width: 1,
-                        color: darkMode ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.3)',
-                        dash: [3, 3]
+                        width: 1.5,
+                        color: darkMode ? 'rgba(129, 140, 248, 0.45)' : 'rgba(99, 102, 241, 0.45)',
+                        dash: [4, 4]
                     },
                     afterInit: (chart) => { chart.crosshair = { x: 0, y: 0 }; },
                     afterEvent: (chart, args) => {
@@ -4289,8 +4284,11 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                             const activePoint = chart.tooltip._active[0];
                             const ctx = chart.ctx;
                             const x = activePoint.element.x;
+                            const y = activePoint.element.y;
                             const topY = chart.scales.y.top;
                             const bottomY = chart.scales.y.bottom;
+
+                            // 1. 수직 십자선 (Dashed Vertical Line)
                             ctx.save();
                             ctx.beginPath();
                             ctx.moveTo(x, topY);
@@ -4300,6 +4298,29 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                             ctx.setLineDash(options.dash);
                             ctx.stroke();
                             ctx.restore();
+
+                            // 2. ✨ 마우스 궤적 네온 글로우 트레이서 점 (Glowing Tracer Dot)
+                            if (y !== undefined && !isNaN(y)) {
+                                ctx.save();
+                                // 외부 은은한 글로우
+                                ctx.beginPath();
+                                ctx.arc(x, y, 9, 0, 2 * Math.PI);
+                                ctx.fillStyle = darkMode ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.25)';
+                                ctx.fill();
+
+                                // 중간 비비드 링
+                                ctx.beginPath();
+                                ctx.arc(x, y, 5.5, 0, 2 * Math.PI);
+                                ctx.fillStyle = '#6366f1';
+                                ctx.fill();
+
+                                // 내부 화이트 코어
+                                ctx.beginPath();
+                                ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
+                                ctx.fillStyle = '#ffffff';
+                                ctx.fill();
+                                ctx.restore();
+                            }
                         }
                     }
                 };
@@ -4313,15 +4334,27 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        onClick: handleChartClick, // [추가] 클릭 이벤트 연결
-                        onHover: handleChartHover, // [수정] 호버 핸들러 교체
-                        hover: { mode: 'nearest', intersect: false }, // [추가] 근접 감지 모드 활성화 (필수)
+                        animation: {
+                            duration: 850,
+                            easing: 'easeInOutQuart'
+                        },
+                        onClick: handleChartClick,
+                        onHover: handleChartHover,
+                        hover: { mode: 'nearest', intersect: false },
                         plugins: {
-                            legend: { position: 'bottom', labels: { color: textColor } },
+                            legend: { 
+                                position: 'bottom', 
+                                labels: { 
+                                    color: textColor,
+                                    usePointStyle: true,
+                                    pointStyle: 'circle',
+                                    padding: 16,
+                                    font: { size: 11, weight: 'bold' }
+                                } 
+                            },
                             title: { display: false },
-                            // [수정] 툴팁 비활성화 및 외부 상태 업데이트 (상단 정보바 연동)
                             tooltip: { 
-                                enabled: false, // 기본 툴팁 끄기
+                                enabled: false,
                                 mode: 'index', 
                                 intersect: false,
                                 external: (context) => {
@@ -4335,14 +4368,17 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                     }
                                     
                                     const title = tooltipModel.title[0] || '';
+                                    let netWorthVal = null;
                                     const items = tooltipModel.body.map((item, i) => {
                                         const dataPoint = tooltipModel.dataPoints[i];
                                         const dataset = dataPoint.dataset;
+                                        if (dataPoint.datasetIndex === 0) {
+                                            netWorthVal = dataPoint.raw;
+                                        }
                                         return {
                                             label: dataset.label,
                                             value: formatNumber(dataPoint.raw, displayMode) + '만원',
                                             rawValue: dataPoint.raw,
-                                            // [수정] 호버 시 색상 변경(투명화)되어도 원본 색상 유지
                                             color: dataset._originalBorder || dataset.borderColor,
                                             createdAt: dataset.createdAt,
                                             isNetWorth: dataPoint.datasetIndex === 0,
@@ -4350,17 +4386,17 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                         };
                                     });
 
-                                    // [추가] 툴팁 항목 정렬 로직
+                                    // 첫 번째 유효 기록 기준 변동폭 연산
+                                    const firstValidVal = finalHistoryData.find(v => v !== null && v !== undefined && v > 0) || 0;
+                                    const diffFromStart = (netWorthVal !== null && firstValidVal > 0) ? (netWorthVal - firstValidVal) : 0;
+                                    const diffPctFromStart = firstValidVal > 0 ? (diffFromStart / firstValidVal) * 100 : 0;
+
                                     items.sort((a, b) => {
                                         if (scenarioSortOrder === 'default') {
-                                            // 1. 순자산 최상단
                                             if (a.isNetWorth) return -1;
                                             if (b.isNetWorth) return 1;
-                                            // 2. 시나리오 평균 두 번째
                                             if (a.isAverage) return -1;
                                             if (b.isAverage) return 1;
-                                            
-                                            // 3. 나머지(시나리오 등) 최신순 정렬
                                             if (!a.createdAt) return 1;
                                             if (!b.createdAt) return -1;
                                             return new Date(b.createdAt) - new Date(a.createdAt);
@@ -4372,10 +4408,10 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                         return 0;
                                     });
 
-                                    const newInfoStr = JSON.stringify({ title, items });
+                                    const newInfoStr = JSON.stringify({ title, items, netWorthVal, diffFromStart, diffPctFromStart });
                                     if (lastHistoryInfoRef.current !== newInfoStr) {
                                         lastHistoryInfoRef.current = newInfoStr;
-                                        setHistoryChartInfo({ title, items });
+                                        setHistoryChartInfo({ title, items, netWorthVal, diffFromStart, diffPctFromStart });
                                     }
                                 }
                             },
@@ -4803,13 +4839,13 @@ import MarketTickerSlide from './components/MarketTickerSlide';
             );
 
             const renderChartsPanel = () => {
-                // 📊 [오늘의 실시간 투자 성과 & 당일 평가손익 연산]
+                // 📊 [전마감일 대비 실시간 투자 성과 & 평가손익 연산]
                 const todayStats = (() => {
                     let totalTodayProfit = 0;
                     let totalStockValue = 0;
                     let totalYesterdayStockValue = 0;
                     let linkedCount = 0;
-                    const itemsWithStats = [];
+                    const tickerStatsMap = new Map();
 
                     if (appData && appData.assets) {
                         Object.keys(appData.assets).forEach(sector => {
@@ -4841,13 +4877,23 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                             totalYesterdayStockValue += baseVal;
                                             totalTodayProfit += profit;
 
-                                            itemsWithStats.push({
-                                                name: item.name || item.ticker,
-                                                ticker: item.ticker,
-                                                profit,
-                                                changePct,
-                                                curVal
-                                            });
+                                            const cleanTicker = item.ticker.trim().toUpperCase();
+                                            if (!tickerStatsMap.has(cleanTicker)) {
+                                                tickerStatsMap.set(cleanTicker, {
+                                                    name: item.name || item.ticker,
+                                                    ticker: cleanTicker,
+                                                    profit,
+                                                    changePct,
+                                                    curVal
+                                                });
+                                            } else {
+                                                const existing = tickerStatsMap.get(cleanTicker);
+                                                existing.profit += profit;
+                                                existing.curVal += curVal;
+                                                if (item.name && item.name.length > (existing.name || '').length) {
+                                                    existing.name = item.name;
+                                                }
+                                            }
                                         }
                                     });
                                 }
@@ -4863,16 +4909,15 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     const yesterdayPoint = pastRecords.length > 0 ? pastRecords[pastRecords.length - 1] : null;
                     const curNet = calculation?.currentNet || 0;
                     
-                    // 어제 날짜(직전 영업일)와 동일하거나 1~2일 이내 기록인 경우만 비교 표시
                     const yesterdayDateStr = yesterdayPoint ? yesterdayPoint.date : null;
-                    const isRecentSnapshot = yesterdayPoint ? (new Date(kstToday) - new Date(yesterdayPoint.date)) / (1000 * 60 * 60 * 24) <= 3 : false;
                     const netDiff = yesterdayPoint ? (curNet - yesterdayPoint.netWorth) : totalTodayProfit;
                     const netDiffPct = yesterdayPoint && yesterdayPoint.netWorth > 0 ? (netDiff / yesterdayPoint.netWorth) * 100 : dayProfitPct;
 
-                    // 최고 상승 / 최저 하락 종목
-                    const sortedGainers = [...itemsWithStats].filter(i => Math.abs(i.changePct) > 0.01).sort((a, b) => b.changePct - a.changePct);
-                    const topGainer = sortedGainers.length > 0 && sortedGainers[0].changePct > 0 ? sortedGainers[0] : null;
-                    const topLoser = sortedGainers.length > 0 && sortedGainers[sortedGainers.length - 1].changePct < 0 ? sortedGainers[sortedGainers.length - 1] : null;
+                    // 전일 마감 대비 최고 상승 / 최저 하락 종목 (항상 전일 종가 대비 현재가 차이 기준)
+                    const uniqueItems = Array.from(tickerStatsMap.values());
+                    const sortedGainers = uniqueItems.sort((a, b) => b.changePct - a.changePct);
+                    const topGainer = sortedGainers.length > 0 ? sortedGainers[0] : null;
+                    const topLoser = sortedGainers.length > 0 ? sortedGainers[sortedGainers.length - 1] : null;
 
                     return {
                         totalTodayProfit: Math.round(totalTodayProfit * 100) / 100,
@@ -4882,7 +4927,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         netDiffPct,
                         yesterdayPoint,
                         yesterdayDateStr,
-                        isRecentSnapshot,
                         linkedCount,
                         topGainer,
                         topLoser,
@@ -4892,7 +4936,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                 return (
                     <div className="space-y-6">
-                        {/* 🔥 [시각화 최상단] 오늘의 실시간 투자 성과 & 당일 평가손익 카드 (라이트/다크 테마 일치) */}
+                        {/* 🔥 [시각화 최상단] 오늘의 실시간 투자 성과 & 당일 평가손익 카드 */}
                         <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 border border-slate-200/90 dark:border-slate-700 shadow-sm relative overflow-hidden transition-colors">
                             {/* 헤더 & 우측 메인 지표 */}
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
@@ -4901,20 +4945,15 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                     <div className="flex items-center gap-2.5 flex-wrap">
                                         <span className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                                             <span>🔥</span>
-                                            <span>오늘의 실시간 투자 성과</span>
+                                            <span>오늘의 투자 성과 (전일 마감 대비)</span>
                                         </span>
                                         <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60 font-mono">
                                             KST {todayStats.kstToday}
                                         </span>
-                                        {todayStats.totalTodayProfit === 0 && (
-                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600">
-                                                개장 전 (전일 종가 기준)
-                                            </span>
-                                        )}
                                     </div>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                                         {todayStats.linkedCount > 0 
-                                            ? `총 ${todayStats.linkedCount}개 연동 종목의 전일 종가 대비 실시간 평가손익 및 당일 변동입니다.`
+                                            ? `총 ${todayStats.linkedCount}개 연동 종목의 전일 종가 대비 현재가 변동 및 직전 마감 스냅샷 대비 자산 손익입니다.`
                                             : '증권/연금 계좌의 종목을 연동하시면 전일 종가 대비 실시간 당일 손익이 자동으로 집계됩니다.'}
                                     </p>
                                 </div>
@@ -4960,33 +4999,41 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                         <span className={`font-black tabular-nums ${
                                             todayStats.netDiff > 0 ? 'text-red-500 dark:text-red-400' : todayStats.netDiff < 0 ? 'text-blue-500 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300'
                                         }`}>
-                                            {todayStats.isRecentSnapshot ? (
+                                            {todayStats.yesterdayPoint ? (
                                                 `${todayStats.netDiff > 0 ? '+' : ''}${formatNumber(todayStats.netDiff, displayMode)}만 (${todayStats.netDiffPct > 0 ? '+' : ''}${todayStats.netDiffPct.toFixed(2)}%)`
                                             ) : (
-                                                '어제 기록 없음'
+                                                '직전 기록 없음'
                                             )}
                                         </span>
                                     </div>
 
-                                    {/* 2. 오늘 최고 상승 종목 */}
+                                    {/* 2. 전일 대비 최고 상승 종목 */}
                                     <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700/50">
                                         <span className="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
                                             <span>🚀</span>
-                                            <span>오늘 최고 상승</span>
+                                            <span>전일 대비 최고 상승</span>
                                         </span>
-                                        <span className="font-extrabold text-red-500 dark:text-red-400 truncate max-w-[130px] tabular-nums" title={todayStats.topGainer?.name || '-'}>
-                                            {todayStats.topGainer ? `${todayStats.topGainer.name} (+${todayStats.topGainer.changePct.toFixed(1)}%)` : '-'}
+                                        <span className={`font-extrabold truncate max-w-[130px] tabular-nums ${
+                                            todayStats.topGainer && todayStats.topGainer.changePct > 0 ? 'text-red-500 dark:text-red-400' : 'text-slate-600 dark:text-slate-300'
+                                        }`} title={todayStats.topGainer?.name || '-'}>
+                                            {todayStats.topGainer 
+                                                ? `${todayStats.topGainer.name} (${todayStats.topGainer.changePct > 0 ? '+' : ''}${todayStats.topGainer.changePct.toFixed(1)}%)` 
+                                                : '-'}
                                         </span>
                                     </div>
 
-                                    {/* 3. 오늘 최저 하락 종목 */}
+                                    {/* 3. 전일 대비 최저 하락 종목 */}
                                     <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700/50">
                                         <span className="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
                                             <span>📉</span>
-                                            <span>오늘 최저 하락</span>
+                                            <span>전일 대비 최저 하락</span>
                                         </span>
-                                        <span className="font-extrabold text-blue-500 dark:text-blue-400 truncate max-w-[130px] tabular-nums" title={todayStats.topLoser?.name || '-'}>
-                                            {todayStats.topLoser ? `${todayStats.topLoser.name} (${todayStats.topLoser.changePct.toFixed(1)}%)` : '-'}
+                                        <span className={`font-extrabold truncate max-w-[130px] tabular-nums ${
+                                            todayStats.topLoser && todayStats.topLoser.changePct < 0 ? 'text-blue-500 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300'
+                                        }`} title={todayStats.topLoser?.name || '-'}>
+                                            {todayStats.topLoser 
+                                                ? `${todayStats.topLoser.name} (${todayStats.topLoser.changePct > 0 ? '+' : ''}${todayStats.topLoser.changePct.toFixed(1)}%)` 
+                                                : '-'}
                                         </span>
                                     </div>
                                 </div>
@@ -6016,6 +6063,64 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                         </div>
                     )}
+                    {/* 🎛️ [실시간 인터랙티브 헤더 HUD] 토스/로빈후드 스타일 마우스 스크러빙 정보 바 */}
+                    <div className="mb-3 mx-4 p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/90 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all">
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 font-mono border border-indigo-200/60 dark:border-indigo-800/60">
+                                    📅 {historyChartInfo?.title ? historyChartInfo.title : (assetHistory[assetHistory.length - 1]?.date ? `최근 기록: ${assetHistory[assetHistory.length - 1].date}` : '히스토리')}
+                                </span>
+                                {historyChartInfo ? (
+                                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 animate-pulse flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                                        <span>실시간 탐색 중</span>
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] font-medium text-slate-400">
+                                        (차트 위로 마우스를 올리면 시점별 자산이 실시간 전환됩니다)
+                                    </span>
+                                )}
+                            </div>
+                            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 font-mono tracking-tight flex items-baseline gap-2">
+                                <span>
+                                    {formatNumber(
+                                        historyChartInfo?.netWorthVal !== undefined && historyChartInfo?.netWorthVal !== null
+                                            ? historyChartInfo.netWorthVal
+                                            : (historyViewMode === 'gross'
+                                                ? (assetHistory[assetHistory.length - 1]?.grossWorth || assetHistory[assetHistory.length - 1]?.netWorth || 0)
+                                                : (assetHistory[assetHistory.length - 1]?.netWorth || 0)),
+                                        displayMode
+                                    )}만원
+                                </span>
+                                <span className="text-xs font-bold text-slate-400 dark:text-slate-500">
+                                    {historyViewMode === 'gross' ? '총자산' : '순자산'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* 우측 델타 뱃지 */}
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                            {historyChartInfo?.diffFromStart !== undefined && historyChartInfo?.diffFromStart !== null ? (
+                                <div className={`px-3.5 py-2 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
+                                    historyChartInfo.diffFromStart > 0
+                                        ? 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/40'
+                                        : historyChartInfo.diffFromStart < 0
+                                            ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-900/40'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200'
+                                }`}>
+                                    <span className="text-[10px]">{historyChartInfo.diffFromStart > 0 ? '▲' : historyChartInfo.diffFromStart < 0 ? '▼' : '―'}</span>
+                                    <span>첫 기록 대비 {historyChartInfo.diffFromStart > 0 ? '+' : ''}{formatNumber(historyChartInfo.diffFromStart, displayMode)}만</span>
+                                    <span className="text-[10px] opacity-80">({historyChartInfo.diffPctFromStart > 0 ? '+' : ''}{historyChartInfo.diffPctFromStart.toFixed(1)}%)</span>
+                                </div>
+                            ) : historyMetrics && (
+                                <div className="px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-700/60 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 shadow-sm">
+                                    <span>👑</span>
+                                    <span>역대 최고 {formatNumber(historyMetrics.athVal, displayMode)}만</span>
+                                    <span className="text-[10px] text-slate-400 font-mono">({historyMetrics.athDate})</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                     
                     <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 h-[600px] relative">
                         <canvas ref={historyChartRef} onContextMenu={handleHistoryContextMenu}></canvas>
