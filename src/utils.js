@@ -1926,39 +1926,95 @@ const exportDashboardToPDF = async (addToast, darkMode, fileName) => {
 
     if (addToast) addToast('PDF 문서를 생성하고 있습니다...', 'info');
 
-    let clone;
+    // [핵심 해결책] 0x0 캔버스/SVG/패턴 렌더링 시 브라우저 네이티브 createPattern 크래시 완벽 방어 가드
+    const origCreatePattern = CanvasRenderingContext2D.prototype.createPattern;
+    const dummyPatternCanvas = document.createElement('canvas');
+    dummyPatternCanvas.width = 1;
+    dummyPatternCanvas.height = 1;
+
+    CanvasRenderingContext2D.prototype.createPattern = function(image, repetition) {
+        if (!image || image.width === 0 || image.height === 0) {
+            return origCreatePattern.call(this, dummyPatternCanvas, repetition || 'repeat');
+        }
+        try {
+            return origCreatePattern.call(this, image, repetition);
+        } catch (e) {
+            return origCreatePattern.call(this, dummyPatternCanvas, repetition || 'repeat');
+        }
+    };
+
+    let clone = null;
     try {
-        // 1. 복제 및 스타일 설정 (화면 밖에서 렌더링)
+        // 1. 복제 및 스타일 설정 (화면 밖에서 실제 크기로 렌더링)
         clone = element.cloneNode(true);
         clone.id = 'dashboard-clone-for-pdf';
         Object.assign(clone.style, {
-            position: 'fixed', // Use fixed to ensure it's not affected by scroll position
+            position: 'fixed',
             top: '-9999px',
             left: '0',
-            width: `${element.offsetWidth}px`,
+            width: `${element.offsetWidth || 1200}px`,
             zIndex: '-9999',
-            backgroundColor: darkMode ? '#1f2937' : '#ffffff' // 다크모드 대응
+            backgroundColor: darkMode ? '#1f2937' : '#ffffff'
         });
         document.body.appendChild(clone);
 
-        // [Fix] 차트(Canvas) 이미지 복사 (cloneNode는 캔버스 내용을 복사하지 않음)
+        // 2. 차트(Canvas) 이미지 복사 및 0x0 비정상 캔버스 안전 정제
         const originalCanvases = element.querySelectorAll('canvas');
         const clonedCanvases = clone.querySelectorAll('canvas');
         originalCanvases.forEach((orig, i) => {
             const cloned = clonedCanvases[i];
-            if (cloned) {
+            if (!cloned) return;
+
+            // 원본 캔버스 크기가 0이거나 미렌더링 상태인 경우 clone 트리에서 안전하게 제거
+            if (!orig || orig.width === 0 || orig.height === 0 || orig.offsetWidth === 0 || orig.offsetHeight === 0) {
+                if (cloned.parentNode) cloned.parentNode.removeChild(cloned);
+                return;
+            }
+
+            try {
                 cloned.width = orig.width;
                 cloned.height = orig.height;
                 const ctx = cloned.getContext('2d');
-                if (ctx) ctx.drawImage(orig, 0, 0);
+                if (ctx) {
+                    ctx.drawImage(orig, 0, 0);
+                }
+            } catch (err) {
+                if (cloned.parentNode) cloned.parentNode.removeChild(cloned);
             }
         });
 
-        // 2. 불필요한 UI 제거
-        const selectorsToRemove = ['.no-print', 'aside', 'button', '.fixed', '.sticky', 'nav'];
+        // clone 트리에 남아있는 캔버스 중 width/height가 0인 캔버스 2차 전수 검사 및 안전 제거
+        clone.querySelectorAll('canvas').forEach(c => {
+            if (c.width === 0 || c.height === 0 || c.offsetWidth === 0 || c.offsetHeight === 0) {
+                if (c.parentNode) c.parentNode.removeChild(c);
+            }
+        });
+
+        // 3. SVG 내 url(#grad-*) 참조가 html2canvas의 createPattern 0-size 충돌을 일으키지 않도록 솔리드 컬러로 치환
+        clone.querySelectorAll('path, line, circle, rect, polygon').forEach(el => {
+            const stroke = el.getAttribute('stroke') || '';
+            const fill = el.getAttribute('fill') || '';
+            if (stroke.includes('url(#grad-red)')) el.setAttribute('stroke', '#ef4444');
+            else if (stroke.includes('url(#grad-emerald)')) el.setAttribute('stroke', '#10b981');
+            else if (stroke.includes('url(#grad-orange)')) el.setAttribute('stroke', '#f97316');
+            else if (stroke.includes('url(#grad-indigo)')) el.setAttribute('stroke', '#6366f1');
+            else if (stroke.startsWith('url(#') || stroke.startsWith('url("#')) el.setAttribute('stroke', '#6366f1');
+            
+            if (fill.startsWith('url(#') || fill.startsWith('url("#')) el.setAttribute('fill', '#6366f1');
+        });
+
+        // 4. 0 크기 요소의 배경 그라데이션 제거 (html2canvas 패턴 0-size 충돌 방지)
+        clone.querySelectorAll('*').forEach(el => {
+            if (el.style && (el.style.width === '0%' || el.style.width === '0px' || (el.offsetWidth === 0 && el.offsetHeight === 0))) {
+                el.style.backgroundImage = 'none';
+            }
+        });
+
+        // 5. 불필요한 UI 제거
+        const selectorsToRemove = ['.no-print', 'aside', 'button', '.fixed', '.sticky', 'nav', '.driver-popover'];
         clone.querySelectorAll(selectorsToRemove.join(',')).forEach(el => el.remove());
 
-        // 3. 입력 필드 평탄화 (Flatten Inputs)
+        // 6. 입력 필드 평탄화 (Flatten Inputs)
         const inputs = clone.querySelectorAll('input, textarea, select');
         inputs.forEach(input => {
             if (input.type === 'hidden' || input.style.display === 'none') return;
@@ -1967,13 +2023,12 @@ const exportDashboardToPDF = async (addToast, darkMode, fileName) => {
             if (input.tagName === 'SELECT') {
                 textValue = input.options[input.selectedIndex]?.text || input.value;
             } else if (input.type === 'checkbox' || input.type === 'radio') {
-                return; // 체크박스는 그대로 렌더링
+                return;
             }
 
             const textEl = document.createElement(input.tagName === 'TEXTAREA' ? 'div' : 'span');
             textEl.textContent = textValue;
             
-            // 스타일 복사 (Computed Style)
             const style = window.getComputedStyle(input);
             Object.assign(textEl.style, {
                 fontFamily: style.fontFamily,
@@ -1993,52 +2048,62 @@ const exportDashboardToPDF = async (addToast, darkMode, fileName) => {
             if (input.parentNode) input.parentNode.replaceChild(textEl, input);
         });
 
-        // 3.5. PDF 잘림 방지를 위한 페이지별 여백(Spacer) 삽입
+        // 7. PDF 잘림 방지를 위한 페이지별 여백(Spacer) 삽입
         const pxPageHeight = Math.floor(clone.offsetWidth * 1.414);
-        const targets = Array.from(clone.querySelectorAll('.rounded-2xl, .rounded-xl, canvas, table, .border'));
-        
-        targets.forEach(el => {
-            if (el.classList.contains('pdf-page-spacer')) return;
-            
-            const rect = el.getBoundingClientRect();
-            const cloneRect = clone.getBoundingClientRect();
-            const relativeTop = rect.top - cloneRect.top;
-            const relativeBottom = rect.bottom - cloneRect.top;
-            
-            const pageIndex = Math.floor(relativeTop / pxPageHeight);
-            const nextPageStart = (pageIndex + 1) * pxPageHeight;
-            
-            // 경계선에 걸치는지 확인
-            if (relativeTop < nextPageStart && relativeBottom > nextPageStart) {
-                const spacerHeight = nextPageStart - relativeTop;
+        if (pxPageHeight > 100) {
+            const targets = Array.from(clone.querySelectorAll('.rounded-2xl, .rounded-xl, canvas, table, .border'));
+            targets.forEach(el => {
+                if (el.classList.contains('pdf-page-spacer')) return;
                 
-                // 너무 큰 영역을 밀면 빈 페이지가 과도하게 생기므로 페이지 높이의 80% 이하일 때만 아래로 밀어줌
-                if (spacerHeight > 0 && spacerHeight < pxPageHeight * 0.8) {
-                    const spacer = document.createElement('div');
-                    spacer.style.height = `${spacerHeight}px`;
-                    spacer.className = 'pdf-page-spacer';
-                    el.parentNode.insertBefore(spacer, el);
-                }
+                try {
+                    const rect = el.getBoundingClientRect();
+                    const cloneRect = clone.getBoundingClientRect();
+                    const relativeTop = rect.top - cloneRect.top;
+                    const relativeBottom = rect.bottom - cloneRect.top;
+                    
+                    if (Number.isFinite(relativeTop) && Number.isFinite(relativeBottom)) {
+                        const pageIndex = Math.floor(relativeTop / pxPageHeight);
+                        const nextPageStart = (pageIndex + 1) * pxPageHeight;
+                        
+                        if (relativeTop < nextPageStart && relativeBottom > nextPageStart) {
+                            const spacerHeight = nextPageStart - relativeTop;
+                            if (spacerHeight > 0 && spacerHeight < pxPageHeight * 0.8) {
+                                const spacer = document.createElement('div');
+                                spacer.style.height = `${spacerHeight}px`;
+                                spacer.className = 'pdf-page-spacer';
+                                if (el.parentNode) el.parentNode.insertBefore(spacer, el);
+                            }
+                        }
+                    }
+                } catch (e) {}
+            });
+        }
+
+        // 8. 캔버스 생성
+        const canvas = await window.html2canvas(clone, {
+            scale: 1.2,
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            backgroundColor: darkMode ? '#1f2937' : '#ffffff',
+            windowWidth: clone.scrollWidth || 1200,
+            windowHeight: clone.scrollHeight,
+            ignoreElements: (el) => {
+                if (!el || !el.classList) return false;
+                const tag = el.tagName?.toLowerCase();
+                if (tag === 'aside' || el.classList.contains('no-print') || el.classList.contains('driver-popover')) return true;
+                if (tag === 'canvas' && (el.width === 0 || el.height === 0)) return true;
+                return false;
             }
         });
 
-        // 4. 캔버스 생성
-        const canvas = await window.html2canvas(clone, {
-            scale: 1.2, // 요구사항: 1.2배율
-            useCORS: true,
-            logging: false,
-            backgroundColor: darkMode ? '#1f2937' : '#ffffff',
-            windowWidth: clone.scrollWidth,
-            windowHeight: clone.scrollHeight
-        });
-
-        // 5. PDF 생성
+        // 9. PDF 생성
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF('p', 'mm', 'a4');
         const imgWidth = 210;
         const pageHeight = 297;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        const imgHeight = (canvas.height * imgWidth) / (canvas.width || 1);
         
         let heightLeft = imgHeight;
         let position = 0;
@@ -2063,7 +2128,10 @@ const exportDashboardToPDF = async (addToast, darkMode, fileName) => {
         console.error('PDF Export Error:', error);
         if (addToast) addToast('PDF 생성 중 오류가 발생했습니다.', 'error');
     } finally {
-        if (clone) document.body.removeChild(clone);
+        CanvasRenderingContext2D.prototype.createPattern = origCreatePattern;
+        if (clone && clone.parentNode) {
+            clone.parentNode.removeChild(clone);
+        }
     }
 };
 

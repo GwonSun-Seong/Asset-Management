@@ -8938,7 +8938,6 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                 }
 
                                 const panelProps = { 
-                                    key: panelId,
                                     id: panelId,
                                     moveUp: () => movePanel(panelId, -1),
                                     moveDown: () => movePanel(panelId, 1),
@@ -8950,7 +8949,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 
                                 switch (panelId) {
                                     case 'summary':
-                                        return <PanelWrapper {...panelProps} title="📊 요약 및 설정" className="bg-white dark:bg-gray-900 rounded-lg shadow">
+                                        return <PanelWrapper key={panelId} {...panelProps} title="📊 요약 및 설정" className="bg-white dark:bg-gray-900 rounded-lg shadow">
     <SummaryPanel 
         calculation={calculation}
         isCalculating={isCalculating}
