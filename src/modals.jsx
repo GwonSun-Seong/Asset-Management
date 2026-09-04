@@ -501,7 +501,9 @@ window.SettingsModal = ({
     supabase,
     userId,
     autoSaveHistoryOnSync,
-    onAutoSaveHistoryOnSyncChange
+    onAutoSaveHistoryOnSyncChange,
+    weatherEffectEnabled,
+    onWeatherEffectChange
 }) => {
     if (!isOpen) return null;
 
@@ -803,6 +805,35 @@ window.SettingsModal = ({
                         <p className="text-[10px] text-gray-500 mt-2 px-1">
                             {logoutBehavior === 'keep' ? '로그아웃 후에도 이 브라우저에 자산 데이터가 남습니다.' : '로그아웃 시 보안을 위해 브라우저의 모든 데이터를 초기화합니다.'}
                         </p>
+                    </section>
+                    {/* [PRO] 실시간 손익 날씨 효과 */}
+                    <section className="pt-3 border-t dark:border-gray-700">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <div className="flex items-center gap-1.5">
+                                    <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                                        <span>🌦️</span> 실시간 손익 날씨 효과
+                                    </h4>
+                                    {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded font-bold">PRO 전용</span>}
+                                </div>
+                                <p className="text-[10px] text-gray-500 mt-0.5">
+                                    당일 손익률에 따라 대시보드 테두리에 맑음/비/번개 등 감성 앰비언트 연출을 적용합니다. (기본값: OFF)
+                                </p>
+                            </div>
+                            {isPro ? (
+                                <label className="relative inline-flex items-center cursor-pointer ml-3 shrink-0">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={!!weatherEffectEnabled} 
+                                        onChange={(e) => onWeatherEffectChange && onWeatherEffectChange(e.target.checked)} 
+                                        className="sr-only peer" 
+                                    />
+                                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                                </label>
+                            ) : (
+                                <span className="text-[10px] text-gray-400 font-bold ml-3 shrink-0">잠김</span>
+                            )}
+                        </div>
                     </section>
                     {/* 동기화 및 로그아웃 */}
                     <div className="pt-4 border-t dark:border-gray-700 space-y-2">

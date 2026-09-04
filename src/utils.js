@@ -1293,15 +1293,33 @@ const fetchSingleTossQuote = async (symbol, token) => {
         const item = (data.result || [])[0];
         if (item && item.lastPrice) {
             const priceNum = Number(item.lastPrice);
-            const basePriceNum = Number(item.basePrice) || (priceNum - (Number(item.change) || 0));
-            const changeNum = Number(item.change) || (priceNum - basePriceNum);
-            const changeRateNum = Number(item.changeRate) || (basePriceNum > 0 ? (priceNum - basePriceNum) / basePriceNum : 0);
+            let basePriceNum = Number(item.basePrice);
+            if (!basePriceNum || isNaN(basePriceNum) || basePriceNum <= 0) {
+                basePriceNum = Number(item.prevClose) || Number(item.previousClose) || Number(item.closePrice);
+            }
+            const changeNum = Number(item.change);
+            const changeRateNum = Number(item.changeRate);
+
+            if (!basePriceNum || basePriceNum === priceNum || isNaN(basePriceNum)) {
+                if (changeNum && !isNaN(changeNum) && changeNum !== 0) {
+                    basePriceNum = priceNum - changeNum;
+                } else if (changeRateNum && !isNaN(changeRateNum) && changeRateNum !== 0) {
+                    const rateVal = Math.abs(changeRateNum) < 1 ? changeRateNum : changeRateNum / 100;
+                    basePriceNum = priceNum / (1 + rateVal);
+                }
+            }
+
+            const finalChange = (basePriceNum > 0 && basePriceNum !== priceNum) ? (priceNum - basePriceNum) : (changeNum || 0);
+            const finalChangePct = (basePriceNum > 0 && basePriceNum !== priceNum) 
+                ? ((priceNum - basePriceNum) / basePriceNum) * 100 
+                : (changeRateNum ? (Math.abs(changeRateNum) < 1 ? changeRateNum * 100 : changeRateNum) : 0);
+
             return {
                 symbol: symbol,
                 price: priceNum,
                 basePrice: basePriceNum > 0 ? basePriceNum : priceNum,
-                change: changeNum,
-                changePct: changeRateNum * 100,
+                change: finalChange,
+                changePct: finalChangePct,
                 currency: item.currency || 'KRW',
                 name: item.symbol
             };
@@ -1367,16 +1385,34 @@ const fetchTossQuotes = async (symbols) => {
                     const resultList = data.result || [];
                     resultList.forEach(item => {
                         const priceNum = Number(item.lastPrice);
-                        const basePriceNum = Number(item.basePrice) || (priceNum - (Number(item.change) || 0));
-                        const changeNum = Number(item.change) || (priceNum - basePriceNum);
-                        const changeRateNum = Number(item.changeRate) || (basePriceNum > 0 ? (priceNum - basePriceNum) / basePriceNum : 0);
+                        let basePriceNum = Number(item.basePrice);
+                        if (!basePriceNum || isNaN(basePriceNum) || basePriceNum <= 0) {
+                            basePriceNum = Number(item.prevClose) || Number(item.previousClose) || Number(item.closePrice);
+                        }
+                        const changeNum = Number(item.change);
+                        const changeRateNum = Number(item.changeRate);
+
+                        if (!basePriceNum || basePriceNum === priceNum || isNaN(basePriceNum)) {
+                            if (changeNum && !isNaN(changeNum) && changeNum !== 0) {
+                                basePriceNum = priceNum - changeNum;
+                            } else if (changeRateNum && !isNaN(changeRateNum) && changeRateNum !== 0) {
+                                const rateVal = Math.abs(changeRateNum) < 1 ? changeRateNum : changeRateNum / 100;
+                                basePriceNum = priceNum / (1 + rateVal);
+                            }
+                        }
+
+                        const finalChange = (basePriceNum > 0 && basePriceNum !== priceNum) ? (priceNum - basePriceNum) : (changeNum || 0);
+                        const finalChangePct = (basePriceNum > 0 && basePriceNum !== priceNum) 
+                            ? ((priceNum - basePriceNum) / basePriceNum) * 100 
+                            : (changeRateNum ? (Math.abs(changeRateNum) < 1 ? changeRateNum * 100 : changeRateNum) : 0);
+
                         if (priceNum > 0) {
                             quotesMap[item.symbol] = {
                                 symbol: item.symbol,
                                 price: priceNum,
                                 basePrice: basePriceNum > 0 ? basePriceNum : priceNum,
-                                change: changeNum,
-                                changePct: changeRateNum * 100,
+                                change: finalChange,
+                                changePct: finalChangePct,
                                 currency: item.currency || 'KRW',
                                 name: item.symbol
                             };
@@ -1644,6 +1680,10 @@ const fetchTossExchangeRateDetails = async () => {
             const res = data.result || {};
             const rateNum = parseFloat(res.rate);
             if (!isNaN(rateNum) && rateNum > 0) {
+                const prevRate = Number(localStorage.getItem('asset_last_usd_krw'));
+                if (prevRate > 0 && Math.abs(prevRate - rateNum) > 0.01) {
+                    localStorage.setItem('asset_prev_usd_krw', prevRate.toString());
+                }
                 localStorage.setItem('asset_last_usd_krw', rateNum.toString());
                 return {
                     rate: rateNum,

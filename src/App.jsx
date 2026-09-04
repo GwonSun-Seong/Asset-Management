@@ -930,6 +930,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
             const [livePriceEnabled, setLivePriceEnabled] = useState(() => localStorage.getItem('toss_live_price_enabled') !== 'false');
             const [livePriceInterval, setLivePriceInterval] = useState(() => Number(localStorage.getItem('toss_live_price_interval')) || 60);
             const [autoSaveHistoryOnSync, setAutoSaveHistoryOnSync] = useState(() => localStorage.getItem('assetDashboardAutoSaveHistoryOnSync') === 'true');
+            const [weatherEffectEnabled, setWeatherEffectEnabled] = useState(() => localStorage.getItem('asset_weather_effect_enabled') === 'true');
             
             useEffect(() => {
                 localStorage.setItem('assetDashboardAutoSaveHistoryOnSync', String(autoSaveHistoryOnSync));
@@ -1234,22 +1235,52 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                             if (q && q.price) {
                                                 const isUsStock = /^[A-Za-z]/.test(item.ticker);
                                                 if (isUsStock) {
-                                                    const safeFxRate = currentLiveFx > 0 ? currentLiveFx : Number(localStorage.getItem('asset_last_usd_krw'));
+                                                    const safeFxRate = currentLiveFx > 0 ? currentLiveFx : (Number(localStorage.getItem('asset_last_usd_krw')) || 1350);
+                                                    const prevFxRate = Number(localStorage.getItem('asset_prev_usd_krw')) || safeFxRate;
+
                                                     if (!safeFxRate || isNaN(safeFxRate) || safeFxRate <= 0) {
                                                         targetPrice = item.currentPrice;
                                                         targetStatus = 'offline';
                                                         targetError = '실시간 환율 데이터를 로드할 수 없어 오프라인 상태로 유지됩니다.';
                                                     } else {
                                                         targetPrice = Math.round(q.price * safeFxRate);
-                                                        targetBasePrice = Math.round((q.basePrice || q.price) * safeFxRate);
-                                                        targetChange = Math.round((q.change || 0) * safeFxRate);
-                                                        targetChangePct = q.changePct || 0;
+                                                        
+                                                        // USD 기준 전일종가 판별 (q.basePrice가 없거나 현재가와 같을 경우 change나 이전값 보존)
+                                                        let usdBase = q.basePrice;
+                                                        if (!usdBase || usdBase === q.price) {
+                                                            if (q.change && q.change !== 0) {
+                                                                usdBase = q.price - q.change;
+                                                            } else if (q.changePct && q.changePct !== 0) {
+                                                                usdBase = q.price / (1 + q.changePct / 100);
+                                                            } else if (item.rawUsdBasePrice && item.rawUsdBasePrice !== q.price) {
+                                                                usdBase = item.rawUsdBasePrice;
+                                                            } else {
+                                                                usdBase = q.basePrice || item.rawUsdBasePrice || q.price;
+                                                            }
+                                                        }
+
+                                                        // 미국 주식 원화 전일평가액 = 전일 USD 가격 * 전일 환율 (주가변동 + 환율변동 동시 반영)
+                                                        targetBasePrice = Math.round(usdBase * prevFxRate);
+                                                        targetChange = targetPrice - targetBasePrice;
+                                                        targetChangePct = targetBasePrice > 0 ? ((targetPrice - targetBasePrice) / targetBasePrice) * 100 : (q.changePct || 0);
                                                     }
                                                 } else {
                                                     targetPrice = q.price;
-                                                    targetBasePrice = q.basePrice || q.price;
-                                                    targetChange = q.change || 0;
-                                                    targetChangePct = q.changePct || 0;
+                                                    let krwBase = q.basePrice;
+                                                    if (!krwBase || krwBase === q.price) {
+                                                        if (q.change && q.change !== 0) {
+                                                            krwBase = q.price - q.change;
+                                                        } else if (q.changePct && q.changePct !== 0) {
+                                                            krwBase = Math.round(q.price / (1 + q.changePct / 100));
+                                                        } else if (item.basePrice && item.basePrice !== q.price) {
+                                                            krwBase = item.basePrice;
+                                                        } else {
+                                                            krwBase = q.basePrice || item.basePrice || q.price;
+                                                        }
+                                                    }
+                                                    targetBasePrice = krwBase;
+                                                    targetChange = targetPrice - targetBasePrice;
+                                                    targetChangePct = targetBasePrice > 0 ? ((targetPrice - targetBasePrice) / targetBasePrice) * 100 : (q.changePct || 0);
                                                 }
                                             }
                                             const targetCurrency = 'KRW';
@@ -4858,20 +4889,32 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                             const curPrice = parseFloat(item.currentPrice) || 0;
                                             const shares = parseFloat(item.shares) || 0;
                                             
-                                            // 전일 종가 또는 변동액 기반 계산
-                                            let changePerShare = parseFloat(item.change) || 0;
-                                            let basePrice = parseFloat(item.basePrice) || (curPrice - changePerShare);
-                                            if (basePrice <= 0) basePrice = curPrice;
-                                            if (changePerShare === 0 && curPrice > 0 && basePrice > 0 && curPrice !== basePrice) {
-                                                changePerShare = curPrice - basePrice;
+                                            // [핵심] 장마감 여부와 무관하게 전일종가 대비 현재가 차이 계산
+                                            let basePrice = parseFloat(item.basePrice);
+                                            if (isNaN(basePrice) || basePrice <= 0) {
+                                                const changeVal = parseFloat(item.change) || 0;
+                                                basePrice = curPrice - changeVal;
+                                            }
+                                            if (isNaN(basePrice) || basePrice <= 0) {
+                                                basePrice = curPrice;
+                                            }
+
+                                            // 2번 내 2번: prevClose === 0 누락 시 자산 폭등 방지 (Safe Fallback)
+                                            let changePerShare = (curPrice > 0 && basePrice > 0) ? (curPrice - basePrice) : 0;
+                                            if (changePerShare === 0 && parseFloat(item.change)) {
+                                                changePerShare = parseFloat(item.change);
+                                                basePrice = curPrice - changePerShare;
+                                            }
+                                            if (curPrice <= 0 || basePrice <= 0) {
+                                                changePerShare = 0;
                                             }
 
                                             const curVal = (curPrice * shares) / 10000; // 만원
                                             const baseVal = (basePrice * shares) / 10000; // 만원
                                             const profit = (changePerShare * shares) / 10000; // 만원
-                                            const changePct = item.changePct !== undefined && item.changePct !== 0 
-                                                ? item.changePct 
-                                                : (basePrice > 0 ? ((curPrice - basePrice) / basePrice) * 100 : 0);
+                                            const changePct = (curPrice > 0 && basePrice > 0 && basePrice !== curPrice)
+                                                ? ((curPrice - basePrice) / basePrice) * 100
+                                                : (item.changePct !== undefined ? parseFloat(item.changePct) || 0 : 0);
 
                                             totalStockValue += curVal;
                                             totalYesterdayStockValue += baseVal;
@@ -4884,7 +4927,9 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                                     ticker: cleanTicker,
                                                     profit,
                                                     changePct,
-                                                    curVal
+                                                    curVal,
+                                                    curPrice,
+                                                    basePrice
                                                 });
                                             } else {
                                                 const existing = tickerStatsMap.get(cleanTicker);
@@ -4901,6 +4946,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         });
                     }
 
+                    // 투자(위험)자산 전용 당일 수익률 (%)
                     const dayProfitPct = totalYesterdayStockValue > 0 ? (totalTodayProfit / totalYesterdayStockValue) * 100 : 0;
                     
                     // 직전 마감 자산 히스토리 대비 당일 총자산 변동
@@ -4911,11 +4957,11 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     
                     const yesterdayDateStr = yesterdayPoint ? yesterdayPoint.date : null;
                     const netDiff = yesterdayPoint ? (curNet - yesterdayPoint.netWorth) : totalTodayProfit;
-                    const netDiffPct = yesterdayPoint && yesterdayPoint.netWorth > 0 ? (netDiff / yesterdayPoint.netWorth) * 100 : dayProfitPct;
+                    const netDiffPct = yesterdayPoint && yesterdayPoint.netWorth > 0 ? (netDiff / yesterdayPoint.netWorth) * 100 : 0;
 
-                    // 전일 마감 대비 최고 상승 / 최저 하락 종목 (항상 전일 종가 대비 현재가 차이 기준)
+                    // 전일 마감 대비 최고 상승 / 최저 하락 종목
                     const uniqueItems = Array.from(tickerStatsMap.values());
-                    const sortedGainers = uniqueItems.sort((a, b) => b.changePct - a.changePct);
+                    const sortedGainers = [...uniqueItems].sort((a, b) => b.changePct - a.changePct);
                     const topGainer = sortedGainers.length > 0 ? sortedGainers[0] : null;
                     const topLoser = sortedGainers.length > 0 ? sortedGainers[sortedGainers.length - 1] : null;
 
@@ -4934,10 +4980,49 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     };
                 })();
 
+                // 🌦️ [PRO 18번] 실시간 손익 날씨 이펙트 테마 정보
+                const weatherInfo = (() => {
+                    if (!isPro || !weatherEffectEnabled) return null;
+                    const pct = todayStats.dayProfitPct;
+                    if (pct >= 1.5) {
+                        return {
+                            icon: '☀️',
+                            label: '맑음 (대폭등)',
+                            desc: '햇살이 쏟아지는 맑은 날씨! 투자자산이 활활 타오르고 있습니다.',
+                            ambientClass: 'border-amber-300/60 dark:border-amber-500/50 shadow-[0_0_35px_rgba(245,158,11,0.22)] bg-gradient-to-br from-amber-50/70 via-white to-orange-50/50 dark:from-amber-950/25 dark:via-slate-800 dark:to-orange-950/20'
+                        };
+                    } else if (pct > 0) {
+                        return {
+                            icon: '🌤️',
+                            label: '화창한 상승',
+                            desc: '초록빛 순항 중! 온화하고 따스한 바람이 불어옵니다.',
+                            ambientClass: 'border-emerald-300/50 dark:border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.18)] bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40 dark:from-emerald-950/20 dark:via-slate-800 dark:to-teal-950/20'
+                        };
+                    } else if (pct > -1.5) {
+                        return {
+                            icon: '🌧️',
+                            label: '부슬부슬 비',
+                            desc: '가벼운 소나기가 지나가는 중입니다. 우산을 챙기세요.',
+                            ambientClass: 'border-blue-300/50 dark:border-blue-500/40 shadow-[0_0_30px_rgba(59,130,246,0.15)] bg-gradient-to-br from-blue-50/60 via-white to-slate-50/50 dark:from-blue-950/20 dark:via-slate-800 dark:to-slate-900/30'
+                        };
+                    } else {
+                        return {
+                            icon: '⚡',
+                            label: '천둥 번개 폭풍우',
+                            desc: '거센 비바람과 천둥 번개가 치고 있습니다. 멘탈을 꽉 잡으세요!',
+                            ambientClass: 'border-rose-400/60 dark:border-rose-600/50 shadow-[0_0_35px_rgba(244,63,94,0.25)] bg-gradient-to-br from-rose-50/70 via-white to-indigo-50/50 dark:from-rose-950/30 dark:via-slate-800 dark:to-indigo-950/30'
+                        };
+                    }
+                })();
+
                 return (
                     <div className="space-y-6">
                         {/* 🔥 [시각화 최상단] 오늘의 실시간 투자 성과 & 당일 평가손익 카드 */}
-                        <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 border border-slate-200/90 dark:border-slate-700 shadow-sm relative overflow-hidden transition-colors">
+                        <div className={`rounded-2xl p-5 sm:p-6 border shadow-sm relative overflow-hidden transition-all duration-500 ${
+                            weatherInfo 
+                                ? weatherInfo.ambientClass 
+                                : 'bg-white dark:bg-slate-800 border-slate-200/90 dark:border-slate-700'
+                        }`}>
                             {/* 헤더 & 우측 메인 지표 */}
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
                                 {/* 좌측 정보 */}
@@ -4950,6 +5035,12 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                         <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60 font-mono">
                                             KST {todayStats.kstToday}
                                         </span>
+                                        {weatherInfo && (
+                                            <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-white/90 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-700 shadow-sm flex items-center gap-1 text-slate-700 dark:text-slate-200 animate-in fade-in" title={weatherInfo.desc}>
+                                                <span>{weatherInfo.icon}</span>
+                                                <span>{weatherInfo.label}</span>
+                                            </span>
+                                        )}
                                     </div>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                                         {todayStats.linkedCount > 0 
@@ -4958,11 +5049,16 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                     </p>
                                 </div>
 
-                                {/* 우측 메인 지표: 오늘 주식 평가손익 */}
+                                {/* 우측 메인 지표: 오늘 투자 평가손익 & 투자자산 vs 총자산 변동률 분리 표기 */}
                                 <div className="flex items-center gap-3.5 bg-slate-50 dark:bg-slate-900/50 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl border border-slate-200/80 dark:border-slate-700/80 self-start md:self-auto">
                                     <div className="text-right">
-                                        <div className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                                            오늘 주식 평가손익
+                                        <div className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center justify-end gap-1">
+                                            <span>오늘 투자 평가손익</span>
+                                            {todayStats.yesterdayPoint && (
+                                                <span className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 hidden sm:inline">
+                                                    (총자산 대비 {todayStats.netDiffPct > 0 ? '+' : ''}{todayStats.netDiffPct.toFixed(2)}%)
+                                                </span>
+                                            )}
                                         </div>
                                         <div className={`text-xl sm:text-2xl font-black tabular-nums ${
                                             todayStats.totalTodayProfit > 0 
@@ -4974,15 +5070,18 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                                             {todayStats.totalTodayProfit > 0 ? '+' : ''}{formatNumber(todayStats.totalTodayProfit, displayMode)}만원
                                         </div>
                                     </div>
-                                    <div className={`px-2.5 py-1.5 rounded-lg text-xs font-black flex items-center gap-1 ${
-                                        todayStats.dayProfitPct > 0 
-                                            ? 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/40' 
-                                            : todayStats.dayProfitPct < 0 
-                                                ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/40' 
-                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                                    }`}>
-                                        <span className="text-[10px]">{todayStats.dayProfitPct > 0 ? '▲' : todayStats.dayProfitPct < 0 ? '▼' : '―'}</span>
-                                        <span>{Math.abs(todayStats.dayProfitPct).toFixed(2)}%</span>
+                                    <div className="flex flex-col items-end gap-0.5">
+                                        <div className={`px-2.5 py-1.5 rounded-lg text-xs font-black flex items-center gap-1 ${
+                                            todayStats.dayProfitPct > 0 
+                                                ? 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/40' 
+                                                : todayStats.dayProfitPct < 0 
+                                                    ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/40' 
+                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                                        }`}>
+                                            <span className="text-[10px]">{todayStats.dayProfitPct > 0 ? '▲' : todayStats.dayProfitPct < 0 ? '▼' : '―'}</span>
+                                            <span>{Math.abs(todayStats.dayProfitPct).toFixed(2)}%</span>
+                                        </div>
+                                        <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500">투자자산 성과</span>
                                     </div>
                                 </div>
                             </div>
@@ -9264,6 +9363,11 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         userId={userProfile?.id}
                         autoSaveHistoryOnSync={autoSaveHistoryOnSync}
                         onAutoSaveHistoryOnSyncChange={setAutoSaveHistoryOnSync}
+                        weatherEffectEnabled={weatherEffectEnabled}
+                        onWeatherEffectChange={(val) => {
+                            setWeatherEffectEnabled(val);
+                            localStorage.setItem('asset_weather_effect_enabled', val ? 'true' : 'false');
+                        }}
                     />}
                     {showSaveToast && (
                         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[99999] bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
