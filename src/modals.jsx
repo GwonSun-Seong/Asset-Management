@@ -503,13 +503,16 @@ window.SettingsModal = ({
     autoSaveHistoryOnSync,
     onAutoSaveHistoryOnSyncChange,
     weatherEffectEnabled,
-    onWeatherEffectChange
+    onWeatherEffectChange,
+    weatherEffectIntensity,
+    onWeatherIntensityChange
 }) => {
     if (!isOpen) return null;
 
     const [pushStatus, setPushStatus] = React.useState({ supported: false, permission: 'default', subscribed: false });
     const [pushLoading, setPushLoading] = React.useState(false);
     const [deviceTokens, setDeviceTokens] = React.useState([]);
+    const [settingsTab, setSettingsTab] = React.useState('display');
 
     React.useEffect(() => {
         if (isOpen) {
@@ -600,265 +603,434 @@ window.SettingsModal = ({
             setPushLoading(false);
         }
     };
+    const showDisplay = settingsTab === 'display' || settingsTab === 'all';
+    const showData = settingsTab === 'data' || settingsTab === 'all';
+    const showSecurity = settingsTab === 'security' || settingsTab === 'all';
+
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-300">
-                <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">⚙️ 앱 설정</h3>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">✕</button>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-3 sm:p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg md:max-w-3xl lg:max-w-4xl max-h-[90vh] md:max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in duration-200">
+                {/* 1. 고정 헤더 */}
+                <div className="p-4 sm:p-5 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50/90 dark:bg-gray-800/90 backdrop-blur-sm shrink-0">
+                    <div className="flex items-center gap-2">
+                        <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                            <span>⚙️</span> 앱 설정
+                        </h3>
+                        {isPro && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30">
+                                PRO
+                            </span>
+                        )}
+                    </div>
+                    <button 
+                        onClick={onClose} 
+                        className="p-1.5 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        title="닫기"
+                    >
+                        ✕
+                    </button>
                 </div>
-                <div className="p-6 space-y-6">
-                    {/* 보안 설정 */}
-                    <section>
-                        <div className="flex justify-between items-center mb-3">
-                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider">🔐 데이터 보안 (종단간 암호화)</h4>
-                            {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded">PRO 전용</span>}
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button onClick={() => onModeChange('normal')} className={`p-3 rounded-xl border-2 transition-all text-left ${encryptionMode === 'normal' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-gray-700'}`}>
-                                <div className="text-sm font-bold dark:text-white">일반 모드</div>
-                                <div className="text-[10px] text-gray-500">일반 암호화</div>
-                            </button>
-                            <button onClick={() => onModeChange('secure')} className={`p-3 rounded-xl border-2 transition-all text-left ${encryptionMode === 'secure' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-gray-700'}`}>
-                                <div className="text-sm font-bold dark:text-white">강화 모드</div>
-                                <div className="text-[10px] text-gray-500">{!isPro ? '🔒 잠김' : '비밀번호 기반 암호화'}</div>
-                            </button>
-                        </div>
-                    </section>
-                    {/* 테마 설정 */}
-                    <section>
-                        <div className="flex justify-between items-center mb-3">
-                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider">🎨 화면 테마</h4>
-                            {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded">PRO 전용</span>}
-                        </div>
-                        <button onClick={onThemeToggle} className="w-full p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                            <span className="text-sm font-medium dark:text-white">{darkMode ? '🌙 다크 모드 사용 중 (데모)' : '☀️ 라이트 모드 사용 중'}</span>
-                            <span className="text-xs text-indigo-600 font-bold">{!isPro ? '🔒 잠김' : '변경하기'}</span>
+
+                {/* 2. 카테고리 탭 (상단 고정) */}
+                <div className="px-3 sm:px-5 py-2.5 border-b dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 flex gap-2 shrink-0 overflow-x-auto">
+                    {[
+                        { id: 'display', label: '🎨 화면·효과' },
+                        { id: 'data', label: '🔔 알림·데이터' },
+                        { id: 'security', label: '🔐 보안·계정' },
+                        { id: 'all', label: '전체 보기' }
+                    ].map(tab => (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setSettingsTab(tab.id)}
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                                settingsTab === tab.id
+                                    ? 'bg-indigo-600 text-white shadow-sm'
+                                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/80 dark:hover:bg-gray-700/60'
+                            }`}
+                        >
+                            {tab.label}
                         </button>
-                    </section>
-                    {/* 개인정보 설정 */}
-                    <section>
-                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">👤 개인정보 설정</h4>
-                        <div className="flex justify-between items-center p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700">
-                            <div>
-                                <span className="text-sm font-medium dark:text-white block">데이터 익명 활용 동의</span>
-                                <span className="text-[10px] text-gray-500">통계 서비스 제공을 위해 익명화된 자산 데이터를 활용합니다.</span>
-                            </div>
-                            <input type="checkbox" checked={!!dataConsent} onChange={(e) => onToggleConsent(e.target.checked)} className="w-5 h-5 accent-indigo-600 cursor-pointer" />
-                        </div>
-                    </section>
-                    {/* 히스토리 설정 */}
-                    <section>
-                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">📈 히스토리 설정</h4>
-                        <div className="flex justify-between items-center p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700">
-                            <div>
-                                <span className="text-sm font-medium dark:text-white block">DB 동기화 시 히스토리 자동 저장</span>
-                                <span className="text-[10px] text-gray-500">클라우드 데이터 저장 시 자동으로 오늘 날짜의 자산 스냅샷을 기록합니다.</span>
-                            </div>
-                            <input 
-                                type="checkbox" 
-                                checked={!!autoSaveHistoryOnSync} 
-                                onChange={(e) => onAutoSaveHistoryOnSyncChange(e.target.checked)} 
-                                className="w-5 h-5 accent-indigo-600 cursor-pointer" 
-                            />
-                        </div>
-                    </section>
-                    {/* 실시간 시세 연동 설정 */}
-                    <section>
-                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">⚡ 실시간 시세 연동</h4>
-                        <div className="space-y-3 p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <span className="text-sm font-medium dark:text-white block">시세 자동 동기화</span>
-                                    <span className="text-[10px] text-gray-500">배경에서 주식 현재가를 주기적으로 갱신합니다.</span>
-                                </div>
-                                <div className="flex bg-gray-100 dark:bg-gray-900 p-1 rounded-xl">
-                                    <button
-                                        type="button"
-                                        onClick={() => onLiveEnabledChange(true)}
-                                        className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${liveEnabled ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500'}`}
-                                    >
-                                        ON
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => onLiveEnabledChange(false)}
-                                        className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${!liveEnabled ? 'bg-gray-400 text-white shadow-sm' : 'text-gray-500'}`}
-                                    >
-                                        OFF
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            {liveEnabled && (
-                                <div className="flex justify-between items-center pt-2 border-t dark:border-gray-800">
-                                    <div>
-                                        <span className="text-xs font-bold dark:text-white block">동기화 주기 (초)</span>
-                                        <span className="text-[10px] text-gray-500">초 단위로 입력 (예: 60 = 1분, 10 = 10초)</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <input 
-                                            type="number"
-                                            min="2"
-                                            className="w-16 bg-gray-50 dark:bg-gray-900 border dark:border-gray-800 rounded px-2 py-1 text-xs font-bold text-center focus:outline-none"
-                                            value={liveInterval || 60}
-                                            onChange={(e) => {
-                                                const val = parseInt(e.target.value) || 60;
-                                                onLiveIntervalChange(val);
-                                            }}
-                                        />
-                                        <span className="text-xs text-gray-500 font-bold">초</span>
-                                    </div>
+                    ))}
+                </div>
+
+                {/* 3. 모바일/PC 반응형 스크롤 바디 (PC에서는 2열 그리드로 시원하게 배치) */}
+                <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 overscroll-contain">
+                    {/* [카테고리 1] 화면·효과 */}
+                    {showDisplay && (
+                        <div className="space-y-4 animate-in fade-in duration-200">
+                            {settingsTab === 'all' && (
+                                <div className="flex items-center gap-2 pb-1 border-b dark:border-gray-700">
+                                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg">🎨 화면·효과 설정</span>
                                 </div>
                             )}
-                        </div>
-                    </section>
-                    {/* 실시간 푸시 알림 설정 */}
-                    <section>
-                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">🔔 실시간 푸시 알림</h4>
-                        <div className="p-3 rounded-xl border-2 border-gray-100 dark:border-gray-700">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <span className="text-sm font-medium dark:text-white block">푸시 알림 수신</span>
-                                    <span className="text-[10px] text-gray-500">
-                                        {!pushStatus.supported 
-                                            ? '이 기기/브라우저는 푸시를 지원하지 않습니다.' 
-                                            : pushStatus.permission === 'denied' 
-                                                ? '🚨 알림 권한이 차단됨 (브라우저 설정 필요)' 
-                                                : '해외 장 마감/환율 리포트 알림을 스마트폰으로 수신합니다.'}
-                                    </span>
-                                </div>
-                                {pushStatus.supported && (
-                                    <button
-                                        type="button"
-                                        disabled={pushLoading}
-                                        onClick={handlePushToggle}
-                                        className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
-                                            pushStatus.subscribed 
-                                                ? 'bg-red-500 hover:bg-red-600 text-white shadow-sm' 
-                                                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm'
-                                        } ${pushLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* 테마 설정 카드 */}
+                                <div className="bg-gray-50/70 dark:bg-gray-900/40 p-4 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 flex flex-col justify-between space-y-3">
+                                    <div>
+                                        <div className="flex justify-between items-center mb-1">
+                                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                <span>🎨</span> 화면 테마
+                                            </h4>
+                                            {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded font-bold">PRO 전용</span>}
+                                        </div>
+                                        <p className="text-[11px] text-gray-500">
+                                            눈의 피로도를 낮춰주는 다크 모드와 깔끔한 라이트 모드를 전환합니다.
+                                        </p>
+                                    </div>
+                                    <button 
+                                        onClick={onThemeToggle} 
+                                        className="w-full p-3 rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex justify-between items-center hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors shadow-sm"
                                     >
-                                        {pushLoading ? '처리 중...' : pushStatus.subscribed ? '알림 끄기' : '알림 켜기'}
+                                        <span className="text-sm font-medium dark:text-white">{darkMode ? '🌙 다크 모드 사용 중' : '☀️ 라이트 모드 사용 중'}</span>
+                                        <span className="text-xs text-indigo-600 dark:text-indigo-400 font-bold">{!isPro ? '🔒 잠김' : '변경하기'}</span>
                                     </button>
-                                )}
-                            </div>
-                        </div>
-                    </section>
-                    {/* 연결된 기기 관리 목록 */}
-                    {pushStatus.supported && deviceTokens.length > 0 && (
-                        <section className="animate-in fade-in slide-in-from-top-2 duration-300">
-                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">📱 알림 수신 기기 관리 ({deviceTokens.length}대)</h4>
-                            <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
-                                {deviceTokens.map(token => {
-                                    const isActive = token.last_active_at;
-                                    const timeStr = isActive ? new Date(token.last_active_at).toLocaleString('ko-KR', {
-                                        month: 'short',
-                                        day: 'numeric',
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                    }) : '기록 없음';
+                                </div>
 
-                                    // OS 종류에 따른 아이콘 매핑
-                                    let deviceIcon = '💻';
-                                    if (/Android/i.test(token.os)) deviceIcon = '🤖';
-                                    else if (/iOS/i.test(token.os)) deviceIcon = '🍎';
-                                    else if (/macOS/i.test(token.os)) deviceIcon = '🍏';
-                                    else if (/Windows/i.test(token.os)) deviceIcon = '🪟';
-
-                                    return (
-                                        <div key={token.id} className="flex justify-between items-center p-2.5 rounded-xl border dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 text-xs transition-all hover:bg-gray-50 dark:hover:bg-gray-900/50">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-lg">{deviceIcon}</span>
-                                                <div>
-                                                    <span className="font-bold text-gray-800 dark:text-gray-200 block">
-                                                        {token.browser || '브라우저'} ({token.os || '알 수 없는 OS'})
-                                                    </span>
-                                                    <span className="text-[10px] text-gray-500 block">
-                                                        최근 활성: {timeStr}
-                                                    </span>
+                                {/* 실시간 시세 연동 카드 */}
+                                <div className="bg-gray-50/70 dark:bg-gray-900/40 p-4 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 flex flex-col justify-between space-y-3">
+                                    <div>
+                                        <div className="flex justify-between items-center mb-1">
+                                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                <span>⚡</span> 실시간 시세 연동
+                                            </h4>
+                                        </div>
+                                        <p className="text-[11px] text-gray-500">
+                                            배경에서 주식 현재가를 주기적으로 갱신하고 연동 주기를 설정합니다.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700">
+                                            <span className="text-xs font-medium dark:text-white">시세 자동 동기화</span>
+                                            <div className="flex bg-gray-100 dark:bg-gray-900 p-0.5 rounded-lg">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onLiveEnabledChange(true)}
+                                                    className={`px-3 py-1 text-[10px] font-black rounded-md transition-all ${liveEnabled ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500'}`}
+                                                >
+                                                    ON
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onLiveEnabledChange(false)}
+                                                    className={`px-3 py-1 text-[10px] font-black rounded-md transition-all ${!liveEnabled ? 'bg-gray-400 text-white shadow-sm' : 'text-gray-500'}`}
+                                                >
+                                                    OFF
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {liveEnabled && (
+                                            <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700">
+                                                <span className="text-xs font-medium dark:text-white">동기화 주기</span>
+                                                <div className="flex items-center gap-1.5">
+                                                    <input 
+                                                        type="number"
+                                                        min="2"
+                                                        className="w-16 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded px-2 py-1 text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                                        value={liveInterval || 60}
+                                                        onChange={(e) => {
+                                                            const val = parseInt(e.target.value) || 60;
+                                                            onLiveIntervalChange(val);
+                                                        }}
+                                                    />
+                                                    <span className="text-xs text-gray-500 font-bold">초</span>
                                                 </div>
                                             </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* [PRO] 실시간 손익 날씨 효과 및 파티클 강도 슬라이더 바 (PC에서 2열 전체 차지하여 시원하게 표시) */}
+                                <div className="md:col-span-2 bg-gray-50/70 dark:bg-gray-900/40 p-4 sm:p-5 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-1.5">
+                                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                <span>🌦️</span> 실시간 손익 날씨 효과 강도
+                                            </h4>
+                                            {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded font-bold">PRO 전용</span>}
+                                        </div>
+                                        <span className="px-2.5 py-0.5 rounded-full text-xs font-black font-mono bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60 shadow-sm">
+                                            {Number(weatherEffectIntensity ?? 0) === 0 ? 'OFF (0%)' : `${weatherEffectIntensity}%`}
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-gray-500">
+                                        당일 손익률에 따라 대시보드 좌우 여백에 맑음 햇살, 비, 천둥번개 앰비언트 파티클을 0(꺼짐)부터 100(최대)까지 슬라이더 바로 세밀하게 조절합니다.
+                                    </p>
+                                    {isPro ? (
+                                        <div className="space-y-2 bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                                            <div className="relative flex items-center py-1">
+                                                <input 
+                                                    type="range" 
+                                                    min="0" 
+                                                    max="100" 
+                                                    step="1"
+                                                    value={weatherEffectIntensity ?? 0} 
+                                                    onChange={(e) => {
+                                                        const val = Number(e.target.value);
+                                                        if (onWeatherIntensityChange) {
+                                                            onWeatherIntensityChange(val);
+                                                        }
+                                                    }} 
+                                                    className="w-full h-2.5 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none" 
+                                                />
+                                            </div>
+                                            <div className="flex justify-between text-[11px] text-gray-400 font-mono font-medium px-1 select-none">
+                                                <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(0)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity ?? 0) === 0 ? 'text-indigo-600 font-bold' : ''}`}>0% (꺼짐)</span>
+                                                <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(25)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 25 ? 'text-indigo-600 font-bold' : ''}`}>25% (미세)</span>
+                                                <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(50)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 50 ? 'text-indigo-600 font-bold' : ''}`}>50% (은은함)</span>
+                                                <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(75)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 75 ? 'text-indigo-600 font-bold' : ''}`}>75% (생생함)</span>
+                                                <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(100)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 100 ? 'text-indigo-600 font-bold' : ''}`}>100% (풍성함)</span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <span className="text-xs text-gray-400 font-bold">PRO 전용 기능입니다.</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* [카테고리 2] 알림·데이터 */}
+                    {showData && (
+                        <div className="space-y-4 animate-in fade-in duration-200">
+                            {settingsTab === 'all' && (
+                                <div className="flex items-center gap-2 pb-1 border-b dark:border-gray-700">
+                                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg">🔔 알림·데이터 설정</span>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* 좌측 칼럼: 실시간 푸시 알림 및 기기 목록 */}
+                                <div className="space-y-4">
+                                    <div className="bg-gray-50/70 dark:bg-gray-900/40 p-4 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 space-y-3">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                                                    <span>🔔</span> 실시간 푸시 알림
+                                                </h4>
+                                                <span className="text-[11px] text-gray-500 block leading-relaxed">
+                                                    {!pushStatus.supported 
+                                                        ? '이 기기/브라우저는 푸시를 지원하지 않습니다.' 
+                                                        : pushStatus.permission === 'denied' 
+                                                            ? '🚨 알림 권한이 차단됨 (브라우저 설정 필요)' 
+                                                            : '해외 장 마감/환율 리포트 및 공지 알림을 스마트폰으로 수신합니다.'}
+                                                </span>
+                                            </div>
+                                            {pushStatus.supported && (
+                                                <button
+                                                    type="button"
+                                                    disabled={pushLoading}
+                                                    onClick={handlePushToggle}
+                                                    className={`px-3.5 py-1.5 text-xs font-black rounded-xl transition-all shrink-0 ${
+                                                        pushStatus.subscribed 
+                                                            ? 'bg-red-500 hover:bg-red-600 text-white shadow-sm' 
+                                                            : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm'
+                                                    } ${pushLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                >
+                                                    {pushLoading ? '처리 중...' : pushStatus.subscribed ? '알림 끄기' : '알림 켜기'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* 연결된 기기 관리 목록 */}
+                                    {pushStatus.supported && deviceTokens.length > 0 && (
+                                        <div className="bg-gray-50/70 dark:bg-gray-900/40 p-4 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 space-y-2.5">
+                                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                <span>📱</span> 알림 수신 기기 ({deviceTokens.length}대)
+                                            </h4>
+                                            <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
+                                                {deviceTokens.map(token => {
+                                                    const isActive = token.last_active_at;
+                                                    const timeStr = isActive ? new Date(token.last_active_at).toLocaleString('ko-KR', {
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    }) : '기록 없음';
+
+                                                    let deviceIcon = '💻';
+                                                    if (/Android/i.test(token.os)) deviceIcon = '🤖';
+                                                    else if (/iOS/i.test(token.os)) deviceIcon = '🍎';
+                                                    else if (/macOS/i.test(token.os)) deviceIcon = '🍏';
+                                                    else if (/Windows/i.test(token.os)) deviceIcon = '🪟';
+
+                                                    return (
+                                                        <div key={token.id} className="flex justify-between items-center p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs transition-all hover:border-indigo-300">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-lg">{deviceIcon}</span>
+                                                                <div>
+                                                                    <span className="font-bold text-gray-800 dark:text-gray-200 block">
+                                                                        {token.browser || '브라우저'} ({token.os || '기기'})
+                                                                    </span>
+                                                                    <span className="text-[10px] text-gray-500 block">
+                                                                        최근 활성: {timeStr}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => handleRemoveDevice(token.endpoint)}
+                                                                className="text-[11px] font-bold text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                                title="알림 차단 및 기기 삭제"
+                                                            >
+                                                                삭제
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 우측 칼럼: 히스토리 & 개인정보 설정 */}
+                                <div className="space-y-4">
+                                    {/* 히스토리 설정 카드 */}
+                                    <div className="bg-gray-50/70 dark:bg-gray-900/40 p-4 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                                                    <span>📈</span> 히스토리 설정
+                                                </h4>
+                                                <span className="text-sm font-medium dark:text-white block">동기화 시 자동 스냅샷</span>
+                                                <span className="text-[11px] text-gray-500 block mt-0.5">클라우드 데이터 저장 시 자동으로 오늘 날짜의 자산 스냅샷을 기록합니다.</span>
+                                            </div>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={!!autoSaveHistoryOnSync} 
+                                                onChange={(e) => onAutoSaveHistoryOnSyncChange(e.target.checked)} 
+                                                className="w-5 h-5 accent-indigo-600 cursor-pointer shrink-0 ml-3" 
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* 개인정보 설정 카드 */}
+                                    <div className="bg-gray-50/70 dark:bg-gray-900/40 p-4 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                                                    <span>👤</span> 개인정보 설정
+                                                </h4>
+                                                <span className="text-sm font-medium dark:text-white block">데이터 익명 활용 동의</span>
+                                                <span className="text-[11px] text-gray-500 block mt-0.5">통계 서비스 제공을 위해 익명화된 자산 데이터를 활용합니다.</span>
+                                            </div>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={!!dataConsent} 
+                                                onChange={(e) => onToggleConsent(e.target.checked)} 
+                                                className="w-5 h-5 accent-indigo-600 cursor-pointer shrink-0 ml-3" 
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* [카테고리 3] 보안·계정 */}
+                    {showSecurity && (
+                        <div className="space-y-4 animate-in fade-in duration-200">
+                            {settingsTab === 'all' && (
+                                <div className="flex items-center gap-2 pb-1 border-b dark:border-gray-700">
+                                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg">🔐 보안·계정 설정</span>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* 좌측 칼럼: 데이터 보안 & 로그아웃 정책 */}
+                                <div className="space-y-4">
+                                    {/* 종단간 암호화 설정 카드 */}
+                                    <div className="bg-gray-50/70 dark:bg-gray-900/40 p-4 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                <span>🔐</span> 데이터 보안 (종단간 암호화)
+                                            </h4>
+                                            {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded font-bold">PRO 전용</span>}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
                                             <button 
-                                                onClick={() => handleRemoveDevice(token.endpoint)}
-                                                className="text-[10px] font-bold text-red-500 hover:text-red-700 hover:underline px-2 py-1 rounded transition-colors"
-                                                title="알림 차단 및 기기 삭제"
+                                                onClick={() => onModeChange('normal')} 
+                                                className={`p-3 rounded-xl border-2 transition-all text-left bg-white dark:bg-gray-800 ${encryptionMode === 'normal' ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 dark:border-gray-700'}`}
                                             >
-                                                기기 삭제
+                                                <div className="text-xs font-bold dark:text-white">일반 모드</div>
+                                                <div className="text-[10px] text-gray-500 mt-0.5">표준 암호화</div>
+                                            </button>
+                                            <button 
+                                                onClick={() => onModeChange('secure')} 
+                                                className={`p-3 rounded-xl border-2 transition-all text-left bg-white dark:bg-gray-800 ${encryptionMode === 'secure' ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 dark:border-gray-700'}`}
+                                            >
+                                                <div className="text-xs font-bold dark:text-white">강화 모드</div>
+                                                <div className="text-[10px] text-gray-500 mt-0.5">{!isPro ? '🔒 잠김' : '비밀번호 기반 암호화'}</div>
                                             </button>
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        </section>
-                    )}
-                    {/* 로그아웃 정책 */}
-                    <section>
-                        <div className="flex justify-between items-center mb-3">
-                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider">🚪 로그아웃 시 데이터 처리</h4>
-                            {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded">PRO 전용</span>}
-                        </div>
-                        <div className={`flex bg-gray-100 dark:bg-gray-900 p-1 rounded-xl ${!isPro ? 'opacity-50 pointer-events-none' : ''}`}>
-                            <button onClick={() => isPro && onLogoutBehaviorChange('keep')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${logoutBehavior === 'keep' ? 'bg-white dark:bg-gray-700 text-indigo-600 shadow-sm' : 'text-gray-500'}`}>로컬 데이터 유지</button>
-                            <button onClick={() => isPro && onLogoutBehaviorChange('reset')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${logoutBehavior === 'reset' ? 'bg-white dark:bg-gray-700 text-red-600 shadow-sm' : 'text-gray-500'}`}>데이터 즉시 삭제</button>
-                        </div>
-                        <p className="text-[10px] text-gray-500 mt-2 px-1">
-                            {logoutBehavior === 'keep' ? '로그아웃 후에도 이 브라우저에 자산 데이터가 남습니다.' : '로그아웃 시 보안을 위해 브라우저의 모든 데이터를 초기화합니다.'}
-                        </p>
-                    </section>
-                    {/* [PRO] 실시간 손익 날씨 효과 */}
-                    <section className="pt-3 border-t dark:border-gray-700">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <div className="flex items-center gap-1.5">
-                                    <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
-                                        <span>🌦️</span> 실시간 손익 날씨 효과
-                                    </h4>
-                                    {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded font-bold">PRO 전용</span>}
+                                    </div>
+
+                                    {/* 로그아웃 정책 카드 */}
+                                    <div className="bg-gray-50/70 dark:bg-gray-900/40 p-4 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                <span>🚪</span> 로그아웃 시 데이터 처리
+                                            </h4>
+                                            {!isPro && <span className="text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded font-bold">PRO 전용</span>}
+                                        </div>
+                                        <div className={`flex bg-gray-200/70 dark:bg-gray-900 p-1 rounded-xl ${!isPro ? 'opacity-50 pointer-events-none' : ''}`}>
+                                            <button 
+                                                onClick={() => isPro && onLogoutBehaviorChange('keep')} 
+                                                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${logoutBehavior === 'keep' ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-gray-500'}`}
+                                            >
+                                                로컬 데이터 유지
+                                            </button>
+                                            <button 
+                                                onClick={() => isPro && onLogoutBehaviorChange('reset')} 
+                                                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${logoutBehavior === 'reset' ? 'bg-white dark:bg-gray-800 text-red-600 shadow-sm' : 'text-gray-500'}`}
+                                            >
+                                                데이터 즉시 삭제
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-gray-500 leading-relaxed">
+                                            {logoutBehavior === 'keep' ? '로그아웃 후에도 이 브라우저에 자산 데이터가 보존됩니다.' : '로그아웃 시 보안을 위해 브라우저의 모든 캐시 데이터를 즉시 초기화합니다.'}
+                                        </p>
+                                    </div>
                                 </div>
-                                <p className="text-[10px] text-gray-500 mt-0.5">
-                                    당일 손익률에 따라 대시보드 테두리에 맑음/비/번개 등 감성 앰비언트 연출을 적용합니다. (기본값: OFF)
-                                </p>
+
+                                {/* 우측 칼럼: 연동 및 계정 빠른 작업 카드 */}
+                                <div className="bg-gray-50/70 dark:bg-gray-900/40 p-4 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 flex flex-col justify-between space-y-4">
+                                    <div>
+                                        <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                                            <span>⚡</span> 계정 및 데이터 작업
+                                        </h4>
+                                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                                            AI 및 금융 시세 연동 API 키를 관리하거나, 원격 클라우드와 수동 동기화를 즉시 수행합니다.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2.5">
+                                        <button 
+                                            onClick={() => {
+                                                onClose();
+                                                if (window.showApiKeyModal) window.showApiKeyModal();
+                                            }}
+                                            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-1.5"
+                                        >
+                                            🔑 API 키 및 연동 설정
+                                        </button>
+                                        <button 
+                                            onClick={() => { onSyncNow(); onClose(); }}
+                                            className="w-full py-2.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/40 rounded-xl text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors flex items-center justify-center gap-1.5"
+                                        >
+                                            🔄 지금 클라우드와 동기화
+                                        </button>
+                                        <button 
+                                            onClick={() => { onLogout(); onClose(); }}
+                                            className="w-full py-2.5 text-red-500 hover:text-red-700 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors border border-transparent hover:border-red-200 dark:hover:border-red-900/40 flex items-center justify-center gap-1.5"
+                                        >
+                                            🚪 로그아웃
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                            {isPro ? (
-                                <label className="relative inline-flex items-center cursor-pointer ml-3 shrink-0">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={!!weatherEffectEnabled} 
-                                        onChange={(e) => onWeatherEffectChange && onWeatherEffectChange(e.target.checked)} 
-                                        className="sr-only peer" 
-                                    />
-                                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
-                                </label>
-                            ) : (
-                                <span className="text-[10px] text-gray-400 font-bold ml-3 shrink-0">잠김</span>
-                            )}
                         </div>
-                    </section>
-                    {/* 동기화 및 로그아웃 */}
-                    <div className="pt-4 border-t dark:border-gray-700 space-y-2">
-                        <button 
-                            onClick={() => {
-                                onClose();
-                                if (window.showApiKeyModal) window.showApiKeyModal();
-                            }}
-                            className="w-full py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-md transition-all flex items-center justify-center gap-1.5"
-                        >
-                            🔑 API 키 및 연동 설정
-                        </button>
-                        <button 
-                            onClick={() => { onSyncNow(); onClose(); }}
-                            className="w-full py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl text-sm font-bold hover:bg-indigo-100 transition-colors"
-                        >
-                            🔄 지금 클라우드와 동기화
-                        </button>
-                        <button 
-                            onClick={() => { onLogout(); onClose(); }}
-                            className="w-full py-3 text-red-500 text-sm font-bold hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
-                        >
-                            🚪 로그아웃
-                        </button>
-                    </div>
+                    )}
                 </div>
             </div>
         </div>

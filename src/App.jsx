@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import AssetSummaryCard from './components/AssetSummaryCard';
 import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioComponents';
 import MarketTickerSlide from './components/MarketTickerSlide';
+import WeatherAtmosphere from './components/WeatherAtmosphere';
 
         const CoreSettingsCard = ({
             monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
@@ -800,6 +801,11 @@ import MarketTickerSlide from './components/MarketTickerSlide';
             const [isDemoMode, setIsDemoMode] = useState(false); // [추가] 데모 모드 상태
             const [isPro, setIsPro] = useState(false); // [추가] 유료 이용자 여부
             const [isAdmin, setIsAdmin] = useState(false); // [추가] 관리자 여부
+            const isLocalEnv = typeof window !== 'undefined' && (
+                window.location.hostname === 'localhost' ||
+                window.location.hostname === '127.0.0.1' ||
+                window.location.port === '5173'
+            );
             const [adminSuggestions, setAdminSuggestions] = useState([]); // [추가] 관리자용 사용자 의견 목록
             const [verifiedEmail, setVerifiedEmail] = useState(null);
             const [userProfile, setUserProfile] = useState(null); // [추가] 사용자 프로필 정보
@@ -930,7 +936,47 @@ import MarketTickerSlide from './components/MarketTickerSlide';
             const [livePriceEnabled, setLivePriceEnabled] = useState(() => localStorage.getItem('toss_live_price_enabled') !== 'false');
             const [livePriceInterval, setLivePriceInterval] = useState(() => Number(localStorage.getItem('toss_live_price_interval')) || 60);
             const [autoSaveHistoryOnSync, setAutoSaveHistoryOnSync] = useState(() => localStorage.getItem('assetDashboardAutoSaveHistoryOnSync') === 'true');
-            const [weatherEffectEnabled, setWeatherEffectEnabled] = useState(() => localStorage.getItem('asset_weather_effect_enabled') === 'true');
+            const [weatherEffectIntensity, setWeatherEffectIntensity] = useState(() => {
+                const saved = localStorage.getItem('asset_weather_effect_intensity');
+                if (saved !== null) return Number(saved);
+                return localStorage.getItem('asset_weather_effect_enabled') === 'false' ? 0 : 70;
+            });
+            const [weatherEffectEnabled, setWeatherEffectEnabled] = useState(() => weatherEffectIntensity > 0);
+
+            const handleWeatherIntensityChange = (val) => {
+                const num = Math.max(0, Math.min(100, Number(val)));
+                setWeatherEffectIntensity(num);
+                localStorage.setItem('asset_weather_effect_intensity', String(num));
+                setWeatherEffectEnabled(num > 0);
+                localStorage.setItem('asset_weather_effect_enabled', num > 0 ? 'true' : 'false');
+            };
+
+            const todayProfitPct = useMemo(() => {
+                let totalProfit = 0;
+                let totalPrevValue = 0;
+                if (appData && appData.assets) {
+                    Object.keys(appData.assets).forEach(sector => {
+                        (appData.assets[sector] || []).forEach(asset => {
+                            (asset.linkedItems || []).forEach(item => {
+                                if (item.ticker && item.shares > 0) {
+                                    const curPrice = parseFloat(item.currentPrice) || 0;
+                                    const shares = parseFloat(item.shares) || 0;
+                                    let basePrice = parseFloat(item.basePrice);
+                                    if (isNaN(basePrice) || basePrice <= 0) {
+                                        const changeVal = parseFloat(item.change) || 0;
+                                        basePrice = curPrice - changeVal;
+                                    }
+                                    if (isNaN(basePrice) || basePrice <= 0) basePrice = curPrice;
+                                    const changePerShare = (curPrice > 0 && basePrice > 0) ? (curPrice - basePrice) : 0;
+                                    totalProfit += (changePerShare * shares);
+                                    totalPrevValue += (basePrice * shares);
+                                }
+                            });
+                        });
+                    });
+                }
+                return totalPrevValue > 0 ? (totalProfit / totalPrevValue) * 100 : 0;
+            }, [appData]);
             
             useEffect(() => {
                 localStorage.setItem('assetDashboardAutoSaveHistoryOnSync', String(autoSaveHistoryOnSync));
@@ -2188,8 +2234,26 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                 }
             };
 
+            const toggleLocalAdmin = () => {
+                if (!isLocal && !isLocalEnv) return;
+                setIsAdmin(prev => {
+                    const next = !prev;
+                    if (next) {
+                        setIsPro(true);
+                        if (!verifiedEmail) {
+                            setVerifiedEmail('admin@local.dev');
+                            setUserProfile({ id: 'local-admin-id', email: 'admin@local.dev', full_name: '로컬 관리자', is_admin: true, is_paid: true });
+                        }
+                        addToast('👑 로컬 관리자(ADMIN) 권한이 활성화되었습니다.', 'success');
+                    } else {
+                        addToast('👤 일반 모드로 전환되었습니다.', 'info');
+                    }
+                    return next;
+                });
+            };
+
             const handleLocalTestToggle = () => {
-                if (!isLocal) return;
+                if (!isLocal && !isLocalEnv) return;
 
                 if (!verifiedEmail) {
                     setVerifiedEmail('test@local.dev');
@@ -2197,10 +2261,14 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     setIsPro(false);
                     setIsAdmin(false);
                     addToast('🛠️ 로컬 테스트: FREE 모드 (가상 로그인)', 'info');
-                } else if (!isPro) {
+                } else if (!isPro && !isAdmin) {
                     setIsPro(true);
                     setIsAdmin(false);
                     addToast('🛠️ 로컬 테스트: PRO 모드', 'success');
+                } else if (isPro && !isAdmin) {
+                    setIsPro(true);
+                    setIsAdmin(true);
+                    addToast('👑 로컬 테스트: ADMIN(관리자) 모드', 'success');
                 } else {
                     setIsPro(false);
                     setIsAdmin(false);
@@ -2621,6 +2689,21 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                     );
                     if (error) throw error;
                     addToast('소중한 의견 감사합니다!', 'success');
+
+                    // [추가] 관리자에게 실시간 웹 푸시 알림 발송
+                    try {
+                        fetch('/toss-api/api/push-notice', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                target: 'admin',
+                                title: '📬 새 사용자 의견 도착',
+                                content: `[${user.email || '익명 사용자'}] ${content.length > 80 ? content.slice(0, 80) + '...' : content}`
+                            })
+                        }).catch(pushErr => console.warn('Admin push notice dispatch failed:', pushErr));
+                    } catch (pushErr) {
+                        console.warn('Admin push notice dispatch error:', pushErr);
+                    }
                 } catch (error) {
                     console.error('Suggestion error:', error);
                     addToast('의견 전송 중 오류가 발생했습니다.', 'error');
@@ -2983,15 +3066,44 @@ import MarketTickerSlide from './components/MarketTickerSlide';
             };
 
             const cycleDisplayMode = () => {
-                if (!isDemoMode && appData?.displayMode === 'amount') setAppData(prev => ({ ...prev, displayMode: 'percent' }));
-                else if (!isDemoMode && appData?.displayMode === 'percent') { resetAppData(window.publicDefaultData || {}); setIsDemoMode(true); }
-                else { resetAppData({...originalUserData, displayMode: 'amount'}); setIsDemoMode(false); }
+                if (isLocal || isLocalEnv) {
+                    // 로컬 환경 순환: 일반 -> 프라이빗 -> 데모 -> 관리자 -> 일반
+                    if (!isDemoMode && !isAdmin && appData?.displayMode === 'amount') {
+                        setAppData(prev => ({ ...prev, displayMode: 'percent' }));
+                        addToast('🔒 프라이빗 모드로 전환되었습니다.', 'info');
+                    } else if (!isDemoMode && !isAdmin && appData?.displayMode === 'percent') {
+                        resetAppData(window.publicDefaultData || {});
+                        setIsDemoMode(true);
+                        addToast('🧪 데모 모드로 전환되었습니다.', 'warning');
+                    } else if (isDemoMode && !isAdmin) {
+                        resetAppData({ ...originalUserData, displayMode: 'amount' });
+                        setIsDemoMode(false);
+                        setIsAdmin(true);
+                        setIsPro(true);
+                        if (!verifiedEmail) {
+                            setVerifiedEmail('admin@local.dev');
+                            setUserProfile({ id: 'local-admin-id', email: 'admin@local.dev', full_name: '로컬 관리자', is_admin: true, is_paid: true });
+                        }
+                        addToast('👑 관리자(ADMIN) 모드로 전환되었습니다.', 'success');
+                    } else {
+                        resetAppData({ ...originalUserData, displayMode: 'amount' });
+                        setIsDemoMode(false);
+                        setIsAdmin(false);
+                        addToast('👤 일반 모드로 전환되었습니다.', 'info');
+                    }
+                } else {
+                    if (!isDemoMode && appData?.displayMode === 'amount') setAppData(prev => ({ ...prev, displayMode: 'percent' }));
+                    else if (!isDemoMode && appData?.displayMode === 'percent') { resetAppData(window.publicDefaultData || {}); setIsDemoMode(true); }
+                    else { resetAppData({ ...originalUserData, displayMode: 'amount' }); setIsDemoMode(false); }
+                }
             };
 
-            const titleText = isDemoMode
-                ? <span className="text-sm text-red-500">(데모 모드)</span>
-                : appData?.displayMode === 'percent'
-                    ? <span className="text-sm text-blue-500">(프라이빗 모드)</span> : null;
+            const titleText = isAdmin
+                ? <span className="text-sm font-black text-purple-600 dark:text-purple-400 animate-in fade-in">(관리자 모드 👑)</span>
+                : isDemoMode
+                    ? <span className="text-sm text-red-500">(데모 모드)</span>
+                    : appData?.displayMode === 'percent'
+                        ? <span className="text-sm text-blue-500">(프라이빗 모드)</span> : null;
 
             // ===== 개선된 PDF 저장 함수 (html2canvas + jsPDF) =====
             const saveToPDF = async () => {
@@ -8662,6 +8774,16 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                 </div>
                 :
                 <div className={`relative min-h-screen transition-colors duration-700 pb-20 sm:pb-0 ${editingPhase !== null ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-gray-50 dark:bg-gray-900'}`}>
+                    {/* [PRO] 실시간 손익 날씨 앰비언트 효과 (화면 좌/우 여백 100% 격리 렌더링) */}
+                    {weatherEffectIntensity > 0 && (
+                        <WeatherAtmosphere 
+                            dayProfitPct={todayProfitPct} 
+                            enabled={weatherEffectIntensity > 0} 
+                            intensity={weatherEffectIntensity}
+                            isPro={isPro}
+                            isAdmin={isAdmin}
+                        />
+                    )}
                     {/* 부드러운 시뮬레이션 모드 배경 효과 */}
                     {editingPhase !== null && (
                         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
@@ -8703,8 +8825,25 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
                             <div className="flex justify-between items-center h-16 gap-4">
                                 <div className="flex items-center flex-shrink-0">
-                                    <h1 id="app-title" className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900 dark:text-white cursor-pointer whitespace-nowrap" onClick={cycleDisplayMode}>
-                                        자산 플래너 {titleText}
+                                    <h1 id="app-title" className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900 dark:text-white cursor-pointer whitespace-nowrap flex items-center gap-2" onClick={cycleDisplayMode} title="클릭하여 모드 전환 (일반 -> 프라이빗 -> 데모 -> 관리자)">
+                                        {(isLocalEnv || isLocal) && (
+                                            <span 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleLocalAdmin();
+                                                }}
+                                                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-black cursor-pointer select-none shadow-sm transition-all hover:scale-105 active:scale-95 ${
+                                                    isAdmin 
+                                                        ? 'bg-purple-500/20 text-purple-600 dark:text-purple-300 border border-purple-500/40 ring-1 ring-purple-500/30' 
+                                                        : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/60'
+                                                }`} 
+                                                title="[클릭] 로컬 관리자(ADMIN) 권한 On/Off 즉시 전환"
+                                            >
+                                                <span className={`w-1.5 h-1.5 rounded-full ${isAdmin ? 'bg-purple-500' : 'bg-emerald-500'} animate-pulse`}></span>
+                                                {isAdmin ? '[LOCAL: ADMIN 👑]' : '[LOCAL]'}
+                                            </span>
+                                        )}
+                                        <span>자산 플래너 {titleText}</span>
                                     </h1>
                                 </div>
 
@@ -9363,11 +9502,9 @@ import MarketTickerSlide from './components/MarketTickerSlide';
                         userId={userProfile?.id}
                         autoSaveHistoryOnSync={autoSaveHistoryOnSync}
                         onAutoSaveHistoryOnSyncChange={setAutoSaveHistoryOnSync}
-                        weatherEffectEnabled={weatherEffectEnabled}
-                        onWeatherEffectChange={(val) => {
-                            setWeatherEffectEnabled(val);
-                            localStorage.setItem('asset_weather_effect_enabled', val ? 'true' : 'false');
-                        }}
+                        weatherEffectEnabled={weatherEffectIntensity > 0}
+                        weatherEffectIntensity={weatherEffectIntensity}
+                        onWeatherIntensityChange={handleWeatherIntensityChange}
                     />}
                     {showSaveToast && (
                         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[99999] bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
