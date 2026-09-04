@@ -3,6 +3,7 @@ import AssetSummaryCard from './components/AssetSummaryCard';
 import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioComponents';
 import MarketTickerSlide from './components/MarketTickerSlide';
 import WeatherAtmosphere from './components/WeatherAtmosphere';
+import { AssetGrowthModernView } from './components/AssetGrowthVariations';
 
         const CoreSettingsCard = ({
             monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
@@ -11,7 +12,8 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
             saveToPDF, saveCurrentAsset, saveScenario, displayMode,
                 autoUpdateBaseDate, setAutoUpdateBaseDate,
                 editingPhase, // [추가]
-                enableLiveQuotes, setEnableLiveQuotes // [추가]
+                enableLiveQuotes, setEnableLiveQuotes, // [추가]
+                weatherThresholds, onUpdateWeatherThresholds
         }) => {
             const TEXTS = window.TEXTS || {};
             const isEditing = editingPhase !== null; // [추가] 편집 모드 여부 확인
@@ -59,6 +61,67 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
                                     />
                                     자동 갱신
                                 </label>
+                            </div>
+
+                            {/* 🌦️ 날씨별 당일 수익률(%) 기준 설정 */}
+                            <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                                        <span>🌦️</span> 날씨별 당일 손익률 기준 (%)
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">실시간 연동</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <div className="flex items-center justify-between text-[11px] text-amber-600 dark:text-amber-400 font-semibold mb-1">
+                                            <span>☀️ 맑음(대폭등)</span>
+                                            <span>이상</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-xs font-bold text-slate-400">+</span>
+                                            <input 
+                                                type="number" 
+                                                step="0.1" 
+                                                className="w-full border dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-md px-2 py-1.5 text-right font-bold text-xs focus:ring-2 focus:ring-amber-500 outline-none" 
+                                                value={weatherThresholds?.high ?? 1.5} 
+                                                onChange={(e) => {
+                                                    const val = parseFloat(e.target.value) || 0;
+                                                    if (onUpdateWeatherThresholds) {
+                                                        onUpdateWeatherThresholds({ ...(weatherThresholds || { high: 1.5, low: -1.5 }), high: val });
+                                                    }
+                                                }} 
+                                            />
+                                            <span className="text-xs text-slate-400 font-semibold">%</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center justify-between text-[11px] text-rose-500 dark:text-rose-400 font-semibold mb-1">
+                                            <span>⚡ 폭풍우</span>
+                                            <span>미만</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <input 
+                                                type="number" 
+                                                step="0.1" 
+                                                className="w-full border dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-md px-2 py-1.5 text-right font-bold text-xs focus:ring-2 focus:ring-rose-500 outline-none" 
+                                                value={weatherThresholds?.low ?? -1.5} 
+                                                onChange={(e) => {
+                                                    const val = parseFloat(e.target.value) || 0;
+                                                    if (onUpdateWeatherThresholds) {
+                                                        onUpdateWeatherThresholds({ ...(weatherThresholds || { high: 1.5, low: -1.5 }), low: val });
+                                                    }
+                                                }} 
+                                            />
+                                            <span className="text-xs text-slate-400 font-semibold">%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-4 gap-1.5 text-[10px] text-center pt-2 border-t border-slate-200/60 dark:border-slate-700/60 font-medium">
+                                    <div className="bg-amber-100/60 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 py-1 rounded">☀️ &ge; +{(weatherThresholds?.high ?? 1.5)}%</div>
+                                    <div className="bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 py-1 rounded">🌤️ 0~+{(weatherThresholds?.high ?? 1.5)}%</div>
+                                    <div className="bg-blue-100/60 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 py-1 rounded">🌧️ {(weatherThresholds?.low ?? -1.5)}~0%</div>
+                                    <div className="bg-purple-100/60 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 py-1 rounded">⚡ &lt; {(weatherThresholds?.low ?? -1.5)}%</div>
+                                </div>
                             </div>
 
                         </div>
@@ -803,8 +866,7 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
             const [isAdmin, setIsAdmin] = useState(false); // [추가] 관리자 여부
             const isLocalEnv = typeof window !== 'undefined' && (
                 window.location.hostname === 'localhost' ||
-                window.location.hostname === '127.0.0.1' ||
-                window.location.port === '5173'
+                window.location.hostname === '127.0.0.1'
             );
             const [adminSuggestions, setAdminSuggestions] = useState([]); // [추가] 관리자용 사용자 의견 목록
             const [verifiedEmail, setVerifiedEmail] = useState(null);
@@ -831,6 +893,26 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
             useEffect(() => {
                 localStorage.setItem('asset_enable_live_quotes', enableLiveQuotes.toString());
             }, [enableLiveQuotes]);
+
+            // 🌦️ 날씨별 손익률(%) 기준 상태
+            const [weatherThresholds, setWeatherThresholds] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('asset_weather_thresholds');
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        if (typeof parsed.high === 'number' && typeof parsed.low === 'number') {
+                            return parsed;
+                        }
+                    }
+                } catch(e) {}
+                return { high: 1.5, low: -1.5 };
+            });
+            const updateWeatherThresholds = useCallback((newThresholds) => {
+                setWeatherThresholds(newThresholds);
+                try {
+                    localStorage.setItem('asset_weather_thresholds', JSON.stringify(newThresholds));
+                } catch(e) {}
+            }, []);
 
             // [개편] 탭 상태 및 분류 재정의
             const [activeTab, setActiveTab] = useState('input'); // 기본값은 데이터 입력
@@ -2234,23 +2316,6 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
                 }
             };
 
-            const toggleLocalAdmin = () => {
-                if (!isLocal && !isLocalEnv) return;
-                setIsAdmin(prev => {
-                    const next = !prev;
-                    if (next) {
-                        setIsPro(true);
-                        if (!verifiedEmail) {
-                            setVerifiedEmail('admin@local.dev');
-                            setUserProfile({ id: 'local-admin-id', email: 'admin@local.dev', full_name: '로컬 관리자', is_admin: true, is_paid: true });
-                        }
-                        addToast('👑 로컬 관리자(ADMIN) 권한이 활성화되었습니다.', 'success');
-                    } else {
-                        addToast('👤 일반 모드로 전환되었습니다.', 'info');
-                    }
-                    return next;
-                });
-            };
 
             const handleLocalTestToggle = () => {
                 if (!isLocal && !isLocalEnv) return;
@@ -3066,44 +3131,21 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
             };
 
             const cycleDisplayMode = () => {
-                if (isLocal || isLocalEnv) {
-                    // 로컬 환경 순환: 일반 -> 프라이빗 -> 데모 -> 관리자 -> 일반
-                    if (!isDemoMode && !isAdmin && appData?.displayMode === 'amount') {
-                        setAppData(prev => ({ ...prev, displayMode: 'percent' }));
-                        addToast('🔒 프라이빗 모드로 전환되었습니다.', 'info');
-                    } else if (!isDemoMode && !isAdmin && appData?.displayMode === 'percent') {
-                        resetAppData(window.publicDefaultData || {});
-                        setIsDemoMode(true);
-                        addToast('🧪 데모 모드로 전환되었습니다.', 'warning');
-                    } else if (isDemoMode && !isAdmin) {
-                        resetAppData({ ...originalUserData, displayMode: 'amount' });
-                        setIsDemoMode(false);
-                        setIsAdmin(true);
-                        setIsPro(true);
-                        if (!verifiedEmail) {
-                            setVerifiedEmail('admin@local.dev');
-                            setUserProfile({ id: 'local-admin-id', email: 'admin@local.dev', full_name: '로컬 관리자', is_admin: true, is_paid: true });
-                        }
-                        addToast('👑 관리자(ADMIN) 모드로 전환되었습니다.', 'success');
-                    } else {
-                        resetAppData({ ...originalUserData, displayMode: 'amount' });
-                        setIsDemoMode(false);
-                        setIsAdmin(false);
-                        addToast('👤 일반 모드로 전환되었습니다.', 'info');
-                    }
+                if (!isDemoMode && appData?.displayMode === 'amount') {
+                    setAppData(prev => ({ ...prev, displayMode: 'percent' }));
+                } else if (!isDemoMode && appData?.displayMode === 'percent') {
+                    resetAppData(window.publicDefaultData || {});
+                    setIsDemoMode(true);
                 } else {
-                    if (!isDemoMode && appData?.displayMode === 'amount') setAppData(prev => ({ ...prev, displayMode: 'percent' }));
-                    else if (!isDemoMode && appData?.displayMode === 'percent') { resetAppData(window.publicDefaultData || {}); setIsDemoMode(true); }
-                    else { resetAppData({ ...originalUserData, displayMode: 'amount' }); setIsDemoMode(false); }
+                    resetAppData({ ...originalUserData, displayMode: 'amount' });
+                    setIsDemoMode(false);
                 }
             };
 
-            const titleText = isAdmin
-                ? <span className="text-sm font-black text-purple-600 dark:text-purple-400 animate-in fade-in">(관리자 모드 👑)</span>
-                : isDemoMode
-                    ? <span className="text-sm text-red-500">(데모 모드)</span>
-                    : appData?.displayMode === 'percent'
-                        ? <span className="text-sm text-blue-500">(프라이빗 모드)</span> : null;
+            const titleText = isDemoMode
+                ? <span className="text-sm text-red-500">(데모 모드)</span>
+                : appData?.displayMode === 'percent'
+                    ? <span className="text-sm text-blue-500">(프라이빗 모드)</span> : null;
 
             // ===== 개선된 PDF 저장 함수 (html2canvas + jsPDF) =====
             const saveToPDF = async () => {
@@ -5096,7 +5138,9 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
                 const weatherInfo = (() => {
                     if (!isPro || !weatherEffectEnabled) return null;
                     const pct = todayStats.dayProfitPct;
-                    if (pct >= 1.5) {
+                    const thHigh = weatherThresholds?.high ?? 1.5;
+                    const thLow = weatherThresholds?.low ?? -1.5;
+                    if (pct >= thHigh) {
                         return {
                             icon: '☀️',
                             label: '맑음 (대폭등)',
@@ -5110,7 +5154,7 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
                             desc: '초록빛 순항 중! 온화하고 따스한 바람이 불어옵니다.',
                             ambientClass: 'border-emerald-300/50 dark:border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.18)] bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40 dark:from-emerald-950/20 dark:via-slate-800 dark:to-teal-950/20'
                         };
-                    } else if (pct > -1.5) {
+                    } else if (pct > thLow) {
                         return {
                             icon: '🌧️',
                             label: '부슬부슬 비',
@@ -8226,9 +8270,38 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
                 return (
                 <div className="space-y-4">
                     {!isExporting && (
-                        <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg w-fit mb-4">
-                            <button onClick={() => setAnalysisMode('growth')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${analysisMode === 'growth' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>📊 자산 증감 분석</button>
-                            <button onClick={() => setAnalysisMode('income')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${analysisMode === 'income' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>💰 자본 소득 분석</button>
+                        <div className="flex flex-wrap items-center gap-2 mb-4">
+                            <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+                                <button onClick={() => setAnalysisMode('growth-modern')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'growth-modern' ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm ring-1 ring-indigo-500/20' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                                    <span>✨</span> 프로 테이블 <span className="text-[10px] px-1 py-0.2 rounded bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">추천</span>
+                                </button>
+                                <button onClick={() => setAnalysisMode('growth')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all ${analysisMode === 'growth' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                                    📊 기존 표 (레거시)
+                                </button>
+                                <button onClick={() => setAnalysisMode('income')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all ${analysisMode === 'income' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                                    💰 자본 소득 분석
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* [신규 배리에이션] 모던 핀테크 클린 프로 테이블 */}
+                    {analysisMode === 'growth-modern' && (
+                        <div className={isExporting ? "mb-10" : ""}>
+                            <AssetGrowthModernView 
+                                sectorInfo={sectorInfo}
+                                currentSectorTotals={currentSectorTotals}
+                                projectedSectorTotals={projectedSectorTotals}
+                                rebalancingTargets={rebalancingTargets}
+                                assets={assets}
+                                calculation={calculation}
+                                currentGrossTotal={currentGrossTotal}
+                                projectedGrossTotal={projectedGrossTotal}
+                                formatNumber={formatNumber}
+                                formatPercent={formatPercent}
+                                displayMode={displayMode}
+                                appData={appData}
+                            />
                         </div>
                     )}
 
@@ -8782,6 +8855,7 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
                             intensity={weatherEffectIntensity}
                             isPro={isPro}
                             isAdmin={isAdmin}
+                            thresholds={weatherThresholds}
                         />
                     )}
                     {/* 부드러운 시뮬레이션 모드 배경 효과 */}
@@ -8825,25 +8899,8 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
                         <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
                             <div className="flex justify-between items-center h-16 gap-4">
                                 <div className="flex items-center flex-shrink-0">
-                                    <h1 id="app-title" className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900 dark:text-white cursor-pointer whitespace-nowrap flex items-center gap-2" onClick={cycleDisplayMode} title="클릭하여 모드 전환 (일반 -> 프라이빗 -> 데모 -> 관리자)">
-                                        {(isLocalEnv || isLocal) && (
-                                            <span 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    toggleLocalAdmin();
-                                                }}
-                                                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-black cursor-pointer select-none shadow-sm transition-all hover:scale-105 active:scale-95 ${
-                                                    isAdmin 
-                                                        ? 'bg-purple-500/20 text-purple-600 dark:text-purple-300 border border-purple-500/40 ring-1 ring-purple-500/30' 
-                                                        : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/60'
-                                                }`} 
-                                                title="[클릭] 로컬 관리자(ADMIN) 권한 On/Off 즉시 전환"
-                                            >
-                                                <span className={`w-1.5 h-1.5 rounded-full ${isAdmin ? 'bg-purple-500' : 'bg-emerald-500'} animate-pulse`}></span>
-                                                {isAdmin ? '[LOCAL: ADMIN 👑]' : '[LOCAL]'}
-                                            </span>
-                                        )}
-                                        <span>자산 플래너 {titleText}</span>
+                                    <h1 id="app-title" className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900 dark:text-white cursor-pointer whitespace-nowrap" onClick={cycleDisplayMode}>
+                                        자산 플래너 {titleText}
                                     </h1>
                                 </div>
 
@@ -9219,6 +9276,8 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
         onOpenScreenshotModal={() => setIsScreenshotModalOpen(true)}
         enableLiveQuotes={enableLiveQuotes}
         setEnableLiveQuotes={setEnableLiveQuotes}
+        weatherThresholds={weatherThresholds}
+        onUpdateWeatherThresholds={updateWeatherThresholds}
     />
     
     {calculation.warnings && calculation.warnings.length > 0 && (

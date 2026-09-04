@@ -14,17 +14,21 @@ export default function WeatherAtmosphere({
     intensity = 70,
     isPro = true,
     isAdmin = false,
-    overrideMode = null
+    overrideMode = null,
+    thresholds = { high: 1.5, low: -1.5 }
 }) {
     const canvasRef = useRef(null);
     const [previewMode, setPreviewMode] = useState(overrideMode);
 
     // 실제 수익률 기반 기본 날씨 계산 (관리자 모드가 아니면 임의 프리뷰 무시)
+    const thHigh = (thresholds && typeof thresholds.high === 'number') ? thresholds.high : 1.5;
+    const thLow = (thresholds && typeof thresholds.low === 'number') ? thresholds.low : -1.5;
+
     const currentMode = (isAdmin ? previewMode : null) || (() => {
-        if (dayProfitPct >= 1.5) return 'gold'; // 황금빛 대폭등
-        if (dayProfitPct > 0) return 'sun';    // 화창한 상승
-        if (dayProfitPct > -1.5) return 'rain'; // 차분한 비
-        return 'storm';                         // 천둥 번개 폭풍우
+        if (dayProfitPct >= thHigh) return 'gold'; // 황금빛 대폭등
+        if (dayProfitPct > 0) return 'sun';       // 화창한 상승
+        if (dayProfitPct > thLow) return 'rain';   // 차분한 비
+        return 'storm';                            // 천둥 번개 폭풍우
     })();
 
     const weatherConfigs = {
@@ -482,20 +486,20 @@ export default function WeatherAtmosphere({
             {/* 3. 우측 사이드 여백 앰비언트 글로우 바 */}
             <div className={'hidden 2xl:block absolute top-0 right-0 bottom-0 w-64 bg-gradient-to-l ' + currentConfig.ambientRight + ' pointer-events-none transition-all duration-1000'} />
 
-            {/* 4. 데스크톱 좌측 여백 초슬림 인디케이터 (관리자 모드일 때만 테스트/모니터링용으로 표시) */}
-            {isAdmin && (
+            {/* 4. 데스크톱 좌측 여백 초슬림 인디케이터 (오직 로컬 개발 환경 및 관리자일 때만 표시, 프로덕션 빌드에서는 절대 비노출) */}
+            {isAdmin && (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) && (
                 <div className="hidden 2xl:flex fixed top-24 left-6 pointer-events-auto z-20 flex-col items-start gap-1 animate-in fade-in">
                     <button 
                         onClick={cyclePreview}
                         className={'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black backdrop-blur-md border shadow-md transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer ' + currentConfig.badgeColor}
-                        title="[관리자 전용] 클릭 시 날씨 변경 (천둥 폭풍우 ⚡ ↔ 비 🌧️ ↔ 황금빛 ☀️ ↔ 화창 🌤️)"
+                        title="[로컬 전용] 클릭 시 날씨 변경 (천둥 폭풍우 ⚡ ↔ 비 🌧️ ↔ 황금빛 ☀️ ↔ 화창 🌤️)"
                     >
                         <span className="text-sm">{currentConfig.icon}</span>
                         <span>{currentConfig.title}</span>
                         <span className="text-[10px] opacity-75 font-mono">({dayProfitPct > 0 ? '+' : ''}{dayProfitPct.toFixed(2)}%)</span>
                     </button>
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold px-1 max-w-[180px] leading-tight">
-                        [관리자 테스트] {currentConfig.desc}
+                        [로컬 테스트] {currentConfig.desc}
                     </span>
                 </div>
             )}

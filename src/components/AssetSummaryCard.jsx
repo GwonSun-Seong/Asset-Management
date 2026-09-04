@@ -165,6 +165,67 @@ const AssetSummaryCard = (props) => {
                                 </div>
                                 <input type="date" className="w-full border dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-blue-500 outline-none text-xs" value={baseDate} onChange={(e) => setBaseDate(e.target.value)} />
                             </div>
+
+                            {/* 🌦️ 날씨별 당일 수익률(%) 기준 설정 */}
+                            <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                                        <span>🌦️</span> 날씨별 수익률 기준 (%)
+                                    </span>
+                                    <span className="text-[9px] text-slate-400">당일 손익률</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <div className="flex items-center justify-between text-[9px] text-amber-600 dark:text-amber-400 font-semibold mb-0.5">
+                                            <span>☀️ 대폭등 기준</span>
+                                            <span>이상</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400">+</span>
+                                            <input 
+                                                type="number" 
+                                                step="0.1" 
+                                                className="w-full border dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded px-1.5 py-1 text-right font-bold text-xs focus:ring-1 focus:ring-amber-500 outline-none" 
+                                                value={props.weatherThresholds?.high ?? 1.5} 
+                                                onChange={(e) => {
+                                                    const val = parseFloat(e.target.value) || 0;
+                                                    if (props.onUpdateWeatherThresholds) {
+                                                        props.onUpdateWeatherThresholds({ ...(props.weatherThresholds || { high: 1.5, low: -1.5 }), high: val });
+                                                    }
+                                                }} 
+                                            />
+                                            <span className="text-[10px] text-slate-400">%</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center justify-between text-[9px] text-rose-500 dark:text-rose-400 font-semibold mb-0.5">
+                                            <span>⚡ 폭풍우 기준</span>
+                                            <span>미만</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <input 
+                                                type="number" 
+                                                step="0.1" 
+                                                className="w-full border dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded px-1.5 py-1 text-right font-bold text-xs focus:ring-1 focus:ring-rose-500 outline-none" 
+                                                value={props.weatherThresholds?.low ?? -1.5} 
+                                                onChange={(e) => {
+                                                    const val = parseFloat(e.target.value) || 0;
+                                                    if (props.onUpdateWeatherThresholds) {
+                                                        props.onUpdateWeatherThresholds({ ...(props.weatherThresholds || { high: 1.5, low: -1.5 }), low: val });
+                                                    }
+                                                }} 
+                                            />
+                                            <span className="text-[10px] text-slate-400">%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-4 gap-1 text-[9px] text-center pt-1 border-t border-slate-200/50 dark:border-slate-700/50">
+                                    <div className="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 py-0.5 rounded font-medium">☀️ &ge; +{(props.weatherThresholds?.high ?? 1.5)}%</div>
+                                    <div className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 py-0.5 rounded font-medium">🌤️ 0~+{(props.weatherThresholds?.high ?? 1.5)}%</div>
+                                    <div className="bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 py-0.5 rounded font-medium">🌧️ {(props.weatherThresholds?.low ?? -1.5)}~0%</div>
+                                    <div className="bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 py-0.5 rounded font-medium">⚡ &lt; {(props.weatherThresholds?.low ?? -1.5)}%</div>
+                                </div>
+                            </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
                                     <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 block mb-1">월 고정 수입</span>
