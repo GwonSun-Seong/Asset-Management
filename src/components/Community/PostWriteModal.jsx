@@ -1,6 +1,7 @@
-// PostWriteModal.jsx - 커뮤니티 글쓰기 모달 (실자산 인증 스냅샷 포함)
-import React, { useState } from 'react';
+// PostWriteModal.jsx - 커뮤니티 글쓰기 모달 (자산 포트폴리오 스냅샷 & 초경량 WebP 사진 첨부 포함)
+import React, { useState, useRef } from 'react';
 import AssetFlexCard from './AssetFlexCard';
+import { uploadCommunityImage } from './imageUtils';
 
 export default function PostWriteModal({ 
     isOpen, 
@@ -9,7 +10,8 @@ export default function PostWriteModal({
     currentUser, 
     isAdmin = false,
     currentAppData = null,
-    currentCalculation = null
+    currentCalculation = null,
+    supabase = null
 }) {
     if (!isOpen) return null;
 
@@ -21,9 +23,15 @@ export default function PostWriteModal({
     const [isAnonymous, setIsAnonymous] = useState(false);
     const [isNotice, setIsNotice] = useState(false);
 
-    // 실자산 포트폴리오 인증 스냅샷 첨부 상태
+    // 이미지 첨부 상태 (최대 3장)
+    const [images, setImages] = useState([]);
+    const [isUploadingImage, setIsUploadingImage] = useState(false);
+    const fileInputRef = useRef(null);
+
+    // 자산 포트폴리오 스냅샷 첨부 상태
     const [attachAssetSnapshot, setAttachAssetSnapshot] = useState(false);
-    const [flexDisplayMode, setFlexDisplayMode] = useState('amount'); // 'amount' | 'percent'
+    const [flexDisplayMode, setFlexDisplayMode] = useState('amount'); // 'amount' | 'ratio'
+    const [hideTierBadge, setHideTierBadge] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // 현재 사용자의 실제 데이터 기반으로 생성되는 자산 스냅샷 계산
@@ -31,27 +39,28 @@ export default function PostWriteModal({
         if (!currentAppData || !currentCalculation) return null;
 
         const netWorth = currentCalculation.currentNet || 0; // 만원 단위
+        const isRatioMode = flexDisplayMode === 'ratio';
         let tierLabel = '시드 자산가';
         let tierBadge = '🌱';
 
         if (netWorth >= 100000) { // 10억 이상
-            tierLabel = '10억 클럽 (초고자산가)';
+            tierLabel = isRatioMode ? '10억 클럽' : '10억 클럽 (10억 이상)';
             tierBadge = '👑';
         } else if (netWorth >= 50000) { // 5억~10억
-            tierLabel = '다이아몬드 (5억 이상)';
+            tierLabel = isRatioMode ? '다이아몬드' : '다이아몬드 (5억 이상)';
             tierBadge = '💎';
         } else if (netWorth >= 30000) { // 3억~5억
-            tierLabel = '골드 (3억 이상)';
+            tierLabel = isRatioMode ? '골드' : '골드 (3억 이상)';
             tierBadge = '🥇';
         } else if (netWorth >= 10000) { // 1억~3억
-            tierLabel = '실버 (1억 이상)';
+            tierLabel = isRatioMode ? '실버' : '실버 (1억 이상)';
             tierBadge = '🥈';
         } else if (netWorth >= 5000) { // 5천만~1억
-            tierLabel = '브론즈 (5천만 이상)';
+            tierLabel = isRatioMode ? '브론즈' : '브론즈 (5천만 이상)';
             tierBadge = '🥉';
         }
 
-        // 섹터별 공식 메타 정보 (색상, 라벨, 아이콘)
+        // 섹터별 메타 정보 (색상, 라벨, 아이콘)
         const sectorMeta = {
             investment: { label: '주식/투자', color: '#F97316', icon: '📈' },
             savings: { label: '예적금/저축', color: '#10B981', icon: '💰' },
@@ -148,10 +157,10 @@ export default function PostWriteModal({
         const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
 
         return {
-            verified: true,
             snapshot_date: dateStr,
             tier_label: tierLabel,
             tier_badge: tierBadge,
+            hide_tier_badge: hideTierBadge,
             display_mode: flexDisplayMode,
             total_net_worth: flexDisplayMode === 'amount' ? netWorth : null,
             total_gross_worth: flexDisplayMode === 'amount' ? totalGross : null,
@@ -200,6 +209,42 @@ export default function PostWriteModal({
         }, 10);
     };
 
+    // 이미지 첨부 선택 및 WebP 압축 업로드 핸들러
+    const handleImageSelect = async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        if (images.length + files.length > 3) {
+            alert('사진은 최대 3장까지만 첨부할 수 있습니다.');
+            return;
+        }
+
+        setIsUploadingImage(true);
+        try {
+            let userId = currentUser?.id;
+            if (supabase) {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) userId = session.user.id;
+            }
+            if (!userId) userId = 'guest';
+
+            for (const file of files) {
+                const uploaded = await uploadCommunityImage(supabase, file, userId);
+                setImages(prev => [...prev, uploaded]);
+            }
+        } catch (err) {
+            console.error('Image upload failed:', err);
+            alert(err.message || '사진 업로드에 실패했습니다.');
+        } finally {
+            setIsUploadingImage(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    // 첨부 이미지 삭제
+    const handleRemoveImage = (indexToRemove) => {
+        setImages(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    };
+
     const handleSubmit = async () => {
         if (!title.trim()) {
             alert('제목을 입력해주세요.');
@@ -217,6 +262,7 @@ export default function PostWriteModal({
                 title: title.trim(),
                 content: content.trim(),
                 tags,
+                images: images.map(img => img.url),
                 is_notice: isAdmin ? isNotice : false,
                 is_anonymous: isAnonymous,
                 asset_snapshot: attachAssetSnapshot ? currentSnapshot : null
@@ -350,9 +396,45 @@ export default function PostWriteModal({
                         </div>
                     </div>
 
-                    {/* 5. 💎 실자산 포트폴리오 인증 첨부 섹션 */}
+                    {/* 4-1. 📷 첨부된 이미지 미리보기 목록 */}
+                    {(images.length > 0 || isUploadingImage) && (
+                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-700/60">
+                            <div className="flex items-center justify-between mb-2.5">
+                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                    <span>📷</span> 첨부된 사진 <span className="font-mono text-indigo-600 dark:text-indigo-400">({images.length}/3)</span>
+                                </label>
+                                <span className="text-[10px] text-slate-400">WebP 초경량 자동 압축 완료</span>
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                                {images.map((img, idx) => (
+                                    <div key={idx} className="relative group w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-800">
+                                        <img src={img.url} alt="첨부 이미지" className="w-full h-full object-cover" />
+                                        <button 
+                                            type="button" 
+                                            onClick={() => handleRemoveImage(idx)}
+                                            className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/75 hover:bg-black text-white text-xs flex items-center justify-center transition-all shadow-md"
+                                            title="사진 삭제"
+                                        >
+                                            ✕
+                                        </button>
+                                        <div className="absolute bottom-0 inset-x-0 bg-black/60 backdrop-blur-xs text-white text-[9px] font-mono px-1 py-0.5 truncate text-center">
+                                            {img.size ? `${Math.round(img.size / 1024)}KB` : 'WebP'}
+                                        </div>
+                                    </div>
+                                ))}
+                                {isUploadingImage && (
+                                    <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl border-2 border-dashed border-indigo-400 dark:border-indigo-600 flex flex-col items-center justify-center gap-1 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 animate-pulse">
+                                        <span className="text-xl">⏳</span>
+                                        <span className="text-[10px] font-bold">압축 중...</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 5. 📊 내 자산 포트폴리오 스냅샷 첨부 섹션 */}
                     <div className="p-4 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 space-y-3">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                             <label className="flex items-center gap-2 cursor-pointer select-none">
                                 <input 
                                     type="checkbox"
@@ -361,7 +443,7 @@ export default function PostWriteModal({
                                     className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
                                 />
                                 <span className="text-xs sm:text-sm font-black text-indigo-900 dark:text-indigo-200 flex items-center gap-1">
-                                    <span>💎</span> 내 자산 포트폴리오 인증 첨부 (공식 데이터)
+                                    <span>📊</span> 내 자산 포트폴리오 스냅샷 첨부
                                 </span>
                             </label>
                             {attachAssetSnapshot && (
@@ -375,22 +457,31 @@ export default function PostWriteModal({
                                     </button>
                                     <button 
                                         type="button" 
-                                        onClick={() => setFlexDisplayMode('percent')} 
-                                        className={`px-2 py-1 rounded transition-all ${flexDisplayMode === 'percent' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500'}`}
+                                        onClick={() => setFlexDisplayMode('ratio')} 
+                                        className={`px-2 py-1 rounded transition-all ${flexDisplayMode === 'ratio' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500'}`}
                                     >
-                                        금액 비공개(비중만)
+                                        금액 비공개 (비중만)
                                     </button>
                                 </div>
                             )}
                         </div>
 
                         {attachAssetSnapshot && (
-                            <div>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                                    현재 대시보드에 입력된 순자산 및 포트폴리오 배분 구조가 위조 없는 불변 스냅샷으로 글에 함께 첨부됩니다.
-                                </p>
+                            <div className="space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                                    <p>현재 입력된 자산 구성 및 배분 구조를 스냅샷 형태로 첨부합니다.</p>
+                                    <label className="flex items-center gap-1.5 cursor-pointer select-none font-bold text-slate-700 dark:text-slate-300">
+                                        <input 
+                                            type="checkbox"
+                                            checked={hideTierBadge}
+                                            onChange={(e) => setHideTierBadge(e.target.checked)}
+                                            className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        <span>자산 등급 뱃지 가리기</span>
+                                    </label>
+                                </div>
                                 {currentSnapshot && (
-                                    <AssetFlexCard snapshot={currentSnapshot} compact={true} />
+                                    <AssetFlexCard snapshot={currentSnapshot} compact={true} hideTier={hideTierBadge} />
                                 )}
                             </div>
                         )}
@@ -426,21 +517,31 @@ export default function PostWriteModal({
 
                 {/* 풋터 버튼 (시안 2 하단 매핑) */}
                 <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850 flex items-center justify-between">
-                    {/* 확장성 준비용 비활성 버튼 (사진/투표) */}
+                    {/* 이미지 첨부용 숨김 input */}
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        accept="image/*" 
+                        multiple 
+                        onChange={handleImageSelect} 
+                        className="hidden" 
+                    />
+
+                    {/* 확장성 준비용 버튼 (사진/투표) */}
                     <div className="flex items-center gap-2">
                         <button 
                             type="button" 
-                            disabled 
-                            title="사진 첨부 기능은 추후 지원 예정입니다."
-                            className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 text-xs font-medium flex items-center gap-1.5 opacity-60 cursor-not-allowed"
+                            disabled={images.length >= 3 || isUploadingImage}
+                            onClick={() => fileInputRef.current?.click()}
+                            className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
                         >
-                            <span>📷</span> 사진 추가 (0/3)
+                            <span>📷</span> 사진 추가 ({images.length}/3)
                         </button>
                         <button 
                             type="button" 
                             disabled 
                             title="투표 기능은 추후 지원 예정입니다."
-                            className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 text-xs font-medium flex items-center gap-1.5 opacity-60 cursor-not-allowed"
+                            className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 text-xs font-medium flex items-center gap-1.5 opacity-50 cursor-not-allowed"
                         >
                             <span>🗳️</span> 투표 추가
                         </button>

@@ -1,4 +1,4 @@
-// PostDetailModal.jsx - 커뮤니티 게시글 상세 모달 (본문, 실자산 인증 풀 렌더러, 좋아요, 댓글, 삭제)
+// PostDetailModal.jsx - 커뮤니티 게시글 상세 모달 (본문, 자산 스냅샷 렌더러, 좋아요, 댓글, 삭제)
 import React, { useState, useEffect } from 'react';
 import AssetFlexCard from './AssetFlexCard';
 import { communityService } from './communityService';
@@ -207,8 +207,18 @@ export default function PostDetailModal({
                                             {post.is_anonymous ? '?' : (post.author_name ? post.author_name.slice(0, 1) : 'U')}
                                         </div>
                                         <div>
-                                            <div className="font-bold text-slate-800 dark:text-slate-200">
-                                                {post.author_name}
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-bold text-slate-800 dark:text-slate-200">
+                                                    {post.author_name}
+                                                </span>
+                                                {!post.is_anonymous && post.author_profile?.selected_badge && post.author_profile.selected_badge !== 'tier' && post.author_profile.selected_badge !== 'none' && (
+                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/50">
+                                                        {post.author_profile.selected_badge === 'fire' && '🏃‍♂️ 파이어족'}
+                                                        {post.author_profile.selected_badge === 'dividend' && '💸 배당 러버'}
+                                                        {post.author_profile.selected_badge === 'investor' && '📈 가치 투자'}
+                                                        {post.author_profile.selected_badge === 'beginner' && '🌱 초보 투자'}
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="text-[10px] text-slate-400 font-mono">
                                                 {formatDate(post.created_at)}
@@ -223,15 +233,45 @@ export default function PostDetailModal({
                                 </div>
                             </div>
 
-                            {/* 🛡️ 검증된 실자산 포트폴리오 스냅샷 카드 렌더링 */}
+                            {/* 자산 포트폴리오 스냅샷 카드 렌더링 */}
                             {post.asset_snapshot && (
-                                <AssetFlexCard snapshot={post.asset_snapshot} compact={false} />
+                                <AssetFlexCard 
+                                    snapshot={post.asset_snapshot} 
+                                    compact={false} 
+                                    authorProfile={post.author_profile}
+                                    hideTier={post.hide_tier_badge}
+                                />
                             )}
 
                             {/* 본문 텍스트 */}
                             <div className="text-slate-800 dark:text-slate-200 text-sm leading-relaxed whitespace-pre-wrap py-2 min-h-[80px]">
                                 {post.content}
                             </div>
+
+                            {/* 📷 첨부 이미지 갤러리 */}
+                            {post.images && Array.isArray(post.images) && post.images.length > 0 && (
+                                <div className="space-y-3 py-3">
+                                    <div className={`grid gap-3 ${
+                                        post.images.length === 1 ? 'grid-cols-1' : (post.images.length === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3')
+                                    }`}>
+                                        {post.images.map((imgUrl, idx) => (
+                                            <div key={idx} className="rounded-2xl overflow-hidden border border-slate-200/80 dark:border-slate-700/60 bg-slate-100 dark:bg-slate-850 shadow-xs group">
+                                                <a href={imgUrl} target="_blank" rel="noopener noreferrer" className="block relative cursor-zoom-in">
+                                                    <img 
+                                                        src={imgUrl} 
+                                                        alt={`첨부 이미지 ${idx + 1}`} 
+                                                        className="w-full max-h-[500px] object-contain rounded-2xl mx-auto hover:opacity-95 transition-opacity"
+                                                        loading="lazy"
+                                                    />
+                                                    <span className="absolute bottom-2.5 right-2.5 px-2.5 py-1 bg-black/60 backdrop-blur-xs text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                                        <span>🔍</span> 원본 확대
+                                                    </span>
+                                                </a>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* 태그 목록 */}
                             {post.tags && post.tags.length > 0 && (
@@ -316,9 +356,19 @@ export default function PostDetailModal({
                                                             <div className="w-5 h-5 rounded-full bg-indigo-500 text-white font-bold text-[9px] flex items-center justify-center">
                                                                 {comment.is_anonymous ? '?' : (comment.author_name ? comment.author_name.slice(0, 1) : 'U')}
                                                             </div>
-                                                            <span className="font-bold text-slate-800 dark:text-slate-200">
-                                                                {comment.author_name}
-                                                            </span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="font-bold text-slate-800 dark:text-slate-200">
+                                                                    {comment.author_name}
+                                                                </span>
+                                                                {!comment.is_anonymous && comment.author_profile?.selected_badge && comment.author_profile.selected_badge !== 'tier' && comment.author_profile.selected_badge !== 'none' && (
+                                                                    <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/40">
+                                                                        {comment.author_profile.selected_badge === 'fire' && '🏃‍♂️'}
+                                                                        {comment.author_profile.selected_badge === 'dividend' && '💸'}
+                                                                        {comment.author_profile.selected_badge === 'investor' && '📈'}
+                                                                        {comment.author_profile.selected_badge === 'beginner' && '🌱'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                             <span className="text-[10px] text-slate-400">
                                                                 {formatDate(comment.created_at)}
                                                             </span>

@@ -58,10 +58,33 @@ export default function PostCard({ post, onClick, onLikeToggle, isLiked = false 
                 {post.content}
             </p>
 
-            {/* 실자산 인증 스냅샷 미니 위젯 렌더링 */}
+            {/* 첨부 이미지 썸네일 그리드 */}
+            {post.images && Array.isArray(post.images) && post.images.length > 0 && (
+                <div className={`mb-3 grid gap-1.5 rounded-2xl overflow-hidden ${
+                    post.images.length === 1 ? 'grid-cols-1 max-h-48' : (post.images.length === 2 ? 'grid-cols-2 max-h-36' : 'grid-cols-3 max-h-28')
+                }`}>
+                    {post.images.map((imgUrl, idx) => (
+                        <div key={idx} className="relative w-full h-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                            <img 
+                                src={imgUrl} 
+                                alt={`첨부 이미지 ${idx + 1}`} 
+                                className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                                loading="lazy"
+                            />
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* 자산 스냅샷 미니 위젯 렌더링 */}
             {post.asset_snapshot && (
                 <div onClick={(e) => { e.stopPropagation(); onClick(); }}>
-                    <AssetFlexCard snapshot={post.asset_snapshot} compact={true} />
+                    <AssetFlexCard 
+                        snapshot={post.asset_snapshot} 
+                        compact={true} 
+                        authorProfile={post.author_profile}
+                        hideTier={post.hide_tier_badge}
+                    />
                 </div>
             )}
 
@@ -74,6 +97,14 @@ export default function PostCard({ post, onClick, onLikeToggle, isLiked = false 
                     <span className="font-semibold text-slate-700 dark:text-slate-300">
                         {post.author_name || '사용자'}
                     </span>
+                    {!post.is_anonymous && post.author_profile?.selected_badge && post.author_profile.selected_badge !== 'tier' && post.author_profile.selected_badge !== 'none' && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/50">
+                            {post.author_profile.selected_badge === 'fire' && '🏃‍♂️ 파이어족'}
+                            {post.author_profile.selected_badge === 'dividend' && '💸 배당 러버'}
+                            {post.author_profile.selected_badge === 'investor' && '📈 가치 투자'}
+                            {post.author_profile.selected_badge === 'beginner' && '🌱 초보 투자'}
+                        </span>
+                    )}
                     <span className="text-[11px] text-slate-400">· {formatDate(post.created_at)}</span>
                 </div>
 

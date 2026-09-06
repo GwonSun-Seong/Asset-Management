@@ -182,3 +182,77 @@ BEGIN
     WHERE id = target_post_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ==============================================================================
+-- 📷 커뮤니티 이미지 스토리지 버킷 및 보안 RLS 설정 (Supabase Storage)
+-- ==============================================================================
+
+-- 0. community_posts 테이블 images 컬럼 안전 추가 (기존 테이블 마이그레이션 대비)
+ALTER TABLE public.community_posts ADD COLUMN IF NOT EXISTS images JSONB DEFAULT '[]'::jsonb;
+
+-- 1. storage.buckets에 community-images 버킷 생성 (Public 버킷, 5MB 제한)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+    'community-images',
+    'community-images',
+    true,
+    5242880, -- 파일당 최대 5MB (클라이언트에서 100~200KB로 압축 후 전송)
+    ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+)
+ON CONFLICT (id) DO UPDATE SET 
+    public = true,
+    file_size_limit = 5242880,
+    allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+-- 2. 스토리지 RLS 정책: 누구나 이미지 조회(다운로드) 가능
+DROP POLICY IF EXISTS "Anyone can view community images" ON storage.objects;
+CREATE POLICY "Anyone can view community images"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'community-images');
+
+-- 3. 스토리지 RLS 정책: 로그인된 인증 사용자는 본인 폴더(user_id/)에만 업로드 가능
+DROP POLICY IF EXISTS "Authenticated users can upload community images" ON storage.objects;
+CREATE POLICY "Authenticated users can upload community images"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+    bucket_id = 'community-images' 
+    AND (auth.uid())::text = (storage.foldername(name))[1]
+);
+
+-- 4. 스토리지 RLS 정책: 본인이 올린 이미지만 삭제 가능
+DROP POLICY IF EXISTS "Users can delete own community images" ON storage.objects;
+CREATE POLICY "Users can delete own community images"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+    bucket_id = 'community-images' 
+    AND (auth.uid())::text = (storage.foldername(name))[1]
+);
+
+-- ==============================================================================
+-- 👤 커뮤니티 사용자 닉네임 및 활동 뱃지 설정 (실시간 소급적용)
+-- ==============================================================================
+
+-- 1. user_profiles 테이블에 커뮤니티 전용 컬럼 추가
+ALTER TABLE public.user_profiles 
+ADD COLUMN IF NOT EXISTS nickname VARCHAR(30),
+ADD COLUMN IF NOT EXISTS nickname_updated_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS selected_badge VARCHAR(30) DEFAULT 'tier',
+ADD COLUMN IF NOT EXISTS hide_tier_badge BOOLEAN DEFAULT false;
+
+-- 2. 커뮤니티 작성자 공개 프로필(닉네임, 뱃지) 조회 정책
+-- 피드에서 모든 사용자의 게시글/댓글 작성자 닉네임 및 뱃지를 조회할 수 있어야 실시간 소급적용 가능
+DROP POLICY IF EXISTS "Anyone can view user public profiles" ON public.user_profiles;
+CREATE POLICY "Anyone can view user public profiles"
+ON public.user_profiles FOR SELECT
+USING (true);
+
+-- 3. 본인 프로필 수정 정책 (본인 계정만 닉네임/뱃지 수정 가능)
+DROP POLICY IF EXISTS "Users can update own community profile" ON public.user_profiles;
+CREATE POLICY "Users can update own community profile"
+ON public.user_profiles FOR UPDATE
+TO authenticated
+USING (auth.uid() = id)
+WITH CHECK (auth.uid() = id);
+

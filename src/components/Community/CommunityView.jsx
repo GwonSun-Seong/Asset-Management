@@ -1,8 +1,9 @@
-// CommunityView.jsx - 커뮤니티 메인 3컬럼 뷰 (피드, 카테고리, 주간 인기글, 실자산 인증, 상세/작성 모달 연동)
+// CommunityView.jsx - 커뮤니티 메인 3컬럼 뷰 (피드, 카테고리, 주간 인기글, 자산 포트폴리오 공유, 상세/작성 모달 연동)
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import PostCard from './PostCard';
 import PostDetailModal from './PostDetailModal';
 import PostWriteModal from './PostWriteModal';
+import ProfileSettingsModal from './ProfileSettingsModal';
 import { communityService } from './communityService';
 
 export default function CommunityView({
@@ -27,6 +28,10 @@ export default function CommunityView({
     const [currentPage, setCurrentPage] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
     const pageSize = 10;
+
+    // 사용자 커뮤니티 프로필 상태 (닉네임, 뱃지)
+    const [userProfile, setUserProfile] = useState(null);
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
     // 모달 상태
     const [selectedPostId, setSelectedPostId] = useState(null);
@@ -76,6 +81,16 @@ export default function CommunityView({
         }
     }, [supabase]);
 
+    // 사용자 프로필 로드 (닉네임, 뱃지)
+    const loadUserProfile = useCallback(async () => {
+        if (!currentUser?.id) {
+            setUserProfile(null);
+            return;
+        }
+        const profile = await communityService.fetchUserProfile(supabase, currentUser.id);
+        setUserProfile(profile);
+    }, [supabase, currentUser]);
+
     useEffect(() => {
         loadPosts();
     }, [loadPosts]);
@@ -83,6 +98,10 @@ export default function CommunityView({
     useEffect(() => {
         loadWeeklyTop();
     }, [loadWeeklyTop]);
+
+    useEffect(() => {
+        loadUserProfile();
+    }, [loadUserProfile]);
 
     // 글 작성 모달 열기 핸들러 (로그인 여부 체크)
     const handleOpenWriteModal = () => {
@@ -98,7 +117,7 @@ export default function CommunityView({
     // 새 글 등록 완료 처리
     const handlePostCreated = async (postInputData) => {
         let userId = currentUser?.id;
-        let authorName = currentUser?.full_name || currentUser?.name || '익명';
+        let authorName = userProfile?.nickname || currentUser?.full_name || currentUser?.name || '익명';
         let authorEmail = currentUser?.email || null;
 
         if (supabase) {
@@ -106,7 +125,7 @@ export default function CommunityView({
                 const { data: { session } } = await supabase.auth.getSession();
                 if (session?.user) {
                     userId = session.user.id;
-                    authorName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || authorName;
+                    authorName = userProfile?.nickname || session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || authorName;
                     authorEmail = session.user.email;
                 }
             } catch (err) {
@@ -446,18 +465,36 @@ export default function CommunityView({
 
                         {currentUser ? (
                             <div>
-                                <div className="flex items-center gap-3 mb-4">
+                                <div className="flex items-center gap-3 mb-3">
                                     <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black text-sm shadow-sm">
-                                        {(currentUser.full_name || currentUser.email || 'U')[0].toUpperCase()}
+                                        {(userProfile?.nickname || currentUser.full_name || currentUser.email || 'U')[0].toUpperCase()}
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                        <div className="font-bold text-sm text-gray-900 dark:text-white truncate">
-                                            {currentUser.full_name || currentUser.email?.split('@')[0]}
+                                        <div className="font-bold text-sm text-gray-900 dark:text-white truncate flex items-center gap-1.5">
+                                            <span>{userProfile?.nickname || currentUser.full_name || currentUser.email?.split('@')[0]}</span>
+                                            {userProfile?.nickname && (
+                                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50">
+                                                    커스텀닉
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="text-[11px] text-gray-400 truncate">
                                             {currentUser.email}
                                         </div>
                                     </div>
+                                </div>
+
+                                {/* 대표 뱃지 상태 표시 */}
+                                <div className="mb-3 p-2 rounded-xl bg-slate-50 dark:bg-slate-750 border border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
+                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">대표 뱃지</span>
+                                    <span className="font-bold text-indigo-600 dark:text-indigo-400 text-[11px]">
+                                        {(!userProfile?.selected_badge || userProfile?.selected_badge === 'tier') && '🥇 자산 티어'}
+                                        {userProfile?.selected_badge === 'fire' && '🏃‍♂️ 파이어족'}
+                                        {userProfile?.selected_badge === 'dividend' && '💸 배당 러버'}
+                                        {userProfile?.selected_badge === 'investor' && '📈 가치 투자자'}
+                                        {userProfile?.selected_badge === 'beginner' && '🌱 초보 투자자'}
+                                        {userProfile?.selected_badge === 'none' && '🚫 뱃지 숨김'}
+                                    </span>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-2 mb-3">
@@ -475,22 +512,30 @@ export default function CommunityView({
                                     </div>
                                 </div>
 
-                                <button
-                                    onClick={() => setMyPostsOnly(prev => !prev)}
-                                    className={`w-full py-2 rounded-xl text-xs font-bold transition-all border ${
-                                        myPostsOnly
-                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                            : 'bg-white dark:bg-gray-750 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {myPostsOnly ? '✓ 전체 글 보기' : '내가 쓴 글 모아보기'}
-                                </button>
+                                <div className="space-y-1.5">
+                                    <button
+                                        onClick={() => setIsProfileModalOpen(true)}
+                                        className="w-full py-2 rounded-xl text-xs font-bold transition-all border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100/50 flex items-center justify-center gap-1.5"
+                                    >
+                                        <span>⚙️</span> 프로필 & 뱃지 설정
+                                    </button>
+                                    <button
+                                        onClick={() => setMyPostsOnly(prev => !prev)}
+                                        className={`w-full py-2 rounded-xl text-xs font-bold transition-all border ${
+                                            myPostsOnly
+                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                                : 'bg-white dark:bg-gray-750 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        {myPostsOnly ? '✓ 전체 글 보기' : '내가 쓴 글 모아보기'}
+                                    </button>
+                                </div>
                             </div>
                         ) : (
                             <div className="text-center py-3">
                                 <div className="text-2xl mb-2">🔐</div>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 leading-relaxed">
-                                    로그인 후 글/댓글 작성 및 실자산 포트폴리오 인증 기능을 이용하실 수 있습니다.
+                                    로그인 후 글/댓글 작성 및 자산 포트폴리오 스냅샷 공유 기능을 이용하실 수 있습니다.
                                 </p>
                                 <button
                                     onClick={onLogin}
@@ -557,7 +602,7 @@ export default function CommunityView({
                             • 상호 존중과 배려를 바탕으로 건설적인 금융/재테크 지식을 나눠주세요.
                         </p>
                         <p className="leading-relaxed">
-                            • 실자산 인증 기능은 실제 계산 엔진의 세션 데이터만 담아 위변조를 방지합니다.
+                            • 자산 포트폴리오 스냅샷은 사용자가 직접 입력한 계산 데이터를 바탕으로 공유되는 참고용 정보입니다.
                         </p>
                         <p className="leading-relaxed">
                             • 욕설, 비방, 불법 리딩방 홍보 등 부적절한 게시글은 관리자에 의해 무통보 삭제됩니다.
@@ -578,6 +623,7 @@ export default function CommunityView({
                 isAdmin={isAdmin}
                 currentAppData={currentAppData}
                 currentCalculation={currentCalculation}
+                supabase={supabase}
             />
 
             {/* ============================================================ */}
@@ -595,6 +641,23 @@ export default function CommunityView({
                 supabase={supabase}
                 onPostDeleted={handlePostDeleted}
                 onLikeToggled={handleLikeToggled}
+            />
+
+            {/* ============================================================ */}
+            {/* 👤 커뮤니티 프로필 & 뱃지 설정 모달 (실시간 소급적용) */}
+            {/* ============================================================ */}
+            <ProfileSettingsModal
+                isOpen={isProfileModalOpen}
+                onClose={() => setIsProfileModalOpen(false)}
+                currentUser={currentUser}
+                userProfile={userProfile}
+                supabase={supabase}
+                onProfileUpdated={(updated) => {
+                    setUserProfile(updated);
+                    loadPosts();
+                    loadWeeklyTop();
+                }}
+                showToast={showToast}
             />
         </div>
     );

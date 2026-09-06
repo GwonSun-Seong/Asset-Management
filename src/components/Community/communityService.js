@@ -45,6 +45,73 @@ const saveLocalLikes = (likes) => {
 };
 
 // ==============================================================================
+// 👤 사용자 프로필 캐시 & 실시간 소급적용 헬퍼
+// ==============================================================================
+
+const PROFILES_KEY = 'assetDashboard_community_profiles_v1';
+
+const getLocalProfiles = () => {
+    try {
+        const raw = localStorage.getItem(PROFILES_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        return {};
+    }
+};
+
+const saveLocalProfiles = (profiles) => {
+    try {
+        localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+    } catch (e) {}
+};
+
+// 작성자 프로필을 배치 조회하여 맵 형태로 캐싱/반환
+async function fetchProfilesMap(supabase, userIds) {
+    const validIds = Array.from(new Set((userIds || []).filter(id => id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))));
+    const localProfiles = getLocalProfiles();
+    const map = { ...localProfiles };
+
+    if (supabase && validIds.length > 0) {
+        try {
+            const { data, error } = await supabase
+                .from('user_profiles')
+                .select('id, nickname, selected_badge, hide_tier_badge, nickname_updated_at')
+                .in('id', validIds);
+            if (!error && data) {
+                data.forEach(p => {
+                    map[p.id] = { ...(map[p.id] || {}), ...p };
+                });
+                saveLocalProfiles(map);
+            }
+        } catch (e) {
+            console.warn('Failed to fetch user profiles:', e);
+        }
+    }
+    return map;
+}
+
+// 게시글 리스트에 최신 사용자 닉네임 및 뱃지 설정을 실시간 소급적용
+function applyProfilesToPosts(posts, profilesMap) {
+    return (posts || []).map(post => {
+        if (!post) return post;
+        const profile = profilesMap[post.user_id];
+        if (!profile) return post;
+
+        const newPost = { ...post, author_profile: profile };
+        if (!newPost.is_anonymous && profile.nickname) {
+            newPost.author_name = profile.nickname;
+        }
+        if (profile.selected_badge) {
+            newPost.selected_badge = profile.selected_badge;
+        }
+        if (profile.hide_tier_badge !== undefined) {
+            newPost.hide_tier_badge = profile.hide_tier_badge;
+        }
+        return newPost;
+    });
+}
+
+// ==============================================================================
 // 🌐 커뮤니티 데이터 API 서비스
 // ==============================================================================
 
@@ -98,9 +165,12 @@ export const communityService = {
                 query = query.range(from, to);
 
                 const { data, error, count } = await query;
-                if (!error) {
-                    return { posts: data || [], totalCount: count !== null ? count : (data ? data.length : 0), isFallback: false };
-                } else {
+                if (!error && data) {
+                    const userIds = data.map(p => p.user_id);
+                    const profilesMap = await fetchProfilesMap(supabase, userIds);
+                    const enrichedPosts = applyProfilesToPosts(data, profilesMap);
+                    return { posts: enrichedPosts, totalCount: count !== null ? count : data.length, isFallback: false };
+                } else if (error) {
                     console.warn('Supabase community_posts query error:', error.message);
                 }
             } catch (err) {
@@ -134,7 +204,10 @@ export const communityService = {
 
         const from = (page - 1) * pageSize;
         const paged = posts.slice(from, from + pageSize);
-        return { posts: paged, totalCount: posts.length, isFallback: true };
+        const userIds = paged.map(p => p.user_id);
+        const profilesMap = await fetchProfilesMap(supabase, userIds);
+        const enriched = applyProfilesToPosts(paged, profilesMap);
+        return { posts: enriched, totalCount: posts.length, isFallback: true };
     },
 
     // 2. 주간 인기글 TOP 3 가져오기 (좋아요 1개 이상만)
@@ -144,29 +217,40 @@ export const communityService = {
                 const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
                 const { data, error } = await supabase
                     .from('community_posts')
-                    .select('id, title, category, like_count, comment_count, view_count, is_notice')
+                    .select('id, user_id, title, category, like_count, comment_count, view_count, is_notice, is_anonymous, author_name')
                     .gte('created_at', sevenDaysAgo)
                     .gt('like_count', 0)
                     .order('like_count', { ascending: false })
                     .limit(3);
 
-                if (!error) return data || [];
+                if (!error && data) {
+                    const userIds = data.map(p => p.user_id);
+                    const profilesMap = await fetchProfilesMap(supabase, userIds);
+                    return applyProfilesToPosts(data, profilesMap);
+                }
             } catch (e) {}
         }
 
         const posts = getLocalPosts();
-        return [...posts]
+        const top = [...posts]
             .filter(p => (p.like_count || 0) > 0)
             .sort((a, b) => (b.like_count || 0) - (a.like_count || 0))
             .slice(0, 3)
             .map(p => ({
                 id: p.id,
+                user_id: p.user_id,
                 title: p.title,
                 category: p.category,
                 like_count: p.like_count,
                 comment_count: p.comment_count,
-                view_count: p.view_count
+                view_count: p.view_count,
+                is_notice: p.is_notice,
+                is_anonymous: p.is_anonymous,
+                author_name: p.author_name
             }));
+        const userIds = top.map(p => p.user_id);
+        const profilesMap = await fetchProfilesMap(supabase, userIds);
+        return applyProfilesToPosts(top, profilesMap);
     },
 
     // 3. 게시글 상세 조회
@@ -206,6 +290,12 @@ export const communityService = {
             }
         }
 
+        if (post) {
+            const profilesMap = await fetchProfilesMap(supabase, [post.user_id]);
+            const [enriched] = applyProfilesToPosts([post], profilesMap);
+            post = enriched;
+        }
+
         return { post, likedByUser };
     },
 
@@ -221,14 +311,23 @@ export const communityService = {
             is_anonymous = false,
             author_name,
             author_email,
-            asset_snapshot = null
+            asset_snapshot = null,
+            images = []
         } = postData;
 
         if (!title.trim()) throw new Error('제목을 입력해주세요.');
         if (!content.trim()) throw new Error('내용을 입력해주세요.');
 
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user_id);
-        const displayAuthorName = is_anonymous ? `익명 (${user_id ? user_id.slice(-4) : '0000'})` : (author_name || '사용자');
+        let displayAuthorName = author_name || '사용자';
+        if (is_anonymous) {
+            displayAuthorName = `익명 (${user_id ? user_id.slice(-4) : '0000'})`;
+        } else if (user_id) {
+            const profile = await this.fetchUserProfile(supabase, user_id);
+            if (profile?.nickname) {
+                displayAuthorName = profile.nickname;
+            }
+        }
         const displayAuthorEmail = is_anonymous ? null : author_email;
 
         const newPost = {
@@ -243,7 +342,7 @@ export const communityService = {
             author_name: displayAuthorName,
             author_email: displayAuthorEmail,
             asset_snapshot,
-            images: [],
+            images: Array.isArray(images) ? images : [],
             poll: null,
             view_count: 1,
             like_count: 0,
@@ -268,7 +367,7 @@ export const communityService = {
                             author_name: displayAuthorName,
                             author_email: displayAuthorEmail,
                             asset_snapshot,
-                            images: [],
+                            images: Array.isArray(images) ? images : [],
                             poll: null
                         }
                     ])
@@ -385,6 +484,7 @@ export const communityService = {
 
     // 7. 댓글 목록 가져오기
     async fetchComments(supabase, postId) {
+        let comments = [];
         if (supabase) {
             try {
                 const { data, error } = await supabase
@@ -393,21 +493,48 @@ export const communityService = {
                     .eq('post_id', postId)
                     .order('created_at', { ascending: true });
 
-                if (!error && data) return data;
+                if (!error && data) comments = data;
             } catch (e) {}
         }
 
-        try {
-            const raw = localStorage.getItem(`comments_${postId}`);
-            return raw ? JSON.parse(raw) : [];
-        } catch (e) {
-            return [];
+        if (!comments.length) {
+            try {
+                const raw = localStorage.getItem(`comments_${postId}`);
+                if (raw) comments = JSON.parse(raw);
+            } catch (e) {}
         }
+
+        if (comments.length > 0) {
+            const userIds = comments.map(c => c.user_id);
+            const profilesMap = await fetchProfilesMap(supabase, userIds);
+            comments = comments.map(c => {
+                if (c.user_id && profilesMap[c.user_id]) {
+                    const pr = profilesMap[c.user_id];
+                    return {
+                        ...c,
+                        author_name: (!c.is_anonymous && pr.nickname) ? pr.nickname : c.author_name,
+                        author_profile: pr
+                    };
+                }
+                return c;
+            });
+        }
+
+        return comments;
     },
 
     // 8. 댓글 추가
     async addComment(supabase, { postId, user_id, content, is_anonymous = false, author_name }) {
         if (!content.trim()) throw new Error('댓글 내용을 입력해주세요.');
+
+        // 사용자 프로필 닉네임 우선 적용
+        let resolvedAuthorName = author_name;
+        if (!is_anonymous && user_id) {
+            const profile = await this.fetchUserProfile(supabase, user_id);
+            if (profile?.nickname) {
+                resolvedAuthorName = profile.nickname;
+            }
+        }
 
         const newComment = {
             id: `comm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -415,7 +542,7 @@ export const communityService = {
             user_id,
             content: content.trim(),
             is_anonymous,
-            author_name: is_anonymous ? `익명 (${user_id.slice(-4)})` : author_name,
+            author_name: is_anonymous ? `익명 (${user_id ? user_id.slice(-4) : '0000'})` : resolvedAuthorName,
             created_at: new Date().toISOString()
         };
 
@@ -496,5 +623,103 @@ export const communityService = {
             p.view_count = (p.view_count || 0) + 1;
             saveLocalPosts(posts);
         }
+    },
+
+    // 11. 사용자 커뮤니티 프로필 조회
+    async fetchUserProfile(supabase, userId) {
+        if (!userId) return null;
+        const local = getLocalProfiles();
+        let profile = local[userId] || { id: userId, nickname: null, selected_badge: 'tier', hide_tier_badge: false };
+
+        if (supabase && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+            try {
+                const { data, error } = await supabase
+                    .from('user_profiles')
+                    .select('id, nickname, nickname_updated_at, selected_badge, hide_tier_badge')
+                    .eq('id', userId)
+                    .maybeSingle();
+
+                if (!error && data) {
+                    profile = { ...profile, ...data };
+                    local[userId] = profile;
+                    saveLocalProfiles(local);
+                }
+            } catch (e) {
+                console.warn('fetchUserProfile exception:', e);
+            }
+        }
+        return profile;
+    },
+
+    // 12. 사용자 커뮤니티 프로필 및 닉네임 변경 (7일 쿨다운 체크)
+    async updateUserProfile(supabase, userId, { nickname, selected_badge, hide_tier_badge }) {
+        if (!userId) throw new Error('로그인이 필요합니다.');
+
+        const current = await this.fetchUserProfile(supabase, userId);
+        const updates = {};
+        const now = new Date();
+
+        if (nickname !== undefined && nickname !== null) {
+            const trimmed = nickname.trim();
+            if (trimmed.length < 2 || trimmed.length > 12) {
+                throw new Error('닉네임은 2자 이상 12자 이하로 입력해주세요.');
+            }
+            if (!/^[a-zA-Z0-9가-힣_-]+$/.test(trimmed)) {
+                throw new Error('닉네임에는 한글, 영문, 숫자, 언더바(_), 하이픈(-)만 사용할 수 있습니다.');
+            }
+
+            // 닉네임이 기존과 다르게 실제로 변경되는 경우에만 7일 쿨다운 체크
+            if (trimmed !== current.nickname) {
+                if (current.nickname_updated_at) {
+                    const lastUpdated = new Date(current.nickname_updated_at).getTime();
+                    const diffDays = (now.getTime() - lastUpdated) / (1000 * 60 * 60 * 24);
+                    if (diffDays < 7) {
+                        const remainDays = Math.ceil(7 - diffDays);
+                        throw new Error(`닉네임은 7일에 1회만 변경할 수 있습니다. (${remainDays}일 후 변경 가능)`);
+                    }
+                }
+                updates.nickname = trimmed;
+                updates.nickname_updated_at = now.toISOString();
+            }
+        }
+
+        if (selected_badge !== undefined) {
+            updates.selected_badge = selected_badge;
+        }
+
+        if (hide_tier_badge !== undefined) {
+            updates.hide_tier_badge = !!hide_tier_badge;
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return current;
+        }
+
+        // 로컬 캐시 즉시 반영
+        const local = getLocalProfiles();
+        const updatedProfile = { ...current, ...updates };
+        local[userId] = updatedProfile;
+        saveLocalProfiles(local);
+
+        if (supabase && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+            try {
+                const { data, error } = await supabase
+                    .from('user_profiles')
+                    .update(updates)
+                    .eq('id', userId)
+                    .select()
+                    .maybeSingle();
+
+                if (error) {
+                    console.error('Failed to update user profile in Supabase:', error);
+                } else if (data) {
+                    return { ...updatedProfile, ...data };
+                }
+            } catch (e) {
+                console.warn('updateUserProfile exception:', e);
+            }
+        }
+
+        return updatedProfile;
     }
 };

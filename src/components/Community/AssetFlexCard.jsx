@@ -1,7 +1,7 @@
-// AssetFlexCard.jsx - 다차원 실자산 포트폴리오 및 재무 건전성 공식 인증 카드
+// AssetFlexCard.jsx - 다차원 포트폴리오 및 재무 상태 요약 카드
 import React from 'react';
 
-// 섹터 공식 메타 매핑 (한글명, 고유 테마 컬러, 아이콘)
+// 섹터 메타 매핑 (한글명, 고유 테마 컬러, 아이콘)
 const SECTOR_META_MAP = {
     investment: { label: '주식/투자', color: '#F97316', icon: '📈' },
     savings: { label: '예적금/저축', color: '#10B981', icon: '💰' },
@@ -60,11 +60,10 @@ const formatKoreanAmount = (manWon) => {
     return `${num.toLocaleString()}만원`;
 };
 
-export default function AssetFlexCard({ snapshot, compact = false }) {
+export default function AssetFlexCard({ snapshot, compact = false, authorProfile = null, hideTier = false }) {
     if (!snapshot) return null;
 
     const {
-        verified = true,
         snapshot_date = '',
         tier_label = '자산가',
         tier_badge = '💎',
@@ -81,6 +80,39 @@ export default function AssetFlexCard({ snapshot, compact = false }) {
         capital_yield = null
     } = snapshot;
 
+    // 티어 뱃지 및 숨김/커스텀 뱃지 계산
+    const shouldHideTier = hideTier || 
+        snapshot.hide_tier_badge || 
+        authorProfile?.hide_tier_badge || 
+        authorProfile?.selected_badge === 'none';
+
+    // 금액 비공개(ratio) 모드인 경우 괄호 안의 금액'(1억 이상)' 등을 자동 제거하여 금액 유출 방지
+    let displayTierLabel = tier_label || '';
+    if (display_mode === 'ratio') {
+        displayTierLabel = displayTierLabel.replace(/\s*\(.*?\)/g, '');
+    }
+
+    // 커스텀 뱃지 매핑 (파이어족, 배당러버, 가치투자자, 초보투자자 등)
+    const customBadgeKey = authorProfile?.selected_badge;
+    let activeBadgeIcon = tier_badge || '💎';
+    let activeBadgeLabel = displayTierLabel;
+
+    if (customBadgeKey && customBadgeKey !== 'tier') {
+        if (customBadgeKey === 'fire') {
+            activeBadgeIcon = '🏃‍♂️';
+            activeBadgeLabel = '파이어족';
+        } else if (customBadgeKey === 'dividend') {
+            activeBadgeIcon = '💸';
+            activeBadgeLabel = '배당 러버';
+        } else if (customBadgeKey === 'investor') {
+            activeBadgeIcon = '📈';
+            activeBadgeLabel = '가치 투자자';
+        } else if (customBadgeKey === 'beginner') {
+            activeBadgeIcon = '🌱';
+            activeBadgeLabel = '초보 투자자';
+        }
+    }
+
     // 모든 섹터 항목을 정규화하여 고유 색상 및 한글화 보장
     const normalizedShares = (portfolio_shares || []).map(normalizeSector);
 
@@ -96,17 +128,21 @@ export default function AssetFlexCard({ snapshot, compact = false }) {
         return (
             <div className="my-2.5 p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-slate-50 via-indigo-50/30 to-blue-50/20 dark:from-slate-800/90 dark:via-indigo-950/20 dark:to-slate-850 border border-indigo-100/80 dark:border-indigo-900/40 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                    <span className="text-2xl p-2 bg-white dark:bg-slate-700 rounded-xl shadow-xs border border-indigo-100 dark:border-indigo-800 flex-shrink-0">
-                        {tier_badge || '💎'}
-                    </span>
+                    {!shouldHideTier && (
+                        <span className="text-2xl p-2 bg-white dark:bg-slate-700 rounded-xl shadow-xs border border-indigo-100 dark:border-indigo-800 flex-shrink-0">
+                            {activeBadgeIcon}
+                        </span>
+                    )}
                     <div>
                         <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-indigo-600 text-white flex items-center gap-0.5 shadow-xs">
-                                <span>🛡️</span> 실자산 인증
+                                <span>📊</span> 자산 요약
                             </span>
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                                {tier_label}
-                            </span>
+                            {!shouldHideTier && activeBadgeLabel && (
+                                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                    {activeBadgeLabel}
+                                </span>
+                            )}
                             {debt_ratio === 0 && (
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                                     무부채 클린
@@ -129,7 +165,7 @@ export default function AssetFlexCard({ snapshot, compact = false }) {
                             </div>
                         ) : (
                             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-1">
-                                순자산 비공개 · 자산 등급 및 포트폴리오 비중 인증 완료
+                                순자산 비공개 · 포트폴리오 비중 공유
                             </div>
                         )}
                     </div>
@@ -163,49 +199,49 @@ export default function AssetFlexCard({ snapshot, compact = false }) {
     }
 
     // =========================================================================
-    // 2. 상세 모달용 풀 렌더링 공식 금융 인증 리포트 카드
+    // 2. 상세 모달용 풀 렌더링 포트폴리오 요약 리포트 카드
     // =========================================================================
     return (
         <div className="my-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-indigo-50/80 via-white to-blue-50/40 dark:from-slate-850 dark:via-slate-800 dark:to-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/50 shadow-md">
             
-            {/* 1. 상단 공식 인증 헤더 & 보안 스탬프 */}
+            {/* 1. 상단 헤더 */}
             <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-indigo-100/80 dark:border-slate-700/60">
                 <div className="flex items-center gap-3.5">
-                    <span className="text-3xl sm:text-4xl p-2.5 sm:p-3 bg-white dark:bg-slate-700 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-800 flex-shrink-0">
-                        {tier_badge || '💎'}
-                    </span>
+                    {!shouldHideTier && (
+                        <span className="text-3xl sm:text-4xl p-2.5 sm:p-3 bg-white dark:bg-slate-700 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-800 flex-shrink-0">
+                            {activeBadgeIcon}
+                        </span>
+                    )}
                     <div>
                         <div className="flex items-center gap-2">
                             <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-indigo-600 text-white flex items-center gap-1 shadow-xs">
-                                <span>🛡️</span> 공식 인증 스냅샷
+                                <span>📊</span> 포트폴리오 스냅샷
                             </span>
-                            <span className="text-sm sm:text-base font-black text-indigo-700 dark:text-indigo-300">
-                                {tier_label}
-                            </span>
+                            {!shouldHideTier && activeBadgeLabel && (
+                                <span className="text-sm sm:text-base font-black text-indigo-700 dark:text-indigo-300">
+                                    {activeBadgeLabel}
+                                </span>
+                            )}
                         </div>
                         <div className="text-[11px] text-slate-400 dark:text-slate-500 font-mono mt-1 flex items-center gap-2">
-                            <span>인증 기준일: {snapshot_date || '최신 검증'}</span>
-                            <span>•</span>
-                            <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-0.5">
-                                <span>✓</span> 계산 엔진 위변조 방지 완료
-                            </span>
+                            <span>기준일: {snapshot_date || '등록 시점'}</span>
                         </div>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                     <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 shadow-xs">
-                        {display_mode === 'amount' ? '🔓 전 항목 투명 공개' : '🔒 자산 비중 중심 공개'}
+                        {display_mode === 'amount' ? '전 항목 수치 공개' : '자산 비중 중심 공개'}
                     </span>
                 </div>
             </div>
 
-            {/* 2. 핵심 재무 건전성 4대 지표 (Financial Vitals 4-Grid) */}
+            {/* 2. 핵심 재무 상태 4대 지표 */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 my-5">
                 {/* 1) 순자산 총액 */}
                 <div className="p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 shadow-xs flex flex-col justify-between">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">인증 순자산</span>
+                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">등록 순자산</span>
                         <span className="text-sm">💰</span>
                     </div>
                     {display_mode === 'amount' && total_net_worth !== null ? (
@@ -223,7 +259,7 @@ export default function AssetFlexCard({ snapshot, compact = false }) {
                                 금액 비공개
                             </div>
                             <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-                                {tier_label} 인증
+                                {!shouldHideTier ? activeBadgeLabel : '비중 중심 공유'}
                             </div>
                         </div>
                     )}
@@ -282,7 +318,7 @@ export default function AssetFlexCard({ snapshot, compact = false }) {
                             {runway_months > 0 ? `${runway_months}개월 버팀` : (savings_rate !== null ? `${savings_rate}%` : '최적화 완료')}
                         </div>
                         <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate">
-                            {runway_months > 0 ? '무수익 시 생활 버퍼' : (savings_rate !== null ? '월 소득 대비 잉여' : '공식 안전 지표')}
+                            {runway_months > 0 ? '무수익 시 생활 버퍼' : (savings_rate !== null ? '월 소득 대비 잉여' : '재무 안전 지표')}
                         </div>
                     </div>
                 </div>
