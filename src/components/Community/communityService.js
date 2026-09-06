@@ -50,7 +50,22 @@ const saveLocalLikes = (likes) => {
 
 export const communityService = {
     // 1. 게시글 목록 조회
-    async fetchPosts(supabase, { category = 'all', sort = 'latest', searchQuery = '', page = 1, pageSize = 20 }) {
+    async fetchPosts(supabaseOrOptions, maybeOptions) {
+        let supabase = supabaseOrOptions;
+        let options = maybeOptions || {};
+        if (supabaseOrOptions && !supabaseOrOptions.from && typeof supabaseOrOptions === 'object') {
+            supabase = supabaseOrOptions.supabase;
+            options = supabaseOrOptions;
+        }
+
+        const {
+            category = 'all',
+            sort = 'latest',
+            searchQuery = '',
+            page = 1,
+            pageSize = 20
+        } = options;
+
         if (supabase) {
             try {
                 let query = supabase
@@ -63,7 +78,12 @@ export const communityService = {
 
                 if (searchQuery && searchQuery.trim()) {
                     const q = searchQuery.trim();
-                    query = query.or(`title.ilike.%${q}%,content.ilike.%${q}%`);
+                    if (q.startsWith('#')) {
+                        const tag = q.substring(1);
+                        query = query.contains('tags', JSON.stringify([tag]));
+                    } else {
+                        query = query.or(`title.ilike.%${q}%,content.ilike.%${q}%`);
+                    }
                 }
 
                 // 공지사항 우선 정렬 후 정렬 기준 적용
@@ -80,9 +100,11 @@ export const communityService = {
                 const { data, error, count } = await query;
                 if (!error) {
                     return { posts: data || [], totalCount: count !== null ? count : (data ? data.length : 0), isFallback: false };
+                } else {
+                    console.warn('Supabase community_posts query error:', error.message);
                 }
             } catch (err) {
-                console.warn('Supabase community_posts query error:', err.message);
+                console.warn('Supabase community_posts exception:', err.message);
             }
         }
 
@@ -93,7 +115,12 @@ export const communityService = {
         }
         if (searchQuery && searchQuery.trim()) {
             const q = searchQuery.trim().toLowerCase();
-            posts = posts.filter(p => p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q) || (p.tags && p.tags.some(t => t.toLowerCase().includes(q))));
+            if (q.startsWith('#')) {
+                const tag = q.substring(1);
+                posts = posts.filter(p => p.tags && p.tags.some(t => t.toLowerCase() === tag));
+            } else {
+                posts = posts.filter(p => p.title?.toLowerCase().includes(q) || p.content?.toLowerCase().includes(q) || (p.tags && p.tags.some(t => t.toLowerCase().includes(q))));
+            }
         }
 
         posts.sort((a, b) => {
@@ -200,6 +227,10 @@ export const communityService = {
         if (!title.trim()) throw new Error('제목을 입력해주세요.');
         if (!content.trim()) throw new Error('내용을 입력해주세요.');
 
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user_id);
+        const displayAuthorName = is_anonymous ? `익명 (${user_id ? user_id.slice(-4) : '0000'})` : (author_name || '사용자');
+        const displayAuthorEmail = is_anonymous ? null : author_email;
+
         const newPost = {
             id: `post-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             user_id,
@@ -209,8 +240,8 @@ export const communityService = {
             tags,
             is_notice: !!is_notice,
             is_anonymous: !!is_anonymous,
-            author_name: is_anonymous ? `익명 (${user_id.slice(-4)})` : author_name,
-            author_email: is_anonymous ? null : author_email,
+            author_name: displayAuthorName,
+            author_email: displayAuthorEmail,
             asset_snapshot,
             images: [],
             poll: null,
@@ -221,7 +252,7 @@ export const communityService = {
             updated_at: new Date().toISOString()
         };
 
-        if (supabase && user_id) {
+        if (supabase && isUuid) {
             try {
                 const { data, error } = await supabase
                     .from('community_posts')
@@ -234,8 +265,8 @@ export const communityService = {
                             tags,
                             is_notice: newPost.is_notice,
                             is_anonymous: newPost.is_anonymous,
-                            author_name: newPost.author_name,
-                            author_email: newPost.author_email,
+                            author_name: displayAuthorName,
+                            author_email: displayAuthorEmail,
                             asset_snapshot,
                             images: [],
                             poll: null
@@ -244,15 +275,21 @@ export const communityService = {
                     .select()
                     .single();
 
-                if (!error && data) {
+                if (error) {
+                    console.error('Supabase post insert error:', error);
+                    throw new Error(`DB 저장 오류: ${error.message || error.details || '권한 또는 스키마 오류'}`);
+                }
+
+                if (data) {
                     return data;
                 }
             } catch (e) {
-                console.warn('Supabase post insert failed, saving to local fallback:', e);
+                console.error('Supabase post insert exception:', e);
+                throw e;
             }
         }
 
-        // 로컬 폴백 저장
+        // 로컬 폴백 저장 (오프라인 모드 또는 로컬 테스트 계정)
         const posts = getLocalPosts();
         posts.unshift(newPost);
         saveLocalPosts(posts);

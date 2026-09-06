@@ -39,33 +39,25 @@ export default function WeatherAtmosphere({
             title: '황금빛 대폭등',
             icon: '☀️',
             desc: '양옆 여백에 황금빛 프리즘 별빛과 따스한 아지랑이가 피어오릅니다.',
-            badgeColor: 'text-amber-700 dark:text-amber-300 border-amber-500/40 bg-amber-500/15 shadow-amber-500/10',
-            ambientLeft: 'from-amber-500/15 via-orange-500/5 to-white dark:to-transparent',
-            ambientRight: 'from-amber-500/15 via-orange-500/5 to-white dark:to-transparent'
+            badgeColor: 'text-amber-700 dark:text-amber-300 border-amber-500/40 bg-amber-500/15 shadow-amber-500/10'
         },
         sun: {
             title: '화창한 상승',
             icon: '🌤️',
             desc: '양옆 여백에 온화하고 쾌청한 초록빛 햇살과 미세 입자가 감돕니다.',
-            badgeColor: 'text-emerald-700 dark:text-emerald-300 border-emerald-500/40 bg-emerald-500/15 shadow-emerald-500/10',
-            ambientLeft: 'from-emerald-500/15 via-teal-500/5 to-white dark:to-transparent',
-            ambientRight: 'from-emerald-500/15 via-teal-500/5 to-white dark:to-transparent'
+            badgeColor: 'text-emerald-700 dark:text-emerald-300 border-emerald-500/40 bg-emerald-500/15 shadow-emerald-500/10'
         },
         rain: {
             title: '차분한 비',
             icon: '🌧️',
             desc: '좌우 사이드 여백에 시원한 빗줄기가 떨어지며 은은한 천둥이 칩니다.',
-            badgeColor: 'text-blue-700 dark:text-blue-300 border-blue-500/40 bg-blue-500/15 shadow-blue-500/10',
-            ambientLeft: 'from-blue-600/20 via-indigo-600/5 to-white dark:to-transparent',
-            ambientRight: 'from-blue-600/20 via-indigo-600/5 to-white dark:to-transparent'
+            badgeColor: 'text-blue-700 dark:text-blue-300 border-blue-500/40 bg-blue-500/15 shadow-blue-500/10'
         },
         storm: {
             title: '천둥 번개 폭풍우',
             icon: '⚡',
             desc: '좌우 여백에 굵은 장대비와 실시간 번개가 내리꽂힙니다.',
-            badgeColor: 'text-purple-700 dark:text-purple-300 border-purple-500/40 bg-purple-500/15 shadow-purple-500/10',
-            ambientLeft: 'from-purple-700/25 via-indigo-900/10 to-white dark:to-transparent',
-            ambientRight: 'from-purple-700/25 via-indigo-900/10 to-white dark:to-transparent'
+            badgeColor: 'text-purple-700 dark:text-purple-300 border-purple-500/40 bg-purple-500/15 shadow-purple-500/10'
         }
     };
 
@@ -470,18 +462,12 @@ export default function WeatherAtmosphere({
     };
 
     return (
-        <div className="fixed inset-0 pointer-events-none z-[15] overflow-hidden select-none">
+        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none">
             {/* 1. 사이드 여백 전용 고성능 60fps 캔버스 (중앙 클리핑으로 100% 분리) */}
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
-            {/* 2. 좌측 사이드 여백 앰비언트 글로우 바 */}
-            <div className={'hidden xl:block absolute top-0 left-0 bottom-0 w-80 3xl:w-96 bg-gradient-to-r ' + currentConfig.ambientLeft + ' pointer-events-none transition-all duration-1000'} />
-
-            {/* 3. 우측 사이드 여백 앰비언트 글로우 바 */}
-            <div className={'hidden xl:block absolute top-0 right-0 bottom-0 w-80 3xl:w-96 bg-gradient-to-l ' + currentConfig.ambientRight + ' pointer-events-none transition-all duration-1000'} />
-
             {/* 4. 데스크톱 좌측 여백 초슬림 인디케이터 (오직 로컬 개발 환경 및 관리자일 때만 표시, 프로덕션 빌드에서는 절대 비노출) */}
-            {isAdmin && (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) && (
+            {isAdmin && import.meta.env.DEV && (
                 <div className="hidden 2xl:flex fixed top-24 left-6 pointer-events-auto z-20 flex-col items-start gap-1 animate-in fade-in">
                     <button 
                         onClick={cyclePreview}

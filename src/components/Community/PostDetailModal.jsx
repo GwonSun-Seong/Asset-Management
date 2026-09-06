@@ -60,7 +60,12 @@ export default function PostDetailModal({
             return;
         }
         try {
-            const res = await communityService.toggleLike(supabase, postId, currentUser.id);
+            let userId = currentUser.id;
+            if (supabase) {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) userId = session.user.id;
+            }
+            const res = await communityService.toggleLike(supabase, postId, userId);
             setLiked(res.liked);
             setLikeCount(prev => res.liked ? prev + 1 : Math.max(0, prev - 1));
             if (onLikeToggled) onLikeToggled(postId, res.liked);
@@ -73,7 +78,12 @@ export default function PostDetailModal({
         if (!confirm('정말로 이 게시글을 삭제하시겠습니까?')) return;
         setIsDeleting(true);
         try {
-            await communityService.deletePost(supabase, postId, currentUser?.id, isAdmin);
+            let userId = currentUser?.id;
+            if (supabase) {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) userId = session.user.id;
+            }
+            await communityService.deletePost(supabase, postId, userId, isAdmin);
             alert('게시글이 삭제되었습니다.');
             if (onPostDeleted) onPostDeleted(postId);
             onClose();
@@ -93,10 +103,19 @@ export default function PostDetailModal({
         if (!commentInput.trim()) return;
 
         try {
-            const authorName = currentUser.user_metadata?.full_name || currentUser.full_name || currentUser.email?.split('@')[0] || '사용자';
+            let userId = currentUser.id;
+            let authorName = currentUser.user_metadata?.full_name || currentUser.full_name || currentUser.email?.split('@')[0] || '사용자';
+            if (supabase) {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) {
+                    userId = session.user.id;
+                    authorName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || authorName;
+                }
+            }
+
             const newComment = await communityService.addComment(supabase, {
                 postId,
-                user_id: currentUser.id,
+                user_id: userId,
                 content: commentInput.trim(),
                 is_anonymous: isCommentAnonymous,
                 author_name: authorName

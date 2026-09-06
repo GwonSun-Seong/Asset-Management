@@ -45,8 +45,7 @@ export default function CommunityView({
         setIsLoading(true);
         try {
             const queryToSearch = selectedTag ? `#${selectedTag}` : searchQuery;
-            const res = await communityService.fetchPosts({
-                supabase,
+            const res = await communityService.fetchPosts(supabase, {
                 category: activeCategory,
                 sort: sortOrder,
                 page: currentPage,
@@ -97,7 +96,35 @@ export default function CommunityView({
     };
 
     // 새 글 등록 완료 처리
-    const handlePostCreated = (newPost) => {
+    const handlePostCreated = async (postInputData) => {
+        let userId = currentUser?.id;
+        let authorName = currentUser?.full_name || currentUser?.name || '익명';
+        let authorEmail = currentUser?.email || null;
+
+        if (supabase) {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) {
+                    userId = session.user.id;
+                    authorName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || authorName;
+                    authorEmail = session.user.email;
+                }
+            } catch (err) {
+                console.warn('Session check failed:', err);
+            }
+        }
+
+        if (!userId) {
+            throw new Error('로그인이 필요한 기능입니다.');
+        }
+
+        await communityService.createPost(supabase, {
+            ...postInputData,
+            user_id: userId,
+            author_name: authorName,
+            author_email: authorEmail
+        });
+
         setIsWriteModalOpen(false);
         showToast('🎉 게시글이 성공적으로 등록되었습니다!');
         loadPosts();

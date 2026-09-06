@@ -179,7 +179,7 @@ export default function PostWriteModal({
                 tags,
                 is_notice: isAdmin ? isNotice : false,
                 is_anonymous: isAnonymous,
-                asset_snapshot: currentSnapshot
+                asset_snapshot: attachAssetSnapshot ? currentSnapshot : null
             });
             onClose();
         } catch (err) {

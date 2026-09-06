@@ -804,10 +804,7 @@ import CommunityView from './components/Community/CommunityView';
             const [isDemoMode, setIsDemoMode] = useState(false); // [추가] 데모 모드 상태
             const [isPro, setIsPro] = useState(false); // [추가] 유료 이용자 여부
             const [isAdmin, setIsAdmin] = useState(false); // [추가] 관리자 여부
-            const isLocalEnv = typeof window !== 'undefined' && (
-                window.location.hostname === 'localhost' ||
-                window.location.hostname === '127.0.0.1'
-            );
+            const isLocalEnv = Boolean(import.meta.env.DEV);
             const [adminSuggestions, setAdminSuggestions] = useState([]); // [추가] 관리자용 사용자 의견 목록
             const [verifiedEmail, setVerifiedEmail] = useState(null);
             const [userProfile, setUserProfile] = useState(null); // [추가] 사용자 프로필 정보
@@ -877,11 +874,23 @@ import CommunityView from './components/Community/CommunityView';
 
             // [추가] 사이드바 섹터 순서 상태 관리 및 드래그 핸들러
             const [sidebarSectorOrder, setSidebarSectorOrder] = useState(() => {
-                return [
+                const defaultSectors = [
                     { id: 'input', label: '📥 데이터 입력' },
                     { id: 'visualization', label: '📈 시각화' },
-                    { id: 'analysis', label: '🔍 분석' }
+                    { id: 'analysis', label: '🔍 분석' },
+                    { id: 'community', label: '💬 커뮤니티' }
                 ];
+                try {
+                    const saved = localStorage.getItem('assetDashboardSidebarSectorOrder');
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        if (!parsed.some(s => s.id === 'community')) {
+                            parsed.push({ id: 'community', label: '💬 커뮤니티' });
+                        }
+                        return parsed;
+                    }
+                } catch (e) {}
+                return defaultSectors;
             });
             useEffect(() => {
                 localStorage.setItem('assetDashboardSidebarSectorOrder', JSON.stringify(sidebarSectorOrder));
@@ -1144,7 +1153,7 @@ import CommunityView from './components/Community/CommunityView';
                 });
             }, []);
 
-            const isLocal = useMemo(() => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1', []);
+            const isLocal = Boolean(import.meta.env.DEV);
 
             const [currentMemoIndex, setCurrentMemoIndex] = useState(0);
             const [isEditingMemoTitle, setIsEditingMemoTitle] = useState(false);
@@ -1172,15 +1181,20 @@ import CommunityView from './components/Community/CommunityView';
             const [layoutOrder, setLayoutOrder] = useState(() => {
                 try {
                     const savedOrder = localStorage.getItem('assetDashboardLayoutOrder');
-                    const defaultOrder = window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'];
+                    const defaultOrder = window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions', 'community'];
+                    let order = defaultOrder;
                     if (savedOrder) {
                         const parsed = JSON.parse(savedOrder);
                         const missing = defaultOrder.filter(id => !parsed.includes(id));
-                        return [...parsed, ...missing];
+                        order = [...parsed, ...missing];
                     }
-                    return defaultOrder;
+                    if (!order.includes('community')) {
+                        order.push('community');
+                    }
+                    return order;
                 } catch {
-                    return window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions'];
+                    const fallback = window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions', 'community'];
+                    return fallback.includes('community') ? fallback : [...fallback, 'community'];
                 }
             });
             useEffect(() => {
@@ -2219,7 +2233,15 @@ import CommunityView from './components/Community/CommunityView';
                         // [추가] 관리자라면 제안 목록 가져오기
                         if (isAdminUser) fetchAdminSuggestions();
 
-                        if (profile) setUserProfile(prev => ({ ...prev, ...profile }));
+                        if (session?.user) {
+                            setUserProfile(prev => ({
+                                ...prev,
+                                ...(profile || {}),
+                                id: session.user.id,
+                                email: session.user.email,
+                                full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0]
+                            }));
+                        }
                     } else {
                         console.warn('Profile fetch error after retries:', fetchError);
                         setSyncStatus('error');
@@ -2285,7 +2307,7 @@ import CommunityView from './components/Community/CommunityView';
             };
 
             const handleLocalTestToggle = () => {
-                if (!isLocal && !isLocalEnv) return;
+                if (!import.meta.env.DEV) return;
 
                 if (!verifiedEmail) {
                     setVerifiedEmail('test@local.dev');
@@ -8893,7 +8915,7 @@ import CommunityView from './components/Community/CommunityView';
                             {/* 클라우드 동기화 카드 */}
                             <div className="mb-4 p-3 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/40 dark:to-blue-900/40 rounded-xl border border-indigo-200 dark:border-indigo-800 shadow-sm">
                                 <div className="flex items-center justify-between mb-2">
-                                    <span onClick={handleLocalTestToggle} className={`text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1 ${isLocal ? 'cursor-pointer hover:text-indigo-800 dark:hover:text-indigo-200' : ''}`} title={isLocal ? "클릭하여 로컬 테스트 모드 전환" : ""}>
+                                    <span onClick={isLocal ? handleLocalTestToggle : undefined} className={`text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1 ${isLocal ? 'cursor-pointer hover:text-indigo-800 dark:hover:text-indigo-200' : ''}`} title={isLocal ? "클릭하여 로컬 테스트 모드 전환" : undefined}>
                                         내 정보
                                         {syncStatus === 'error' && <span title={syncError} className="cursor-help text-red-500">⚠️</span>}
                                     </span>
@@ -8997,8 +9019,15 @@ import CommunityView from './components/Community/CommunityView';
                                         onDrop={(e) => handleSectorDrop(e, sector.id)}
                                         className={`p-1 rounded-xl transition-all ${sIdx !== 0 ? "mt-1 pt-2 border-t dark:border-gray-800" : ""} ${draggedSectorId === sector.id ? 'opacity-50 scale-95' : ''}`}
                                     >
-                                        <div className={`px-2 mb-1.5 text-[10px] uppercase tracking-widest flex items-center justify-between group/hdr cursor-grab active:cursor-grabbing ${
-                                            activeTab === sector.id ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-gray-600 dark:text-gray-400'
+                                        <div 
+                                            onClick={() => {
+                                                setActiveTab(sector.id);
+                                                if (sector.id === 'community') {
+                                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                                }
+                                            }}
+                                            className={`px-2 mb-1.5 text-[10px] uppercase tracking-widest flex items-center justify-between group/hdr cursor-pointer active:cursor-grabbing ${
+                                            activeTab === sector.id ? 'font-black text-blue-600 dark:text-blue-400' : 'font-bold text-gray-600 dark:text-gray-400 hover:text-blue-500'
                                         }`}>
                                             {sector.label}
                                             <span className="opacity-0 group-hover/hdr:opacity-100 text-[8px] transition-opacity">⋮⋮</span>
@@ -9009,8 +9038,10 @@ import CommunityView from './components/Community/CommunityView';
                                                 if (id === 'scenario') return scenarios.length > 0;
                                                 if (id === 'history') return assetHistory.length > 0;
                                                 return true;
-                                            }).map(id => {
-                                                const isCurrentPanel = activePanel === id;
+                                            }).concat(
+                                                sector.id === 'community' && !layoutOrder.includes('community') ? ['community'] : []
+                                            ).map(id => {
+                                                const isCurrentPanel = activePanel === id || (sector.id === 'community' && activeTab === 'community');
                                                 const isSameTab = activeTab === sector.id;
                                                 
                                                 return (
@@ -9022,7 +9053,11 @@ import CommunityView from './components/Community/CommunityView';
                                                     onDrop={(e) => handlePanelDrop(e, id)}
                                                     onClick={() => {
                                                         setActiveTab(sector.id);
-                                                        setTimeout(() => scrollToPanel(id), 50);
+                                                        if (id === 'community') {
+                                                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                                                        } else {
+                                                            setTimeout(() => scrollToPanel(id), 50);
+                                                        }
                                                     }} 
                                                     className={`w-full text-left px-2 py-1.5 text-xs rounded-lg transition-all flex items-center gap-2 group ${
                                                         draggedPanelId === id 
@@ -9033,12 +9068,12 @@ import CommunityView from './components/Community/CommunityView';
                                                                 ? 'font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 opacity-100'
                                                             : 'font-normal text-gray-500 dark:text-gray-500 hover:text-blue-500'
                                                               )
-                                                          )
+                                                           )
                                                     }`}
                                                 >
                                                     <span className={`w-1 h-3 rounded-full transition-all ${isCurrentPanel ? 'bg-blue-500 scale-y-110' : 'bg-transparent'}`}></span>
-                                                    <span className={`transition-transform ${isCurrentPanel ? 'scale-110' : 'opacity-70'}`}>{navLabels[id]?.icon}</span>
-                                                    <span className="truncate">{navLabels[id]?.title}</span>
+                                                    <span className={`transition-transform ${isCurrentPanel ? 'scale-110' : 'opacity-70'}`}>{navLabels[id]?.icon || '💬'}</span>
+                                                    <span className="truncate">{navLabels[id]?.title || '커뮤니티 광장'}</span>
                                                 </button>
                                             );})}
                                         </div>

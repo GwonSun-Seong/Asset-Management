@@ -73,7 +73,8 @@ window.navLabels = {
     events: { title: "타임라인 & 이벤트", icon: "🎉" },
     'detail-analysis': { title: "상세 분석", icon: "🔍" },
     'capital-income': { title: "자본소득 분석", icon: "💹" },
-    assumptions: { title: "가정 사항", icon: "💡" }
+    assumptions: { title: "가정 사항", icon: "💡" },
+    community: { title: "커뮤니티 광장", icon: "💬" }
 };
 
 // UI 텍스트 리소스 (i18n 준비)
