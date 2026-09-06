@@ -1,4 +1,4 @@
-// ProfileSettingsModal.jsx - 커뮤니티 닉네임(7일 쿨다운) 및 대표 뱃지 설정 모달 (실시간 소급적용)
+// ProfileSettingsModal.jsx - 커뮤니티 닉네임 및 대표 뱃지 설정 모달 (실시간 소급적용)
 import React, { useState, useEffect } from 'react';
 import { communityService } from './communityService';
 
@@ -38,11 +38,6 @@ export default function ProfileSettingsModal({
 
     if (!isOpen) return null;
 
-    // 닉네임 변경 쿨다운 계산 (7일 = 604,800,000 ms)
-    const lastUpdatedTime = userProfile?.nickname_updated_at ? new Date(userProfile.nickname_updated_at).getTime() : null;
-    const diffDays = lastUpdatedTime ? (Date.now() - lastUpdatedTime) / (1000 * 60 * 60 * 24) : 999;
-    const isCooldownActive = diffDays < 7;
-    const remainDays = isCooldownActive ? Math.ceil(7 - diffDays) : 0;
     const currentNickname = userProfile?.nickname || currentUser?.full_name || currentUser?.email?.split('@')[0] || '';
     const isNicknameModified = nickname.trim() !== currentNickname;
 
@@ -52,10 +47,6 @@ export default function ProfileSettingsModal({
 
         const trimmed = nickname.trim();
         if (isNicknameModified) {
-            if (isCooldownActive) {
-                setErrorMsg(`닉네임은 7일에 1회만 변경할 수 있습니다. (${remainDays}일 후 변경 가능)`);
-                return;
-            }
             if (trimmed.length < 2 || trimmed.length > 12) {
                 setErrorMsg('닉네임은 2자 이상 12자 이하로 입력해주세요.');
                 return;
@@ -120,32 +111,19 @@ export default function ProfileSettingsModal({
                             <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                                 <span>✏️</span> 커뮤니티 닉네임
                             </label>
-                            {isCooldownActive && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                                    ⏳ 변경 대기 중 ({remainDays}일 남음)
-                                </span>
-                            )}
                         </div>
                         <div className="relative">
                             <input 
                                 type="text"
                                 value={nickname}
                                 onChange={(e) => setNickname(e.target.value)}
-                                disabled={isCooldownActive}
                                 maxLength={12}
                                 placeholder="사용할 닉네임을 입력하세요 (2~12자)"
-                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:bg-slate-100 dark:disabled:bg-slate-850"
+                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                             />
-                            {isCooldownActive && (
-                                <span className="absolute right-3 top-2.5 text-xs text-slate-400" title="쿨다운 활성">
-                                    🔒
-                                </span>
-                            )}
                         </div>
                         <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-                            {isCooldownActive 
-                                ? `최근 닉네임을 변경하셨습니다. 7일에 1회만 변경 가능합니다. (다음 변경 가능: ${remainDays}일 후)`
-                                : '한글, 영문, 숫자, _, - 2~12자 입력 가능하며 변경 후 7일간 유지됩니다.'}
+                            한글, 영문, 숫자, _, - 조합으로 2~12자까지 자유롭게 설정할 수 있습니다.
                         </p>
                     </div>
 

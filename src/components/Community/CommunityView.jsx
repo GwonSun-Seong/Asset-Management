@@ -45,9 +45,18 @@ export default function CommunityView({
         setTimeout(() => setToastMessage(null), 3000);
     };
 
+    const currentUserId = currentUser?.id;
+    const currentUserEmail = currentUser?.email;
+
     // 1. 게시글 목록 불러오기
-    const loadPosts = useCallback(async () => {
-        setIsLoading(true);
+    const loadPosts = useCallback(async (isSilent = false) => {
+        // 이미 게시글이 있는 상태에서 배경 갱신 시에는 화면을 지우지 않고 백그라운드에서 교체 (깜빡임/글 사라짐 방지)
+        if (!isSilent) {
+            setPosts(prev => {
+                if (prev.length === 0) setIsLoading(true);
+                return prev;
+            });
+        }
         try {
             const queryToSearch = selectedTag ? `#${selectedTag}` : searchQuery;
             const res = await communityService.fetchPosts(supabase, {
@@ -59,8 +68,8 @@ export default function CommunityView({
             });
 
             let list = res.posts || [];
-            if (myPostsOnly && currentUser) {
-                list = list.filter(p => p.user_id === currentUser.id || p.author_email === currentUser.email);
+            if (myPostsOnly && currentUserId) {
+                list = list.filter(p => p.user_id === currentUserId || (currentUserEmail && p.author_email === currentUserEmail));
             }
             setPosts(list);
             setTotalCount(res.totalCount || list.length);
@@ -69,7 +78,7 @@ export default function CommunityView({
         } finally {
             setIsLoading(false);
         }
-    }, [supabase, activeCategory, sortOrder, currentPage, searchQuery, selectedTag, myPostsOnly, currentUser]);
+    }, [supabase, activeCategory, sortOrder, currentPage, searchQuery, selectedTag, myPostsOnly, currentUserId, currentUserEmail]);
 
     // 2. 주간 인기글 불러오기
     const loadWeeklyTop = useCallback(async () => {
@@ -81,27 +90,30 @@ export default function CommunityView({
         }
     }, [supabase]);
 
-    // 사용자 프로필 로드 (닉네임, 뱃지)
+    // 3. 사용자 프로필 로드 (닉네임, 뱃지)
     const loadUserProfile = useCallback(async () => {
-        if (!currentUser?.id) {
+        if (!currentUserId) {
             setUserProfile(null);
             return;
         }
-        const profile = await communityService.fetchUserProfile(supabase, currentUser.id);
+        const profile = await communityService.fetchUserProfile(supabase, currentUserId);
         setUserProfile(profile);
-    }, [supabase, currentUser]);
+    }, [supabase, currentUserId]);
 
+    // 필터/페이지/검색조건/카테고리 변경 시에만 게시글을 불러옴 (부모 리렌더 시 깜빡임 방지)
     useEffect(() => {
         loadPosts();
-    }, [loadPosts]);
+    }, [activeCategory, sortOrder, currentPage, searchQuery, selectedTag, myPostsOnly, supabase]);
 
+    // 마운트 시 최초 1회만 주간 인기글 로드
     useEffect(() => {
         loadWeeklyTop();
     }, [loadWeeklyTop]);
 
+    // 사용자 ID 변경 시에만 프로필 로드
     useEffect(() => {
         loadUserProfile();
-    }, [loadUserProfile]);
+    }, [currentUserId, loadUserProfile]);
 
     // 글 작성 모달 열기 핸들러 (로그인 여부 체크)
     const handleOpenWriteModal = () => {

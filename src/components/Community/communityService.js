@@ -166,10 +166,30 @@ export const communityService = {
 
                 const { data, error, count } = await query;
                 if (!error && data) {
-                    const userIds = data.map(p => p.user_id);
+                    // 혹시 로컬 임시로 작성되었으나 아직 DB에 동기화되지 않은 로컬 전용 글 병합 (글 실종 방지)
+                    const localPosts = getLocalPosts();
+                    const remoteIds = new Set(data.map(p => p.id));
+                    let localOnlyPosts = localPosts.filter(lp => !remoteIds.has(lp.id) && typeof lp.id === 'string' && lp.id.startsWith('post-'));
+
+                    if (category && category !== 'all') {
+                        localOnlyPosts = localOnlyPosts.filter(p => p.category === category);
+                    }
+                    if (searchQuery && searchQuery.trim()) {
+                        const q = searchQuery.trim().toLowerCase();
+                        if (q.startsWith('#')) {
+                            const tag = q.substring(1);
+                            localOnlyPosts = localOnlyPosts.filter(p => p.tags && p.tags.some(t => t.toLowerCase() === tag));
+                        } else {
+                            localOnlyPosts = localOnlyPosts.filter(p => p.title?.toLowerCase().includes(q) || p.content?.toLowerCase().includes(q));
+                        }
+                    }
+
+                    const mergedData = (page === 1 && localOnlyPosts.length > 0) ? [...localOnlyPosts, ...data] : data;
+
+                    const userIds = mergedData.map(p => p.user_id);
                     const profilesMap = await fetchProfilesMap(supabase, userIds);
-                    const enrichedPosts = applyProfilesToPosts(data, profilesMap);
-                    return { posts: enrichedPosts, totalCount: count !== null ? count : data.length, isFallback: false };
+                    const enrichedPosts = applyProfilesToPosts(mergedData, profilesMap);
+                    return { posts: enrichedPosts, totalCount: (count !== null ? count : data.length) + (page === 1 ? localOnlyPosts.length : 0), isFallback: false };
                 } else if (error) {
                     console.warn('Supabase community_posts query error:', error.message);
                 }
@@ -380,6 +400,9 @@ export const communityService = {
                 }
 
                 if (data) {
+                    const posts = getLocalPosts().filter(p => p.id !== data.id);
+                    posts.unshift(data);
+                    saveLocalPosts(posts);
                     return data;
                 }
             } catch (e) {
@@ -408,7 +431,11 @@ export const communityService = {
                     deleteQuery = deleteQuery.eq('user_id', currentUserId);
                 }
                 const { error } = await deleteQuery;
-                if (!error) return true;
+                if (!error) {
+                    const posts = getLocalPosts().filter(p => p.id !== postId);
+                    saveLocalPosts(posts);
+                    return true;
+                }
             } catch (e) {
                 console.warn('Supabase post delete failed, fallback to local:', e);
             }
@@ -651,13 +678,12 @@ export const communityService = {
         return profile;
     },
 
-    // 12. 사용자 커뮤니티 프로필 및 닉네임 변경 (7일 쿨다운 체크)
+    // 12. 사용자 커뮤니티 프로필 및 닉네임 변경
     async updateUserProfile(supabase, userId, { nickname, selected_badge, hide_tier_badge }) {
         if (!userId) throw new Error('로그인이 필요합니다.');
 
         const current = await this.fetchUserProfile(supabase, userId);
         const updates = {};
-        const now = new Date();
 
         if (nickname !== undefined && nickname !== null) {
             const trimmed = nickname.trim();
@@ -667,20 +693,7 @@ export const communityService = {
             if (!/^[a-zA-Z0-9가-힣_-]+$/.test(trimmed)) {
                 throw new Error('닉네임에는 한글, 영문, 숫자, 언더바(_), 하이픈(-)만 사용할 수 있습니다.');
             }
-
-            // 닉네임이 기존과 다르게 실제로 변경되는 경우에만 7일 쿨다운 체크
-            if (trimmed !== current.nickname) {
-                if (current.nickname_updated_at) {
-                    const lastUpdated = new Date(current.nickname_updated_at).getTime();
-                    const diffDays = (now.getTime() - lastUpdated) / (1000 * 60 * 60 * 24);
-                    if (diffDays < 7) {
-                        const remainDays = Math.ceil(7 - diffDays);
-                        throw new Error(`닉네임은 7일에 1회만 변경할 수 있습니다. (${remainDays}일 후 변경 가능)`);
-                    }
-                }
-                updates.nickname = trimmed;
-                updates.nickname_updated_at = now.toISOString();
-            }
+            updates.nickname = trimmed;
         }
 
         if (selected_badge !== undefined) {

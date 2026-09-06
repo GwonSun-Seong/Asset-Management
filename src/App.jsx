@@ -2330,6 +2330,25 @@ import CommunityView from './components/Community/CommunityView';
                 }
             };
 
+            // 커뮤니티 전달용 사용자 정보 메모이제이션 (5초 단위 실시간 시세 갱신 등으로 인한 불필요한 리렌더링 및 깜빡임 방지)
+            const communityCurrentUser = useMemo(() => {
+                if (userProfile) {
+                    return {
+                        id: userProfile.id,
+                        email: userProfile.email || verifiedEmail,
+                        full_name: userProfile.full_name || userProfile.name || (verifiedEmail ? verifiedEmail.split('@')[0] : '익명')
+                    };
+                }
+                if (verifiedEmail) {
+                    return {
+                        id: verifiedEmail,
+                        email: verifiedEmail,
+                        full_name: verifiedEmail.split('@')[0]
+                    };
+                }
+                return null;
+            }, [userProfile?.id, userProfile?.email, userProfile?.full_name, userProfile?.name, verifiedEmail]);
+
             useEffect(() => {
                 if (!supabase) return;
                 
@@ -9111,15 +9130,7 @@ import CommunityView from './components/Community/CommunityView';
                             {activeTab === 'community' ? (
                                 <CommunityView
                                     supabase={supabase}
-                                    currentUser={userProfile ? {
-                                        id: userProfile.id,
-                                        email: userProfile.email || verifiedEmail,
-                                        full_name: userProfile.full_name || userProfile.name || (verifiedEmail ? verifiedEmail.split('@')[0] : '익명')
-                                    } : (verifiedEmail ? {
-                                        id: verifiedEmail,
-                                        email: verifiedEmail,
-                                        full_name: verifiedEmail.split('@')[0]
-                                    } : null)}
+                                    currentUser={communityCurrentUser}
                                     isAdmin={isAdmin}
                                     currentAppData={appData}
                                     currentCalculation={calculation}
