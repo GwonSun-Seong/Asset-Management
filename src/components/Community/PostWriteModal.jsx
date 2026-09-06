@@ -51,25 +51,18 @@ export default function PostWriteModal({
             tierBadge = '🥉';
         }
 
-        // 섹터별 비중 산출
-        const assets = currentAppData.assets || {};
-        const sectorLabels = {
-            stock: '주식',
-            deposit: '현금/예적금',
-            crypto: '가상자산',
-            realEstate: '부동산',
-            pension: '연금/퇴직',
-            other: '기타'
-        };
-        const sectorColors = {
-            stock: '#3B82F6',
-            deposit: '#10B981',
-            crypto: '#F59E0B',
-            realEstate: '#8B5CF6',
-            pension: '#EC4899',
-            other: '#6B7280'
+        // 섹터별 공식 메타 정보 (색상, 라벨, 아이콘)
+        const sectorMeta = {
+            investment: { label: '주식/투자', color: '#F97316', icon: '📈' },
+            savings: { label: '예적금/저축', color: '#10B981', icon: '💰' },
+            deposit: { label: '입출금통장', color: '#3B82F6', icon: '🏦' },
+            pension: { label: '연금/퇴직', color: '#A855F7', icon: '🏛️' },
+            realestate: { label: '부동산', color: '#F59E0B', icon: '🏠' },
+            car: { label: '자동차', color: '#06B6D4', icon: '🚗' },
+            misc: { label: '기타자산', color: '#6366F1', icon: '📦' }
         };
 
+        const assets = currentAppData.assets || {};
         let grossTotal = 0;
         const sectorTotals = {};
         Object.keys(assets).forEach(sec => {
@@ -81,34 +74,75 @@ export default function PostWriteModal({
 
         const portfolioShares = Object.keys(sectorTotals)
             .filter(sec => sectorTotals[sec] > 0)
-            .map(sec => ({
-                sector: sec,
-                label: sectorLabels[sec] || sec,
-                ratio: grossTotal > 0 ? Math.round((sectorTotals[sec] / grossTotal) * 100) : 0,
-                color: sectorColors[sec] || '#3B82F6'
-            }))
+            .map(sec => {
+                const meta = sectorMeta[sec] || { label: sec, color: '#64748B', icon: '📁' };
+                return {
+                    sector: sec,
+                    label: meta.label,
+                    icon: meta.icon,
+                    amount: sectorTotals[sec],
+                    ratio: grossTotal > 0 ? Math.round((sectorTotals[sec] / grossTotal) * 100) : 0,
+                    color: meta.color
+                };
+            })
             .sort((a, b) => b.ratio - a.ratio);
 
-        // 상위 보유 종목 추출
+        // 상위 보유 종목 및 가중평균 수익률 산출
         const allItems = [];
+        let totalWeightedReturn = 0;
+        let eligibleAssetTotal = 0;
+
         Object.keys(assets).forEach(sec => {
             if (sec === 'loan') return;
             (assets[sec] || []).forEach(a => {
-                if (Number(a.amount || 0) > 0) {
+                const amt = Number(a.amount || 0);
+                if (amt > 0) {
+                    const r = typeof a.rate === 'number' ? a.rate : 0;
                     allItems.push({
                         name: a.name,
-                        amount: Number(a.amount || 0),
-                        rate: typeof a.rate === 'number' ? a.rate : 0
+                        amount: amt,
+                        rate: r,
+                        sector: sec
                     });
+                    totalWeightedReturn += amt * r;
+                    eligibleAssetTotal += amt;
                 }
             });
         });
+
         allItems.sort((a, b) => b.amount - a.amount);
-        const topHoldings = allItems.slice(0, 4).map(item => ({
-            name: item.name,
-            ratio: grossTotal > 0 ? Math.round((item.amount / grossTotal) * 100) : 0,
-            rate: item.rate
-        }));
+        const topHoldings = allItems.slice(0, 4).map(item => {
+            const meta = sectorMeta[item.sector] || { label: '자산', icon: '🏷️' };
+            return {
+                name: item.name,
+                sector: item.sector,
+                sectorLabel: meta.label,
+                sectorIcon: meta.icon,
+                amount: item.amount,
+                ratio: grossTotal > 0 ? Math.round((item.amount / grossTotal) * 100) : 0,
+                rate: item.rate
+            };
+        });
+
+        // 다차원 재무 지표 계산
+        const totalGross = currentCalculation.currentGross || grossTotal;
+        const totalDebt = Math.max(0, totalGross - netWorth);
+        const debtRatio = totalGross > 0 ? Math.round((totalDebt / totalGross) * 100) : 0;
+        const expectedReturn = eligibleAssetTotal > 0 ? parseFloat((totalWeightedReturn / eligibleAssetTotal).toFixed(1)) : 0;
+
+        // 월 소득 및 지출 분석
+        const monthlySalary = Number(currentAppData.monthlySalary || 0);
+        const monthlyExpense = Number(currentCalculation.totalMonthlyExpense || (currentAppData.monthlyExpenses || []).reduce((acc, e) => acc + Number(e.amount || 0), 0));
+        const monthlySavings = Math.max(0, monthlySalary - monthlyExpense);
+        const savingsRate = monthlySalary > 0 ? Math.round((monthlySavings / monthlySalary) * 100) : null;
+
+        // 비상금 런웨이 (현금성 자산으로 몇 개월 버틸 수 있는지)
+        let runwayMonths = currentCalculation.fireMetrics?.runwayMonths;
+        if (runwayMonths === undefined || runwayMonths === null) {
+            const liquidCash = (assets.deposit || []).reduce((acc, a) => acc + Number(a.amount || 0), 0) + 
+                               (assets.savings || []).reduce((acc, a) => acc + Number(a.amount || 0), 0);
+            runwayMonths = monthlyExpense > 0 ? Math.round(liquidCash / monthlyExpense) : 0;
+        }
 
         const now = new Date();
         const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
@@ -120,9 +154,15 @@ export default function PostWriteModal({
             tier_badge: tierBadge,
             display_mode: flexDisplayMode,
             total_net_worth: flexDisplayMode === 'amount' ? netWorth : null,
+            total_gross_worth: flexDisplayMode === 'amount' ? totalGross : null,
+            total_debt: flexDisplayMode === 'amount' ? totalDebt : null,
+            debt_ratio: debtRatio,
+            expected_return: expectedReturn,
+            savings_rate: savingsRate,
+            runway_months: runwayMonths,
+            monthly_savings: flexDisplayMode === 'amount' ? monthlySavings : null,
             portfolio_shares: portfolioShares,
-            top_holdings: topHoldings,
-            capital_yield: currentCalculation.growthRate ? parseFloat(currentCalculation.growthRate.toFixed(1)) : null
+            top_holdings: topHoldings
         };
     };
 
