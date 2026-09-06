@@ -4,6 +4,7 @@ import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioCo
 import MarketTickerSlide from './components/MarketTickerSlide';
 import WeatherAtmosphere from './components/WeatherAtmosphere';
 import { AssetGrowthModernView } from './components/AssetGrowthVariations';
+import CommunityView from './components/Community/CommunityView';
 
         const CoreSettingsCard = ({
             monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
@@ -864,7 +865,8 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
             const TAB_MAPPING = {
                 input: ['assets', 'expenses', 'events', 'memo', 'rebalance'], // 입력
                 visualization: ['budget', 'charts', 'history', 'scenario'], // 시각화 (요약은 항상 표시되므로 메뉴에서 제외)
-                analysis: ['detail-analysis', 'assumptions'] // 분석
+                analysis: ['detail-analysis', 'assumptions'], // 분석
+                community: ['community'] // 커뮤니티
             };
             
 
@@ -8766,7 +8768,8 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                                     {[
                                         { id: 'input', label: '데이터 입력' },
                                         { id: 'visualization', label: '시각화' },
-                                        { id: 'analysis', label: '분석' }
+                                        { id: 'analysis', label: '분석' },
+                                        { id: 'community', label: '커뮤니티' }
                                     ].map(tab => (
                                         <button
                                             key={tab.id}
@@ -8787,7 +8790,8 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                                     {[
                                         { id: 'input', label: '입력' },
                                         { id: 'visualization', label: '시각화' },
-                                        { id: 'analysis', label: '분석' }
+                                        { id: 'analysis', label: '분석' },
+                                        { id: 'community', label: '커뮤니티' }
                                     ].map(tab => (
                                         <button
                                             key={tab.id}
@@ -9069,6 +9073,25 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                         </aside>
 
                         <div id="main-dashboard-panel" className={`flex-1 space-y-8 min-w-0 transition-all duration-700 relative z-10 ${editingPhase !== null ? 'p-4 sm:p-6 rounded-2xl bg-white/40 dark:bg-gray-800/40 backdrop-blur-md ring-4 ring-indigo-500/30 shadow-[0_0_30px_rgba(99,102,241,0.15)]' : ''}`}>
+                            {activeTab === 'community' ? (
+                                <CommunityView
+                                    supabase={supabase}
+                                    currentUser={userProfile ? {
+                                        id: userProfile.id,
+                                        email: userProfile.email || verifiedEmail,
+                                        full_name: userProfile.full_name || userProfile.name || (verifiedEmail ? verifiedEmail.split('@')[0] : '익명')
+                                    } : (verifiedEmail ? {
+                                        id: verifiedEmail,
+                                        email: verifiedEmail,
+                                        full_name: verifiedEmail.split('@')[0]
+                                    } : null)}
+                                    isAdmin={isAdmin}
+                                    currentAppData={appData}
+                                    currentCalculation={calculation}
+                                    onLogin={handleLogin}
+                                />
+                            ) : (
+                            <>
                             {/* [개선] PDF 내보내기 시에는 사용자의 커스텀 순서가 아닌 표준 보고서 순서(입력->시각화->분석)로 출력 */}
                             {(isExporting ? [
                                 'summary', 
@@ -9225,17 +9248,21 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                                 <span className="mx-2 text-gray-300 dark:text-gray-700">|</span>
                                 <span className="text-xs text-gray-400 dark:text-gray-600">© 2024 Asset Planner</span>
                             </div>
+                            </>
+                            )}
                         </div>
 
                         {/* ===== 모바일 버튼 ===== */}
-                        <div className="sm:hidden flex flex-col gap-2">
-                            <button onClick={saveToPDF} disabled={editingPhase !== null} className={`w-full py-3 rounded-lg font-medium transition-colors ${editingPhase !== null ? 'bg-blue-300 text-white/70 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
-                                📄 PDF로 저장
-                            </button>
-                            <button onClick={saveScenario} disabled={editingPhase !== null} className={`w-full py-3 rounded-lg font-medium transition-colors ${editingPhase !== null ? 'bg-gray-400 text-white/70 cursor-not-allowed' : 'bg-gray-600 text-white'}`}>
-                                💾 시나리오 저장
-                            </button>
-                        </div>
+                        {activeTab !== 'community' && (
+                            <div className="sm:hidden flex flex-col gap-2">
+                                <button onClick={saveToPDF} disabled={editingPhase !== null} className={`w-full py-3 rounded-lg font-medium transition-colors ${editingPhase !== null ? 'bg-blue-300 text-white/70 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
+                                    📄 PDF로 저장
+                                </button>
+                                <button onClick={saveScenario} disabled={editingPhase !== null} className={`w-full py-3 rounded-lg font-medium transition-colors ${editingPhase !== null ? 'bg-gray-400 text-white/70 cursor-not-allowed' : 'bg-gray-600 text-white'}`}>
+                                    💾 시나리오 저장
+                                </button>
+                            </div>
+                        )}
                     </div>
                     </div> {/* End of relative z-10 */}
                     {/* ===== AI 분석 플로팅 위젯 (기존 블로그 배너 위치) ===== */}
