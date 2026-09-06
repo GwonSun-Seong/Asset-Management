@@ -505,7 +505,9 @@ window.SettingsModal = ({
     weatherEffectEnabled,
     onWeatherEffectChange,
     weatherEffectIntensity,
-    onWeatherIntensityChange
+    onWeatherIntensityChange,
+    weatherThresholds,
+    onUpdateWeatherThresholds
 }) => {
     if (!isOpen) return null;
 
@@ -758,29 +760,147 @@ window.SettingsModal = ({
                                         당일 손익률에 따라 대시보드 좌우 여백에 맑음 햇살, 비, 천둥번개 앰비언트 파티클을 0(꺼짐)부터 100(최대)까지 슬라이더 바로 세밀하게 조절합니다.
                                     </p>
                                     {isPro ? (
-                                        <div className="space-y-2 bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                                            <div className="relative flex items-center py-1">
-                                                <input 
-                                                    type="range" 
-                                                    min="0" 
-                                                    max="100" 
-                                                    step="1"
-                                                    value={weatherEffectIntensity ?? 0} 
-                                                    onChange={(e) => {
-                                                        const val = Number(e.target.value);
-                                                        if (onWeatherIntensityChange) {
-                                                            onWeatherIntensityChange(val);
-                                                        }
-                                                    }} 
-                                                    className="w-full h-2.5 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none" 
-                                                />
+                                        <div className="space-y-4 bg-white dark:bg-gray-800 p-3.5 sm:p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                                            {/* 강도 슬라이더 */}
+                                            <div className="space-y-1.5">
+                                                <div className="flex justify-between items-center text-[11px] font-bold text-gray-600 dark:text-gray-300">
+                                                    <span>이펙트 강도 세밀 조절</span>
+                                                    <span className="font-mono text-indigo-600 dark:text-indigo-400">{weatherEffectIntensity}%</span>
+                                                </div>
+                                                <div className="relative flex items-center py-1">
+                                                    <input 
+                                                        type="range" 
+                                                        min="0" 
+                                                        max="100" 
+                                                        step="1"
+                                                        value={weatherEffectIntensity ?? 0} 
+                                                        onChange={(e) => {
+                                                            const val = Number(e.target.value);
+                                                            if (onWeatherIntensityChange) {
+                                                                onWeatherIntensityChange(val);
+                                                            }
+                                                        }} 
+                                                        className="w-full h-2.5 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none" 
+                                                    />
+                                                </div>
+                                                <div className="flex justify-between text-[11px] text-gray-400 font-mono font-medium px-1 select-none">
+                                                    <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(0)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity ?? 0) === 0 ? 'text-indigo-600 font-bold' : ''}`}>0% (꺼짐)</span>
+                                                    <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(25)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 25 ? 'text-indigo-600 font-bold' : ''}`}>25%</span>
+                                                    <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(50)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 50 ? 'text-indigo-600 font-bold' : ''}`}>50%</span>
+                                                    <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(75)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 75 ? 'text-indigo-600 font-bold' : ''}`}>75%</span>
+                                                    <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(100)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 100 ? 'text-indigo-600 font-bold' : ''}`}>100%</span>
+                                                </div>
                                             </div>
-                                            <div className="flex justify-between text-[11px] text-gray-400 font-mono font-medium px-1 select-none">
-                                                <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(0)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity ?? 0) === 0 ? 'text-indigo-600 font-bold' : ''}`}>0% (꺼짐)</span>
-                                                <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(25)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 25 ? 'text-indigo-600 font-bold' : ''}`}>25% (미세)</span>
-                                                <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(50)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 50 ? 'text-indigo-600 font-bold' : ''}`}>50% (은은함)</span>
-                                                <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(75)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 75 ? 'text-indigo-600 font-bold' : ''}`}>75% (생생함)</span>
-                                                <span onClick={() => onWeatherIntensityChange && onWeatherIntensityChange(100)} className={`cursor-pointer hover:text-indigo-600 transition-colors ${Number(weatherEffectIntensity) === 100 ? 'text-indigo-600 font-bold' : ''}`}>100% (풍성함)</span>
+
+                                            {/* 날씨 전환 당일 수익률(%) 임계치 기준 설정 */}
+                                            <div className="pt-3 border-t border-gray-100 dark:border-gray-700/80 space-y-2.5">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                                                        <span>🎯</span> 날씨별 당일 수익률 발동 기준
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400 font-mono">단위: %</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                    {/* 1. 황금빛 대폭등 */}
+                                                    <div className="p-2 bg-amber-50/60 dark:bg-amber-950/20 rounded-xl border border-amber-200/60 dark:border-amber-900/40">
+                                                        <div className="flex items-center justify-between text-[11px] text-amber-700 dark:text-amber-400 font-bold mb-1">
+                                                            <span className="flex items-center gap-0.5">☀️ 대폭등</span>
+                                                            <span className="text-[9px] font-mono">이상</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-xs font-bold text-amber-600">+</span>
+                                                            <input 
+                                                                type="number" 
+                                                                step="0.1" 
+                                                                className="w-full border dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg px-1.5 py-1 text-right font-black text-xs focus:ring-1 focus:ring-amber-500 outline-none" 
+                                                                value={weatherThresholds?.high ?? 1.5} 
+                                                                onChange={(e) => {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    if (onUpdateWeatherThresholds) {
+                                                                        onUpdateWeatherThresholds({ ...(weatherThresholds || { high: 1.5, sunMin: 0, rainMax: 0, low: -1.5 }), high: val });
+                                                                    }
+                                                                }} 
+                                                            />
+                                                            <span className="text-[10px] font-mono text-gray-400">%</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* 2. 화창한 약상승 */}
+                                                    <div className="p-2 bg-emerald-50/60 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40">
+                                                        <div className="flex items-center justify-between text-[11px] text-emerald-700 dark:text-emerald-400 font-bold mb-1">
+                                                            <span className="flex items-center gap-0.5">🌤️ 약상승</span>
+                                                            <span className="text-[9px] font-mono">이상</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-xs font-bold text-emerald-600">+</span>
+                                                            <input 
+                                                                type="number" 
+                                                                step="0.1" 
+                                                                className="w-full border dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg px-1.5 py-1 text-right font-black text-xs focus:ring-1 focus:ring-emerald-500 outline-none" 
+                                                                value={weatherThresholds?.sunMin ?? 0} 
+                                                                onChange={(e) => {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    if (onUpdateWeatherThresholds) {
+                                                                        onUpdateWeatherThresholds({ ...(weatherThresholds || { high: 1.5, sunMin: 0, rainMax: 0, low: -1.5 }), sunMin: val });
+                                                                    }
+                                                                }} 
+                                                            />
+                                                            <span className="text-[10px] font-mono text-gray-400">%</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* 3. 부슬부슬 비 */}
+                                                    <div className="p-2 bg-blue-50/60 dark:bg-blue-950/20 rounded-xl border border-blue-200/60 dark:border-blue-900/40">
+                                                        <div className="flex items-center justify-between text-[11px] text-blue-700 dark:text-blue-400 font-bold mb-1">
+                                                            <span className="flex items-center gap-0.5">🌧️ 부슬비</span>
+                                                            <span className="text-[9px] font-mono">이하</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <input 
+                                                                type="number" 
+                                                                step="0.1" 
+                                                                className="w-full border dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg px-1.5 py-1 text-right font-black text-xs focus:ring-1 focus:ring-blue-500 outline-none" 
+                                                                value={weatherThresholds?.rainMax ?? 0} 
+                                                                onChange={(e) => {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    if (onUpdateWeatherThresholds) {
+                                                                        onUpdateWeatherThresholds({ ...(weatherThresholds || { high: 1.5, sunMin: 0, rainMax: 0, low: -1.5 }), rainMax: val });
+                                                                    }
+                                                                }} 
+                                                            />
+                                                            <span className="text-[10px] font-mono text-gray-400">%</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* 4. 천둥 폭풍우 */}
+                                                    <div className="p-2 bg-purple-50/60 dark:bg-purple-950/20 rounded-xl border border-purple-200/60 dark:border-purple-900/40">
+                                                        <div className="flex items-center justify-between text-[11px] text-purple-700 dark:text-purple-400 font-bold mb-1">
+                                                            <span className="flex items-center gap-0.5">⚡ 폭풍우</span>
+                                                            <span className="text-[9px] font-mono">미만</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <input 
+                                                                type="number" 
+                                                                step="0.1" 
+                                                                className="w-full border dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg px-1.5 py-1 text-right font-black text-xs focus:ring-1 focus:ring-purple-500 outline-none" 
+                                                                value={weatherThresholds?.low ?? -1.5} 
+                                                                onChange={(e) => {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    if (onUpdateWeatherThresholds) {
+                                                                        onUpdateWeatherThresholds({ ...(weatherThresholds || { high: 1.5, sunMin: 0, rainMax: 0, low: -1.5 }), low: val });
+                                                                    }
+                                                                }} 
+                                                            />
+                                                            <span className="text-[10px] font-mono text-gray-400">%</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-4 gap-1 text-[10px] text-center pt-1 font-mono">
+                                                    <div className="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 py-1 rounded-lg font-bold border border-amber-200/50 dark:border-amber-900/30">☀️ &ge; +{(weatherThresholds?.high ?? 1.5)}%</div>
+                                                    <div className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 py-1 rounded-lg font-bold border border-emerald-200/50 dark:border-emerald-900/30">🌤️ +{(weatherThresholds?.sunMin ?? 0)}~+{(weatherThresholds?.high ?? 1.5)}%</div>
+                                                    <div className="bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 py-1 rounded-lg font-bold border border-blue-200/50 dark:border-blue-900/30">🌧️ {(weatherThresholds?.low ?? -1.5)}~{(weatherThresholds?.rainMax ?? 0)}%</div>
+                                                    <div className="bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 py-1 rounded-lg font-bold border border-purple-200/50 dark:border-purple-900/30">⚡ &lt; {(weatherThresholds?.low ?? -1.5)}%</div>
+                                                </div>
                                             </div>
                                         </div>
                                     ) : (
@@ -2243,6 +2363,36 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
 
                     {/* 4. Stock List Table */}
                     <section className="space-y-3">
+                        {(!localStorage.getItem('toss_client_id') || !localStorage.getItem('toss_client_secret')) && (
+                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 p-3.5 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-sm">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-base">📈</span>
+                                    <div className="text-xs text-slate-700 dark:text-slate-200">
+                                        <span className="font-black text-indigo-600 dark:text-indigo-400">토스증권 Open API</span>를 연동하면 실시간 시세와 손익이 자동 반영됩니다.
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 w-full sm:w-auto">
+                                    <a 
+                                        href="https://corp.tossinvest.com/ko/open-api" 
+                                        target="_blank" 
+                                        rel="noreferrer" 
+                                        className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 shadow-sm flex items-center gap-1 whitespace-nowrap"
+                                        title="토스증권 개발자 센터(Open API)에서 키 발급받기"
+                                    >
+                                        <span>🔑 키 발급받기</span>
+                                        <span>↗</span>
+                                    </a>
+                                    <button 
+                                        onClick={() => {
+                                            if (window.showApiKeyModal) window.showApiKeyModal();
+                                        }}
+                                        className="text-[10px] font-black text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-xl shadow-sm transition-all whitespace-nowrap"
+                                    >
+                                        키 등록하기
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                         <div className="flex flex-wrap items-center justify-between gap-2 px-1">
                             <div className="flex items-center gap-2">
                                 <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 flex-shrink-0">📋 리스트</h4>
@@ -5073,11 +5223,20 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                     {/* Toss Securities API */}
                     <div className="space-y-3">
                         <div className="flex justify-between items-center">
-                            <label className="text-xs font-black text-slate-700 dark:text-slate-200">
-                                📈 토스증권 Open API 연동 키
+                            <label className="text-xs font-black text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                                <span>📈 토스증권 Open API 연동 키</span>
                             </label>
-                            <span className="text-[9px] font-bold text-slate-400">{"토스 WTS > 설정 > Open API"}</span>
+                            <a 
+                                href="https://corp.tossinvest.com/ko/open-api" 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold flex items-center gap-1"
+                                title="토스증권 개발자 센터(Open API)에서 키 발급받기"
+                            >
+                                API 키 발급받기 ↗
+                            </a>
                         </div>
+                        <p className="text-[10px] text-slate-400">토스증권 Open API 센터에서 발급받은 Client ID와 Secret Key를 등록하면 실시간 주식 시세가 자동 동기화됩니다.</p>
 
                         <div className="space-y-1.5">
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">API Key (Client ID)</label>

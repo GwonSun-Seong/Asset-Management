@@ -22,13 +22,16 @@ export default function WeatherAtmosphere({
 
     // 실제 수익률 기반 기본 날씨 계산 (관리자 모드가 아니면 임의 프리뷰 무시)
     const thHigh = (thresholds && typeof thresholds.high === 'number') ? thresholds.high : 1.5;
+    const thSunMin = (thresholds && typeof thresholds.sunMin === 'number') ? thresholds.sunMin : 0;
+    const thRainMax = (thresholds && typeof thresholds.rainMax === 'number') ? thresholds.rainMax : 0;
     const thLow = (thresholds && typeof thresholds.low === 'number') ? thresholds.low : -1.5;
 
     const currentMode = (isAdmin ? previewMode : null) || (() => {
         if (dayProfitPct >= thHigh) return 'gold'; // 황금빛 대폭등
-        if (dayProfitPct > 0) return 'sun';       // 화창한 상승
-        if (dayProfitPct > thLow) return 'rain';   // 차분한 비
-        return 'storm';                            // 천둥 번개 폭풍우
+        if (dayProfitPct >= thSunMin && dayProfitPct > 0) return 'sun'; // 화창한 상승 (약상승 이상)
+        if (dayProfitPct <= thRainMax && dayProfitPct > thLow) return 'rain'; // 차분한 비 (부슬비 이하)
+        if (dayProfitPct < thLow) return 'storm'; // 천둥 번개 폭풍우
+        return dayProfitPct >= 0 ? 'sun' : 'rain'; // 중립/보합 구간
     })();
 
     const weatherConfigs = {
@@ -37,32 +40,32 @@ export default function WeatherAtmosphere({
             icon: '☀️',
             desc: '양옆 여백에 황금빛 프리즘 별빛과 따스한 아지랑이가 피어오릅니다.',
             badgeColor: 'text-amber-700 dark:text-amber-300 border-amber-500/40 bg-amber-500/15 shadow-amber-500/10',
-            ambientLeft: 'from-amber-500/20 via-orange-500/5 to-transparent',
-            ambientRight: 'from-amber-500/20 via-orange-500/5 to-transparent'
+            ambientLeft: 'from-amber-500/15 via-orange-500/5 to-white dark:to-transparent',
+            ambientRight: 'from-amber-500/15 via-orange-500/5 to-white dark:to-transparent'
         },
         sun: {
             title: '화창한 상승',
             icon: '🌤️',
             desc: '양옆 여백에 온화하고 쾌청한 초록빛 햇살과 미세 입자가 감돕니다.',
             badgeColor: 'text-emerald-700 dark:text-emerald-300 border-emerald-500/40 bg-emerald-500/15 shadow-emerald-500/10',
-            ambientLeft: 'from-emerald-500/20 via-teal-500/5 to-transparent',
-            ambientRight: 'from-emerald-500/20 via-teal-500/5 to-transparent'
+            ambientLeft: 'from-emerald-500/15 via-teal-500/5 to-white dark:to-transparent',
+            ambientRight: 'from-emerald-500/15 via-teal-500/5 to-white dark:to-transparent'
         },
         rain: {
             title: '차분한 비',
             icon: '🌧️',
             desc: '좌우 사이드 여백에 시원한 빗줄기가 떨어지며 은은한 천둥이 칩니다.',
             badgeColor: 'text-blue-700 dark:text-blue-300 border-blue-500/40 bg-blue-500/15 shadow-blue-500/10',
-            ambientLeft: 'from-blue-600/25 via-indigo-600/10 to-transparent',
-            ambientRight: 'from-blue-600/25 via-indigo-600/10 to-transparent'
+            ambientLeft: 'from-blue-600/20 via-indigo-600/5 to-white dark:to-transparent',
+            ambientRight: 'from-blue-600/20 via-indigo-600/5 to-white dark:to-transparent'
         },
         storm: {
             title: '천둥 번개 폭풍우',
             icon: '⚡',
             desc: '좌우 여백에 굵은 장대비와 실시간 번개가 내리꽂힙니다.',
             badgeColor: 'text-purple-700 dark:text-purple-300 border-purple-500/40 bg-purple-500/15 shadow-purple-500/10',
-            ambientLeft: 'from-purple-700/30 via-indigo-900/15 to-transparent',
-            ambientRight: 'from-purple-700/30 via-indigo-900/15 to-transparent'
+            ambientLeft: 'from-purple-700/25 via-indigo-900/10 to-white dark:to-transparent',
+            ambientRight: 'from-purple-700/25 via-indigo-900/10 to-white dark:to-transparent'
         }
     };
 
@@ -412,15 +415,6 @@ export default function WeatherAtmosphere({
                     ? (dark ? 'rgba(251, 191, 36, ALPHA)' : 'rgba(217, 119, 6, ALPHA)') 
                     : (dark ? 'rgba(52, 211, 153, ALPHA)' : 'rgba(16, 185, 129, ALPHA)');
 
-                // 물결치는 은은한 상승 아지랑이 기둥 (좌/우 여백)
-                const waveOffset = Math.sin(frameCount * 0.025) * 15;
-                const hazeGradient = ctx.createLinearGradient(0, height, 0, 0);
-                hazeGradient.addColorStop(0, currentMode === 'gold' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(16, 185, 129, 0.06)');
-                hazeGradient.addColorStop(1, 'rgba(245, 158, 11, 0)');
-                ctx.fillStyle = hazeGradient;
-                ctx.fillRect(0, 0, leftEnd + waveOffset, height);
-                ctx.fillRect(rightStart - waveOffset, 0, width, height);
-
                 // 파티클 (다이아몬드 별빛 ✦ + 유기적 빛무리)
                 for (let i = 0; i < sunParticles.length; i++) {
                     const p = sunParticles[i];
@@ -481,10 +475,10 @@ export default function WeatherAtmosphere({
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
             {/* 2. 좌측 사이드 여백 앰비언트 글로우 바 */}
-            <div className={'hidden 2xl:block absolute top-0 left-0 bottom-0 w-64 bg-gradient-to-r ' + currentConfig.ambientLeft + ' pointer-events-none transition-all duration-1000'} />
+            <div className={'hidden xl:block absolute top-0 left-0 bottom-0 w-80 3xl:w-96 bg-gradient-to-r ' + currentConfig.ambientLeft + ' pointer-events-none transition-all duration-1000'} />
 
             {/* 3. 우측 사이드 여백 앰비언트 글로우 바 */}
-            <div className={'hidden 2xl:block absolute top-0 right-0 bottom-0 w-64 bg-gradient-to-l ' + currentConfig.ambientRight + ' pointer-events-none transition-all duration-1000'} />
+            <div className={'hidden xl:block absolute top-0 right-0 bottom-0 w-80 3xl:w-96 bg-gradient-to-l ' + currentConfig.ambientRight + ' pointer-events-none transition-all duration-1000'} />
 
             {/* 4. 데스크톱 좌측 여백 초슬림 인디케이터 (오직 로컬 개발 환경 및 관리자일 때만 표시, 프로덕션 빌드에서는 절대 비노출) */}
             {isAdmin && (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) && (

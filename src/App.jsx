@@ -12,8 +12,7 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
             saveToPDF, saveCurrentAsset, saveScenario, displayMode,
                 autoUpdateBaseDate, setAutoUpdateBaseDate,
                 editingPhase, // [추가]
-                enableLiveQuotes, setEnableLiveQuotes, // [추가]
-                weatherThresholds, onUpdateWeatherThresholds
+                enableLiveQuotes, setEnableLiveQuotes // [추가]
         }) => {
             const TEXTS = window.TEXTS || {};
             const isEditing = editingPhase !== null; // [추가] 편집 모드 여부 확인
@@ -63,68 +62,7 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                                 </label>
                             </div>
 
-                            {/* 🌦️ 날씨별 당일 수익률(%) 기준 설정 */}
-                            <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                                        <span>🌦️</span> 날씨별 당일 손익률 기준 (%)
-                                    </span>
-                                    <span className="text-[10px] text-slate-400">실시간 연동</span>
-                                </div>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <div className="flex items-center justify-between text-[11px] text-amber-600 dark:text-amber-400 font-semibold mb-1">
-                                            <span>☀️ 맑음(대폭등)</span>
-                                            <span>이상</span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-xs font-bold text-slate-400">+</span>
-                                            <input 
-                                                type="number" 
-                                                step="0.1" 
-                                                className="w-full border dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-md px-2 py-1.5 text-right font-bold text-xs focus:ring-2 focus:ring-amber-500 outline-none" 
-                                                value={weatherThresholds?.high ?? 1.5} 
-                                                onChange={(e) => {
-                                                    const val = parseFloat(e.target.value) || 0;
-                                                    if (onUpdateWeatherThresholds) {
-                                                        onUpdateWeatherThresholds({ ...(weatherThresholds || { high: 1.5, low: -1.5 }), high: val });
-                                                    }
-                                                }} 
-                                            />
-                                            <span className="text-xs text-slate-400 font-semibold">%</span>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="flex items-center justify-between text-[11px] text-rose-500 dark:text-rose-400 font-semibold mb-1">
-                                            <span>⚡ 폭풍우</span>
-                                            <span>미만</span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <input 
-                                                type="number" 
-                                                step="0.1" 
-                                                className="w-full border dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-md px-2 py-1.5 text-right font-bold text-xs focus:ring-2 focus:ring-rose-500 outline-none" 
-                                                value={weatherThresholds?.low ?? -1.5} 
-                                                onChange={(e) => {
-                                                    const val = parseFloat(e.target.value) || 0;
-                                                    if (onUpdateWeatherThresholds) {
-                                                        onUpdateWeatherThresholds({ ...(weatherThresholds || { high: 1.5, low: -1.5 }), low: val });
-                                                    }
-                                                }} 
-                                            />
-                                            <span className="text-xs text-slate-400 font-semibold">%</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-4 gap-1.5 text-[10px] text-center pt-2 border-t border-slate-200/60 dark:border-slate-700/60 font-medium">
-                                    <div className="bg-amber-100/60 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 py-1 rounded">☀️ &ge; +{(weatherThresholds?.high ?? 1.5)}%</div>
-                                    <div className="bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 py-1 rounded">🌤️ 0~+{(weatherThresholds?.high ?? 1.5)}%</div>
-                                    <div className="bg-blue-100/60 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 py-1 rounded">🌧️ {(weatherThresholds?.low ?? -1.5)}~0%</div>
-                                    <div className="bg-purple-100/60 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 py-1 rounded">⚡ &lt; {(weatherThresholds?.low ?? -1.5)}%</div>
-                                </div>
                             </div>
-
-                        </div>
                                 <div className="pt-4 border-t dark:border-gray-700">
                                     <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">{TEXTS.settings?.dataManagement || "데이터 관리"}</h3>
                                     <div className="flex items-center justify-between bg-slate-55 dark:bg-slate-900/50 p-1.5 rounded-xl border border-slate-100 dark:border-slate-800 gap-1">
@@ -516,7 +454,7 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
             }, []);
 
             return (
-            <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200 relative">
+            <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-200 relative">
                 <div>
                 {/* Header Skeleton */}
                 <div className="sticky top-0 z-50 bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 h-16">
@@ -861,6 +799,7 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
             const [inflationRate, setInflationRate] = useState(2.5);
             const [scenarios, setScenarios] = useState([]);
             const [originalUserData, setOriginalUserData] = useState(null); // [추가] 원본 데이터 캐시
+            const originalUserDataRef = useRef(null);
             const [isDemoMode, setIsDemoMode] = useState(false); // [추가] 데모 모드 상태
             const [isPro, setIsPro] = useState(false); // [추가] 유료 이용자 여부
             const [isAdmin, setIsAdmin] = useState(false); // [추가] 관리자 여부
@@ -883,7 +822,7 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
             const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
             const [lastSyncTime, setLastSyncTime] = useState(null); // [추가] 마지막 동기화 시간
-            const [analysisMode, setAnalysisMode] = useState('growth'); // [추가] 상세 분석 모드 ('growth' | 'income')
+            const [analysisMode, setAnalysisMode] = useState('growth-modern'); // [변경] 상세 분석 모드 ('growth-modern' | 'income')
             const [editingPhase, setEditingPhase] = useState(null); // [추가] 페이즈 편집 상태 추적
             const editingPhaseRef = useRef(null); // [보안] 단축키 강제 저장을 위한 실시간 상태 추적 Ref
 
@@ -894,18 +833,23 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                 localStorage.setItem('asset_enable_live_quotes', enableLiveQuotes.toString());
             }, [enableLiveQuotes]);
 
-            // 🌦️ 날씨별 손익률(%) 기준 상태
+            // 🌦️ 날씨별 손익률(%) 기준 상태 (대폭등 high, 약상승 sunMin, 부슬비 rainMax, 폭풍우 low)
             const [weatherThresholds, setWeatherThresholds] = useState(() => {
                 try {
                     const saved = localStorage.getItem('asset_weather_thresholds');
                     if (saved) {
                         const parsed = JSON.parse(saved);
                         if (typeof parsed.high === 'number' && typeof parsed.low === 'number') {
-                            return parsed;
+                            return {
+                                high: parsed.high,
+                                sunMin: typeof parsed.sunMin === 'number' ? parsed.sunMin : 0,
+                                rainMax: typeof parsed.rainMax === 'number' ? parsed.rainMax : 0,
+                                low: parsed.low
+                            };
                         }
                     }
                 } catch(e) {}
-                return { high: 1.5, low: -1.5 };
+                return { high: 1.5, sunMin: 0, rainMax: 0, low: -1.5 };
             });
             const updateWeatherThresholds = useCallback((newThresholds) => {
                 setWeatherThresholds(newThresholds);
@@ -1629,6 +1573,23 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                     
                     // 1. 로컬 데이터 로드 시도
                     try {
+                        // [데모 모드 중 새로고침 안전 복원 가드]
+                        const preDemoBackup = localStorage.getItem('assetDashboard_pre_demo_backup');
+                        if (preDemoBackup) {
+                            try {
+                                const parsedBackup = JSON.parse(preDemoBackup);
+                                if (parsedBackup && parsedBackup.appData) {
+                                    localStorage.setItem('assetDashboardDataV3', JSON.stringify(parsedBackup.appData));
+                                    if (parsedBackup.scenarios) localStorage.setItem('assetDashboardScenarios', JSON.stringify(parsedBackup.scenarios));
+                                    if (parsedBackup.assetHistory) localStorage.setItem('assetDashboardHistory', JSON.stringify(parsedBackup.assetHistory));
+                                    if (parsedBackup.referenceScenarios) localStorage.setItem('assetDashboardReferenceScenarios', JSON.stringify(parsedBackup.referenceScenarios));
+                                    localStorage.removeItem('assetDashboard_pre_demo_backup');
+                                }
+                            } catch (e) {
+                                console.error("데모 백업 복원 실패:", e);
+                            }
+                        }
+
                         const savedData = localStorage.getItem('assetDashboardDataV3');
                         const savedScenarios = localStorage.getItem('assetDashboardScenarios');
                         const savedHistory = localStorage.getItem('assetDashboardHistory');
@@ -1665,10 +1626,12 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                                 (parsedData.assets[sector]||[]).forEach(a=>{ if (a.feeRate === undefined) a.feeRate = 0; });
                             });
                             setAppData(mergedData); // [수정] parsedData 대신 mergedData 사용
-                            setOriginalUserData(parsedData); // [추가]
+                            originalUserDataRef.current = mergedData;
+                            setOriginalUserData(mergedData); // [추가]
                             lastSavedDataRef.current = JSON.stringify({ appData: mergedData, scenarios: initialScenarios, assetHistory: initialHistory, referenceScenarios: initialReferences });
                         } else {
                             setAppData(baseData);
+                            originalUserDataRef.current = baseData;
                             setOriginalUserData(baseData); // [추가]
                             lastSavedDataRef.current = JSON.stringify({ appData: baseData, scenarios: initialScenarios, assetHistory: initialHistory, referenceScenarios: initialReferences });
                         }
@@ -1980,6 +1943,9 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                         
                         lastSavedDataRef.current = JSON.stringify(fullCloudData);
                         resetAppData(actualAppData);
+                        originalUserDataRef.current = actualAppData;
+                        setOriginalUserData(actualAppData);
+                        try { localStorage.removeItem('assetDashboard_pre_demo_backup'); } catch(e) {}
                         if (fullCloudData.scenarios) setScenarios(fullCloudData.scenarios);
                         if (fullCloudData.assetHistory) setAssetHistory(fullCloudData.assetHistory);
 
@@ -2316,7 +2282,6 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                 }
             };
 
-
             const handleLocalTestToggle = () => {
                 if (!isLocal && !isLocalEnv) return;
 
@@ -2501,12 +2466,13 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
 
 
             useEffect(() => {
-                if (!isInitialized) return;
+                if (!isInitialized || isDemoMode || appData?.isDemo) return;
 
                 try {
                     // [수정] 미래 시점 편집 중일 때도 저장을 차단하지 않고, 
                     // 현재 편집 중인 페이즈 데이터를 원본 배열에 알맞게 조립하여 저장하도록 구성
                     const trueAppData = getPhaseMergedAppData(appData, editingPhase);
+                    if (!trueAppData || trueAppData.isDemo) return;
 
                     const fullState = { appData: trueAppData, scenarios, assetHistory, referenceScenarios };
                     const fullStateStr = JSON.stringify(fullState);
@@ -2529,7 +2495,7 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                     console.error("Local Storage Save Failed:", e);
                     // 저장 실패 시 앱이 멈추지 않도록 예외 처리 (필요 시 토스트 메시지 추가 가능)
                 }
-            }, [appData, scenarios, assetHistory, referenceScenarios, isInitialized, editingPhase]);
+            }, [appData, scenarios, assetHistory, referenceScenarios, isInitialized, editingPhase, isDemoMode]);
 
             const saveCurrentAsset = () => {
                 try {
@@ -2912,12 +2878,27 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                 try {
                     const customDefault = localStorage.getItem('assetDashboardCustomDefault');
                     if (customDefault && confirm('저장된 기본값으로 초기화하시겠습니까?')) {
-                        resetAppData(JSON.parse(customDefault));
+                        const parsed = JSON.parse(customDefault);
+                        delete parsed.isDemo;
+                        resetAppData(parsed);
                         setIsDemoMode(false);
+                        originalUserDataRef.current = parsed;
+                        setOriginalUserData(parsed);
+                        try {
+                            localStorage.setItem('assetDashboardDataV3', JSON.stringify(parsed));
+                            localStorage.removeItem('assetDashboard_pre_demo_backup');
+                        } catch(e) {}
                         addToast('기본값을 불러왔습니다.', 'success');
                     } else if (!customDefault && confirm('저장된 기본값이 없습니다. 사이트 기본값으로 초기화하시겠습니까?')) {
-                        resetAppData(window.publicDefaultData || {});
+                        const def = JSON.parse(JSON.stringify(window.publicDefaultData || {}));
+                        resetAppData(def);
                         setIsDemoMode(false);
+                        originalUserDataRef.current = def;
+                        setOriginalUserData(def);
+                        try {
+                            localStorage.setItem('assetDashboardDataV3', JSON.stringify(def));
+                            localStorage.removeItem('assetDashboard_pre_demo_backup');
+                        } catch(e) {}
                         addToast('사이트 기본값을 불러왔습니다.', 'info');
                     }
                 } catch (error) {
@@ -3131,21 +3112,100 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
             };
 
             const cycleDisplayMode = () => {
+                // 모드 전환 시 드릴다운 상태 초기화 (차트 깨짐 방지)
+                setCurrentDrillDown(null);
+                setProjectedDrillDown(null);
+                setInvestmentDrillDown(null);
+
+                const getSafeRestoredData = () => {
+                    // 1. pre_demo_backup에서 최우선 복원
+                    try {
+                        const preDemoBackup = localStorage.getItem('assetDashboard_pre_demo_backup');
+                        if (preDemoBackup) {
+                            const parsed = JSON.parse(preDemoBackup);
+                            if (parsed && parsed.appData && parsed.appData.assets && Object.keys(parsed.appData.assets).length > 0) {
+                                if (parsed.scenarios) setScenarios(parsed.scenarios);
+                                if (parsed.assetHistory) setAssetHistory(parsed.assetHistory);
+                                if (parsed.referenceScenarios) setReferenceScenarios(parsed.referenceScenarios);
+                                localStorage.removeItem('assetDashboard_pre_demo_backup');
+                                return parsed.appData;
+                            }
+                        }
+                    } catch (e) {
+                        console.error("pre_demo_backup 파싱 실패:", e);
+                    }
+
+                    // 2. originalUserDataRef 또는 originalUserData 상태
+                    let dataToRestore = originalUserDataRef.current || originalUserData;
+                    if (!dataToRestore || !dataToRestore.assets || Object.keys(dataToRestore.assets).length === 0) {
+                        try {
+                            const cached = localStorage.getItem('assetDashboardDataV3');
+                            if (cached) dataToRestore = JSON.parse(cached);
+                        } catch (e) {
+                            console.error("복원 데이터 파싱 실패:", e);
+                        }
+                    }
+                    const fallback = window.publicDefaultData || {};
+                    return dataToRestore || fallback;
+                };
+
+                // 순환 구조: 일반 모드(amount) -> 프라이빗 모드(percent) -> 데모 모드(demo) -> 일반 모드(amount)
                 if (!isDemoMode && appData?.displayMode === 'amount') {
+                    // [일반 -> 프라이빗]
                     setAppData(prev => ({ ...prev, displayMode: 'percent' }));
+                    addToast('🔒 프라이빗 모드로 전환되었습니다.', 'info');
                 } else if (!isDemoMode && appData?.displayMode === 'percent') {
-                    resetAppData(window.publicDefaultData || {});
+                    // [프라이빗 -> 데모 진입]
+                    // 사용자 현재 실제 데이터를 백업에 영구 보존
+                    const currentFullAppData = typeof getPhaseMergedAppData === 'function' ? getPhaseMergedAppData(appData, editingPhase) : appData;
+                    const backupPayload = {
+                        appData: currentFullAppData,
+                        scenarios: scenarios,
+                        assetHistory: assetHistory,
+                        referenceScenarios: referenceScenarios
+                    };
+                    try {
+                        localStorage.setItem('assetDashboard_pre_demo_backup', JSON.stringify(backupPayload));
+                    } catch (e) {
+                        console.error("데모 백업 저장 실패:", e);
+                    }
+                    originalUserDataRef.current = currentFullAppData;
+                    setOriginalUserData(currentFullAppData);
+
+                    // 데모 데이터 주입
+                    const demoData = JSON.parse(JSON.stringify(window.publicDefaultData || {}));
+                    demoData.isDemo = true;
+                    demoData.displayMode = 'amount';
+                    resetAppData(demoData);
                     setIsDemoMode(true);
+                    addToast('🧪 데모 모드로 전환되었습니다.', 'warning');
                 } else {
-                    resetAppData({ ...originalUserData, displayMode: 'amount' });
+                    // [데모 -> 일반 모드로 완전 복귀]
+                    const targetData = getSafeRestoredData();
+                    const cleanTargetData = { ...targetData, displayMode: 'amount' };
+                    delete cleanTargetData.isDemo;
+
+                    resetAppData(cleanTargetData);
                     setIsDemoMode(false);
+                    originalUserDataRef.current = cleanTargetData;
+                    setOriginalUserData(cleanTargetData);
+
+                    // 로컬스토리지에도 복원된 원본 데이터 즉시 보존
+                    try {
+                        localStorage.setItem('assetDashboardDataV3', JSON.stringify(cleanTargetData));
+                    } catch (e) {}
+
+                    addToast('👤 일반 모드로 복원되었습니다.', 'info');
                 }
             };
 
             const titleText = isDemoMode
-                ? <span className="text-sm text-red-500">(데모 모드)</span>
+                ? <span className="text-sm font-bold text-red-500 animate-in fade-in">(데모 모드)</span>
                 : appData?.displayMode === 'percent'
-                    ? <span className="text-sm text-blue-500">(프라이빗 모드)</span> : null;
+                    ? <span className="text-sm font-bold text-blue-500 animate-in fade-in">(프라이빗 모드)</span>
+                    : isAdmin
+                        ? <span className="text-sm font-bold text-purple-600 dark:text-purple-400 animate-in fade-in">(관리자 모드)</span>
+                        : null;
 
             // ===== 개선된 PDF 저장 함수 (html2canvas + jsPDF) =====
             const saveToPDF = async () => {
@@ -3621,8 +3681,9 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                         const sectorAssets = (assets[currentDrillDown] || []).filter(a => !excludedAssetIds.includes(a.id));
                         labels = sectorAssets.map(a => a.name);
                         data = sectorAssets.map(a => a.amount);
-                        // [수정] 전역 getRGB 함수를 사용하여 드릴다운 색상 일관성 유지
-                        const baseRGB = window.getRGB(sectorInfo[currentDrillDown].color);
+                        // [수정] 전역 getRGB 함수를 사용하여 드릴다운 색상 일관성 유지 (안전한 폴백 추가)
+                        const sectorColor = sectorInfo[currentDrillDown]?.color || '#3b82f6';
+                        const baseRGB = window.getRGB ? window.getRGB(sectorColor) : '59, 130, 246';
                         // [수정] 다크모드일 때 드릴다운 색상 투명도 조정 (톤 다운)
                         const startAlpha = darkMode ? 0.8 : 0.9;
                         colors = sectorAssets.map((_, i) => `rgba(${baseRGB}, ${Math.max(0.1, startAlpha - (i * 0.1))})`);
@@ -3697,8 +3758,9 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                         const projAssets = (calculation.projected[projectedDrillDown] || []).filter(a => !excludedAssetIds.includes(a.id));
                         labels = projAssets.map(a => a.name);
                         data = projAssets.map(a => a.amount);
-                        // [수정] 전역 getRGB 함수를 사용하여 드릴다운 색상 일관성 유지
-                        const baseRGB = window.getRGB(sectorInfo[projectedDrillDown].color);
+                        // [수정] 전역 getRGB 함수를 사용하여 드릴다운 색상 일관성 유지 (안전한 폴백 추가)
+                        const sectorColor = sectorInfo[projectedDrillDown]?.color || '#10b981';
+                        const baseRGB = window.getRGB ? window.getRGB(sectorColor) : '16, 185, 129';
                         // [수정] 다크모드일 때 드릴다운 색상 투명도 조정 (톤 다운)
                         const startAlpha = darkMode ? 0.8 : 0.9;
                         colors = projAssets.map((_, i) => `rgba(${baseRGB}, ${Math.max(0.1, startAlpha - (i * 0.1))})`);
@@ -5139,6 +5201,8 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                     if (!isPro || !weatherEffectEnabled) return null;
                     const pct = todayStats.dayProfitPct;
                     const thHigh = weatherThresholds?.high ?? 1.5;
+                    const thSunMin = weatherThresholds?.sunMin ?? 0;
+                    const thRainMax = weatherThresholds?.rainMax ?? 0;
                     const thLow = weatherThresholds?.low ?? -1.5;
                     if (pct >= thHigh) {
                         return {
@@ -5147,26 +5211,39 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                             desc: '햇살이 쏟아지는 맑은 날씨! 투자자산이 활활 타오르고 있습니다.',
                             ambientClass: 'border-amber-300/60 dark:border-amber-500/50 shadow-[0_0_35px_rgba(245,158,11,0.22)] bg-gradient-to-br from-amber-50/70 via-white to-orange-50/50 dark:from-amber-950/25 dark:via-slate-800 dark:to-orange-950/20'
                         };
-                    } else if (pct > 0) {
+                    } else if (pct >= thSunMin && pct > 0) {
                         return {
                             icon: '🌤️',
                             label: '화창한 상승',
                             desc: '초록빛 순항 중! 온화하고 따스한 바람이 불어옵니다.',
                             ambientClass: 'border-emerald-300/50 dark:border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.18)] bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40 dark:from-emerald-950/20 dark:via-slate-800 dark:to-teal-950/20'
                         };
-                    } else if (pct > thLow) {
+                    } else if (pct <= thRainMax && pct > thLow) {
                         return {
                             icon: '🌧️',
                             label: '부슬부슬 비',
                             desc: '가벼운 소나기가 지나가는 중입니다. 우산을 챙기세요.',
                             ambientClass: 'border-blue-300/50 dark:border-blue-500/40 shadow-[0_0_30px_rgba(59,130,246,0.15)] bg-gradient-to-br from-blue-50/60 via-white to-slate-50/50 dark:from-blue-950/20 dark:via-slate-800 dark:to-slate-900/30'
                         };
-                    } else {
+                    } else if (pct < thLow) {
                         return {
                             icon: '⚡',
                             label: '천둥 번개 폭풍우',
                             desc: '거센 비바람과 천둥 번개가 치고 있습니다. 멘탈을 꽉 잡으세요!',
                             ambientClass: 'border-rose-400/60 dark:border-rose-600/50 shadow-[0_0_35px_rgba(244,63,94,0.25)] bg-gradient-to-br from-rose-50/70 via-white to-indigo-50/50 dark:from-rose-950/30 dark:via-slate-800 dark:to-indigo-950/30'
+                        };
+                    } else {
+                        // 중립/보합 구간 (0% 부근)
+                        return pct >= 0 ? {
+                            icon: '🌤️',
+                            label: '화창한 상승',
+                            desc: '초록빛 순항 중! 온화하고 따스한 바람이 불어옵니다.',
+                            ambientClass: 'border-emerald-300/50 dark:border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.18)] bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40 dark:from-emerald-950/20 dark:via-slate-800 dark:to-teal-950/20'
+                        } : {
+                            icon: '🌧️',
+                            label: '부슬부슬 비',
+                            desc: '가벼운 소나기가 지나가는 중입니다. 우산을 챙기세요.',
+                            ambientClass: 'border-blue-300/50 dark:border-blue-500/40 shadow-[0_0_30px_rgba(59,130,246,0.15)] bg-gradient-to-br from-blue-50/60 via-white to-slate-50/50 dark:from-blue-950/20 dark:via-slate-800 dark:to-slate-900/30'
                         };
                     }
                 })();
@@ -8273,21 +8350,19 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                         <div className="flex flex-wrap items-center gap-2 mb-4">
                             <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
                                 <button onClick={() => setAnalysisMode('growth-modern')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'growth-modern' ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm ring-1 ring-indigo-500/20' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
-                                    <span>✨</span> 프로 테이블 <span className="text-[10px] px-1 py-0.2 rounded bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">추천</span>
+                                    <span>📊</span> 자산 증감 분석
                                 </button>
-                                <button onClick={() => setAnalysisMode('growth')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all ${analysisMode === 'growth' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
-                                    📊 기존 표 (레거시)
-                                </button>
-                                <button onClick={() => setAnalysisMode('income')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all ${analysisMode === 'income' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
-                                    💰 자본 소득 분석
+                                <button onClick={() => setAnalysisMode('income')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'income' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                                    <span>💰</span> 자본 소득 분석
                                 </button>
                             </div>
                         </div>
                     )}
 
-                    {/* [신규 배리에이션] 모던 핀테크 클린 프로 테이블 */}
-                    {analysisMode === 'growth-modern' && (
+                    {/* [자산 증감 분석] 모던 핀테크 프로 테이블 */}
+                    {(analysisMode === 'growth-modern' || isExporting) && (
                         <div className={isExporting ? "mb-10" : ""}>
+                            {isExporting && <h4 className="text-lg font-bold mb-4 flex items-center gap-2"><span className="text-xl">📊</span> 자산 증감 분석</h4>}
                             <AssetGrowthModernView 
                                 sectorInfo={sectorInfo}
                                 currentSectorTotals={currentSectorTotals}
@@ -8303,225 +8378,6 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                                 appData={appData}
                             />
                         </div>
-                    )}
-
-                    {(analysisMode === 'growth' || isExporting) && (
-                    <div className={isExporting ? "mb-10" : ""}>
-                        {isExporting && <h4 className="text-lg font-bold mb-4 flex items-center gap-2"><span className="text-xl">📊</span> 자산 증감 분석</h4>}
-                    <div className="sm:hidden space-y-4">
-                        {Object.keys(sectorInfo).map(sectorKey => {
-                            const current = currentSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
-                            const projected = projectedSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
-                            const growthRate = current.amount > 0 ? ((projected.amount - current.amount) / current.amount * 100) : 0;
-                            const isPositiveGood = sectorKey === 'loan' ? growthRate <= 0 : growthRate >= 0;
-                            const targetPct = (rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length));
-
-                            return (
-                                <div key={sectorKey} className={`p-4 rounded-lg shadow-sm ${sectorInfo[sectorKey].bgClass} border dark:border-gray-700`}>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <h4 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                            {sectorInfo[sectorKey].icon} {sectorInfo[sectorKey].name}
-                                        </h4>
-                                        {growthRate !== 0 && (
-                                            <span className={`text-xs font-bold px-2 py-1 rounded ${isPositiveGood ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
-                                                증감율: {formatPercent(growthRate)}%
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
-                                        <div>
-                                            <span className="text-xs text-gray-500 dark:text-gray-400 block">현재 금액</span>
-                                            <span className="font-semibold tabular-nums">{formatNumber(current.amount, displayMode)}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-xs text-gray-500 dark:text-gray-400 block">예상 금액</span>
-                                            <span className="font-semibold tabular-nums">{formatNumber(projected.amount, displayMode)}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-xs text-gray-500 dark:text-gray-400 block">현재 비중</span>
-                                            <span className="tabular-nums">{formatPercent(current.percentage)}%</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-xs text-gray-500 dark:text-gray-400 block">예상 비중</span>
-                                            <span className="tabular-nums">{formatPercent(projected.percentage)}%</span>
-                                        </div>
-                                    </div>
-                                    
-                                    {assets[sectorKey]?.length > 0 && (
-                                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-2">
-                                            {assets[sectorKey].map((asset, idx) => {
-                                                const projectedAmount = calculation.projected[sectorKey]?.[idx]?.amount || 0;
-                                                const assetGrowth = projectedAmount - asset.amount;
-                                                const assetGrowthRate = asset.amount > 0 ? (assetGrowth / asset.amount * 100) : 0;
-                                                const isAssetPositiveGood = sectorKey === 'loan' ? assetGrowthRate <= 0 : assetGrowthRate >= 0;
-                                                
-                                                return (
-                                                    <div key={`${sectorKey}-${idx}`} className="flex justify-between items-center text-xs bg-white/50 dark:bg-black/20 p-2 rounded">
-                                                        <span className="font-medium truncate flex-1">{asset.name}</span>
-                                                        <div className="text-right">
-                                                            <div>{formatNumber(asset.amount, displayMode)} → {formatNumber(projectedAmount, displayMode)}</div>
-                                                            <div className={`${isAssetPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                                {formatPercent(assetGrowthRate)}%
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                            <div className="p-4 rounded-lg shadow-sm bg-gray-100 dark:bg-gray-800 border dark:border-gray-700 mt-4">
-                                <div className="flex justify-between items-center mb-2">
-                                    <h4 className="font-bold text-gray-900 dark:text-white">총자산 (부채 포함)</h4>
-                                    <span className="text-xs font-bold px-2 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                                        증감율: {formatPercent(calculation.growth / Math.max(1, calculation.currentGross) * 100)}%
-                                    </span>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-sm mb-3">
-                                    <div><span className="text-xs text-gray-500 dark:text-gray-400 block">현재</span><span className="font-bold tabular-nums">{formatNumber(calculation.currentGross, displayMode)}</span></div>
-                                    <div><span className="text-xs text-gray-500 dark:text-gray-400 block">예상</span><span className="font-bold tabular-nums">{formatNumber(calculation.projectedGross, displayMode)}</span></div>
-                                </div>
-                                <div className="flex justify-between items-center mb-2 pt-3 border-t border-gray-200 dark:border-gray-700">
-                                    <h4 className="font-bold text-indigo-700 dark:text-indigo-400">순자산</h4>
-                                    <span className={`text-xs font-bold px-2 py-1 rounded ${(calculation.projectedNet - calculation.currentNet) >= 0 ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
-                                        증감율: {formatPercent((calculation.projectedNet - calculation.currentNet) / Math.max(1, calculation.currentNet) * 100)}%
-                                    </span>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                    <div><span className="text-xs text-gray-500 dark:text-gray-400 block">현재</span><span className="font-bold text-indigo-700 dark:text-indigo-400 tabular-nums">{formatNumber(calculation.currentNet, displayMode)}</span></div>
-                                    <div><span className="text-xs text-gray-500 dark:text-gray-400 block">예상</span><span className="font-bold text-indigo-700 dark:text-indigo-400 tabular-nums">{formatNumber(calculation.projectedNet, displayMode)}</span></div>
-                                </div>
-                            </div>
-                    </div>
-
-                    {/* 데스크탑 테이블 뷰 */}
-                    <div className="hidden sm:block overflow-x-auto -mx-6 px-6">
-                    <table className="w-full text-sm dark:text-gray-300 min-w-[950px] border-separate border-spacing-0">
-                        <thead className="bg-gray-100 dark:bg-gray-800 sticky top-0 z-20">
-                            <tr>
-                                <th className="p-4 text-left font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest border-b dark:border-gray-700 w-1/4">섹터 / 자산 항목</th>
-                                <th className="p-4 text-right font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest border-b dark:border-gray-700">금액 변화 (현재 → 예상)</th>
-                                <th className="p-4 text-right font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest border-b dark:border-gray-700">순증감 (율)</th>
-                                <th className="p-4 text-center font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest border-b dark:border-gray-700">현재 비중</th>
-                                <th className="p-4 text-center font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest border-b dark:border-gray-700">예상 비중</th>
-                                <th className="p-4 text-right font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest border-b dark:border-gray-700">목표</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {Object.keys(sectorInfo).map(sectorKey => {
-                                const current = currentSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
-                                const projected = projectedSectorTotals[sectorKey] || { amount: 0, percentage: 0 };
-                                const growthRate = current.amount > 0 ? ((projected.amount - current.amount) / current.amount * 100) : 0;
-                                const isPositiveGood = sectorKey === 'loan' ? growthRate <= 0 : growthRate >= 0;
-                                const rebalanceStatus = getRebalanceStatus(sectorKey, projected.percentage, false);
-                                const targetPct = (rebalancingTargets[sectorKey] ?? Math.round(100 / Object.keys(sectorInfo).length));
-
-                                return (
-                                    <React.Fragment key={sectorKey}>
-                                        <tr className={`group ${sectorInfo[sectorKey].bgClass} border-l-4 border-l-transparent hover:border-l-current transition-all`}>
-                                            <td className="p-4 font-bold border-b dark:border-gray-700">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xl">{sectorInfo[sectorKey].icon}</span>
-                                                    <span className="text-base">{sectorInfo[sectorKey].name}</span>
-                                                </div>
-                                            </td>
-                                            <td className="p-4 text-right border-b dark:border-gray-700 tabular-nums">
-                                                <div className="flex items-center justify-end gap-2">
-                                                    <span className="text-xs text-gray-400 opacity-70">{formatNumber(current.amount, displayMode)}</span>
-                                                    <span className="text-gray-300">→</span>
-                                                    <span className="text-base font-black">{formatNumber(projected.amount, displayMode)}</span>
-                                                </div>
-                                            </td>
-                                            <td className={`p-4 text-right border-b dark:border-gray-700 tabular-nums ${isPositiveGood ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                <div className="font-black text-base">{growthRate > 0 ? '▲' : growthRate < 0 ? '▼' : ''} {formatNumber(Math.abs(projected.amount - current.amount), displayMode)}</div>
-                                                <div className="text-xs opacity-80">({formatPercent(growthRate)}%)</div>
-                                            </td>
-                                            <td className="p-4 border-b dark:border-gray-700">
-                                                <div className="flex flex-col items-center gap-1">
-                                                    <span className="font-medium tabular-nums">{formatPercent(current.percentage)}%</span>
-                                                    <div className="w-16 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden"><div className="h-full bg-gray-400" style={{ width: `${current.percentage}%` }}></div></div>
-                                                </div>
-                                            </td>
-                                            <td className="p-4 border-b dark:border-gray-700">
-                                                <div className="flex flex-col items-center gap-1">
-                                                    <span className="font-medium tabular-nums">{formatPercent(projected.percentage)}%</span>
-                                                    <div className="w-16 h-1 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                                                        <div className="h-full bg-green-500" style={{ width: `${projected.percentage}%` }}></div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="p-4 text-right border-b dark:border-gray-700 tabular-nums font-bold text-gray-400">{formatPercent(targetPct)}%</td>
-                                        </tr>
-                                        {assets[sectorKey]?.map((asset, idx) => {
-                                            const projectedAmount = calculation.projected[sectorKey]?.[idx]?.amount || 0;
-                                            const assetGrowth = projectedAmount - asset.amount;
-                                            const assetGrowthRate = asset.amount > 0 ? (assetGrowth / asset.amount * 100) : 0;
-                                            const isAssetPositiveGood = sectorKey === 'loan' ? assetGrowthRate <= 0 : assetGrowthRate >= 0;
-                                            const sectorTotal = projected.amount || 1;
-                                            const currentAssetPercentageInPortfolio = (currentGrossTotal > 0) ? (asset.amount / currentGrossTotal * 100) : 0;
-                                            const assetPercentageInPortfolio = (projectedAmount / projectedGrossTotal * 100);
-                                            const currentAssetPercentageInSector = (current.amount > 0) ? (asset.amount / current.amount * 100) : 0;
-                                            const projectedAssetPercentageInSector = (projected.amount > 0) ? (projectedAmount / projected.amount * 100) : 0;
-                                            const itemTarget = appData.itemTargets?.[asset.id] ?? Math.round(100/(assets[sectorKey]?.length||1));
-                                            const itemRebalanceStatus = getRebalanceStatus(asset.id, projectedAssetPercentageInSector, true, asset.id, sectorKey);
-                                            
-                                            return (
-                                                <tr key={`${sectorKey}-${idx}`} className="border-b dark:border-gray-700/30 bg-white/10 dark:bg-gray-900/10 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                                                    <td className="p-3 pl-12 text-[13px] text-gray-500 dark:text-gray-400">
-                                                        <span className="opacity-20 mr-2">└</span>{asset.name}
-                                                    </td>
-                                                    <td className="p-3 text-right text-[12px] tabular-nums font-medium text-gray-500">
-                                                        {formatNumber(asset.amount, displayMode)} <span className="mx-1 opacity-30">→</span> {formatNumber(projectedAmount, displayMode)}
-                                                    </td>
-                                                    <td className={`p-3 text-right text-[12px] tabular-nums font-bold ${isAssetPositiveGood ? 'text-green-600/80' : 'text-red-500/80'}`}>
-                                                        {assetGrowth > 0 ? '+' : ''}{formatNumber(assetGrowth, displayMode)}
-                                                        <span className="ml-1 font-normal opacity-70">({formatPercent(assetGrowthRate)}%)</span>
-                                                    </td>
-                                                    <td className="p-3 text-center text-[12px] tabular-nums text-gray-500">
-                                                        {sectorKey !== 'loan' ? `${formatPercent(currentAssetPercentageInPortfolio)}%` : '-'}
-                                                    </td>
-                                                    <td className="p-3 text-center text-[12px] tabular-nums text-gray-500">
-                                                        {sectorKey !== 'loan' ? `${formatPercent(assetPercentageInPortfolio)}% (${formatPercent(projectedAssetPercentageInSector)}%)` : '-'}
-                                                    </td>
-                                                    <td className={`p-3 text-right text-[11px] tabular-nums opacity-60 ${itemRebalanceStatus}`}>({formatPercent(itemTarget)}%)</td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </React.Fragment>
-                                );
-                            })}
-                            <tr className="bg-gray-100 dark:bg-gray-700 border-t-2 border-gray-300 dark:border-gray-600">
-                                <td className="p-4 font-black">총계</td>
-                                <td className="p-4 text-right font-black tabular-nums">
-                                    {formatNumber(calculation.currentGross, displayMode)} → {formatNumber(calculation.projectedGross, displayMode)}
-                                </td>
-                                <td className={`p-4 text-right font-black tabular-nums ${calculation.growth >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                    +{formatNumber(calculation.growth, displayMode)}
-                                    <div className="text-xs font-bold">({formatPercent(calculation.growth / Math.max(1, calculation.currentGross) * 100)}%)</div>
-                                </td>
-                                <td className="p-3 text-center font-bold tabular-nums">100.0%</td>
-                                <td className="p-3 text-center font-bold tabular-nums">100.0%</td>
-                                <td className="p-3 text-right font-bold tabular-nums">100.0%</td>
-                            </tr>
-                            <tr className="border-t border-gray-300 dark:border-gray-600 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-300">
-                                <td className="p-3 font-bold">순자산</td>
-                                <td className="p-3 text-right font-bold tabular-nums">
-                                    {formatNumber(calculation.currentNet, displayMode)} → {formatNumber(calculation.projectedNet, displayMode)}
-                                </td>
-                                <td className={`p-3 text-right font-bold tabular-nums ${(calculation.projectedNet - calculation.currentNet) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
-                                    {(calculation.projectedNet - calculation.currentNet) >= 0 ? '+' : ''}{formatNumber(calculation.projectedNet - calculation.currentNet, displayMode)}
-                                    <div className="text-xs font-bold">({formatPercent((calculation.projectedNet - calculation.currentNet) / Math.max(1, calculation.currentNet) * 100)}%)</div>
-                                </td>
-                                <td className="p-3 text-center font-bold tabular-nums">-</td>
-                                <td className="p-3 text-center font-bold tabular-nums">-</td>
-                                <td className="p-3 text-right font-bold tabular-nums">-</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                    </div>
                     )}
 
                     {(analysisMode === 'income' || isExporting) && (
@@ -8839,14 +8695,14 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
 
             return (
                 (calculation.error || layoutOrder.length === 0) ? 
-                <div className="flex items-center justify-center min-h-screen bg-gray-50">
+                <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900">
                     { layoutOrder.length === 0 ? '레이아웃 로딩 중...' : '계산 오류 발생. 설정을 확인해주세요.' }
                     <button onClick={() => { if(confirm('모든 로컬 데이터를 삭제하고 초기화하시겠습니까?')) { localStorage.clear(); window.location.reload(); } }} className="mt-4 text-sm text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer">
                         데이터 초기화 (복구)
                     </button>
                 </div>
                 :
-                <div className={`relative min-h-screen transition-colors duration-700 pb-20 sm:pb-0 ${editingPhase !== null ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-gray-50 dark:bg-gray-900'}`}>
+                <div className={`relative min-h-screen transition-colors duration-700 pb-20 sm:pb-0 ${editingPhase !== null ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-white dark:bg-gray-900'}`}>
                     {/* [PRO] 실시간 손익 날씨 앰비언트 효과 (화면 좌/우 여백 100% 격리 렌더링) */}
                     {weatherEffectIntensity > 0 && (
                         <WeatherAtmosphere 
@@ -8899,8 +8755,9 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                         <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
                             <div className="flex justify-between items-center h-16 gap-4">
                                 <div className="flex items-center flex-shrink-0">
-                                    <h1 id="app-title" className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900 dark:text-white cursor-pointer whitespace-nowrap" onClick={cycleDisplayMode}>
-                                        자산 플래너 {titleText}
+                                    <h1 id="app-title" className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900 dark:text-white cursor-pointer whitespace-nowrap flex items-center gap-1.5" onClick={cycleDisplayMode} title="클릭하여 모드 전환">
+                                        <span>자산 플래너</span>
+                                        {titleText}
                                     </h1>
                                 </div>
 
@@ -9276,8 +9133,6 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
         onOpenScreenshotModal={() => setIsScreenshotModalOpen(true)}
         enableLiveQuotes={enableLiveQuotes}
         setEnableLiveQuotes={setEnableLiveQuotes}
-        weatherThresholds={weatherThresholds}
-        onUpdateWeatherThresholds={updateWeatherThresholds}
     />
     
     {calculation.warnings && calculation.warnings.length > 0 && (
@@ -9406,17 +9261,56 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                             currentData={{ appData, scenarios, assetHistory, referenceScenarios }}
                             onImport={(data, type) => {
                                 if (confirm(type === 'csv' ? 'CSV 데이터를 불러오시겠습니까? 현재 설정과 자산 목록이 CSV 내용으로 대체됩니다.' : '전체 데이터를 복구하시겠습니까? 현재 데이터가 모두 덮어씌워집니다.')) {
+                                    // [중요] 데모 모드 중 불러오기 수행 시 데모 모드를 즉시 해제하고 데모 백업 삭제
+                                    setIsDemoMode(false);
+                                    try {
+                                        localStorage.removeItem('assetDashboard_pre_demo_backup');
+                                    } catch (e) {}
+
                                     if (type === 'csv') {
                                         // CSV는 appData의 일부 필드만 갱신
                                         if (data.appData) {
-                                            setAppData(prev => ({ ...prev, ...data.appData }));
+                                            setAppData(prev => {
+                                                const merged = { ...prev, ...data.appData };
+                                                delete merged.isDemo;
+                                                originalUserDataRef.current = merged;
+                                                setOriginalUserData(merged);
+                                                try {
+                                                    localStorage.setItem('assetDashboardDataV3', JSON.stringify(merged));
+                                                } catch(e) {}
+                                                return merged;
+                                            });
                                         }
                                     } else {
                                         // JSON 전체 복구
-                                        if (data.appData) setAppData(data.appData);
-                                        if (data.scenarios) setScenarios(data.scenarios);
-                                        if (data.assetHistory) setAssetHistory(data.assetHistory);
-                                        if (data.referenceScenarios) setReferenceScenarios(data.referenceScenarios);
+                                        const importedAppData = data.appData || data;
+                                        if (importedAppData) {
+                                            delete importedAppData.isDemo;
+                                            resetAppData(importedAppData);
+                                            originalUserDataRef.current = importedAppData;
+                                            setOriginalUserData(importedAppData);
+                                            try {
+                                                localStorage.setItem('assetDashboardDataV3', JSON.stringify(importedAppData));
+                                            } catch(e) {}
+                                        }
+                                        if (data.scenarios) {
+                                            setScenarios(data.scenarios);
+                                            try { localStorage.setItem('assetDashboardScenarios', JSON.stringify(data.scenarios)); } catch(e) {}
+                                        }
+                                        if (data.assetHistory) {
+                                            setAssetHistory(data.assetHistory);
+                                            try { localStorage.setItem('assetDashboardHistory', JSON.stringify(data.assetHistory)); } catch(e) {}
+                                        }
+                                        if (data.referenceScenarios) {
+                                            setReferenceScenarios(data.referenceScenarios);
+                                            try { localStorage.setItem('assetDashboardReferenceScenarios', JSON.stringify(data.referenceScenarios)); } catch(e) {}
+                                        }
+                                        lastSavedDataRef.current = JSON.stringify({
+                                            appData: importedAppData,
+                                            scenarios: data.scenarios || scenarios,
+                                            assetHistory: data.assetHistory || assetHistory,
+                                            referenceScenarios: data.referenceScenarios || referenceScenarios
+                                        });
                                     }
                                     addToast(type === 'csv' ? 'CSV 데이터가 적용되었습니다.' : '전체 데이터가 성공적으로 복구되었습니다!', 'success');
                                 }
@@ -9564,6 +9458,8 @@ import { AssetGrowthModernView } from './components/AssetGrowthVariations';
                         weatherEffectEnabled={weatherEffectIntensity > 0}
                         weatherEffectIntensity={weatherEffectIntensity}
                         onWeatherIntensityChange={handleWeatherIntensityChange}
+                        weatherThresholds={weatherThresholds}
+                        onUpdateWeatherThresholds={updateWeatherThresholds}
                     />}
                     {showSaveToast && (
                         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[99999] bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
