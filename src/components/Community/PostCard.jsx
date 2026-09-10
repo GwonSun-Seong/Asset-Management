@@ -1,6 +1,7 @@
 // PostCard.jsx - 커뮤니티 피드 리스트용 개별 게시글 카드
 import React from 'react';
 import AssetFlexCard from './AssetFlexCard';
+import { renderBadgeInfo } from './badgeConstants';
 
 export default function PostCard({ post, onClick, onLikeToggle, isLiked = false }) {
     if (!post) return null;
@@ -60,19 +61,32 @@ export default function PostCard({ post, onClick, onLikeToggle, isLiked = false 
 
             {/* 첨부 이미지 썸네일 그리드 */}
             {post.images && Array.isArray(post.images) && post.images.length > 0 && (
-                <div className={`mb-3 grid gap-1.5 rounded-2xl overflow-hidden ${
-                    post.images.length === 1 ? 'grid-cols-1 max-h-48' : (post.images.length === 2 ? 'grid-cols-2 max-h-36' : 'grid-cols-3 max-h-28')
-                }`}>
-                    {post.images.map((imgUrl, idx) => (
-                        <div key={idx} className="relative w-full h-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                <div className="mb-3">
+                    {post.images.length === 1 ? (
+                        <div className="rounded-2xl overflow-hidden border border-slate-200/60 dark:border-slate-800/80 bg-slate-100 dark:bg-slate-800/50 max-h-[420px] sm:max-h-[480px] flex items-center justify-center">
                             <img 
-                                src={imgUrl} 
-                                alt={`첨부 이미지 ${idx + 1}`} 
-                                className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                                src={post.images[0]} 
+                                alt="첨부 이미지" 
+                                className="w-full h-auto max-h-[420px] sm:max-h-[480px] object-cover hover:scale-[1.01] transition-transform duration-300"
                                 loading="lazy"
                             />
                         </div>
-                    ))}
+                    ) : (
+                        <div className={`grid gap-2 rounded-2xl overflow-hidden ${
+                            post.images.length === 2 ? 'grid-cols-2 h-52 sm:h-64' : 'grid-cols-3 h-40 sm:h-52'
+                        }`}>
+                            {post.images.map((imgUrl, idx) => (
+                                <div key={idx} className="relative w-full h-full bg-slate-100 dark:bg-slate-800 overflow-hidden rounded-xl">
+                                    <img 
+                                        src={imgUrl} 
+                                        alt={`첨부 이미지 ${idx + 1}`} 
+                                        className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                                        loading="lazy"
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -97,14 +111,18 @@ export default function PostCard({ post, onClick, onLikeToggle, isLiked = false 
                     <span className="font-semibold text-slate-700 dark:text-slate-300">
                         {post.author_name || '사용자'}
                     </span>
-                    {!post.is_anonymous && post.author_profile?.selected_badge && post.author_profile.selected_badge !== 'tier' && post.author_profile.selected_badge !== 'none' && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/50">
-                            {post.author_profile.selected_badge === 'fire' && '🏃‍♂️ 파이어족'}
-                            {post.author_profile.selected_badge === 'dividend' && '💸 배당 러버'}
-                            {post.author_profile.selected_badge === 'investor' && '📈 가치 투자'}
-                            {post.author_profile.selected_badge === 'beginner' && '🌱 초보 투자'}
-                        </span>
-                    )}
+                    {(() => {
+                        const badge = !post.is_anonymous ? renderBadgeInfo(post.author_profile?.selected_badge, post.author_profile, post.asset_snapshot) : null;
+                        if (!badge) return null;
+                        return (
+                            <span 
+                                className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/50 cursor-help transition-transform hover:scale-105"
+                                title={badge.tooltip}
+                            >
+                                {badge.icon} {badge.label}
+                            </span>
+                        );
+                    })()}
                     <span className="text-[11px] text-slate-400">· {formatDate(post.created_at)}</span>
                 </div>
 

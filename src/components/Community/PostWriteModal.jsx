@@ -2,6 +2,7 @@
 import React, { useState, useRef } from 'react';
 import AssetFlexCard from './AssetFlexCard';
 import { uploadCommunityImage } from './imageUtils';
+import { getTierByNetWorth } from './badgeConstants';
 
 export default function PostWriteModal({ 
     isOpen, 
@@ -28,37 +29,58 @@ export default function PostWriteModal({
     const [isUploadingImage, setIsUploadingImage] = useState(false);
     const fileInputRef = useRef(null);
 
-    // 자산 포트폴리오 스냅샷 첨부 상태
+const SNAPSHOT_PREFS_KEY = 'asset_snapshot_pref_v1';
+
+const DEFAULT_SNAPSHOT_PREFS = {
+    flexDisplayMode: 'amount', // 'amount' | 'ratio'
+    hideTierBadge: false,
+    show_net_worth: true,
+    show_debt_ratio: true,
+    show_expected_return: true,
+    show_runway: true,
+    show_fire_rate: true,
+    show_cash_flow: true,
+    show_cash_flow_statement: true,
+    show_portfolio_shares: true,
+    show_top_holdings: true,
+    excluded_holding_names: [],
+    excluded_cash_flow_keys: []
+};
+
+const getSavedSnapshotPrefs = () => {
+    try {
+        const saved = localStorage.getItem(SNAPSHOT_PREFS_KEY);
+        if (saved) {
+            return { ...DEFAULT_SNAPSHOT_PREFS, ...JSON.parse(saved) };
+        }
+    } catch (e) {}
+    return DEFAULT_SNAPSHOT_PREFS;
+};
+
+    // 자산 포트폴리오 스냅샷 첨부 상태 및 캐시된 사용자 커스텀 설정
     const [attachAssetSnapshot, setAttachAssetSnapshot] = useState(false);
-    const [flexDisplayMode, setFlexDisplayMode] = useState('amount'); // 'amount' | 'ratio'
-    const [hideTierBadge, setHideTierBadge] = useState(false);
+    const [snapshotPrefs, setSnapshotPrefs] = useState(() => getSavedSnapshotPrefs());
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const updateSnapshotPrefs = (updater) => {
+        setSnapshotPrefs(prev => {
+            const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+            try {
+                localStorage.setItem(SNAPSHOT_PREFS_KEY, JSON.stringify(next));
+            } catch (e) {}
+            return next;
+        });
+    };
+
     // 현재 사용자의 실제 데이터 기반으로 생성되는 자산 스냅샷 계산
-    const generateSnapshotFromUserData = () => {
+    const generateSnapshotFromUserData = (isForPublishing = false) => {
         if (!currentAppData || !currentCalculation) return null;
 
         const netWorth = currentCalculation.currentNet || 0; // 만원 단위
-        const isRatioMode = flexDisplayMode === 'ratio';
-        let tierLabel = '시드 자산가';
-        let tierBadge = '🌱';
-
-        if (netWorth >= 100000) { // 10억 이상
-            tierLabel = isRatioMode ? '10억 클럽' : '10억 클럽 (10억 이상)';
-            tierBadge = '👑';
-        } else if (netWorth >= 50000) { // 5억~10억
-            tierLabel = isRatioMode ? '다이아몬드' : '다이아몬드 (5억 이상)';
-            tierBadge = '💎';
-        } else if (netWorth >= 30000) { // 3억~5억
-            tierLabel = isRatioMode ? '골드' : '골드 (3억 이상)';
-            tierBadge = '🥇';
-        } else if (netWorth >= 10000) { // 1억~3억
-            tierLabel = isRatioMode ? '실버' : '실버 (1억 이상)';
-            tierBadge = '🥈';
-        } else if (netWorth >= 5000) { // 5천만~1억
-            tierLabel = isRatioMode ? '브론즈' : '브론즈 (5천만 이상)';
-            tierBadge = '🥉';
-        }
+        const isRatioMode = snapshotPrefs.flexDisplayMode === 'ratio';
+        const calculatedTier = getTierByNetWorth(netWorth);
+        let tierLabel = isRatioMode ? calculatedTier.label : `${calculatedTier.label} (${calculatedTier.criteria.replace('순자산 ', '')})`;
+        let tierBadge = calculatedTier.icon;
 
         // 섹터별 메타 정보 (색상, 라벨, 아이콘)
         const sectorMeta = {
@@ -120,7 +142,7 @@ export default function PostWriteModal({
         });
 
         allItems.sort((a, b) => b.amount - a.amount);
-        const topHoldings = allItems.slice(0, 4).map(item => {
+        const topHoldings = allItems.slice(0, 8).map(item => {
             const meta = sectorMeta[item.sector] || { label: '자산', icon: '🏷️' };
             return {
                 name: item.name,
@@ -145,7 +167,7 @@ export default function PostWriteModal({
         const monthlySavings = Math.max(0, monthlySalary - monthlyExpense);
         const savingsRate = monthlySalary > 0 ? Math.round((monthlySavings / monthlySalary) * 100) : null;
 
-        // 비상금 런웨이 (현금성 자산으로 몇 개월 버틸 수 있는지)
+        // 1) 비상금 런웨이 (현금성 자산으로 몇 개월 버틸 수 있는지)
         let runwayMonths = currentCalculation.fireMetrics?.runwayMonths;
         if (runwayMonths === undefined || runwayMonths === null) {
             const liquidCash = (assets.deposit || []).reduce((acc, a) => acc + Number(a.amount || 0), 0) + 
@@ -153,29 +175,212 @@ export default function PostWriteModal({
             runwayMonths = monthlyExpense > 0 ? Math.round(liquidCash / monthlyExpense) : 0;
         }
 
+        // 2) FIRE 달성률 (연 지출 x 25 = 4% Rule 기준 은퇴 자본 대비)
+        let fireTargetCapital = currentCalculation.fireMetrics?.swr4PercentCapital || 0;
+        if (!fireTargetCapital && monthlyExpense > 0) {
+            fireTargetCapital = (monthlyExpense * 12) * 25;
+        }
+        const fireRate = fireTargetCapital > 0 && netWorth > 0 
+            ? Math.min(999, Math.round((netWorth / fireTargetCapital) * 100)) 
+            : null;
+
+        // 3) 월 순 현금흐름 (월 실수령 수입 - 월 고정지출 총액)
+        const monthlyCashFlow = monthlySalary > 0 ? (monthlySalary - monthlyExpense) : null;
+
         const now = new Date();
         const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
 
+        const isAmountMode = snapshotPrefs.flexDisplayMode === 'amount';
+
+        // 🛡️ 보안 핵심: 발행(DB 업로드) 시 비공개/제외 처리된 모든 데이터를 원천 파기 (Zero-Data Sanitization)
+        // 독자가 F12 개발자 도구나 네트워크 응답 패킷을 확인하더라도 비활성화된 데이터가 0바이트(null)로 존재하지 않음
+
+        // 1. 포트폴리오 섹터 배분 정제
+        let sanitizedShares = [];
+        if (snapshotPrefs.show_portfolio_shares) {
+            sanitizedShares = portfolioShares.map(s => ({
+                sector: s.sector,
+                label: s.label,
+                icon: s.icon,
+                color: s.color,
+                ratio: s.ratio,
+                // 비율 모드이거나 비공개 시 실제 원화 금액 원천 파기
+                amount: (!isForPublishing || isAmountMode) ? s.amount : null
+            }));
+        }
+
+        // 2. 핵심 보유 종목 정제 (제외된 종목 및 비활성화 시 완전 삭제)
+        let finalHoldings = [];
+        if (snapshotPrefs.show_top_holdings) {
+            const candidateList = isForPublishing 
+                ? topHoldings.filter(h => !(snapshotPrefs.excluded_holding_names || []).includes(h.name)).slice(0, 4)
+                : topHoldings;
+
+            finalHoldings = candidateList.map(h => ({
+                name: h.name,
+                sector: h.sector,
+                sectorLabel: h.sectorLabel,
+                sectorIcon: h.sectorIcon,
+                ratio: h.ratio,
+                rate: h.rate,
+                // 비율 모드이거나 비공개 시 실제 원화 금액 원천 파기
+                amount: (!isForPublishing || isAmountMode) ? h.amount : null
+            }));
+        }
+
+        // 3. 월간 자금 흐름 리포트 (수입 100% 대비 소비 지출 / 투자저축 / 대출상환 / 잉여금)
+        let savingsContribTotal = 0;
+        const savingsContribItems = [];
+        let loanContribTotal = 0;
+        const loanContribItems = [];
+
+        Object.keys(assets).forEach(sec => {
+            (assets[sec] || []).forEach(a => {
+                const contrib = Number(a.monthlyContrib || 0);
+                if (contrib > 0) {
+                    if (sec === 'loan') {
+                        loanContribTotal += contrib;
+                        loanContribItems.push({ name: a.name, amount: contrib, sector: sec });
+                    } else {
+                        savingsContribTotal += contrib;
+                        savingsContribItems.push({ name: a.name, amount: contrib, sector: sec });
+                    }
+                }
+            });
+        });
+
+        const expenseList = (currentAppData.monthlyExpenses || [])
+            .filter(e => Number(e.amount || 0) > 0)
+            .map(e => ({ name: e.name, amount: Number(e.amount || 0) }));
+        const livingExpenseTotal = Number(currentCalculation.totalMonthlyExpense || expenseList.reduce((acc, e) => acc + e.amount, 0));
+
+        // 잉여 현금 (월 수입 - 소비지출 - 저축/투자 - 대출상환)
+        const surplusAmount = Math.max(0, monthlySalary - livingExpenseTotal - savingsContribTotal - loanContribTotal);
+
+        const baseInflow = monthlySalary > 0 
+            ? monthlySalary 
+            : (livingExpenseTotal + savingsContribTotal + loanContribTotal);
+
+        const rawCashFlowCategories = [
+            {
+                key: 'expense',
+                label: '소비 지출',
+                subLabel: '생활비 · 고정소비',
+                icon: '🔻',
+                color: '#ef4444',
+                amount: livingExpenseTotal,
+                ratio: baseInflow > 0 ? Math.round((livingExpenseTotal / baseInflow) * 100) : 0,
+                items: expenseList.slice(0, 3)
+            },
+            {
+                key: 'savings',
+                label: '투자 / 저축',
+                subLabel: '주식 · 적금 납입',
+                icon: '📈',
+                color: '#10b981',
+                amount: savingsContribTotal,
+                ratio: baseInflow > 0 ? Math.round((savingsContribTotal / baseInflow) * 100) : 0,
+                items: savingsContribItems.slice(0, 3)
+            },
+            {
+                key: 'loan',
+                label: '대출 상환',
+                subLabel: '원리금 상환액',
+                icon: '💳',
+                color: '#f97316',
+                amount: loanContribTotal,
+                ratio: baseInflow > 0 ? Math.round((loanContribTotal / baseInflow) * 100) : 0,
+                items: loanContribItems.slice(0, 3)
+            },
+            {
+                key: 'surplus',
+                label: '잉여 자금',
+                subLabel: '월 순 잉여 현금',
+                icon: '💰',
+                color: '#6366f1',
+                amount: surplusAmount,
+                ratio: baseInflow > 0 ? Math.max(0, 100 - (
+                    (baseInflow > 0 ? Math.round((livingExpenseTotal / baseInflow) * 100) : 0) +
+                    (baseInflow > 0 ? Math.round((savingsContribTotal / baseInflow) * 100) : 0) +
+                    (baseInflow > 0 ? Math.round((loanContribTotal / baseInflow) * 100) : 0)
+                )) : 0,
+                items: []
+            }
+        ];
+
+        let sanitizedCashFlow = null;
+        if (snapshotPrefs.show_cash_flow_statement && baseInflow > 0) {
+            const excludedKeys = snapshotPrefs.excluded_cash_flow_keys || [];
+            
+            // 발행 시에는 제외된 카테고리를 아예 필터링하여 서버로 전송하지 않음 (Zero-Knowledge)
+            const activeCategories = isForPublishing 
+                ? rawCashFlowCategories.filter(c => !excludedKeys.includes(c.key))
+                : rawCashFlowCategories;
+
+            sanitizedCashFlow = {
+                monthly_salary: (!isForPublishing || isAmountMode) ? monthlySalary : null,
+                base_inflow: (!isForPublishing || isAmountMode) ? baseInflow : null,
+                categories: activeCategories.map(c => ({
+                    key: c.key,
+                    label: c.label,
+                    subLabel: c.subLabel,
+                    icon: c.icon,
+                    color: c.color,
+                    ratio: c.ratio,
+                    amount: (!isForPublishing || isAmountMode) ? c.amount : null,
+                    items: c.items.map(item => ({
+                        name: item.name,
+                        amount: (!isForPublishing || isAmountMode) ? item.amount : null,
+                        ratio: baseInflow > 0 ? Math.round((item.amount / baseInflow) * 100) : 0
+                    }))
+                }))
+            };
+        }
+
         return {
             snapshot_date: dateStr,
-            tier_label: tierLabel,
-            tier_badge: tierBadge,
-            hide_tier_badge: hideTierBadge,
-            display_mode: flexDisplayMode,
-            total_net_worth: flexDisplayMode === 'amount' ? netWorth : null,
-            total_gross_worth: flexDisplayMode === 'amount' ? totalGross : null,
-            total_debt: flexDisplayMode === 'amount' ? totalDebt : null,
-            debt_ratio: debtRatio,
-            expected_return: expectedReturn,
-            savings_rate: savingsRate,
-            runway_months: runwayMonths,
-            monthly_savings: flexDisplayMode === 'amount' ? monthlySavings : null,
-            portfolio_shares: portfolioShares,
-            top_holdings: topHoldings
+            tier_label: snapshotPrefs.hideTierBadge ? null : tierLabel,
+            tier_badge: snapshotPrefs.hideTierBadge ? null : tierBadge,
+            hide_tier_badge: snapshotPrefs.hideTierBadge,
+            display_mode: snapshotPrefs.flexDisplayMode,
+
+            // 순자산 카드 비공개 또는 비율 모드 시 원화 금액 원천 파기
+            total_net_worth: (snapshotPrefs.show_net_worth && isAmountMode) ? netWorth : null,
+            total_gross_worth: (snapshotPrefs.show_net_worth && isAmountMode) ? totalGross : null,
+            total_debt: (snapshotPrefs.show_net_worth && isAmountMode) ? totalDebt : null,
+
+            // 개별 재무 지표 비공개 시 수치 완전 파기 (DB에 null로 저장)
+            debt_ratio: snapshotPrefs.show_debt_ratio ? debtRatio : null,
+            expected_return: snapshotPrefs.show_expected_return ? expectedReturn : null,
+            savings_rate: (snapshotPrefs.show_runway && !runwayMonths) ? savingsRate : null,
+            runway_months: snapshotPrefs.show_runway ? runwayMonths : null,
+            fire_rate: snapshotPrefs.show_fire_rate ? fireRate : null,
+            monthly_cash_flow: snapshotPrefs.show_cash_flow ? monthlyCashFlow : null,
+            monthly_savings: (snapshotPrefs.show_cash_flow && isAmountMode) ? monthlySavings : null,
+
+            // 섹션 데이터
+            portfolio_shares: sanitizedShares,
+            top_holdings: finalHoldings,
+            cash_flow_statement: sanitizedCashFlow,
+
+            // 컴포넌트 공개/비공개 플래그
+            show_net_worth: snapshotPrefs.show_net_worth,
+            show_debt_ratio: snapshotPrefs.show_debt_ratio,
+            show_expected_return: snapshotPrefs.show_expected_return,
+            show_runway: snapshotPrefs.show_runway,
+            show_fire_rate: snapshotPrefs.show_fire_rate,
+            show_cash_flow: snapshotPrefs.show_cash_flow,
+            show_cash_flow_statement: snapshotPrefs.show_cash_flow_statement,
+            show_portfolio_shares: snapshotPrefs.show_portfolio_shares,
+            show_top_holdings: snapshotPrefs.show_top_holdings,
+
+            // 발행 시에는 제외 목록조차 서버에 보내지 않음 (이름/키 노출 차단)
+            excluded_holding_names: isForPublishing ? [] : (snapshotPrefs.excluded_holding_names || []),
+            excluded_cash_flow_keys: isForPublishing ? [] : (snapshotPrefs.excluded_cash_flow_keys || [])
         };
     };
 
-    const currentSnapshot = attachAssetSnapshot ? generateSnapshotFromUserData() : null;
+    const previewSnapshot = attachAssetSnapshot ? generateSnapshotFromUserData(false) : null;
 
     // 태그 입력 핸들러
     const handleTagKeyDown = (e) => {
@@ -228,8 +433,14 @@ export default function PostWriteModal({
             if (!userId) userId = 'guest';
 
             for (const file of files) {
-                const uploaded = await uploadCommunityImage(supabase, file, userId);
-                setImages(prev => [...prev, uploaded]);
+                try {
+                    const uploaded = await uploadCommunityImage(supabase, file, userId);
+                    setImages(prev => [...prev, uploaded]);
+                } catch (imgErr) {
+                    console.warn('Supabase image upload failed, falling back to local preview:', imgErr);
+                    const fallbackUploaded = await uploadCommunityImage(null, file, userId);
+                    setImages(prev => [...prev, fallbackUploaded]);
+                }
             }
         } catch (err) {
             console.error('Image upload failed:', err);
@@ -265,7 +476,7 @@ export default function PostWriteModal({
                 images: images.map(img => img.url),
                 is_notice: isAdmin ? isNotice : false,
                 is_anonymous: isAnonymous,
-                asset_snapshot: attachAssetSnapshot ? currentSnapshot : null
+                asset_snapshot: attachAssetSnapshot ? generateSnapshotFromUserData(true) : null
             });
             onClose();
         } catch (err) {
@@ -450,15 +661,15 @@ export default function PostWriteModal({
                                 <div className="flex bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold">
                                     <button 
                                         type="button" 
-                                        onClick={() => setFlexDisplayMode('amount')} 
-                                        className={`px-2 py-1 rounded transition-all ${flexDisplayMode === 'amount' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500'}`}
+                                        onClick={() => updateSnapshotPrefs({ flexDisplayMode: 'amount' })} 
+                                        className={`px-2.5 py-1 rounded transition-all cursor-pointer ${snapshotPrefs.flexDisplayMode === 'amount' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500'}`}
                                     >
                                         금액 공개
                                     </button>
                                     <button 
                                         type="button" 
-                                        onClick={() => setFlexDisplayMode('ratio')} 
-                                        className={`px-2 py-1 rounded transition-all ${flexDisplayMode === 'ratio' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500'}`}
+                                        onClick={() => updateSnapshotPrefs({ flexDisplayMode: 'ratio' })} 
+                                        className={`px-2.5 py-1 rounded transition-all cursor-pointer ${snapshotPrefs.flexDisplayMode === 'ratio' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500'}`}
                                     >
                                         금액 비공개 (비중만)
                                     </button>
@@ -467,21 +678,48 @@ export default function PostWriteModal({
                         </div>
 
                         {attachAssetSnapshot && (
-                            <div className="space-y-2.5">
+                            <div className="space-y-3">
                                 <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-                                    <p>현재 입력된 자산 구성 및 배분 구조를 스냅샷 형태로 첨부합니다.</p>
+                                    <p className="font-medium">
+                                        💡 게시글에 첨부될 실제 스냅샷입니다. 원치 않는 카드나 종목을 클릭하여 바로 비공개 처리할 수 있습니다.
+                                    </p>
                                     <label className="flex items-center gap-1.5 cursor-pointer select-none font-bold text-slate-700 dark:text-slate-300">
                                         <input 
                                             type="checkbox"
-                                            checked={hideTierBadge}
-                                            onChange={(e) => setHideTierBadge(e.target.checked)}
+                                            checked={snapshotPrefs.hideTierBadge}
+                                            onChange={(e) => updateSnapshotPrefs({ hideTierBadge: e.target.checked })}
                                             className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500"
                                         />
                                         <span>자산 등급 뱃지 가리기</span>
                                     </label>
                                 </div>
-                                {currentSnapshot && (
-                                    <AssetFlexCard snapshot={currentSnapshot} compact={true} hideTier={hideTierBadge} />
+                                {previewSnapshot && (
+                                    <AssetFlexCard 
+                                        snapshot={previewSnapshot} 
+                                        compact={false} 
+                                        hideTier={snapshotPrefs.hideTierBadge} 
+                                        interactive={true}
+                                        onToggleMetric={(key) => updateSnapshotPrefs(prev => ({ ...prev, [key]: !prev[key] }))}
+                                        onToggleHolding={(name) => updateSnapshotPrefs(prev => {
+                                            const list = prev.excluded_holding_names || [];
+                                            return {
+                                                ...prev,
+                                                excluded_holding_names: list.includes(name) 
+                                                    ? list.filter(n => n !== name) 
+                                                    : [...list, name]
+                                            };
+                                        })}
+                                        onToggleSection={(key) => updateSnapshotPrefs(prev => ({ ...prev, [key]: !prev[key] }))}
+                                        onToggleCashFlowCategory={(key) => updateSnapshotPrefs(prev => {
+                                            const list = prev.excluded_cash_flow_keys || [];
+                                            return {
+                                                ...prev,
+                                                excluded_cash_flow_keys: list.includes(key)
+                                                    ? list.filter(k => k !== key)
+                                                    : [...list, key]
+                                            };
+                                        })}
+                                    />
                                 )}
                             </div>
                         )}

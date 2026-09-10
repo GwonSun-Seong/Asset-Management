@@ -716,9 +716,14 @@ export const communityService = {
 
         if (supabase && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
             try {
+                const supabaseUpdates = {};
+                if (updates.nickname !== undefined) supabaseUpdates.nickname = updates.nickname;
+                if (updates.selected_badge !== undefined) supabaseUpdates.selected_badge = updates.selected_badge;
+                if (updates.hide_tier_badge !== undefined) supabaseUpdates.hide_tier_badge = updates.hide_tier_badge;
+
                 const { data, error } = await supabase
                     .from('user_profiles')
-                    .update(updates)
+                    .update(supabaseUpdates)
                     .eq('id', userId)
                     .select()
                     .maybeSingle();

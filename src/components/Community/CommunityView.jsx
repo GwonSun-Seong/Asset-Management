@@ -115,14 +115,8 @@ export default function CommunityView({
         loadUserProfile();
     }, [currentUserId, loadUserProfile]);
 
-    // 글 작성 모달 열기 핸들러 (로그인 여부 체크)
+    // 글 작성 모달 열기 핸들러 (작성 화면 및 스냅샷 커스텀 테스트는 로그인 없이 자유롭게 진입 가능)
     const handleOpenWriteModal = () => {
-        if (!currentUser) {
-            if (window.confirm('글 작성을 위해서는 로그인이 필요합니다.\n지금 로그인하시겠습니까?')) {
-                if (onLogin) onLogin();
-            }
-            return;
-        }
         setIsWriteModalOpen(true);
     };
 
@@ -145,8 +139,18 @@ export default function CommunityView({
             }
         }
 
+        // 업로드/등록 단계에서 로그인 체크
         if (!userId) {
-            throw new Error('로그인이 필요한 기능입니다.');
+            const doLogin = window.confirm(
+                '커뮤니티 서버에 정식 등록하려면 로그인이 필요합니다.\n지금 로그인하시겠습니까?\n\n(취소 시 로컬 브라우저에 임시 저장되어 화면 및 스냅샷 기능을 테스트해 볼 수 있습니다)'
+            );
+            if (doLogin) {
+                if (onLogin) onLogin();
+                throw new Error('로그인을 진행해주세요.');
+            }
+            // 취소 선택 시 로컬 테스트 모드로 임시 등록 진행
+            userId = 'local-guest-test';
+            authorName = authorName === '익명' ? '로컬 테스터' : authorName;
         }
 
         await communityService.createPost(supabase, {
@@ -664,6 +668,8 @@ export default function CommunityView({
                 currentUser={currentUser}
                 userProfile={userProfile}
                 supabase={supabase}
+                currentCalculation={currentCalculation}
+                currentAppData={currentAppData}
                 onProfileUpdated={(updated) => {
                     setUserProfile(updated);
                     loadPosts();

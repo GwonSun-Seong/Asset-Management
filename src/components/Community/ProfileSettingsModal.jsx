@@ -1,15 +1,12 @@
 // ProfileSettingsModal.jsx - 커뮤니티 닉네임 및 대표 뱃지 설정 모달 (실시간 소급적용)
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { communityService } from './communityService';
-
-const BADGE_OPTIONS = [
-    { key: 'tier', label: '자산 구간 티어', desc: '자산 규모에 따라 브론즈/실버/골드 등 자동 표시', icon: '🥇' },
-    { key: 'fire', label: '파이어족', desc: '경제적 자유 및 조기은퇴 준비 집중', icon: '🏃‍♂️' },
-    { key: 'dividend', label: '배당 러버', desc: '현금흐름 및 안정적인 배당주 투자 선호', icon: '💸' },
-    { key: 'investor', label: '가치 투자자', desc: '장기적 기업 가치와 스노우볼 복리 추구', icon: '📈' },
-    { key: 'beginner', label: '초보 투자자', desc: '성실히 자산을 불려가는 단계', icon: '🌱' },
-    { key: 'none', label: '뱃지 미표시', desc: '게시글과 댓글에서 뱃지를 노출하지 않음', icon: '🚫' }
-];
+import { 
+    getTierByNetWorth, 
+    ASSET_TIER_TABLE, 
+    TIER_HOVER_TOOLTIP, 
+    CUSTOM_BADGES 
+} from './badgeConstants';
 
 export default function ProfileSettingsModal({
     isOpen,
@@ -17,6 +14,8 @@ export default function ProfileSettingsModal({
     currentUser,
     userProfile,
     supabase,
+    currentCalculation,
+    currentAppData,
     onProfileUpdated,
     showToast
 }) {
@@ -25,6 +24,26 @@ export default function ProfileSettingsModal({
     const [hideTierBadge, setHideTierBadge] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [errorMsg, setErrorMsg] = useState(null);
+
+    // 사용자의 현재 순자산 기준 실제 티어 계산
+    const userTier = useMemo(() => {
+        const netWorth = currentCalculation?.currentNet || 0;
+        return getTierByNetWorth(netWorth);
+    }, [currentCalculation]);
+
+    // 동적 뱃지 옵션 목록 (자산 티어는 사용자 자산에 맞는 티어 1개로 표시)
+    const badgeOptions = useMemo(() => {
+        return [
+            {
+                key: 'tier',
+                label: userTier.label,
+                desc: `내 자산 구간 (${userTier.criteria})`,
+                icon: userTier.icon,
+                isTier: true
+            },
+            ...CUSTOM_BADGES
+        ];
+    }, [userTier]);
 
     // 초기값 세팅
     useEffect(() => {
@@ -62,7 +81,9 @@ export default function ProfileSettingsModal({
             const updated = await communityService.updateUserProfile(supabase, currentUser.id, {
                 nickname: isNicknameModified ? trimmed : undefined,
                 selected_badge: selectedBadge,
-                hide_tier_badge: hideTierBadge
+                hide_tier_badge: hideTierBadge,
+                tier_label: userTier.label,
+                tier_badge: userTier.icon
             });
 
             if (onProfileUpdated) onProfileUpdated(updated);
@@ -129,34 +150,81 @@ export default function ProfileSettingsModal({
 
                     {/* 2. 대표 활동 뱃지 선택 (이전 게시글 실시간 소급적용) */}
                     <div>
-                        <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1.5">
-                            <span>🏷️</span> 대표 활동 뱃지 선택
-                        </label>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                <span>🏷️</span> 대표 활동 뱃지 선택
+                            </label>
+                            <span className="text-[10px] text-slate-400">
+                                💡 티어에 마우스를 올리면 금액 기준 확인 가능
+                            </span>
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {BADGE_OPTIONS.map((opt) => {
+                            {badgeOptions.map((opt) => {
                                 const isSelected = selectedBadge === opt.key;
                                 return (
-                                    <button
-                                        key={opt.key}
-                                        type="button"
-                                        onClick={() => setSelectedBadge(opt.key)}
-                                        className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 ${
-                                            isSelected 
-                                                ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 ring-1 ring-indigo-600' 
-                                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300'
-                                        }`}
-                                    >
-                                        <span className="text-xl flex-shrink-0 mt-0.5">{opt.icon}</span>
-                                        <div className="min-w-0 flex-1">
-                                            <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
-                                                <span>{opt.label}</span>
-                                                {isSelected && <span className="text-indigo-600 text-xs">✓</span>}
+                                    <div key={opt.key} className="relative group/badge">
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedBadge(opt.key)}
+                                            title={opt.isTier ? TIER_HOVER_TOOLTIP : `${opt.icon} ${opt.label}: ${opt.desc}`}
+                                            className={`w-full p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 cursor-pointer ${
+                                                isSelected 
+                                                    ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 ring-1 ring-indigo-600 shadow-xs' 
+                                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+                                            }`}
+                                        >
+                                            <span className="text-xl flex-shrink-0 mt-0.5">{opt.icon}</span>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                                                    <span className="flex items-center gap-1.5">
+                                                        {opt.label}
+                                                        {opt.isTier && (
+                                                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300/60 dark:border-amber-700/60">
+                                                                내 자산
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    {isSelected && <span className="text-indigo-600 dark:text-indigo-400 font-black text-xs">✓</span>}
+                                                </div>
+                                                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                                                    {opt.desc}
+                                                </div>
                                             </div>
-                                            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                                {opt.desc}
+                                        </button>
+
+                                        {/* 자산 티어 뱃지인 경우 마우스 호버 시 전체 티어 구간 기준 팝업 노출 */}
+                                        {opt.isTier && (
+                                            <div className="absolute left-0 right-0 sm:left-auto sm:right-0 top-full mt-1 sm:w-72 p-3 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white rounded-2xl shadow-2xl z-50 border border-slate-700 text-xs pointer-events-none opacity-0 group-hover/badge:opacity-100 transition-all duration-200">
+                                                <div className="font-bold text-amber-300 mb-1.5 flex items-center justify-between text-[11px]">
+                                                    <span className="flex items-center gap-1">📊 자산 티어 구간 기준</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">순자산 기준</span>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    {ASSET_TIER_TABLE.map((t) => {
+                                                        const isMyTier = t.key === userTier.key;
+                                                        return (
+                                                            <div key={t.key} className={`flex items-center justify-between px-2 py-1 rounded-lg text-[10px] ${
+                                                                isMyTier 
+                                                                    ? 'bg-indigo-600 text-white font-bold shadow-xs' 
+                                                                    : 'text-slate-300 bg-slate-800/60'
+                                                            }`}>
+                                                                <span className="flex items-center gap-1.5">
+                                                                    <span>{t.icon}</span>
+                                                                    <span>{t.label}</span>
+                                                                    {isMyTier && <span className="text-[9px] bg-amber-400 text-slate-900 font-black px-1 rounded-xs">내 등급</span>}
+                                                                </span>
+                                                                <span className="font-mono text-[10px] text-slate-200">{t.criteria.replace('순자산 ', '')}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className="text-[10px] text-indigo-300 mt-2 border-t border-slate-700/80 pt-1.5 flex justify-between items-center">
+                                                    <span>현재 내 티어:</span>
+                                                    <span className="font-bold text-amber-300">{userTier.icon} {userTier.label}</span>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </button>
+                                        )}
+                                    </div>
                                 );
                             })}
                         </div>

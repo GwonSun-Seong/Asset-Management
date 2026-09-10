@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import AssetFlexCard from './AssetFlexCard';
 import { communityService } from './communityService';
+import { renderBadgeInfo } from './badgeConstants';
 
 export default function PostDetailModal({
     isOpen,
@@ -211,14 +212,18 @@ export default function PostDetailModal({
                                                 <span className="font-bold text-slate-800 dark:text-slate-200">
                                                     {post.author_name}
                                                 </span>
-                                                {!post.is_anonymous && post.author_profile?.selected_badge && post.author_profile.selected_badge !== 'tier' && post.author_profile.selected_badge !== 'none' && (
-                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/50">
-                                                        {post.author_profile.selected_badge === 'fire' && '🏃‍♂️ 파이어족'}
-                                                        {post.author_profile.selected_badge === 'dividend' && '💸 배당 러버'}
-                                                        {post.author_profile.selected_badge === 'investor' && '📈 가치 투자'}
-                                                        {post.author_profile.selected_badge === 'beginner' && '🌱 초보 투자'}
-                                                    </span>
-                                                )}
+                                                {(() => {
+                                                    const badge = !post.is_anonymous ? renderBadgeInfo(post.author_profile?.selected_badge, post.author_profile, post.asset_snapshot) : null;
+                                                    if (!badge) return null;
+                                                    return (
+                                                        <span 
+                                                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/50 cursor-help transition-transform hover:scale-105"
+                                                            title={badge.tooltip}
+                                                        >
+                                                            {badge.icon} {badge.label}
+                                                        </span>
+                                                    );
+                                                })()}
                                             </div>
                                             <div className="text-[10px] text-slate-400 font-mono">
                                                 {formatDate(post.created_at)}
@@ -360,14 +365,18 @@ export default function PostDetailModal({
                                                                 <span className="font-bold text-slate-800 dark:text-slate-200">
                                                                     {comment.author_name}
                                                                 </span>
-                                                                {!comment.is_anonymous && comment.author_profile?.selected_badge && comment.author_profile.selected_badge !== 'tier' && comment.author_profile.selected_badge !== 'none' && (
-                                                                    <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/40">
-                                                                        {comment.author_profile.selected_badge === 'fire' && '🏃‍♂️'}
-                                                                        {comment.author_profile.selected_badge === 'dividend' && '💸'}
-                                                                        {comment.author_profile.selected_badge === 'investor' && '📈'}
-                                                                        {comment.author_profile.selected_badge === 'beginner' && '🌱'}
-                                                                    </span>
-                                                                )}
+                                                                {(() => {
+                                                                    const badge = !comment.is_anonymous ? renderBadgeInfo(comment.author_profile?.selected_badge, comment.author_profile) : null;
+                                                                    if (!badge) return null;
+                                                                    return (
+                                                                        <span 
+                                                                            className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/40 cursor-help"
+                                                                            title={badge.tooltip}
+                                                                        >
+                                                                            {badge.icon} {badge.label}
+                                                                        </span>
+                                                                    );
+                                                                })()}
                                                             </div>
                                                             <span className="text-[10px] text-slate-400">
                                                                 {formatDate(comment.created_at)}
