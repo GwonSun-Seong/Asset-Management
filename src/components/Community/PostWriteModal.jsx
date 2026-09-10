@@ -79,8 +79,9 @@ const getSavedSnapshotPrefs = () => {
         const netWorth = currentCalculation.currentNet || 0; // 만원 단위
         const isRatioMode = snapshotPrefs.flexDisplayMode === 'ratio';
         const calculatedTier = getTierByNetWorth(netWorth);
-        let tierLabel = isRatioMode ? calculatedTier.label : `${calculatedTier.label} (${calculatedTier.criteria.replace('순자산 ', '')})`;
-        let tierBadge = calculatedTier.icon;
+        // 금액 비공개(ratio) 모드이거나 hideTierBadge인 경우 자산 구간(실버, 골드 등) 노출 원천 차단
+        let tierLabel = (isRatioMode || snapshotPrefs.hideTierBadge) ? null : `${calculatedTier.label} (${calculatedTier.criteria.replace('순자산 ', '')})`;
+        let tierBadge = (isRatioMode || snapshotPrefs.hideTierBadge) ? null : calculatedTier.icon;
 
         // 섹터별 메타 정보 (색상, 라벨, 아이콘)
         const sectorMeta = {
@@ -195,9 +196,9 @@ const getSavedSnapshotPrefs = () => {
         // 🛡️ 보안 핵심: 발행(DB 업로드) 시 비공개/제외 처리된 모든 데이터를 원천 파기 (Zero-Data Sanitization)
         // 독자가 F12 개발자 도구나 네트워크 응답 패킷을 확인하더라도 비활성화된 데이터가 0바이트(null)로 존재하지 않음
 
-        // 1. 포트폴리오 섹터 배분 정제
+        // 1. 포트폴리오 섹터 배분 정제 (프리뷰 중에는 재활성화가 가능하도록 유지, 발행 시에만 완전 파기)
         let sanitizedShares = [];
-        if (snapshotPrefs.show_portfolio_shares) {
+        if (!isForPublishing || snapshotPrefs.show_portfolio_shares) {
             sanitizedShares = portfolioShares.map(s => ({
                 sector: s.sector,
                 label: s.label,
@@ -209,9 +210,9 @@ const getSavedSnapshotPrefs = () => {
             }));
         }
 
-        // 2. 핵심 보유 종목 정제 (제외된 종목 및 비활성화 시 완전 삭제)
+        // 2. 핵심 보유 종목 정제 (프리뷰 중에는 재활성화가 가능하도록 유지, 발행 시에만 완전 파기)
         let finalHoldings = [];
-        if (snapshotPrefs.show_top_holdings) {
+        if (!isForPublishing || snapshotPrefs.show_top_holdings) {
             const candidateList = isForPublishing 
                 ? topHoldings.filter(h => !(snapshotPrefs.excluded_holding_names || []).includes(h.name)).slice(0, 4)
                 : topHoldings;
@@ -309,7 +310,7 @@ const getSavedSnapshotPrefs = () => {
         ];
 
         let sanitizedCashFlow = null;
-        if (snapshotPrefs.show_cash_flow_statement && baseInflow > 0) {
+        if ((!isForPublishing || snapshotPrefs.show_cash_flow_statement) && baseInflow > 0) {
             const excludedKeys = snapshotPrefs.excluded_cash_flow_keys || [];
             
             // 발행 시에는 제외된 카테고리를 아예 필터링하여 서버로 전송하지 않음 (Zero-Knowledge)
@@ -668,7 +669,7 @@ const getSavedSnapshotPrefs = () => {
                                     </button>
                                     <button 
                                         type="button" 
-                                        onClick={() => updateSnapshotPrefs({ flexDisplayMode: 'ratio' })} 
+                                        onClick={() => updateSnapshotPrefs({ flexDisplayMode: 'ratio', hideTierBadge: true })} 
                                         className={`px-2.5 py-1 rounded transition-all cursor-pointer ${snapshotPrefs.flexDisplayMode === 'ratio' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500'}`}
                                     >
                                         금액 비공개 (비중만)

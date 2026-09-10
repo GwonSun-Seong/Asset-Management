@@ -107,11 +107,17 @@ export default function AssetFlexCard({
         excluded_cash_flow_keys = []
     } = snapshot;
 
+    // 커스텀 페르소나 뱃지 여부 (욜로, 야수의 심장, 파이어족 등은 금액 구간과 무관한 정체성 뱃지)
+    const customBadgeKey = authorProfile?.selected_badge;
+    const isCustomPersonaBadge = customBadgeKey && customBadgeKey !== 'tier' && customBadgeKey !== 'none';
+
     // 티어 뱃지 및 숨김/커스텀 뱃지 계산
+    // 🛡️ 금액 비공개(ratio) 모드인 경우 자산 구간(실버, 골드 등)은 금액 유출을 막기 위해 무조건 자동 숨김
     const shouldHideTier = hideTier || 
         snapshot.hide_tier_badge || 
         authorProfile?.hide_tier_badge || 
-        authorProfile?.selected_badge === 'none';
+        authorProfile?.selected_badge === 'none' ||
+        (display_mode === 'ratio' && !isCustomPersonaBadge);
 
     // 금액 비공개(ratio) 모드인 경우 괄호 안의 금액'(1억 이상)' 등을 자동 제거하여 금액 유출 방지
     let displayTierLabel = tier_label || '';
@@ -119,8 +125,6 @@ export default function AssetFlexCard({
         displayTierLabel = displayTierLabel.replace(/\s*\(.*?\)/g, '');
     }
 
-    // 커스텀 뱃지 매핑 (파이어족, 배당러버, 가치투자자, 초보투자자, 욜로, 야수의 심장 등)
-    const customBadgeKey = authorProfile?.selected_badge;
     let activeBadgeIcon = tier_badge || '💎';
     let activeBadgeLabel = displayTierLabel;
     let activeBadgeTooltip = '';
@@ -287,15 +291,9 @@ export default function AssetFlexCard({
             ) : (
                 <div>
                     <div className="h-8 flex items-baseline gap-1">
-                        {!shouldHideTier && activeBadgeLabel ? (
-                            <span className="text-lg sm:text-xl font-black text-indigo-600 dark:text-indigo-400 tracking-tight whitespace-nowrap">
-                                {activeBadgeLabel}
-                            </span>
-                        ) : (
-                            <span className="text-lg sm:text-xl font-black text-indigo-600 dark:text-indigo-400 tracking-tight whitespace-nowrap">
-                                금액 비공개
-                            </span>
-                        )}
+                        <span className="text-lg sm:text-xl font-black text-indigo-600 dark:text-indigo-400 tracking-tight whitespace-nowrap">
+                            금액 비공개
+                        </span>
                     </div>
                     <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate">
                         포트폴리오 비중 중심 공유
@@ -564,9 +562,9 @@ export default function AssetFlexCard({
                                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md transition-all ${
                                             isCardActive 
                                                 ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60' 
-                                                : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
                                         }`}>
-                                            {isCardActive ? '공개 ✓' : '비공개 ✕'}
+                                            {isCardActive ? '공개 ✓' : '제외 ✕'}
                                         </span>
                                     )}
                                 </div>
@@ -579,26 +577,44 @@ export default function AssetFlexCard({
 
             {/* 3. 자산 포트폴리오 배분 (분리형 멀티 세그먼트 바 & 범례) */}
             {(interactive || show_portfolio_shares) && normalizedShares.length > 0 && (
-                <div className={`space-y-3 pt-2 mt-2 transition-all ${
-                    interactive && !show_portfolio_shares ? 'opacity-40 grayscale scale-[0.99]' : ''
-                }`}>
+                <div 
+                    onClick={(e) => {
+                        if (interactive && !show_portfolio_shares) {
+                            e.stopPropagation();
+                            onToggleSection && onToggleSection('show_portfolio_shares');
+                        }
+                    }}
+                    className={`space-y-3 pt-2 mt-2 transition-all p-3 rounded-2xl ${
+                        interactive && !show_portfolio_shares 
+                            ? 'opacity-40 grayscale scale-[0.99] border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/60 dark:bg-slate-850/60 cursor-pointer hover:opacity-75 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/30' 
+                            : ''
+                    }`}
+                >
                     <div className="flex justify-between items-center text-xs font-bold text-slate-800 dark:text-slate-200">
                         <span className="flex items-center gap-1.5">
                             <span>📊</span> 자산 포트폴리오 배분 구조
+                            {interactive && !show_portfolio_shares && (
+                                <span className="text-[10px] font-bold text-rose-500 dark:text-rose-400">
+                                    (클릭하여 복원)
+                                </span>
+                            )}
                         </span>
                         <div className="flex items-center gap-2">
                             <span className="text-slate-400 text-[11px] font-normal">합계 100%</span>
                             {interactive && (
                                 <button
                                     type="button"
-                                    onClick={() => onToggleSection && onToggleSection('show_portfolio_shares')}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onToggleSection && onToggleSection('show_portfolio_shares');
+                                    }}
                                     className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-all cursor-pointer ${
                                         show_portfolio_shares 
-                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60' 
-                                            : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 hover:bg-emerald-100' 
+                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 hover:bg-rose-100'
                                     }`}
                                 >
-                                    {show_portfolio_shares ? '섹션 공개 ✓' : '섹션 비공개 ✕'}
+                                    {show_portfolio_shares ? '섹션 공개 ✓' : '✕ 제외됨 (클릭 시 복원)'}
                                 </button>
                             )}
                         </div>
@@ -606,7 +622,12 @@ export default function AssetFlexCard({
 
                     {/* 분리형 멀티 컬러 막대바 */}
                     <div 
-                        onClick={() => interactive && onToggleSection && onToggleSection('show_portfolio_shares')}
+                        onClick={(e) => {
+                            if (interactive && onToggleSection) {
+                                e.stopPropagation();
+                                onToggleSection('show_portfolio_shares');
+                            }
+                        }}
                         className={`h-4 sm:h-5 w-full rounded-2xl bg-slate-100 dark:bg-slate-800 p-1 flex gap-1 shadow-inner border border-slate-200/80 dark:border-slate-700/60 overflow-hidden ${
                             interactive ? 'cursor-pointer hover:ring-2 hover:ring-indigo-400/40' : ''
                         }`}
@@ -624,7 +645,16 @@ export default function AssetFlexCard({
                     {/* 섹터 상세 그리드 범례 */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 pt-1">
                         {normalizedShares.map((sec, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-2 sm:p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 shadow-2xs">
+                            <div 
+                                key={idx} 
+                                onClick={(e) => {
+                                    if (interactive && !show_portfolio_shares) {
+                                        e.stopPropagation();
+                                        onToggleSection && onToggleSection('show_portfolio_shares');
+                                    }
+                                }}
+                                className="flex items-center justify-between p-2 sm:p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 shadow-2xs"
+                            >
                                 <div className="flex items-center gap-2 min-w-0">
                                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-2xs" style={{ backgroundColor: sec.color }}></span>
                                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate whitespace-nowrap">
@@ -644,16 +674,32 @@ export default function AssetFlexCard({
 
             {/* 4. 월간 자금 흐름 배분 구조 (수입 100% 대비 소비 지출 / 투자저축 / 대출상환 / 잉여금) */}
             {(interactive || (show_cash_flow_statement && displayCashFlowCategories.length > 0)) && cash_flow_statement && (
-                <div className={`space-y-3 pt-3 mt-4 border-t border-indigo-100/80 dark:border-slate-700/60 transition-all ${
-                    interactive && !show_cash_flow_statement ? 'opacity-40 grayscale scale-[0.99]' : ''
-                }`}>
+                <div 
+                    onClick={(e) => {
+                        if (interactive && !show_cash_flow_statement) {
+                            e.stopPropagation();
+                            onToggleSection && onToggleSection('show_cash_flow_statement');
+                        }
+                    }}
+                    className={`space-y-3 pt-3 mt-4 border-t border-indigo-100/80 dark:border-slate-700/60 transition-all p-3 rounded-2xl ${
+                        interactive && !show_cash_flow_statement 
+                            ? 'opacity-40 grayscale scale-[0.99] border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/60 dark:bg-slate-850/60 cursor-pointer hover:opacity-75 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/30' 
+                            : ''
+                    }`}
+                >
                     <div className="flex justify-between items-center text-xs font-bold text-slate-800 dark:text-slate-200">
                         <span className="flex items-center gap-1.5">
                             <span>💸</span> 월간 자금 흐름 구조 (Cash Flow)
                             {interactive && (
-                                <span className="text-[10px] text-indigo-500 font-normal">
-                                    (클릭하여 특정 흐름을 제외할 수 있습니다)
-                                </span>
+                                !show_cash_flow_statement ? (
+                                    <span className="text-[10px] font-bold text-rose-500 dark:text-rose-400">
+                                        (클릭하여 복원)
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] text-indigo-500 font-normal">
+                                        (클릭하여 특정 흐름을 제외할 수 있습니다)
+                                    </span>
+                                )
                             )}
                         </span>
                         <div className="flex items-center gap-2">
@@ -665,14 +711,17 @@ export default function AssetFlexCard({
                             {interactive && (
                                 <button
                                     type="button"
-                                    onClick={() => onToggleSection && onToggleSection('show_cash_flow_statement')}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onToggleSection && onToggleSection('show_cash_flow_statement');
+                                    }}
                                     className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-all cursor-pointer ${
                                         show_cash_flow_statement 
-                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60' 
-                                            : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 hover:bg-emerald-100' 
+                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 hover:bg-rose-100'
                                     }`}
                                 >
-                                    {show_cash_flow_statement ? '섹션 공개 ✓' : '섹션 비공개 ✕'}
+                                    {show_cash_flow_statement ? '섹션 공개 ✓' : '✕ 제외됨 (클릭 시 복원)'}
                                 </button>
                             )}
                         </div>
@@ -680,7 +729,12 @@ export default function AssetFlexCard({
 
                     {/* 멀티 컬러 자금 흐름 막대바 */}
                     <div 
-                        onClick={() => interactive && onToggleSection && onToggleSection('show_cash_flow_statement')}
+                        onClick={(e) => {
+                            if (interactive && onToggleSection) {
+                                e.stopPropagation();
+                                onToggleSection('show_cash_flow_statement');
+                            }
+                        }}
                         className={`h-4 sm:h-5 w-full rounded-2xl bg-slate-100 dark:bg-slate-800 p-1 flex gap-1 shadow-inner border border-slate-200/80 dark:border-slate-700/60 overflow-hidden ${
                             interactive ? 'cursor-pointer hover:ring-2 hover:ring-indigo-400/40' : ''
                         }`}
@@ -702,7 +756,15 @@ export default function AssetFlexCard({
                             return (
                                 <div 
                                     key={idx}
-                                    onClick={() => interactive && onToggleCashFlowCategory && onToggleCashFlowCategory(cat.key)}
+                                    onClick={(e) => {
+                                        if (!interactive) return;
+                                        if (!show_cash_flow_statement) {
+                                            e.stopPropagation();
+                                            onToggleSection && onToggleSection('show_cash_flow_statement');
+                                        } else {
+                                            onToggleCashFlowCategory && onToggleCashFlowCategory(cat.key);
+                                        }
+                                    }}
                                     className={`p-3 sm:p-3.5 rounded-2xl border text-xs font-medium transition-all shadow-xs flex flex-col justify-between gap-2 relative ${
                                         interactive ? 'cursor-pointer select-none' : ''
                                     } ${
@@ -769,16 +831,32 @@ export default function AssetFlexCard({
 
             {/* 5. 주요 핵심 보유 종목 TOP (개별 클릭으로 민감 항목 제외 가능) */}
             {(interactive || (show_top_holdings && displayHoldings.length > 0)) && (
-                <div className={`mt-5 pt-4 border-t border-indigo-100/80 dark:border-slate-700/60 transition-all ${
-                    interactive && !show_top_holdings ? 'opacity-40 grayscale scale-[0.99]' : ''
-                }`}>
+                <div 
+                    onClick={(e) => {
+                        if (interactive && !show_top_holdings) {
+                            e.stopPropagation();
+                            onToggleSection && onToggleSection('show_top_holdings');
+                        }
+                    }}
+                    className={`mt-5 pt-4 border-t border-indigo-100/80 dark:border-slate-700/60 transition-all p-3 rounded-2xl ${
+                        interactive && !show_top_holdings 
+                            ? 'opacity-40 grayscale scale-[0.99] border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/60 dark:bg-slate-850/60 cursor-pointer hover:opacity-75 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/30' 
+                            : ''
+                    }`}
+                >
                     <div className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2.5 flex items-center justify-between">
                         <span className="flex items-center gap-1.5">
                             <span>🏆</span> 핵심 보유 종목 TOP
                             {interactive && (
-                                <span className="text-[10px] text-indigo-500 font-normal">
-                                    (특정 종목을 클릭해 숨길 수 있습니다)
-                                </span>
+                                !show_top_holdings ? (
+                                    <span className="text-[10px] font-bold text-rose-500 dark:text-rose-400">
+                                        (클릭하여 복원)
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] text-indigo-500 font-normal">
+                                        (특정 종목을 클릭해 숨길 수 있습니다)
+                                    </span>
+                                )
                             )}
                         </span>
                         <div className="flex items-center gap-2">
@@ -786,14 +864,17 @@ export default function AssetFlexCard({
                             {interactive && (
                                 <button
                                     type="button"
-                                    onClick={() => onToggleSection && onToggleSection('show_top_holdings')}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onToggleSection && onToggleSection('show_top_holdings');
+                                    }}
                                     className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-all cursor-pointer ${
                                         show_top_holdings 
-                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60' 
-                                            : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 hover:bg-emerald-100' 
+                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 hover:bg-rose-100'
                                     }`}
                                 >
-                                    {show_top_holdings ? '섹션 공개 ✓' : '섹션 비공개 ✕'}
+                                    {show_top_holdings ? '섹션 공개 ✓' : '✕ 제외됨 (클릭 시 복원)'}
                                 </button>
                             )}
                         </div>
@@ -806,7 +887,15 @@ export default function AssetFlexCard({
                             return (
                                 <div 
                                     key={idx}
-                                    onClick={() => interactive && onToggleHolding && onToggleHolding(item.name)}
+                                    onClick={(e) => {
+                                        if (!interactive) return;
+                                        if (!show_top_holdings) {
+                                            e.stopPropagation();
+                                            onToggleSection && onToggleSection('show_top_holdings');
+                                        } else {
+                                            onToggleHolding && onToggleHolding(item.name);
+                                        }
+                                    }}
                                     className={`p-3 sm:p-3.5 rounded-2xl border text-xs font-medium transition-all shadow-xs flex flex-col justify-between gap-2 relative ${
                                         interactive ? 'cursor-pointer select-none' : ''
                                     } ${
@@ -828,7 +917,7 @@ export default function AssetFlexCard({
                                         {interactive ? (
                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md whitespace-nowrap shrink-0 transition-all ${
                                                 isExcluded 
-                                                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-500' 
+                                                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800' 
                                                     : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60'
                                             }`}>
                                                 {isExcluded ? '제외 ✕' : '공개 ✓'}
