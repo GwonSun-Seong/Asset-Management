@@ -1273,6 +1273,114 @@ const getTossToken = async (clientId, clientSecret, forceRefresh = false) => {
     }
 };
 
+// [핵심] 당일 전일 종가(Prev Close) 캐시 및 캔들 기반 실시간 동기화 엔진
+const tossPrevCloseCache = new Map();
+
+const getTossPrevCloseKey = (symbol, dateStr) => `toss_prev_close_${symbol}_${dateStr}`;
+
+const getCachedTossPrevClose = (symbol, dateStr) => {
+    if (!symbol) return null;
+    const cleanSym = symbol.trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
+    if (tossPrevCloseCache.has(cleanSym)) {
+        const item = tossPrevCloseCache.get(cleanSym);
+        if (item && item.date === dateStr) return item.price;
+    }
+    try {
+        const val = localStorage.getItem(getTossPrevCloseKey(cleanSym, dateStr));
+        if (val) {
+            const num = Number(val);
+            if (num > 0) {
+                tossPrevCloseCache.set(cleanSym, { date: dateStr, price: num });
+                return num;
+            }
+        }
+    } catch (e) {}
+    return null;
+};
+
+const setCachedTossPrevClose = (symbol, dateStr, price) => {
+    if (!symbol || !price || price <= 0) return;
+    const cleanSym = symbol.trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
+    tossPrevCloseCache.set(cleanSym, { date: dateStr, price: Number(price) });
+    try {
+        localStorage.setItem(getTossPrevCloseKey(cleanSym, dateStr), String(price));
+    } catch (e) {}
+};
+
+// 캔들 데이터로부터 정확한 '전일 종가' 추출
+const extractPrevCloseFromCandles = (symbol, candles) => {
+    if (!Array.isArray(candles) || candles.length === 0) return null;
+    const isKorean = /^\d{6}$/.test(symbol);
+    const kstToday = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+    
+    let targetToday = kstToday;
+    if (!isKorean) {
+        try {
+            targetToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+        } catch (e) {
+            targetToday = kstToday;
+        }
+    }
+    
+    const latest = candles[0];
+    const latestDate = (latest.timestamp || '').slice(0, 10);
+    
+    // 최신 봉이 오늘자 봉이면, 전일 종가는 candles[1].closePrice
+    if (latestDate === targetToday && candles.length >= 2) {
+        const prev = candles[1];
+        const val = Number(prev.closePrice || prev.close || prev.lastPrice);
+        if (val > 0) return val;
+    }
+    
+    // 오늘자 봉이 아직 생성되지 않은 경우(장 시작 전 등) 최신 봉이 곧 직전 장 마감 종가
+    const val = Number(latest.closePrice || latest.close || latest.lastPrice);
+    if (val > 0) return val;
+    
+    return null;
+};
+
+// 미캐시 심볼들의 전일 종가를 캔들 API로 백그라운드 일괄 동기화 (10 TPS 제한 준수: 4개씩 분할 호출)
+let isFetchingPrevCloses = false;
+const syncMissingPrevCloses = async (symbols, token, dateStr) => {
+    if (isFetchingPrevCloses || !token) return;
+    isFetchingPrevCloses = true;
+    try {
+        const missing = symbols.filter(s => !getCachedTossPrevClose(s, dateStr));
+        if (missing.length === 0) return;
+        
+        const batchSize = 4;
+        for (let i = 0; i < missing.length; i += batchSize) {
+            const batch = missing.slice(i, i + batchSize);
+            await Promise.all(batch.map(async (sym) => {
+                try {
+                    const cleaned = sym.trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
+                    const url = `https://openapi.tossinvest.com/api/v1/candles?symbol=${cleaned}&interval=1d&count=2&adjusted=true`;
+                    const res = await fetchTossWithProxy(url, {
+                        method: 'GET',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const d = await res.json();
+                        const candles = d.result?.candles;
+                        const prevClose = extractPrevCloseFromCandles(cleaned, candles);
+                        if (prevClose && prevClose > 0) {
+                            setCachedTossPrevClose(cleaned, dateStr, prevClose);
+                            setCachedTossPrevClose(sym, dateStr, prevClose);
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`Failed to fetch prevClose candle for ${sym}:`, err);
+                }
+            }));
+            if (i + batchSize < missing.length) {
+                await new Promise(r => setTimeout(r, 200));
+            }
+        }
+    } finally {
+        isFetchingPrevCloses = false;
+    }
+};
+
 // [추가] 토스증권 OpenAPI 다중 현재가 조회
 // 단일 심볼 토스 시세 조회 헬퍼 (400 발생 시 단건 해체 fallback 용)
 const fetchSingleTossQuote = async (symbol, token) => {
@@ -1293,26 +1401,14 @@ const fetchSingleTossQuote = async (symbol, token) => {
         const item = (data.result || [])[0];
         if (item && item.lastPrice) {
             const priceNum = Number(item.lastPrice);
-            let basePriceNum = Number(item.basePrice);
-            if (!basePriceNum || isNaN(basePriceNum) || basePriceNum <= 0) {
-                basePriceNum = Number(item.prevClose) || Number(item.previousClose) || Number(item.closePrice);
-            }
-            const changeNum = Number(item.change);
-            const changeRateNum = Number(item.changeRate);
+            const kstToday = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+            const cachedBase = getCachedTossPrevClose(cleaned, kstToday);
+            const basePriceNum = (cachedBase && cachedBase > 0) ? cachedBase : priceNum;
 
-            if (!basePriceNum || basePriceNum === priceNum || isNaN(basePriceNum)) {
-                if (changeNum && !isNaN(changeNum) && changeNum !== 0) {
-                    basePriceNum = priceNum - changeNum;
-                } else if (changeRateNum && !isNaN(changeRateNum) && changeRateNum !== 0) {
-                    const rateVal = Math.abs(changeRateNum) < 1 ? changeRateNum : changeRateNum / 100;
-                    basePriceNum = priceNum / (1 + rateVal);
-                }
-            }
-
-            const finalChange = (basePriceNum > 0 && basePriceNum !== priceNum) ? (priceNum - basePriceNum) : (changeNum || 0);
+            const finalChange = (basePriceNum > 0 && basePriceNum !== priceNum) ? (priceNum - basePriceNum) : 0;
             const finalChangePct = (basePriceNum > 0 && basePriceNum !== priceNum) 
                 ? ((priceNum - basePriceNum) / basePriceNum) * 100 
-                : (changeRateNum ? (Math.abs(changeRateNum) < 1 ? changeRateNum * 100 : changeRateNum) : 0);
+                : 0;
 
             return {
                 symbol: symbol,
@@ -1330,7 +1426,7 @@ const fetchSingleTossQuote = async (symbol, token) => {
     }
 };
 
-// [추가/수정] 토스증권 OpenAPI 다중 현재가 조회 (Chunking + 401 토큰 자동 갱신 + Self-Healing Fallback)
+// [추가/수정] 토스증권 OpenAPI 다중 현재가 조회 (Chunking + 401 토큰 자동 갱신 + 정확한 전일종가 매핑)
 const fetchTossQuotes = async (symbols) => {
     if (!symbols || symbols.length === 0) return {};
     
@@ -1354,8 +1450,13 @@ const fetchTossQuotes = async (symbols) => {
 
         if (validSymbols.length === 0) return {};
 
-        // 2. 중복 제거 및 8개 단위 청크(Chunk) 분할
+        const kstToday = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
         const uniqueSymbols = [...new Set(validSymbols)];
+
+        // 미캐시 심볼 전일 종가 비동기 캔들 동기화 트리거
+        syncMissingPrevCloses(uniqueSymbols, token, kstToday);
+
+        // 2. 중복 제거 및 8개 단위 청크(Chunk) 분할
         const chunkSize = 8;
         const quotesMap = {};
 
@@ -1385,26 +1486,14 @@ const fetchTossQuotes = async (symbols) => {
                     const resultList = data.result || [];
                     resultList.forEach(item => {
                         const priceNum = Number(item.lastPrice);
-                        let basePriceNum = Number(item.basePrice);
-                        if (!basePriceNum || isNaN(basePriceNum) || basePriceNum <= 0) {
-                            basePriceNum = Number(item.prevClose) || Number(item.previousClose) || Number(item.closePrice);
-                        }
-                        const changeNum = Number(item.change);
-                        const changeRateNum = Number(item.changeRate);
+                        const cleanSym = (item.symbol || '').trim().toUpperCase().replace(/\.[A-Z]+$/i, '');
+                        const cachedBase = getCachedTossPrevClose(cleanSym, kstToday) || getCachedTossPrevClose(item.symbol, kstToday);
+                        const basePriceNum = (cachedBase && cachedBase > 0) ? cachedBase : priceNum;
 
-                        if (!basePriceNum || basePriceNum === priceNum || isNaN(basePriceNum)) {
-                            if (changeNum && !isNaN(changeNum) && changeNum !== 0) {
-                                basePriceNum = priceNum - changeNum;
-                            } else if (changeRateNum && !isNaN(changeRateNum) && changeRateNum !== 0) {
-                                const rateVal = Math.abs(changeRateNum) < 1 ? changeRateNum : changeRateNum / 100;
-                                basePriceNum = priceNum / (1 + rateVal);
-                            }
-                        }
-
-                        const finalChange = (basePriceNum > 0 && basePriceNum !== priceNum) ? (priceNum - basePriceNum) : (changeNum || 0);
+                        const finalChange = (basePriceNum > 0 && basePriceNum !== priceNum) ? (priceNum - basePriceNum) : 0;
                         const finalChangePct = (basePriceNum > 0 && basePriceNum !== priceNum) 
                             ? ((priceNum - basePriceNum) / basePriceNum) * 100 
-                            : (changeRateNum ? (Math.abs(changeRateNum) < 1 ? changeRateNum * 100 : changeRateNum) : 0);
+                            : 0;
 
                         if (priceNum > 0) {
                             quotesMap[item.symbol] = {

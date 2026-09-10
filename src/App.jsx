@@ -1333,42 +1333,21 @@ import CommunityView from './components/Community/CommunityView';
                                                     } else {
                                                         targetPrice = Math.round(q.price * safeFxRate);
                                                         
-                                                        // USD 기준 전일종가 판별 (q.basePrice가 없거나 현재가와 같을 경우 change나 이전값 보존)
-                                                        let usdBase = q.basePrice;
-                                                        if (!usdBase || usdBase === q.price) {
-                                                            if (q.change && q.change !== 0) {
-                                                                usdBase = q.price - q.change;
-                                                            } else if (q.changePct && q.changePct !== 0) {
-                                                                usdBase = q.price / (1 + q.changePct / 100);
-                                                            } else if (item.rawUsdBasePrice && item.rawUsdBasePrice !== q.price) {
-                                                                usdBase = item.rawUsdBasePrice;
-                                                            } else {
-                                                                usdBase = q.basePrice || item.rawUsdBasePrice || q.price;
-                                                            }
-                                                        }
+                                                        // USD 기준 전일종가 (q.basePrice가 유효하면 사용, 없으면 현재가로 안전 처리하여 옛날 단가 오염 방지)
+                                                        const usdBase = (q.basePrice && q.basePrice > 0) ? q.basePrice : q.price;
 
                                                         // 미국 주식 원화 전일평가액 = 전일 USD 가격 * 전일 환율 (주가변동 + 환율변동 동시 반영)
                                                         targetBasePrice = Math.round(usdBase * prevFxRate);
                                                         targetChange = targetPrice - targetBasePrice;
-                                                        targetChangePct = targetBasePrice > 0 ? ((targetPrice - targetBasePrice) / targetBasePrice) * 100 : (q.changePct || 0);
+                                                        targetChangePct = targetBasePrice > 0 ? ((targetPrice - targetBasePrice) / targetBasePrice) * 100 : 0;
                                                     }
                                                 } else {
                                                     targetPrice = q.price;
-                                                    let krwBase = q.basePrice;
-                                                    if (!krwBase || krwBase === q.price) {
-                                                        if (q.change && q.change !== 0) {
-                                                            krwBase = q.price - q.change;
-                                                        } else if (q.changePct && q.changePct !== 0) {
-                                                            krwBase = Math.round(q.price / (1 + q.changePct / 100));
-                                                        } else if (item.basePrice && item.basePrice !== q.price) {
-                                                            krwBase = item.basePrice;
-                                                        } else {
-                                                            krwBase = q.basePrice || item.basePrice || q.price;
-                                                        }
-                                                    }
+                                                    // 국내 주식 전일 종가 판별 (q.basePrice 우선, 없으면 현재가로 안전 처리하여 옛날 단가 오염 방지)
+                                                    const krwBase = (q.basePrice && q.basePrice > 0) ? q.basePrice : q.price;
                                                     targetBasePrice = krwBase;
                                                     targetChange = targetPrice - targetBasePrice;
-                                                    targetChangePct = targetBasePrice > 0 ? ((targetPrice - targetBasePrice) / targetBasePrice) * 100 : (q.changePct || 0);
+                                                    targetChangePct = targetBasePrice > 0 ? ((targetPrice - targetBasePrice) / targetBasePrice) * 100 : 0;
                                                 }
                                             }
                                             const targetCurrency = 'KRW';
@@ -5320,7 +5299,7 @@ import CommunityView from './components/Community/CommunityView';
                                     </div>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                                         {todayStats.linkedCount > 0 
-                                            ? `총 ${todayStats.linkedCount}개 연동 종목의 전일 종가 대비 현재가 변동 및 직전 마감 스냅샷 대비 자산 손익입니다.`
+                                            ? `총 ${todayStats.linkedCount}개 연동 종목의 전일 종가 대비 실시간 평가손익입니다.`
                                             : '증권/연금 계좌의 종목을 연동하시면 전일 종가 대비 실시간 당일 손익이 자동으로 집계됩니다.'}
                                     </p>
                                 </div>
@@ -5330,11 +5309,6 @@ import CommunityView from './components/Community/CommunityView';
                                     <div className="text-right">
                                         <div className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center justify-end gap-1">
                                             <span>오늘 투자 평가손익</span>
-                                            {todayStats.yesterdayPoint && (
-                                                <span className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 hidden sm:inline">
-                                                    (총자산 대비 {todayStats.netDiffPct > 0 ? '+' : ''}{todayStats.netDiffPct.toFixed(2)}%)
-                                                </span>
-                                            )}
                                         </div>
                                         <div className={`text-xl sm:text-2xl font-black tabular-nums ${
                                             todayStats.totalTodayProfit > 0 
@@ -5362,33 +5336,16 @@ import CommunityView from './components/Community/CommunityView';
                                 </div>
                             </div>
 
-                            {/* 하단 3개 서브 스탯 카드 */}
+                            {/* 하단 2개 서브 스탯 카드: 최고 상승 & 최저 하락 */}
                             {todayStats.linkedCount > 0 && (
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/60 text-xs">
-                                    {/* 1. 직전 마감 대비 총자산 변동 */}
-                                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700/50">
-                                        <span className="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
-                                            <span>📈</span>
-                                            <span>{todayStats.yesterdayDateStr ? `${todayStats.yesterdayDateStr.slice(5)} 마감 대비` : '직전 마감 대비'}</span>
-                                        </span>
-                                        <span className={`font-black tabular-nums ${
-                                            todayStats.netDiff > 0 ? 'text-red-500 dark:text-red-400' : todayStats.netDiff < 0 ? 'text-blue-500 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300'
-                                        }`}>
-                                            {todayStats.yesterdayPoint ? (
-                                                `${todayStats.netDiff > 0 ? '+' : ''}${formatNumber(todayStats.netDiff, displayMode)}만 (${todayStats.netDiffPct > 0 ? '+' : ''}${todayStats.netDiffPct.toFixed(2)}%)`
-                                            ) : (
-                                                '직전 기록 없음'
-                                            )}
-                                        </span>
-                                    </div>
-
-                                    {/* 2. 전일 대비 최고 상승 종목 */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/60 text-xs">
+                                    {/* 1. 전일 대비 최고 상승 종목 */}
                                     <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700/50">
                                         <span className="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
                                             <span>🚀</span>
                                             <span>전일 대비 최고 상승</span>
                                         </span>
-                                        <span className={`font-extrabold truncate max-w-[130px] tabular-nums ${
+                                        <span className={`font-extrabold truncate max-w-[150px] tabular-nums ${
                                             todayStats.topGainer && todayStats.topGainer.changePct > 0 ? 'text-red-500 dark:text-red-400' : 'text-slate-600 dark:text-slate-300'
                                         }`} title={todayStats.topGainer?.name || '-'}>
                                             {todayStats.topGainer 
@@ -5397,13 +5354,13 @@ import CommunityView from './components/Community/CommunityView';
                                         </span>
                                     </div>
 
-                                    {/* 3. 전일 대비 최저 하락 종목 */}
+                                    {/* 2. 전일 대비 최저 하락 종목 */}
                                     <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700/50">
                                         <span className="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
                                             <span>📉</span>
                                             <span>전일 대비 최저 하락</span>
                                         </span>
-                                        <span className={`font-extrabold truncate max-w-[130px] tabular-nums ${
+                                        <span className={`font-extrabold truncate max-w-[150px] tabular-nums ${
                                             todayStats.topLoser && todayStats.topLoser.changePct < 0 ? 'text-blue-500 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300'
                                         }`} title={todayStats.topLoser?.name || '-'}>
                                             {todayStats.topLoser 
