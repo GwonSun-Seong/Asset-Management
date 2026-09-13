@@ -1,6 +1,6 @@
 // AssetFlexCard.jsx - 다차원 포트폴리오 및 재무 상태 요약 카드
 import React from 'react';
-import { TIER_HOVER_TOOLTIP, ASSET_TIER_TABLE } from './badgeConstants';
+import { TIER_HOVER_TOOLTIP, ASSET_TIER_TABLE, BADGE_META_MAP } from './badgeConstants';
 
 // 섹터 메타 매핑 (한글명, 고유 테마 컬러, 아이콘)
 const SECTOR_META_MAP = {
@@ -124,40 +124,25 @@ export default function AssetFlexCard({
     if (display_mode === 'ratio') {
         displayTierLabel = displayTierLabel.replace(/\s*\(.*?\)/g, '');
     }
+    // 레거시 '시드' 라벨을 '새싹'으로 통일
+    if (displayTierLabel.startsWith('시드')) {
+        displayTierLabel = displayTierLabel.replace(/^시드/, '새싹');
+    }
 
     let activeBadgeIcon = tier_badge || '💎';
     let activeBadgeLabel = displayTierLabel;
     let activeBadgeTooltip = '';
 
     if (customBadgeKey && customBadgeKey !== 'tier') {
-        if (customBadgeKey === 'yolo') {
-            activeBadgeIcon = '🎉';
-            activeBadgeLabel = '욜로';
-            activeBadgeTooltip = '🎉 욜로: 현재의 라이프스타일과 행복 중시';
-        } else if (customBadgeKey === 'beast') {
-            activeBadgeIcon = '🦁';
-            activeBadgeLabel = '야수의 심장';
-            activeBadgeTooltip = '🦁 야수의 심장: 고수익 고위험! 과감하고 공격적인 투자';
-        } else if (customBadgeKey === 'fire') {
-            activeBadgeIcon = '🏃‍♂️';
-            activeBadgeLabel = '파이어족';
-            activeBadgeTooltip = '🏃‍♂️ 파이어족: 경제적 자유 및 조기은퇴 준비 집중';
-        } else if (customBadgeKey === 'dividend') {
-            activeBadgeIcon = '💸';
-            activeBadgeLabel = '배당 러버';
-            activeBadgeTooltip = '💸 배당 러버: 현금흐름 및 안정적인 배당주 투자 선호';
-        } else if (customBadgeKey === 'investor') {
-            activeBadgeIcon = '📈';
-            activeBadgeLabel = '가치 투자자';
-            activeBadgeTooltip = '📈 가치 투자자: 장기적 기업 가치와 스노우볼 복리 추구';
-        } else if (customBadgeKey === 'beginner') {
-            activeBadgeIcon = '🌱';
-            activeBadgeLabel = '초보 투자자';
-            activeBadgeTooltip = '🌱 초보 투자자: 성실히 자산을 불려가는 단계';
+        const custom = BADGE_META_MAP[customBadgeKey];
+        if (custom) {
+            activeBadgeIcon = custom.icon;
+            activeBadgeLabel = custom.label;
+            activeBadgeTooltip = `${custom.icon} ${custom.label}: ${custom.desc}`;
         }
     } else {
         const cleanLabel = (displayTierLabel || '').replace(/\s*\(.*?\)/g, '');
-        const matched = ASSET_TIER_TABLE.find(t => t.label === cleanLabel);
+        const matched = ASSET_TIER_TABLE.find(t => t.label === cleanLabel || (cleanLabel === '시드' && t.key === 'seed'));
         activeBadgeTooltip = `${displayTierLabel} (${matched?.criteria || '자산 티어'})\n\n${TIER_HOVER_TOOLTIP}`;
     }
 

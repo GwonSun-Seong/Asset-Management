@@ -239,7 +239,9 @@ ALTER TABLE public.user_profiles
 ADD COLUMN IF NOT EXISTS nickname VARCHAR(30),
 ADD COLUMN IF NOT EXISTS nickname_updated_at TIMESTAMPTZ,
 ADD COLUMN IF NOT EXISTS selected_badge VARCHAR(30) DEFAULT 'tier',
-ADD COLUMN IF NOT EXISTS hide_tier_badge BOOLEAN DEFAULT false;
+ADD COLUMN IF NOT EXISTS hide_tier_badge BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS tier_label VARCHAR(50),
+ADD COLUMN IF NOT EXISTS tier_badge VARCHAR(20);
 
 -- 2. 커뮤니티 작성자 공개 프로필(닉네임, 뱃지) 조회 정책
 -- 피드에서 모든 사용자의 게시글/댓글 작성자 닉네임 및 뱃지를 조회할 수 있어야 실시간 소급적용 가능

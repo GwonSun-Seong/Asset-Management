@@ -5,6 +5,7 @@ import PostDetailModal from './PostDetailModal';
 import PostWriteModal from './PostWriteModal';
 import ProfileSettingsModal from './ProfileSettingsModal';
 import { communityService } from './communityService';
+import { getTierByNetWorth, BADGE_META_MAP } from './badgeConstants';
 
 export default function CommunityView({
     supabase = null,
@@ -32,6 +33,12 @@ export default function CommunityView({
     // 사용자 커뮤니티 프로필 상태 (닉네임, 뱃지)
     const [userProfile, setUserProfile] = useState(null);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+    // 사용자 실제 자산 티어 계산
+    const userTier = useMemo(() => {
+        const netWorth = currentCalculation?.currentNet || 0;
+        return getTierByNetWorth(netWorth);
+    }, [currentCalculation]);
 
     // 모달 상태
     const [selectedPostId, setSelectedPostId] = useState(null);
@@ -523,13 +530,14 @@ export default function CommunityView({
                                 {/* 대표 뱃지 상태 표시 */}
                                 <div className="mb-3 p-2 rounded-xl bg-slate-50 dark:bg-slate-750 border border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
                                     <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">대표 뱃지</span>
-                                    <span className="font-bold text-indigo-600 dark:text-indigo-400 text-[11px]">
-                                        {(!userProfile?.selected_badge || userProfile?.selected_badge === 'tier') && '🥇 자산 티어'}
-                                        {userProfile?.selected_badge === 'fire' && '🏃‍♂️ 파이어족'}
-                                        {userProfile?.selected_badge === 'dividend' && '💸 배당 러버'}
-                                        {userProfile?.selected_badge === 'investor' && '📈 가치 투자자'}
-                                        {userProfile?.selected_badge === 'beginner' && '🌱 초보 투자자'}
-                                        {userProfile?.selected_badge === 'none' && '🚫 뱃지 숨김'}
+                                    <span className="font-bold text-indigo-600 dark:text-indigo-400 text-[11px] flex items-center gap-1">
+                                        {(!userProfile?.selected_badge || userProfile?.selected_badge === 'tier') ? (
+                                            <span>{userProfile?.tier_badge || userTier.icon} {userProfile?.tier_label || userTier.label}</span>
+                                        ) : userProfile?.selected_badge === 'none' ? (
+                                            <span>🚫 뱃지 숨김</span>
+                                        ) : (
+                                            <span>{BADGE_META_MAP[userProfile?.selected_badge]?.icon || '🏷️'} {BADGE_META_MAP[userProfile?.selected_badge]?.label || userProfile?.selected_badge}</span>
+                                        )}
                                     </span>
                                 </div>
 

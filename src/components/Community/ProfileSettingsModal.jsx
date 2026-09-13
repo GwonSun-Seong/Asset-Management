@@ -166,7 +166,7 @@ export default function ProfileSettingsModal({
                                         <button
                                             type="button"
                                             onClick={() => setSelectedBadge(opt.key)}
-                                            title={opt.isTier ? TIER_HOVER_TOOLTIP : `${opt.icon} ${opt.label}: ${opt.desc}`}
+                                            aria-label={`${opt.icon} ${opt.label}: ${opt.desc}`}
                                             className={`w-full p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 cursor-pointer ${
                                                 isSelected 
                                                     ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 ring-1 ring-indigo-600 shadow-xs' 
@@ -199,7 +199,7 @@ export default function ProfileSettingsModal({
                                                     <span className="flex items-center gap-1">📊 자산 티어 구간 기준</span>
                                                     <span className="text-[10px] text-slate-400 font-normal">순자산 기준</span>
                                                 </div>
-                                                <div className="space-y-1">
+                                                <div className="space-y-1 max-h-64 overflow-y-auto custom-scrollbar pr-1">
                                                     {ASSET_TIER_TABLE.map((t) => {
                                                         const isMyTier = t.key === userTier.key;
                                                         return (

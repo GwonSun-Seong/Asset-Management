@@ -73,15 +73,28 @@ async function fetchProfilesMap(supabase, userIds) {
 
     if (supabase && validIds.length > 0) {
         try {
+            // tier_label, tier_badge도 함께 조회 시도
             const { data, error } = await supabase
                 .from('user_profiles')
-                .select('id, nickname, selected_badge, hide_tier_badge, nickname_updated_at')
+                .select('id, nickname, selected_badge, hide_tier_badge, nickname_updated_at, tier_label, tier_badge')
                 .in('id', validIds);
             if (!error && data) {
                 data.forEach(p => {
                     map[p.id] = { ...(map[p.id] || {}), ...p };
                 });
                 saveLocalProfiles(map);
+            } else if (error) {
+                // 컬럼이 아직 없는 경우 기본 컬럼으로 안전 폴백
+                const fallback = await supabase
+                    .from('user_profiles')
+                    .select('id, nickname, selected_badge, hide_tier_badge, nickname_updated_at')
+                    .in('id', validIds);
+                if (fallback.data) {
+                    fallback.data.forEach(p => {
+                        map[p.id] = { ...(map[p.id] || {}), ...p };
+                    });
+                    saveLocalProfiles(map);
+                }
             }
         } catch (e) {
             console.warn('Failed to fetch user profiles:', e);
@@ -820,7 +833,7 @@ export const communityService = {
             try {
                 const { data, error } = await supabase
                     .from('user_profiles')
-                    .select('id, nickname, nickname_updated_at, selected_badge, hide_tier_badge')
+                    .select('id, nickname, nickname_updated_at, selected_badge, hide_tier_badge, tier_label, tier_badge')
                     .eq('id', userId)
                     .maybeSingle();
 
@@ -828,6 +841,17 @@ export const communityService = {
                     profile = { ...profile, ...data };
                     local[userId] = profile;
                     saveLocalProfiles(local);
+                } else if (error) {
+                    const fallback = await supabase
+                        .from('user_profiles')
+                        .select('id, nickname, nickname_updated_at, selected_badge, hide_tier_badge')
+                        .eq('id', userId)
+                        .maybeSingle();
+                    if (fallback.data) {
+                        profile = { ...profile, ...fallback.data };
+                        local[userId] = profile;
+                        saveLocalProfiles(local);
+                    }
                 }
             } catch (e) {
                 console.warn('fetchUserProfile exception:', e);
@@ -837,7 +861,7 @@ export const communityService = {
     },
 
     // 12. 사용자 커뮤니티 프로필 및 닉네임 변경
-    async updateUserProfile(supabase, userId, { nickname, selected_badge, hide_tier_badge }) {
+    async updateUserProfile(supabase, userId, { nickname, selected_badge, hide_tier_badge, tier_label, tier_badge }) {
         if (!userId) throw new Error('로그인이 필요합니다.');
 
         const current = await this.fetchUserProfile(supabase, userId);
@@ -854,13 +878,10 @@ export const communityService = {
             updates.nickname = trimmed;
         }
 
-        if (selected_badge !== undefined) {
-            updates.selected_badge = selected_badge;
-        }
-
-        if (hide_tier_badge !== undefined) {
-            updates.hide_tier_badge = !!hide_tier_badge;
-        }
+        if (selected_badge !== undefined) updates.selected_badge = selected_badge;
+        if (hide_tier_badge !== undefined) updates.hide_tier_badge = !!hide_tier_badge;
+        if (tier_label !== undefined) updates.tier_label = tier_label;
+        if (tier_badge !== undefined) updates.tier_badge = tier_badge;
 
         if (Object.keys(updates).length === 0) {
             return current;
@@ -878,13 +899,29 @@ export const communityService = {
                 if (updates.nickname !== undefined) supabaseUpdates.nickname = updates.nickname;
                 if (updates.selected_badge !== undefined) supabaseUpdates.selected_badge = updates.selected_badge;
                 if (updates.hide_tier_badge !== undefined) supabaseUpdates.hide_tier_badge = updates.hide_tier_badge;
+                if (updates.tier_label !== undefined) supabaseUpdates.tier_label = updates.tier_label;
+                if (updates.tier_badge !== undefined) supabaseUpdates.tier_badge = updates.tier_badge;
 
-                const { data, error } = await supabase
+                let { data, error } = await supabase
                     .from('user_profiles')
                     .update(supabaseUpdates)
                     .eq('id', userId)
                     .select()
                     .maybeSingle();
+
+                // DB에 tier_label, tier_badge 컬럼이 아직 없는 경우를 위한 안전 폴백
+                if (error && (error.message?.includes('tier_label') || error.message?.includes('tier_badge'))) {
+                    delete supabaseUpdates.tier_label;
+                    delete supabaseUpdates.tier_badge;
+                    const retry = await supabase
+                        .from('user_profiles')
+                        .update(supabaseUpdates)
+                        .eq('id', userId)
+                        .select()
+                        .maybeSingle();
+                    data = retry.data;
+                    error = retry.error;
+                }
 
                 if (error) {
                     console.error('Failed to update user profile in Supabase:', error);

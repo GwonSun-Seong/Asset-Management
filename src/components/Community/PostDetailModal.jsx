@@ -160,6 +160,15 @@ export default function PostDetailModal({
             (post.user_id === 'local-guest-test')
         )
     );
+
+    const canDeletePost = Boolean(
+        currentUser && post && (
+            currentUser.id === post.user_id || 
+            (post.user_id === 'local-guest-test') ||
+            isAdmin
+        )
+    );
+
     // 댓글 계층 구조 분리 (루트 댓글 + 대댓글 맵)
     const { rootComments, repliesMap } = useMemo(() => {
         const roots = [];
