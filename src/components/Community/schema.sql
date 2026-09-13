@@ -265,3 +265,12 @@ CREATE POLICY "Anyone can view community posts" ON public.community_posts
         -- 추후 팔로워 기능 도입 시:
         -- OR (visibility = 'followers' AND EXISTS (SELECT 1 FROM public.user_follows WHERE following_id = public.community_posts.user_id AND follower_id = auth.uid()))
     );
+
+-- ==============================================================================
+-- 💬 댓글 대댓글(답글) 계층 지원 마이그레이션 (parent_id)
+-- ==============================================================================
+ALTER TABLE public.community_comments 
+ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES public.community_comments(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON public.community_comments (parent_id);
+

@@ -230,39 +230,105 @@ window.ManualHistoryModal = ({ isOpen, onClose, onSave, existingData = null }) =
 window.PrivacyPolicyModal = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-                <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">개인정보처리방침</h3>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in-95 duration-200">
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50/70 dark:bg-gray-800/80 rounded-t-2xl">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xl">🛡️</span>
+                        <div>
+                            <h3 className="text-base font-bold text-gray-900 dark:text-white">개인정보처리방침</h3>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400">자산 플래너의 데이터 및 개인정보 처리 안내</p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={onClose} 
+                        className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        title="닫기"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
-                <div className="p-6 overflow-y-auto text-sm text-gray-700 dark:text-gray-300 space-y-4">
-                    <p><strong>1. 개인정보의 처리 목적</strong><br/>
-                    '자산 플래너'(이하 '서비스')는 다음의 목적을 위하여 개인정보를 처리합니다. 처리하고 있는 개인정보는 다음의 목적 이외의 용도로는 이용되지 않으며 이용 목적이 변경되는 경우에는 별도의 동의를 받는 등 필요한 조치를 이행할 예정입니다.<br/>
-                    - 서비스 제공 및 콘텐츠 이용: 자산 시뮬레이션 데이터 저장 및 동기화 (선택 사항)<br/>
-                    - 통계 작성 및 서비스 개선: 접속 빈도 파악, 서비스 이용 통계, 익명화된 자산 데이터 분석</p>
 
-                    <p><strong>2. 처리하는 개인정보의 항목</strong><br/>
-                    서비스는 기본적인 기능 이용 시 별도의 개인정보를 수집하지 않으며, 모든 데이터는 사용자의 브라우저(Local Storage)에 저장됩니다.<br/>
-                    단, '클라우드 동기화(PRO)' 기능을 사용하는 경우에 한하여 다음의 정보가 수집될 수 있습니다.<br/>
-                    - 필수항목: 이메일 주소, 프로필 이미지, 이름 (Google 로그인 시 제공되는 정보)<br/>
-                    - 수집방법: Google OAuth 2.0 연동</p>
+                {/* Body Content */}
+                <div className="p-6 overflow-y-auto text-xs sm:text-sm text-gray-700 dark:text-gray-300 space-y-5 leading-relaxed">
+                    {/* 핵심 요약 */}
+                    <div className="bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-800/40 rounded-xl p-3.5 space-y-1.5">
+                        <div className="text-xs font-bold text-indigo-700 dark:text-indigo-300">💡 핵심 원칙 요약</div>
+                        <p className="text-xs text-indigo-950 dark:text-indigo-200">
+                            • <strong>비로그인 시:</strong> 모든 자산 데이터는 서버로 전송되지 않고 사용자의 웹 브라우저(LocalStorage)에만 저장됩니다.<br/>
+                            • <strong>로그인 시:</strong> 구글 계정 정보(이메일, 프로필)와 클라우드 동기화 데이터만 안전하게 관리되며, 비밀번호 기반 종단간 암호화(E2EE)를 지원합니다.<br/>
+                            • <strong>데이터 통제권:</strong> 사용자는 언제든지 데이터를 JSON/Excel/PDF로 내보내거나 브라우저에서 즉시 초기화할 수 있습니다.
+                        </p>
+                    </div>
 
-                    <p><strong>3. 개인정보의 처리 및 보유 기간</strong><br/>
-                    서비스는 법령에 따른 개인정보 보유·이용기간 또는 정보주체로부터 개인정보를 수집 시에 동의받은 개인정보 보유·이용기간 내에서 개인정보를 처리·보유합니다.<br/>
-                    - 회원 탈퇴 시 즉시 파기</p>
+                    {/* 1. 수집 항목 및 방법 */}
+                    <section className="space-y-1.5">
+                        <h4 className="font-bold text-gray-900 dark:text-white">1. 수집하는 정보 및 수집 방법</h4>
+                        <div className="space-y-1.5 text-xs text-gray-600 dark:text-gray-400">
+                            <p>• <strong>비로그인 이용:</strong> 별도의 개인정보를 수집하지 않으며, 입력된 모든 자산·지출·시나리오 데이터는 사용자 기기의 브라우저에만 저장됩니다.</p>
+                            <p>• <strong>구글 로그인 및 클라우드 동기화:</strong> 구글 계정 식별자, 이메일, 프로필 정보(이름, 사진) 및 백업 대상 자산 데이터(JSON)를 수집·보관합니다.</p>
+                            <p>• <strong>커뮤니티 이용:</strong> 작성한 게시글·댓글(대댓글 포함), 첨부 이미지, 공개 여부 설정(전체공개/비공개), 좋아요/북마크/투표 참여 내역을 처리합니다. (비공개 글은 본인만 조회 가능)</p>
+                            <p>• <strong>웹 알림(선택):</strong> 공지 및 커뮤니티 알림을 위해 브라우저 권한 허용 시 푸시 토큰을 수집합니다.</p>
+                        </div>
+                    </section>
 
-                    <p><strong>4. 쿠키(Cookie)의 운용 및 거부</strong><br/>
-                    서비스는 이용자에게 개별적인 맞춤서비스를 제공하기 위해 이용정보를 저장하고 수시로 불러오는 '쿠키(cookie)'를 사용합니다.</p>
+                    {/* 2. 이용 목적 */}
+                    <section className="space-y-1.5">
+                        <h4 className="font-bold text-gray-900 dark:text-white">2. 개인정보의 이용 목적</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                            수집된 정보는 회원 인증, 클라우드 자산 백업 및 기기 간 동기화, 커뮤니티 글/댓글 작성 지원, 알림 발송 목적에만 이용됩니다. (설정에서 익명 활용 동의 시에 한해 비식별 통계 목적으로만 제한적 활용)
+                        </p>
+                    </section>
 
-                    <p><strong>5. 가명/익명 정보의 처리</strong><br/>
-                    서비스는 통계 작성, 과학적 연구, 공익적 기록 보존 등을 위하여 수집한 개인정보를 특정 개인을 알아볼 수 없도록 가명/익명 처리하여 활용할 수 있습니다.<br/>
-                    - 가명/익명 정보는 개인정보와 분리하여 별도로 저장·관리합니다.</p>
+                    {/* 3. 외부 API 및 제3자 연동 */}
+                    <section className="space-y-1.5">
+                        <h4 className="font-bold text-gray-900 dark:text-white">3. 외부 API 및 제3자 연동</h4>
+                        <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                            <p>• <strong>AI 분석:</strong> 사용자가 직접 등록한 Gemini API 키를 통해 브라우저와 Google API 간에만 직접 통신하며, 서비스 서버에는 API 키 및 대화 내용이 저장되지 않습니다.</p>
+                            <p>• <strong>주가/환율 시세:</strong> 시세 조회를 위해 외부 금융 API를 호출하며, 이 때 개인정보 없이 오직 종목 코드만 전송됩니다.</p>
+                        </div>
+                    </section>
+
+                    {/* 4. 보유 및 파기 */}
+                    <section className="space-y-1.5">
+                        <h4 className="font-bold text-gray-900 dark:text-white">4. 개인정보의 보유 및 파기</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                            회원 탈퇴 또는 데이터 삭제 요청 시 클라우드 데이터는 즉시 파기됩니다. 브라우저 로컬 데이터는 사용자가 캐시를 비우거나 [데이터 관리 &gt; 데이터 초기화] 버튼을 누르면 즉시 영구 삭제됩니다.
+                        </p>
+                    </section>
+
+                    {/* 5. 이용자의 권리 */}
+                    <section className="space-y-1.5">
+                        <h4 className="font-bold text-gray-900 dark:text-white">5. 이용자의 권리 및 행사 방법</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                            이용자는 언제든지 본인의 자산 데이터를 파일(JSON/Excel/PDF)로 백업받을 수 있으며, 설정 메뉴에서 로그아웃 시 로컬 데이터 즉시 삭제 정책을 선택하거나 데이터 익명 활용 동의를 철회할 수 있습니다.
+                        </p>
+                    </section>
+
+                    {/* 6. 문의 창구 */}
+                    <section className="space-y-1.5">
+                        <h4 className="font-bold text-gray-900 dark:text-white">6. 문의 창구</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                            개인정보 처리 관련 문의나 건의사항은 서비스 내 <strong>[소중한 의견 보내기(건의사항)]</strong> 메뉴 또는 관리자 이메일을 통해 접수해 주시면 신속히 확인하여 조치하겠습니다.
+                        </p>
+                    </section>
+
+                    {/* 부칙 */}
+                    <div className="pt-2 border-t border-gray-100 dark:border-gray-700/60 text-[11px] text-gray-400 dark:text-gray-500 flex justify-between">
+                        <span>시행일자: 2024년 01월 01일</span>
+                        <span>최종 수정: 2026년 09월 14일</span>
+                    </div>
                 </div>
-                <div className="p-6 border-t dark:border-gray-700 flex justify-end">
-                    <button onClick={onClose} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">닫기</button>
+
+                {/* Footer */}
+                <div className="px-6 py-3.5 border-t border-gray-200 dark:border-gray-700 flex justify-end bg-gray-50/70 dark:bg-gray-800/80 rounded-b-2xl">
+                    <button 
+                        onClick={onClose} 
+                        className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors"
+                    >
+                        확인
+                    </button>
                 </div>
             </div>
         </div>

@@ -1,6 +1,7 @@
 // PostCard.jsx - 커뮤니티 피드 리스트용 개별 게시글 카드
 import React from 'react';
 import AssetFlexCard from './AssetFlexCard';
+import FormattedContent from './FormattedContent';
 import { renderBadgeInfo } from './badgeConstants';
 
 export default function PostCard({ post, onClick, onLikeToggle, isLiked = false }) {
@@ -41,7 +42,7 @@ export default function PostCard({ post, onClick, onLikeToggle, isLiked = false 
                 )}
                 {post.visibility === 'private' && (
                     <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 flex items-center gap-1 shadow-xs border border-amber-400/40">
-                        <span>🔒</span> 나만보기
+                        <span>🔒</span> 비공개
                     </span>
                 )}
                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
@@ -59,10 +60,10 @@ export default function PostCard({ post, onClick, onLikeToggle, isLiked = false 
                 {post.title}
             </h3>
 
-            {/* 본문 요약 (2줄 말줄임) */}
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed mb-3">
-                {post.content}
-            </p>
+            {/* 본문 요약 (2줄 말줄임, 인라인 서식 적용) */}
+            <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed mb-3">
+                <FormattedContent content={post.content} inline={true} />
+            </div>
 
             {/* 첨부 이미지 썸네일 그리드 */}
             {post.images && Array.isArray(post.images) && post.images.length > 0 && (

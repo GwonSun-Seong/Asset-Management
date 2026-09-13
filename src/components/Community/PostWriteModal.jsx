@@ -1,6 +1,7 @@
 // PostWriteModal.jsx - 커뮤니티 글쓰기 모달 (자산 포트폴리오 스냅샷 & 초경량 WebP 사진 첨부 포함)
 import React, { useState, useRef, useEffect } from 'react';
 import AssetFlexCard from './AssetFlexCard';
+import FormattedContent from './FormattedContent';
 import { uploadCommunityImage } from './imageUtils';
 import { getTierByNetWorth } from './badgeConstants';
 
@@ -23,6 +24,7 @@ export default function PostWriteModal({
     const [tagInput, setTagInput] = useState('');
     const [tags, setTags] = useState([]);
     const [visibility, setVisibility] = useState('public'); // 'public' | 'private'
+    const [editorTab, setEditorTab] = useState('write'); // 'write' | 'preview'
     const [isAnonymous, setIsAnonymous] = useState(false);
     const [isNotice, setIsNotice] = useState(false);
 
@@ -30,6 +32,12 @@ export default function PostWriteModal({
     const [images, setImages] = useState([]);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
     const fileInputRef = useRef(null);
+
+    // [신규 28번] 임시 자동저장 (Draft Guard) 상태
+    const DRAFT_STORAGE_KEY = 'community_post_draft_v1';
+    const [draftFound, setDraftFound] = useState(null);
+    const [lastSavedTime, setLastSavedTime] = useState(null);
+    const autoSaveTimerRef = useRef(null);
 
 const SNAPSHOT_PREFS_KEY = 'asset_snapshot_pref_v1';
 
@@ -85,8 +93,70 @@ const getSavedSnapshotPrefs = () => {
             setVisibility('public');
             setImages([]);
             setAttachAssetSnapshot(false);
+
+            // [신규 28번] 이전에 작성 중이던 임시 저장 글 검사
+            try {
+                const rawDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+                if (rawDraft) {
+                    const parsed = JSON.parse(rawDraft);
+                    if (parsed && (parsed.title?.trim() || parsed.content?.trim())) {
+                        setDraftFound(parsed);
+                    }
+                }
+            } catch (e) {}
         }
     }, [editingPost, isOpen]);
+
+    // [신규 28번] 임시 저장 복원
+    const handleRestoreDraft = () => {
+        if (!draftFound) return;
+        if (draftFound.category) setCategory(draftFound.category);
+        if (draftFound.title) setTitle(draftFound.title);
+        if (draftFound.content) setContent(draftFound.content);
+        if (draftFound.tags && Array.isArray(draftFound.tags)) setTags(draftFound.tags);
+        if (draftFound.visibility) setVisibility(draftFound.visibility);
+        setLastSavedTime(draftFound.savedAt || '이전');
+        setDraftFound(null);
+    };
+
+    // [신규 28번] 임시 저장 삭제
+    const handleDiscardDraft = () => {
+        try {
+            localStorage.removeItem(DRAFT_STORAGE_KEY);
+        } catch (e) {}
+        setDraftFound(null);
+        setLastSavedTime(null);
+    };
+
+    // [신규 28번] 0.8초 디바운스 자동 저장 이펙트
+    useEffect(() => {
+        if (editingPost || !isOpen) return;
+        if (!title.trim() && !content.trim()) return;
+
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+        autoSaveTimerRef.current = setTimeout(() => {
+            try {
+                const now = new Date();
+                const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+                const draftData = {
+                    title,
+                    content,
+                    category,
+                    tags,
+                    visibility,
+                    savedAt: timeStr,
+                    timestamp: now.getTime()
+                };
+                localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
+                setLastSavedTime(timeStr);
+            } catch (e) {}
+        }, 800);
+
+        return () => {
+            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+        };
+    }, [title, content, category, tags, visibility, editingPost, isOpen]);
 
     const updateSnapshotPrefs = (updater) => {
         setSnapshotPrefs(prev => {
@@ -513,6 +583,16 @@ const getSavedSnapshotPrefs = () => {
                     ? (editingPost?.asset_snapshot || generateSnapshotFromUserData(true)) 
                     : null
             }, !!editingPost);
+
+            // [신규 28번] 새 글 등록 성공 시 임시 저장 글 정리
+            if (!editingPost) {
+                try {
+                    localStorage.removeItem(DRAFT_STORAGE_KEY);
+                } catch (e) {}
+                setDraftFound(null);
+                setLastSavedTime(null);
+            }
+
             onClose();
         } catch (err) {
             alert(err.message || (editingPost ? '게시글 수정에 실패했습니다.' : '게시글 등록에 실패했습니다.'));
@@ -532,15 +612,19 @@ const getSavedSnapshotPrefs = () => {
                         <h2 className="text-xl font-black text-slate-900 dark:text-white">
                             {editingPost ? '게시글 수정' : '글쓰기'}
                         </h2>
-                        {editingPost && (
+                        {editingPost ? (
                             <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200/50">
                                 수정 모드
                             </span>
-                        )}
+                        ) : lastSavedTime ? (
+                            <span className="text-[11px] font-semibold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/50 px-2.5 py-0.5 rounded-full border border-teal-200/60 dark:border-teal-800/60 flex items-center gap-1 animate-in fade-in">
+                                <span>✓</span> {lastSavedTime} 자동저장됨
+                            </span>
+                        ) : null}
                     </div>
                     <button 
                         onClick={onClose} 
-                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg p-1"
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg p-1 cursor-pointer"
                     >
                         ✕
                     </button>
@@ -548,14 +632,49 @@ const getSavedSnapshotPrefs = () => {
 
                 {/* 바디 폼 (스크롤 영역) */}
                 <div className="p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
-                    {/* 0. 공개 범위 설정 (모두보기 / 나만보기) */}
+                    {/* [신규 28번] 임시 저장 글 복원 안내 배너 */}
+                    {draftFound && !editingPost && (
+                        <div className="p-4 rounded-2xl bg-amber-50/90 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs animate-in fade-in">
+                            <div className="flex items-start gap-2.5">
+                                <span className="text-lg">💾</span>
+                                <div>
+                                    <div className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                                        <span>이전에 작성 중이던 임시 저장 글이 있습니다.</span>
+                                        {draftFound.savedAt && (
+                                            <span className="text-[10px] font-normal text-amber-600 dark:text-amber-400">({draftFound.savedAt} 저장)</span>
+                                        )}
+                                    </div>
+                                    <div className="text-[11px] text-amber-700 dark:text-amber-300/90 line-clamp-1 mt-0.5">
+                                        "{draftFound.title || '제목 없음'}" · {draftFound.content ? draftFound.content.slice(0, 30) + '...' : '내용 없음'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={handleRestoreDraft}
+                                    className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs transition-all shadow-xs cursor-pointer"
+                                >
+                                    복원하기
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleDiscardDraft}
+                                    className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 font-bold text-xs transition-all cursor-pointer"
+                                >
+                                    삭제
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    {/* 0. 공개 범위 설정 (전체공개 / 비공개) */}
                     <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-2">
                         <div className="flex items-center justify-between">
                             <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
                                 <span>🔒</span> 공개 범위 설정
                             </label>
                             <span className="text-[11px] font-semibold text-slate-400">
-                                {visibility === 'private' ? '🔒 나만 보기 (비공개 보관)' : '🌐 모두 보기 (전체 공개)'}
+                                {visibility === 'private' ? '🔒 비공개' : '🌐 전체공개'}
                             </span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
@@ -570,12 +689,12 @@ const getSavedSnapshotPrefs = () => {
                             >
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm text-slate-900 dark:text-white">
-                                        <span>🌐</span> 모두보기 (전체 공개)
+                                        <span>🌐</span> 전체공개
                                     </div>
                                     {visibility === 'public' && <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">✓ 선택됨</span>}
                                 </div>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
-                                    커뮤니티 피드에 공개되어 모든 회원이 열람 및 소통 가능합니다.
+                                    커뮤니티 피드에 등록되어 모든 사용자가 열람할 수 있습니다.
                                 </p>
                             </button>
 
@@ -590,12 +709,12 @@ const getSavedSnapshotPrefs = () => {
                             >
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm text-slate-900 dark:text-white">
-                                        <span>🔒</span> 나만보기 (비공개 보관)
+                                        <span>🔒</span> 비공개
                                     </div>
                                     {visibility === 'private' && <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">✓ 비공개</span>}
                                 </div>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
-                                    본인에게만 보이며, 책 챕터 초고 등 비공개 보관에 적합합니다. (추후 언제든 공개로 전환 가능)
+                                    작성자 본인에게만 보이며, 다른 사용자에게는 일절 노출되지 않습니다. (추후 언제든 공개 전환 가능)
                                 </p>
                             </button>
                         </div>
@@ -642,35 +761,75 @@ const getSavedSnapshotPrefs = () => {
                         />
                     </div>
 
-                    {/* 3. 본문 에디터 (서식 툴바 + 텍스트에어리어) */}
+                    {/* 3. 본문 에디터 (서식 툴바 + 텍스트에어리어 + 실시간 서식 미리보기) */}
                     <div>
-                        <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400">내용</label>
+                        <div className="flex justify-between items-center mb-1.5">
+                            <div className="flex items-center gap-2">
+                                <label className="text-xs font-bold text-slate-500 dark:text-slate-400">내용</label>
+                                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[11px] font-bold">
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditorTab('write')}
+                                        className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer ${
+                                            editorTab === 'write'
+                                                ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                        }`}
+                                    >
+                                        ✏️ 작성
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditorTab('preview')}
+                                        className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer ${
+                                            editorTab === 'preview'
+                                                ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                        }`}
+                                    >
+                                        👁️ 미리보기
+                                    </button>
+                                </div>
+                            </div>
                             <span className="text-[10px] text-slate-400 font-mono">{content.length}/5,000</span>
                         </div>
-                        <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-teal-600/30 focus-within:border-teal-600 transition-all">
+                        <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-teal-600/30 focus-within:border-teal-600 transition-all bg-white dark:bg-slate-900">
                             {/* 서식 툴바 (B, I, U, S, T, H, quote, link, code) */}
-                            <div className="flex flex-wrap items-center gap-1 p-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs">
-                                <button type="button" onClick={() => insertFormat('**')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 font-black" title="굵게">B</button>
-                                <button type="button" onClick={() => insertFormat('*')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 italic font-serif" title="기울임">I</button>
-                                <button type="button" onClick={() => insertFormat('<u>', '</u>')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 underline" title="밑줄">U</button>
-                                <button type="button" onClick={() => insertFormat('~~')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 line-through" title="취소선">S</button>
-                                <span className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1"></span>
-                                <button type="button" onClick={() => insertFormat('### ')} className="px-1.5 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 font-bold" title="제목 (소제목)">H</button>
-                                <button type="button" onClick={() => insertFormat('> ')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 font-serif" title="인용문">“</button>
-                                <button type="button" onClick={() => insertFormat('[링크텍스트](', ')')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700" title="링크">🔗</button>
-                                <button type="button" onClick={() => insertFormat('`')} className="px-1.5 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 font-mono" title="코드">&lt;/&gt;</button>
-                            </div>
+                            {editorTab === 'write' && (
+                                <div className="flex flex-wrap items-center gap-1 p-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs">
+                                    <button type="button" onClick={() => insertFormat('**')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 font-black" title="굵게 (**텍스트**)">B</button>
+                                    <button type="button" onClick={() => insertFormat('*')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 italic font-serif" title="기울임 (*텍스트*)">I</button>
+                                    <button type="button" onClick={() => insertFormat('<u>', '</u>')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 underline" title="밑줄 (<u>텍스트</u>)">U</button>
+                                    <button type="button" onClick={() => insertFormat('~~')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 line-through" title="취소선 (~~텍스트~~)">S</button>
+                                    <span className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1"></span>
+                                    <button type="button" onClick={() => insertFormat('### ')} className="px-1.5 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 font-bold" title="제목 (소제목)">H</button>
+                                    <button type="button" onClick={() => insertFormat('> ')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 font-serif" title="인용문">“</button>
+                                    <button type="button" onClick={() => insertFormat('[링크텍스트](', ')')} className="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700" title="링크">🔗</button>
+                                    <button type="button" onClick={() => insertFormat('`')} className="px-1.5 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 font-mono" title="코드">&lt;/&gt;</button>
+                                </div>
+                            )}
 
-                            <textarea
-                                id="post-content-textarea"
-                                rows={8}
-                                maxLength={5000}
-                                value={content}
-                                onChange={(e) => setContent(e.target.value)}
-                                placeholder="내용을 입력하세요"
-                                className="w-full p-4 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none resize-none leading-relaxed"
-                            />
+                            {editorTab === 'write' ? (
+                                <textarea
+                                    id="post-content-textarea"
+                                    rows={8}
+                                    maxLength={5000}
+                                    value={content}
+                                    onChange={(e) => setContent(e.target.value)}
+                                    placeholder="내용을 입력하세요 (**볼드체**, *기울임*, ~~취소선~~, # 제목 등 서식이 지원됩니다)"
+                                    className="w-full p-4 bg-transparent text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none resize-none leading-relaxed min-h-[200px]"
+                                />
+                            ) : (
+                                <div className="w-full p-4 min-h-[200px] max-h-[380px] overflow-y-auto text-sm text-slate-900 dark:text-white leading-relaxed">
+                                    {content.trim() ? (
+                                        <FormattedContent content={content} />
+                                    ) : (
+                                        <p className="text-slate-400 text-xs italic">
+                                            작성된 본문 내용이 없습니다. 내용을 입력한 후 미리보기를 확인해보세요.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
 

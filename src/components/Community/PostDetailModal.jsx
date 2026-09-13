@@ -1,6 +1,7 @@
 // PostDetailModal.jsx - 커뮤니티 게시글 상세 모달 (본문, 자산 스냅샷 렌더러, 좋아요, 댓글, 삭제)
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import AssetFlexCard from './AssetFlexCard';
+import FormattedContent from './FormattedContent';
 import { communityService } from './communityService';
 import { renderBadgeInfo } from './badgeConstants';
 
@@ -21,6 +22,7 @@ export default function PostDetailModal({
     const [comments, setComments] = useState([]);
     const [commentInput, setCommentInput] = useState('');
     const [isCommentAnonymous, setIsCommentAnonymous] = useState(false);
+    const [replyingTo, setReplyingTo] = useState(null); // { id, authorName } | null
     const [liked, setLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
@@ -122,10 +124,12 @@ export default function PostDetailModal({
                 user_id: userId,
                 content: commentInput.trim(),
                 is_anonymous: isCommentAnonymous,
-                author_name: authorName
+                author_name: authorName,
+                parent_id: replyingTo ? replyingTo.id : null
             });
             setComments(prev => [...prev, newComment]);
             setCommentInput('');
+            setReplyingTo(null);
             if (post) setPost(prev => ({ ...prev, comment_count: (prev.comment_count || 0) + 1 }));
         } catch (err) {
             alert(err.message || '댓글 등록 실패');
@@ -133,11 +137,12 @@ export default function PostDetailModal({
     };
 
     const handleDeleteComment = async (commentId) => {
-        if (!confirm('댓글을 삭제하시겠습니까?')) return;
+        if (!confirm('댓글을 삭제하시겠습니까?\n(답글이 있는 경우 하위 답글도 함께 삭제됩니다)')) return;
         try {
             await communityService.deleteComment(supabase, commentId, postId, currentUser?.id, isAdmin);
-            setComments(prev => prev.filter(c => c.id !== commentId));
-            if (post) setPost(prev => ({ ...prev, comment_count: Math.max(0, (prev.comment_count || 1) - 1) }));
+            const deletedIds = comments.filter(c => c.id === commentId || c.parent_id === commentId).map(c => c.id);
+            setComments(prev => prev.filter(c => !deletedIds.includes(c.id)));
+            if (post) setPost(prev => ({ ...prev, comment_count: Math.max(0, (prev.comment_count || deletedIds.length) - deletedIds.length) }));
         } catch (e) {
             alert(e.message || '댓글 삭제 실패');
         }
@@ -155,7 +160,20 @@ export default function PostDetailModal({
             (post.user_id === 'local-guest-test')
         )
     );
-    const canDeletePost = currentUser && (currentUser.id === post?.user_id || isAdmin);
+    // 댓글 계층 구조 분리 (루트 댓글 + 대댓글 맵)
+    const { rootComments, repliesMap } = useMemo(() => {
+        const roots = [];
+        const replies = {};
+        comments.forEach(c => {
+            if (!c.parent_id) {
+                roots.push(c);
+            } else {
+                if (!replies[c.parent_id]) replies[c.parent_id] = [];
+                replies[c.parent_id].push(c);
+            }
+        });
+        return { rootComments: roots, repliesMap: replies };
+    }, [comments]);
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
@@ -171,7 +189,7 @@ export default function PostDetailModal({
                         )}
                         {post?.visibility === 'private' && (
                             <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-slate-800 text-amber-300 flex items-center gap-1 shadow-xs border border-amber-400/40">
-                                <span>🔒</span> 나만보기 (비공개)
+                                <span>🔒</span> 비공개
                             </span>
                         )}
                         <span className="text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-200/70 dark:bg-slate-700 px-3 py-1 rounded-full">
@@ -277,9 +295,9 @@ export default function PostDetailModal({
                                 />
                             )}
 
-                            {/* 본문 텍스트 */}
-                            <div className="text-slate-800 dark:text-slate-200 text-sm leading-relaxed whitespace-pre-wrap py-2 min-h-[80px]">
-                                {post.content}
+                            {/* 본문 텍스트 (마크다운 서식 렌더링) */}
+                            <div className="text-slate-800 dark:text-slate-200 text-sm leading-relaxed py-2 min-h-[80px]">
+                                <FormattedContent content={post.content} />
                             </div>
 
                             {/* 📷 첨부 이미지 갤러리 */}
@@ -346,10 +364,35 @@ export default function PostDetailModal({
 
                                 {/* 댓글 입력 폼 */}
                                 <form onSubmit={handleAddComment} className="space-y-2.5 bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+                                    {/* 답글 대상 인디케이터 */}
+                                    {replyingTo && (
+                                        <div className="flex items-center justify-between px-3 py-1.5 bg-indigo-50/90 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/80 rounded-xl text-xs text-indigo-700 dark:text-indigo-300">
+                                            <div className="flex items-center gap-1.5 font-bold">
+                                                <span>↳</span>
+                                                <span className="text-indigo-900 dark:text-white">@{replyingTo.authorName}</span>
+                                                <span>님에게 답글 작성 중</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setReplyingTo(null)}
+                                                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-bold transition-colors cursor-pointer px-1"
+                                            >
+                                                ✕ 취소
+                                            </button>
+                                        </div>
+                                    )}
+
                                     <textarea
+                                        id="comment-textarea"
                                         value={commentInput}
                                         onChange={(e) => setCommentInput(e.target.value)}
-                                        placeholder={currentUser ? "의견을 나눠보세요. (타인을 존중하는 건전한 댓글을 지향합니다)" : "댓글을 작성하려면 먼저 로그인해주세요."}
+                                        placeholder={
+                                            !currentUser 
+                                                ? "댓글을 작성하려면 먼저 로그인해주세요." 
+                                                : replyingTo
+                                                    ? `@${replyingTo.authorName} 님에게 남길 답글을 작성하세요... (**볼드체**, *기울임* 지원)`
+                                                    : "의견을 나눠보세요. (**볼드체**, *기울임* 등 서식이 지원됩니다)"
+                                        }
                                         disabled={!currentUser}
                                         rows={3}
                                         className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden dark:text-white resize-none"
@@ -362,14 +405,14 @@ export default function PostDetailModal({
                                                 onChange={(e) => setIsCommentAnonymous(e.target.checked)}
                                                 className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                                             />
-                                            <span>익명 댓글</span>
+                                            <span>익명</span>
                                         </label>
                                         <button 
                                             type="submit"
                                             disabled={!currentUser || !commentInput.trim()}
-                                            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-40 shadow-xs cursor-pointer"
+                                            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-40 shadow-xs cursor-pointer flex items-center gap-1"
                                         >
-                                            댓글 등록
+                                            {replyingTo ? '답글 등록' : '댓글 등록'}
                                         </button>
                                     </div>
                                 </form>
@@ -381,48 +424,118 @@ export default function PostDetailModal({
                                             💬 아직 등록된 댓글이 없습니다. 첫 번째 의견을 남겨보세요!
                                         </div>
                                     ) : (
-                                        comments.map((comment) => {
+                                        rootComments.map((comment) => {
                                             const canDeleteComment = currentUser && (currentUser.id === comment.user_id || isAdmin);
+                                            const replies = repliesMap[comment.id] || [];
+
                                             return (
-                                                <div key={comment.id} className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-xs">
-                                                    <div className="flex items-center justify-between mb-1.5">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="w-5 h-5 rounded-full bg-indigo-500 text-white font-bold text-[9px] flex items-center justify-center">
-                                                                {comment.is_anonymous ? '?' : (comment.author_name ? comment.author_name.slice(0, 1) : 'U')}
-                                                            </div>
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="font-bold text-slate-800 dark:text-slate-200">
-                                                                    {comment.author_name}
+                                                <div key={comment.id} className="space-y-2">
+                                                    {/* 부모(루트) 댓글 카드 */}
+                                                    <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-xs">
+                                                        <div className="flex items-center justify-between mb-1.5">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-5 h-5 rounded-full bg-indigo-500 text-white font-bold text-[9px] flex items-center justify-center">
+                                                                    {comment.is_anonymous ? '?' : (comment.author_name ? comment.author_name.slice(0, 1) : 'U')}
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                                                                        {comment.author_name}
+                                                                    </span>
+                                                                    {(() => {
+                                                                        const badge = !comment.is_anonymous ? renderBadgeInfo(comment.author_profile?.selected_badge, comment.author_profile) : null;
+                                                                        if (!badge) return null;
+                                                                        return (
+                                                                            <span 
+                                                                                className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/40 cursor-help"
+                                                                                title={badge.tooltip}
+                                                                            >
+                                                                                {badge.icon} {badge.label}
+                                                                            </span>
+                                                                        );
+                                                                    })()}
+                                                                </div>
+                                                                <span className="text-[10px] text-slate-400">
+                                                                    {formatDate(comment.created_at)}
                                                                 </span>
-                                                                {(() => {
-                                                                    const badge = !comment.is_anonymous ? renderBadgeInfo(comment.author_profile?.selected_badge, comment.author_profile) : null;
-                                                                    if (!badge) return null;
-                                                                    return (
-                                                                        <span 
-                                                                            className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/40 cursor-help"
-                                                                            title={badge.tooltip}
-                                                                        >
-                                                                            {badge.icon} {badge.label}
-                                                                        </span>
-                                                                    );
-                                                                })()}
                                                             </div>
-                                                            <span className="text-[10px] text-slate-400">
-                                                                {formatDate(comment.created_at)}
-                                                            </span>
+                                                            <div className="flex items-center gap-2">
+                                                                {currentUser && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setReplyingTo({ id: comment.id, authorName: comment.author_name });
+                                                                            const ta = document.getElementById('comment-textarea');
+                                                                            if (ta) ta.focus();
+                                                                        }}
+                                                                        className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 text-[11px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
+                                                                    >
+                                                                        <span>💬</span> 답글
+                                                                    </button>
+                                                                )}
+                                                                {canDeleteComment && (
+                                                                    <button 
+                                                                        onClick={() => handleDeleteComment(comment.id)}
+                                                                        className="text-slate-400 hover:text-rose-500 text-[10px] font-bold transition-colors cursor-pointer"
+                                                                    >
+                                                                        삭제
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                        {canDeleteComment && (
-                                                            <button 
-                                                                onClick={() => handleDeleteComment(comment.id)}
-                                                                className="text-slate-400 hover:text-rose-500 text-[10px] font-bold transition-colors"
-                                                            >
-                                                                삭제
-                                                            </button>
-                                                        )}
+                                                        <div className="text-slate-700 dark:text-slate-300 leading-relaxed pl-7 text-xs sm:text-sm">
+                                                            <FormattedContent content={comment.content} inline={true} />
+                                                        </div>
                                                     </div>
-                                                    <p className="text-slate-700 dark:text-slate-300 leading-relaxed pl-7 whitespace-pre-wrap">
-                                                        {comment.content}
-                                                    </p>
+
+                                                    {/* 자식 대댓글 목록 */}
+                                                    {replies.length > 0 && (
+                                                        <div className="ml-5 sm:ml-7 pl-3.5 border-l-2 border-indigo-200/80 dark:border-indigo-900/60 space-y-2">
+                                                            {replies.map(reply => {
+                                                                const canDeleteReply = currentUser && (currentUser.id === reply.user_id || isAdmin);
+                                                                return (
+                                                                    <div key={reply.id} className="p-3.5 rounded-xl bg-white dark:bg-slate-850/80 border border-slate-200/70 dark:border-slate-800 text-xs shadow-2xs">
+                                                                        <div className="flex items-center justify-between mb-1.5">
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <span className="text-indigo-500 font-bold text-xs">↳</span>
+                                                                                <div className="w-4 h-4 rounded-full bg-indigo-500 text-white font-bold text-[8px] flex items-center justify-center">
+                                                                                    {reply.is_anonymous ? '?' : (reply.author_name ? reply.author_name.slice(0, 1) : 'U')}
+                                                                                </div>
+                                                                                <span className="font-bold text-slate-800 dark:text-slate-200">
+                                                                                    {reply.author_name}
+                                                                                </span>
+                                                                                {(() => {
+                                                                                    const badge = !reply.is_anonymous ? renderBadgeInfo(reply.author_profile?.selected_badge, reply.author_profile) : null;
+                                                                                    if (!badge) return null;
+                                                                                    return (
+                                                                                        <span 
+                                                                                            className="text-[8px] font-bold px-1 py-0.1 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/40"
+                                                                                            title={badge.tooltip}
+                                                                                        >
+                                                                                            {badge.icon} {badge.label}
+                                                                                        </span>
+                                                                                    );
+                                                                                })()}
+                                                                                <span className="text-[10px] text-slate-400">
+                                                                                    {formatDate(reply.created_at)}
+                                                                                </span>
+                                                                            </div>
+                                                                            {canDeleteReply && (
+                                                                                <button 
+                                                                                    onClick={() => handleDeleteComment(reply.id)}
+                                                                                    className="text-slate-400 hover:text-rose-500 text-[10px] font-bold transition-colors cursor-pointer"
+                                                                                >
+                                                                                    삭제
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="text-slate-700 dark:text-slate-300 leading-relaxed pl-5 text-xs">
+                                                                            <FormattedContent content={reply.content} inline={true} />
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             );
                                         })

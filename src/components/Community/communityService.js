@@ -690,8 +690,8 @@ export const communityService = {
         return comments;
     },
 
-    // 8. 댓글 추가
-    async addComment(supabase, { postId, user_id, content, is_anonymous = false, author_name }) {
+    // 8. 댓글 및 대댓글(답글) 추가
+    async addComment(supabase, { postId, user_id, content, is_anonymous = false, author_name, parent_id = null }) {
         if (!content.trim()) throw new Error('댓글 내용을 입력해주세요.');
 
         // 사용자 프로필 닉네임 우선 적용
@@ -707,6 +707,7 @@ export const communityService = {
             id: `comm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
             post_id: postId,
             user_id,
+            parent_id: parent_id || null,
             content: content.trim(),
             is_anonymous,
             author_name: is_anonymous ? `익명 (${user_id ? user_id.slice(-4) : '0000'})` : resolvedAuthorName,
@@ -715,22 +716,38 @@ export const communityService = {
 
         if (supabase && user_id) {
             try {
+                const payload = {
+                    post_id: postId,
+                    user_id,
+                    content: newComment.content,
+                    is_anonymous,
+                    author_name: newComment.author_name
+                };
+                if (parent_id) payload.parent_id = parent_id;
+
                 const { data, error } = await supabase
                     .from('community_comments')
-                    .insert([
-                        {
-                            post_id: postId,
-                            user_id,
-                            content: newComment.content,
-                            is_anonymous,
-                            author_name: newComment.author_name
-                        }
-                    ])
+                    .insert([payload])
                     .select()
                     .single();
 
                 if (!error && data) return data;
-            } catch (e) {}
+
+                // Supabase에 parent_id 컬럼이 아직 없는 경우 대비 fallback
+                if (error && parent_id) {
+                    delete payload.parent_id;
+                    const fallbackRes = await supabase
+                        .from('community_comments')
+                        .insert([payload])
+                        .select()
+                        .single();
+                    if (!fallbackRes.error && fallbackRes.data) {
+                        return { ...fallbackRes.data, parent_id };
+                    }
+                }
+            } catch (e) {
+                console.warn('Supabase comment insert failed, using local fallback:', e);
+            }
         }
 
         // 로컬 저장
@@ -754,7 +771,7 @@ export const communityService = {
         return newComment;
     },
 
-    // 9. 댓글 삭제
+    // 9. 댓글 삭제 (대댓글 캐스케이드 삭제 포함)
     async deleteComment(supabase, commentId, postId, currentUserId, isAdmin = false) {
         if (supabase) {
             try {
@@ -770,7 +787,8 @@ export const communityService = {
             const raw = localStorage.getItem(key);
             if (raw) {
                 let comments = JSON.parse(raw);
-                comments = comments.filter(c => c.id !== commentId);
+                // 삭제 대상 댓글 및 해당 댓글의 대댓글(parent_id) 함께 정리
+                comments = comments.filter(c => c.id !== commentId && c.parent_id !== commentId);
                 localStorage.setItem(key, JSON.stringify(comments));
             }
         } catch (e) {}

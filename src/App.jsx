@@ -3353,6 +3353,12 @@ import CommunityView from './components/Community/CommunityView';
                 setReferenceScenarios(prev => prev.map(r => r.id === id ? { ...r, color } : r));
             };
 
+            const renameScenario = (id, newName) => {
+                if (!newName || !newName.trim()) return;
+                setScenarios(prev => prev.map(s => s.id === id ? { ...s, name: newName.trim() } : s));
+                addToast('시나리오 이름이 변경되었습니다.', 'success');
+            };
+
             // ===== 예산 계산 =====
             const totalMonthlyExpense = useMemo(() => {
                 if (!monthlyExpenses || !Array.isArray(monthlyExpenses)) return 0;
@@ -5117,25 +5123,52 @@ import CommunityView from './components/Community/CommunityView';
 
 
             const renderScenarioPanel = () => ( 
-                <div className="flex flex-col lg:flex-row lg:items-start gap-6">
-                    <div className="lg:w-full lg:max-w-md">
-                        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">저장된 시나리오</h3>
-                        <SavedScenariosCarousel 
-                            scenarios={scenarios} 
-                            onLoad={loadScenario} 
-                            onDelete={deleteScenario} 
-                            onExport={(scenario) => setScenarioToExport(scenario)}
-                            referenceScenarios={referenceScenarios}
-                            onToggleReference={toggleReference}
-                            onUpdateReferenceColor={updateReferenceColor}
-                            isPro={isPro}
-                            onOpenProModal={() => setIsProModalOpen(true)}
-                        />
+                <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-200 dark:border-gray-700">
+                        <div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                <span>🔀</span> 시나리오 시뮬레이션 & 비교
+                                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
+                                    {scenarios.length}개 시나리오
+                                </span>
+                            </h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                현재 계획을 시나리오로 스냅샷하여 저장하고, 다양한 저축·투자 가정을 비교 분석합니다.
+                            </p>
+                        </div>
+                        <button
+                            onClick={saveScenario}
+                            className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all active:scale-95 whitespace-nowrap"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>
+                            현재 계획 시나리오로 저장
+                        </button>
                     </div>
-                    <div className="flex-grow border-l border-gray-200 dark:border-gray-700 pl-6">
-                        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">시나리오 비교 (최대 3개)</h3>
-                        <ScenarioCompare scenarios={scenarios} sectorInfo={sectorInfo} calculateMonthlyProjection={calculateMonthlyProjection} formatNumber={formatNumber} className="bg-gray-50 dark:bg-gray-900" />
-                    </div>
+
+                    {/* Section 1: 저장된 시나리오 보관함 (상단 가로형 슬라이더/그리드) */}
+                    <SavedScenariosCarousel 
+                        scenarios={scenarios} 
+                        onLoad={loadScenario} 
+                        onDelete={deleteScenario} 
+                        onExport={(scenario) => setScenarioToExport(scenario)}
+                        referenceScenarios={referenceScenarios}
+                        onToggleReference={toggleReference}
+                        onUpdateReferenceColor={updateReferenceColor}
+                        isPro={isPro}
+                        onOpenProModal={() => setIsProModalOpen(true)}
+                        onSaveCurrent={saveScenario}
+                        onRename={renameScenario}
+                        calculateMonthlyProjection={calculateMonthlyProjection}
+                        formatNumber={formatNumber}
+                    />
+
+                    {/* Section 2: 시나리오 비교 분석실 (하단 전체 너비) */}
+                    <ScenarioCompare 
+                        scenarios={scenarios} 
+                        sectorInfo={sectorInfo} 
+                        calculateMonthlyProjection={calculateMonthlyProjection} 
+                        formatNumber={formatNumber} 
+                    />
                 </div>
             );
 
