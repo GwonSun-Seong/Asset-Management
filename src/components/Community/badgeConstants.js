@@ -49,14 +49,20 @@ export function renderBadgeInfo(selectedBadge, authorProfile = null, snapshot = 
     if (!selectedBadge || selectedBadge === 'none') return null;
 
     if (selectedBadge === 'tier') {
+        // 🛡️ 금액 비공개(ratio) 모드이거나 hide_tier_badge인 경우 티어 뱃지(실버, 골드 등 자산 구간) 노출 원천 차단
+        if (snapshot?.hide_tier_badge || snapshot?.display_mode === 'ratio' || authorProfile?.hide_tier_badge) {
+            return null;
+        }
+
         const tierLabel = snapshot?.tier_label?.replace(/\s*\(.*?\)/g, '') || authorProfile?.tier_label;
+        if (!tierLabel) return null;
         const tierIcon = snapshot?.tier_badge || authorProfile?.tier_badge || '🥇';
         const matchedTier = ASSET_TIER_TABLE.find(t => t.label === tierLabel) || { criteria: '자산 구간 티어' };
         
         return {
-            label: tierLabel || '티어 뱃지',
+            label: tierLabel,
             icon: tierIcon,
-            tooltip: `${tierLabel || '자산 티어'} (${matchedTier.criteria})\n\n${TIER_HOVER_TOOLTIP}`
+            tooltip: `${tierLabel} (${matchedTier.criteria})\n\n${TIER_HOVER_TOOLTIP}`
         };
     }
 

@@ -4,24 +4,25 @@ import AssetFlexCard from './AssetFlexCard';
 import { communityService } from './communityService';
 import { renderBadgeInfo } from './badgeConstants';
 
-export default function PostDetailModal({
-    isOpen,
-    postId,
-    onClose,
-    currentUser,
+export default function PostDetailModal({ 
+    postId, 
+    isOpen, 
+    onClose, 
+    currentUser, 
+    onPostDeleted, 
+    onLikeToggled, 
+    onEditPost,
     isAdmin = false,
-    supabase = null,
-    onPostDeleted = null,
-    onLikeToggled = null
+    supabase = null 
 }) {
     if (!isOpen || !postId) return null;
 
     const [post, setPost] = useState(null);
-    const [liked, setLiked] = useState(false);
-    const [likeCount, setLikeCount] = useState(0);
     const [comments, setComments] = useState([]);
     const [commentInput, setCommentInput] = useState('');
     const [isCommentAnonymous, setIsCommentAnonymous] = useState(false);
+    const [liked, setLiked] = useState(false);
+    const [likeCount, setLikeCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [isDeleting, setIsDeleting] = useState(false);
 
@@ -33,17 +34,19 @@ export default function PostDetailModal({
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const currentUserId = currentUser?.id || null;
-            const { post: loadedPost, likedByUser } = await communityService.fetchPostDetail(supabase, postId, currentUserId);
-            if (loadedPost) {
-                setPost(loadedPost);
-                setLiked(likedByUser);
-                setLikeCount(loadedPost.like_count || 0);
-                // 조회수 증가
-                communityService.incrementView(supabase, postId);
+            let userId = currentUser?.id;
+            if (supabase) {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) userId = session.user.id;
             }
-            const loadedComments = await communityService.fetchComments(supabase, postId);
-            setComments(loadedComments || []);
+
+            const { post: fetchedPost, likedByUser } = await communityService.fetchPostDetail(supabase, postId, userId);
+            setPost(fetchedPost);
+            setLiked(likedByUser);
+            setLikeCount(fetchedPost?.like_count || 0);
+
+            const fetchedComments = await communityService.fetchComments(supabase, postId);
+            setComments(fetchedComments);
         } catch (err) {
             console.error('Failed to load post detail:', err);
         } finally {
@@ -146,6 +149,12 @@ export default function PostDetailModal({
         return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     };
 
+    const canEditPost = Boolean(
+        currentUser && post && (
+            currentUser.id === post.user_id || 
+            (post.user_id === 'local-guest-test')
+        )
+    );
     const canDeletePost = currentUser && (currentUser.id === post?.user_id || isAdmin);
 
     return (
@@ -160,24 +169,39 @@ export default function PostDetailModal({
                                 <span>📌</span> 전체 공지
                             </span>
                         )}
+                        {post?.visibility === 'private' && (
+                            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-slate-800 text-amber-300 flex items-center gap-1 shadow-xs border border-amber-400/40">
+                                <span>🔒</span> 나만보기 (비공개)
+                            </span>
+                        )}
                         <span className="text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-200/70 dark:bg-slate-700 px-3 py-1 rounded-full">
                             {categoryLabels[post?.category] || post?.category || '자유주제'}
                         </span>
                     </div>
 
                     <div className="flex items-center gap-2">
+                        {canEditPost && (
+                            <button 
+                                onClick={() => {
+                                    if (onEditPost) onEditPost(post);
+                                }}
+                                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-3 py-1.5 rounded-xl border border-indigo-200/70 dark:border-indigo-800/70 transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                                <span>✏️</span> 게시글 수정
+                            </button>
+                        )}
                         {canDeletePost && (
                             <button 
                                 onClick={handleDeletePost}
                                 disabled={isDeleting}
-                                className="text-xs font-bold text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 px-3 py-1.5 rounded-xl transition-all"
+                                className="text-xs font-bold text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
                             >
                                 {isDeleting ? '삭제 중...' : '게시글 삭제'}
                             </button>
                         )}
                         <button 
                             onClick={onClose} 
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-base font-bold transition-all"
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-base font-bold transition-all cursor-pointer"
                         >
                             ✕
                         </button>
@@ -225,8 +249,13 @@ export default function PostDetailModal({
                                                     );
                                                 })()}
                                             </div>
-                                            <div className="text-[10px] text-slate-400 font-mono">
-                                                {formatDate(post.created_at)}
+                                            <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5">
+                                                <span>{formatDate(post.created_at)}</span>
+                                                {(post.is_edited || (post.updated_at && post.created_at && new Date(post.updated_at).getTime() - new Date(post.created_at).getTime() > 1000)) && (
+                                                    <span className="text-slate-400 font-sans font-normal bg-slate-100 dark:bg-slate-800 px-1 py-0.2 rounded text-[9px] border border-slate-200/50 dark:border-slate-700/50">
+                                                        (수정됨)
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

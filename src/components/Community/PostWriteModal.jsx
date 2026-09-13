@@ -1,5 +1,5 @@
 // PostWriteModal.jsx - 커뮤니티 글쓰기 모달 (자산 포트폴리오 스냅샷 & 초경량 WebP 사진 첨부 포함)
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import AssetFlexCard from './AssetFlexCard';
 import { uploadCommunityImage } from './imageUtils';
 import { getTierByNetWorth } from './badgeConstants';
@@ -9,6 +9,7 @@ export default function PostWriteModal({
     onClose, 
     onSubmit, 
     currentUser, 
+    editingPost = null,
     isAdmin = false,
     currentAppData = null,
     currentCalculation = null,
@@ -21,6 +22,7 @@ export default function PostWriteModal({
     const [content, setContent] = useState('');
     const [tagInput, setTagInput] = useState('');
     const [tags, setTags] = useState([]);
+    const [visibility, setVisibility] = useState('public'); // 'public' | 'private'
     const [isAnonymous, setIsAnonymous] = useState(false);
     const [isNotice, setIsNotice] = useState(false);
 
@@ -61,6 +63,30 @@ const getSavedSnapshotPrefs = () => {
     const [attachAssetSnapshot, setAttachAssetSnapshot] = useState(false);
     const [snapshotPrefs, setSnapshotPrefs] = useState(() => getSavedSnapshotPrefs());
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (editingPost) {
+            setCategory(editingPost.category || 'free');
+            setTitle(editingPost.title || '');
+            setContent(editingPost.content || '');
+            setTags(Array.isArray(editingPost.tags) ? editingPost.tags : []);
+            setIsAnonymous(!!editingPost.is_anonymous);
+            setIsNotice(!!editingPost.is_notice);
+            setVisibility(editingPost.visibility || 'public');
+            setImages(Array.isArray(editingPost.images) ? editingPost.images.map(url => (typeof url === 'string' ? { url } : url)) : []);
+            setAttachAssetSnapshot(!!editingPost.asset_snapshot);
+        } else {
+            setCategory('free');
+            setTitle('');
+            setContent('');
+            setTags([]);
+            setIsAnonymous(false);
+            setIsNotice(false);
+            setVisibility('public');
+            setImages([]);
+            setAttachAssetSnapshot(false);
+        }
+    }, [editingPost, isOpen]);
 
     const updateSnapshotPrefs = (updater) => {
         setSnapshotPrefs(prev => {
@@ -356,7 +382,11 @@ const getSavedSnapshotPrefs = () => {
             savings_rate: (snapshotPrefs.show_runway && !runwayMonths) ? savingsRate : null,
             runway_months: snapshotPrefs.show_runway ? runwayMonths : null,
             fire_rate: snapshotPrefs.show_fire_rate ? fireRate : null,
-            monthly_cash_flow: snapshotPrefs.show_cash_flow ? monthlyCashFlow : null,
+            monthly_cash_flow: snapshotPrefs.show_cash_flow 
+                ? ((isForPublishing && !isAmountMode) 
+                    ? (monthlyCashFlow !== null ? (monthlyCashFlow >= 0 ? 1 : -1) : null) 
+                    : monthlyCashFlow) 
+                : null,
             monthly_savings: (snapshotPrefs.show_cash_flow && isAmountMode) ? monthlySavings : null,
 
             // 섹션 데이터
@@ -470,18 +500,22 @@ const getSavedSnapshotPrefs = () => {
         setIsSubmitting(true);
         try {
             await onSubmit({
+                id: editingPost?.id,
                 category,
                 title: title.trim(),
                 content: content.trim(),
                 tags,
-                images: images.map(img => img.url),
+                visibility, // 'public' | 'private'
+                images: images.map(img => (typeof img === 'string' ? img : img.url)),
                 is_notice: isAdmin ? isNotice : false,
                 is_anonymous: isAnonymous,
-                asset_snapshot: attachAssetSnapshot ? generateSnapshotFromUserData(true) : null
-            });
+                asset_snapshot: attachAssetSnapshot 
+                    ? (editingPost?.asset_snapshot || generateSnapshotFromUserData(true)) 
+                    : null
+            }, !!editingPost);
             onClose();
         } catch (err) {
-            alert(err.message || '게시글 등록에 실패했습니다.');
+            alert(err.message || (editingPost ? '게시글 수정에 실패했습니다.' : '게시글 등록에 실패했습니다.'));
         } finally {
             setIsSubmitting(false);
         }
@@ -492,10 +526,18 @@ const getSavedSnapshotPrefs = () => {
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden border border-slate-200 dark:border-slate-800 my-auto flex flex-col max-h-[92vh]">
                 
                 {/* 헤더 */}
-                <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                    <h2 className="text-xl font-black text-slate-900 dark:text-white">
-                        글쓰기
-                    </h2>
+                <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-850">
+                    <div className="flex items-center gap-2.5">
+                        <span className="text-xl">{editingPost ? '✏️' : '📝'}</span>
+                        <h2 className="text-xl font-black text-slate-900 dark:text-white">
+                            {editingPost ? '게시글 수정' : '글쓰기'}
+                        </h2>
+                        {editingPost && (
+                            <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200/50">
+                                수정 모드
+                            </span>
+                        )}
+                    </div>
                     <button 
                         onClick={onClose} 
                         className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg p-1"
@@ -506,6 +548,58 @@ const getSavedSnapshotPrefs = () => {
 
                 {/* 바디 폼 (스크롤 영역) */}
                 <div className="p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
+                    {/* 0. 공개 범위 설정 (모두보기 / 나만보기) */}
+                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-2">
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                                <span>🔒</span> 공개 범위 설정
+                            </label>
+                            <span className="text-[11px] font-semibold text-slate-400">
+                                {visibility === 'private' ? '🔒 나만 보기 (비공개 보관)' : '🌐 모두 보기 (전체 공개)'}
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setVisibility('public')}
+                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                                    visibility === 'public'
+                                        ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border-indigo-500 ring-2 ring-indigo-400/30 shadow-xs'
+                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm text-slate-900 dark:text-white">
+                                        <span>🌐</span> 모두보기 (전체 공개)
+                                    </div>
+                                    {visibility === 'public' && <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">✓ 선택됨</span>}
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                                    커뮤니티 피드에 공개되어 모든 회원이 열람 및 소통 가능합니다.
+                                </p>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setVisibility('private')}
+                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                                    visibility === 'private'
+                                        ? 'bg-amber-50/90 dark:bg-amber-950/50 border-amber-500 ring-2 ring-amber-400/30 shadow-xs'
+                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm text-slate-900 dark:text-white">
+                                        <span>🔒</span> 나만보기 (비공개 보관)
+                                    </div>
+                                    {visibility === 'private' && <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">✓ 비공개</span>}
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                                    본인에게만 보이며, 책 챕터 초고 등 비공개 보관에 적합합니다. (추후 언제든 공개로 전환 가능)
+                                </p>
+                            </button>
+                        </div>
+                    </div>
                     {/* 1. 주제 선택 */}
                     <div>
                         <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">
@@ -800,7 +894,7 @@ const getSavedSnapshotPrefs = () => {
                             onClick={handleSubmit}
                             className="px-6 py-2.5 rounded-xl bg-teal-800 hover:bg-teal-900 text-white text-xs sm:text-sm font-black shadow-sm transition-all disabled:opacity-50"
                         >
-                            {isSubmitting ? '등록 중...' : '등록'}
+                            {isSubmitting ? (editingPost ? '수정 중...' : '등록 중...') : (editingPost ? '수정 완료' : '등록')}
                         </button>
                     </div>
                 </div>

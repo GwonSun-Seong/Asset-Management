@@ -129,6 +129,7 @@ export const communityService = {
             category = 'all',
             sort = 'latest',
             searchQuery = '',
+            currentUserId = null,
             page = 1,
             pageSize = 20
         } = options;
@@ -169,7 +170,12 @@ export const communityService = {
                     // 혹시 로컬 임시로 작성되었으나 아직 DB에 동기화되지 않은 로컬 전용 글 병합 (글 실종 방지)
                     const localPosts = getLocalPosts();
                     const remoteIds = new Set(data.map(p => p.id));
-                    let localOnlyPosts = localPosts.filter(lp => !remoteIds.has(lp.id) && typeof lp.id === 'string' && lp.id.startsWith('post-'));
+                    let localOnlyPosts = localPosts.filter(lp => {
+                        if (remoteIds.has(lp.id) || typeof lp.id !== 'string' || !lp.id.startsWith('post-')) return false;
+                        // 비공개 글은 본인에게만 표시
+                        if (lp.visibility === 'private' && lp.user_id !== currentUserId) return false;
+                        return true;
+                    });
 
                     if (category && category !== 'all') {
                         localOnlyPosts = localOnlyPosts.filter(p => p.category === category);
@@ -184,12 +190,15 @@ export const communityService = {
                         }
                     }
 
-                    const mergedData = (page === 1 && localOnlyPosts.length > 0) ? [...localOnlyPosts, ...data] : data;
+                    // 비공개 글은 작성자 본인에게만 보이도록 보장 (RLS 미적용 환경 대비 2중 안전장치)
+                    const filteredData = data.filter(p => !p.visibility || p.visibility === 'public' || (currentUserId && p.user_id === currentUserId));
+
+                    const mergedData = (page === 1 && localOnlyPosts.length > 0) ? [...localOnlyPosts, ...filteredData] : filteredData;
 
                     const userIds = mergedData.map(p => p.user_id);
                     const profilesMap = await fetchProfilesMap(supabase, userIds);
                     const enrichedPosts = applyProfilesToPosts(mergedData, profilesMap);
-                    return { posts: enrichedPosts, totalCount: (count !== null ? count : data.length) + (page === 1 ? localOnlyPosts.length : 0), isFallback: false };
+                    return { posts: enrichedPosts, totalCount: (count !== null ? count : filteredData.length) + (page === 1 ? localOnlyPosts.length : 0), isFallback: false };
                 } else if (error) {
                     console.warn('Supabase community_posts query error:', error.message);
                 }
@@ -200,6 +209,9 @@ export const communityService = {
 
         // 로컬 스토리지 (오프라인 또는 DB 에러 시)
         let posts = getLocalPosts();
+        // 비공개 글은 본인에게만 노출
+        posts = posts.filter(p => !p.visibility || p.visibility === 'public' || (currentUserId && p.user_id === currentUserId));
+
         if (category && category !== 'all') {
             posts = posts.filter(p => p.category === category);
         }
@@ -230,16 +242,17 @@ export const communityService = {
         return { posts: enriched, totalCount: posts.length, isFallback: true };
     },
 
-    // 2. 주간 인기글 TOP 3 가져오기 (좋아요 1개 이상만)
+    // 2. 주간 인기글 TOP 3 가져오기 (좋아요 1개 이상, 공개 글만)
     async fetchWeeklyTop(supabase) {
         if (supabase) {
             try {
                 const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
                 const { data, error } = await supabase
                     .from('community_posts')
-                    .select('id, user_id, title, category, like_count, comment_count, view_count, is_notice, is_anonymous, author_name')
+                    .select('id, user_id, title, category, like_count, comment_count, view_count, is_notice, is_anonymous, author_name, visibility, is_edited, created_at, updated_at')
                     .gte('created_at', sevenDaysAgo)
                     .gt('like_count', 0)
+                    .or('visibility.eq.public,visibility.is.null')
                     .order('like_count', { ascending: false })
                     .limit(3);
 
@@ -253,7 +266,7 @@ export const communityService = {
 
         const posts = getLocalPosts();
         const top = [...posts]
-            .filter(p => (p.like_count || 0) > 0)
+            .filter(p => (!p.visibility || p.visibility === 'public') && (p.like_count || 0) > 0)
             .sort((a, b) => (b.like_count || 0) - (a.like_count || 0))
             .slice(0, 3)
             .map(p => ({
@@ -327,6 +340,7 @@ export const communityService = {
             title,
             content,
             tags = [],
+            visibility = 'public',
             is_notice = false,
             is_anonymous = false,
             author_name,
@@ -357,6 +371,8 @@ export const communityService = {
             title: title.trim(),
             content: content.trim(),
             tags,
+            visibility: visibility || 'public',
+            is_edited: false,
             is_notice: !!is_notice,
             is_anonymous: !!is_anonymous,
             author_name: displayAuthorName,
@@ -373,26 +389,39 @@ export const communityService = {
 
         if (supabase && isUuid) {
             try {
-                const { data, error } = await supabase
+                const insertPayload = {
+                    user_id,
+                    category,
+                    title: newPost.title,
+                    content: newPost.content,
+                    tags,
+                    visibility: newPost.visibility,
+                    is_notice: newPost.is_notice,
+                    is_anonymous: newPost.is_anonymous,
+                    author_name: displayAuthorName,
+                    author_email: displayAuthorEmail,
+                    asset_snapshot,
+                    images: Array.isArray(images) ? images : [],
+                    poll: null
+                };
+
+                let { data, error } = await supabase
                     .from('community_posts')
-                    .insert([
-                        {
-                            user_id,
-                            category,
-                            title: newPost.title,
-                            content: newPost.content,
-                            tags,
-                            is_notice: newPost.is_notice,
-                            is_anonymous: newPost.is_anonymous,
-                            author_name: displayAuthorName,
-                            author_email: displayAuthorEmail,
-                            asset_snapshot,
-                            images: Array.isArray(images) ? images : [],
-                            poll: null
-                        }
-                    ])
+                    .insert([insertPayload])
                     .select()
                     .single();
+
+                // DB에 visibility 컬럼이 아직 없는 구버전 스키마 대응 (안전 폴백)
+                if (error && error.message && error.message.includes('visibility')) {
+                    delete insertPayload.visibility;
+                    const retry = await supabase
+                        .from('community_posts')
+                        .insert([insertPayload])
+                        .select()
+                        .single();
+                    data = retry.data;
+                    error = retry.error;
+                }
 
                 if (error) {
                     console.error('Supabase post insert error:', error);
@@ -416,6 +445,117 @@ export const communityService = {
         posts.unshift(newPost);
         saveLocalPosts(posts);
         return newPost;
+    },
+
+    // 4-1. 게시글 수정 (작성자 본인 전용)
+    async updatePost(supabase, postId, updateData, currentUserId) {
+        if (!postId) throw new Error('수정할 게시글 ID가 없습니다.');
+        const {
+            title,
+            content,
+            category,
+            tags,
+            visibility = 'public',
+            is_anonymous,
+            images,
+            asset_snapshot
+        } = updateData;
+
+        if (!title || !title.trim()) throw new Error('제목을 입력해주세요.');
+        if (!content || !content.trim()) throw new Error('내용을 입력해주세요.');
+
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(postId);
+        const nowIso = new Date().toISOString();
+
+        if (supabase && isUuid) {
+            try {
+                const updatePayload = {
+                    title: title.trim(),
+                    content: content.trim(),
+                    category,
+                    tags: Array.isArray(tags) ? tags : [],
+                    visibility: visibility || 'public',
+                    is_edited: true,
+                    updated_at: nowIso
+                };
+
+                if (is_anonymous !== undefined) {
+                    updatePayload.is_anonymous = !!is_anonymous;
+                }
+                if (Array.isArray(images)) {
+                    updatePayload.images = images;
+                }
+                if (asset_snapshot !== undefined) {
+                    updatePayload.asset_snapshot = asset_snapshot;
+                }
+
+                let query = supabase
+                    .from('community_posts')
+                    .update(updatePayload)
+                    .eq('id', postId);
+
+                if (currentUserId && currentUserId !== 'local-guest-test') {
+                    query = query.eq('user_id', currentUserId);
+                }
+
+                let { data, error } = await query.select().single();
+
+                // DB에 visibility나 is_edited 컬럼이 아직 없는 경우 안전 폴백
+                if (error && error.message && (error.message.includes('visibility') || error.message.includes('is_edited'))) {
+                    delete updatePayload.visibility;
+                    delete updatePayload.is_edited;
+                    const retry = await supabase
+                        .from('community_posts')
+                        .update(updatePayload)
+                        .eq('id', postId)
+                        .select()
+                        .single();
+                    data = retry.data;
+                    error = retry.error;
+                }
+
+                if (error) {
+                    console.error('Supabase post update error:', error);
+                    throw new Error(`DB 수정 오류: ${error.message || error.details}`);
+                }
+
+                if (data) {
+                    const posts = getLocalPosts().map(p => p.id === postId ? { ...p, ...data, is_edited: true, updated_at: nowIso } : p);
+                    saveLocalPosts(posts);
+                    return { ...data, is_edited: true, updated_at: nowIso };
+                }
+            } catch (e) {
+                console.error('Supabase post update exception:', e);
+                throw e;
+            }
+        }
+
+        // 로컬 스토리지 수정 폴백
+        const posts = getLocalPosts();
+        const targetIdx = posts.findIndex(p => p.id === postId);
+        if (targetIdx === -1) throw new Error('게시글을 찾을 수 없습니다.');
+
+        if (currentUserId && posts[targetIdx].user_id && posts[targetIdx].user_id !== currentUserId && currentUserId !== 'local-guest-test') {
+            throw new Error('본인의 게시글만 수정할 수 있습니다.');
+        }
+
+        const updated = {
+            ...posts[targetIdx],
+            title: title.trim(),
+            content: content.trim(),
+            category: category || posts[targetIdx].category,
+            tags: Array.isArray(tags) ? tags : posts[targetIdx].tags,
+            visibility: visibility || 'public',
+            is_edited: true,
+            updated_at: nowIso
+        };
+        if (is_anonymous !== undefined) updated.is_anonymous = !!is_anonymous;
+        if (Array.isArray(images)) updated.images = images;
+        if (asset_snapshot !== undefined) updated.asset_snapshot = asset_snapshot;
+
+        posts[targetIdx] = updated;
+        saveLocalPosts(posts);
+        return updated;
     },
 
     // 5. 게시글 삭제 (작성자 본인 또는 관리자만 가능)

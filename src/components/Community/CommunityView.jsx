@@ -37,6 +37,7 @@ export default function CommunityView({
     const [selectedPostId, setSelectedPostId] = useState(null);
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
     const [isWriteModalOpen, setIsWriteModalOpen] = useState(false);
+    const [editingPost, setEditingPost] = useState(null);
 
     // 토스트 알림 상태
     const [toastMessage, setToastMessage] = useState(null);
@@ -64,7 +65,8 @@ export default function CommunityView({
                 sort: sortOrder,
                 page: currentPage,
                 pageSize,
-                searchQuery: queryToSearch
+                searchQuery: queryToSearch,
+                currentUserId
             });
 
             let list = res.posts || [];
@@ -120,8 +122,8 @@ export default function CommunityView({
         setIsWriteModalOpen(true);
     };
 
-    // 새 글 등록 완료 처리
-    const handlePostCreated = async (postInputData) => {
+    // 새 글 등록 및 수정 완료 처리
+    const handlePostCreated = async (postInputData, isEdit = false) => {
         let userId = currentUser?.id;
         let authorName = userProfile?.nickname || currentUser?.full_name || currentUser?.name || '익명';
         let authorEmail = currentUser?.email || null;
@@ -153,6 +155,16 @@ export default function CommunityView({
             authorName = authorName === '익명' ? '로컬 테스터' : authorName;
         }
 
+        if (isEdit && postInputData.id) {
+            const updated = await communityService.updatePost(supabase, postInputData.id, postInputData, userId);
+            setIsWriteModalOpen(false);
+            setEditingPost(null);
+            showToast('✏️ 게시글이 성공적으로 수정되었습니다!');
+            setPosts(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p));
+            loadWeeklyTop();
+            return;
+        }
+
         await communityService.createPost(supabase, {
             ...postInputData,
             user_id: userId,
@@ -161,9 +173,17 @@ export default function CommunityView({
         });
 
         setIsWriteModalOpen(false);
+        setEditingPost(null);
         showToast('🎉 게시글이 성공적으로 등록되었습니다!');
         loadPosts();
         loadWeeklyTop();
+    };
+
+    // 게시글 수정 모달 열기
+    const handleStartEditPost = (postToEdit) => {
+        setEditingPost(postToEdit);
+        setIsDetailModalOpen(false);
+        setIsWriteModalOpen(true);
     };
 
     // 게시글 상세 열기
@@ -629,12 +649,17 @@ export default function CommunityView({
             </div>
 
             {/* ============================================================ */}
-            {/* 게시글 작성 모달 */}
+            {/* ============================================================ */}
+            {/* 게시글 작성 및 수정 모달 */}
             {/* ============================================================ */}
             <PostWriteModal
                 isOpen={isWriteModalOpen}
-                onClose={() => setIsWriteModalOpen(false)}
+                onClose={() => {
+                    setIsWriteModalOpen(false);
+                    setEditingPost(null);
+                }}
                 onSubmit={handlePostCreated}
+                editingPost={editingPost}
                 currentUser={currentUser}
                 isAdmin={isAdmin}
                 currentAppData={currentAppData}
@@ -657,6 +682,7 @@ export default function CommunityView({
                 supabase={supabase}
                 onPostDeleted={handlePostDeleted}
                 onLikeToggled={handleLikeToggled}
+                onEditPost={handleStartEditPost}
             />
 
             {/* ============================================================ */}

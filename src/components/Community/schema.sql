@@ -248,11 +248,20 @@ CREATE POLICY "Anyone can view user public profiles"
 ON public.user_profiles FOR SELECT
 USING (true);
 
--- 3. 본인 프로필 수정 정책 (본인 계정만 닉네임/뱃지 수정 가능)
-DROP POLICY IF EXISTS "Users can update own community profile" ON public.user_profiles;
-CREATE POLICY "Users can update own community profile"
-ON public.user_profiles FOR UPDATE
-TO authenticated
-USING (auth.uid() = id)
-WITH CHECK (auth.uid() = id);
+-- ==============================================================================
+-- 🔒 게시글 공개 범위(나만보기/팔로워/모두보기) 및 수정됨(is_edited) 마이그레이션
+-- ==============================================================================
+-- 1. community_posts 테이블에 공개 범위 및 수정 여부 컬럼 추가
+ALTER TABLE public.community_posts 
+ADD COLUMN IF NOT EXISTS visibility VARCHAR(20) DEFAULT 'public' CHECK (visibility IN ('public', 'followers', 'private')),
+ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT false;
 
+-- 2. 공개 범위에 따른 RLS 조회 정책 갱신 (비공개 글은 작성자 본인만 조회 가능)
+DROP POLICY IF EXISTS "Anyone can view community posts" ON public.community_posts;
+CREATE POLICY "Anyone can view community posts" ON public.community_posts
+    FOR SELECT USING (
+        visibility = 'public' 
+        OR (auth.uid() = user_id)
+        -- 추후 팔로워 기능 도입 시:
+        -- OR (visibility = 'followers' AND EXISTS (SELECT 1 FROM public.user_follows WHERE following_id = public.community_posts.user_id AND follower_id = auth.uid()))
+    );

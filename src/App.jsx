@@ -400,47 +400,73 @@ import CommunityView from './components/Community/CommunityView';
             );
         };
 
-        const StackedBarDisplay = ({ targets, sectorInfo }) => {
-            const validSectors = Object.keys(sectorInfo).filter(k => k !== 'loan');
-            const defaultPct = Math.round(100 / validSectors.length);
+        const StackedBarDisplay = ({ targets, sectorInfo, excludedSectors = [], assetSectorOrder = [] }) => {
+            const order = Array.isArray(assetSectorOrder) ? assetSectorOrder : [];
+            const validSectors = Object.keys(sectorInfo)
+                .filter(k => k !== 'loan' && !excludedSectors.includes(k))
+                .sort((a, b) => {
+                    const idxA = order.indexOf(a);
+                    const idxB = order.indexOf(b);
+                    if (idxA === -1) return 1;
+                    if (idxB === -1) return -1;
+                    return idxA - idxB;
+                });
+            const defaultPct = validSectors.length > 0 ? Math.round(100 / validSectors.length) : 0;
             
             const total = validSectors.reduce((sum, key) => {
-                return sum + (targets[key] ?? defaultPct);
+                const val = targets[key];
+                return sum + ((val === undefined || val === null) ? defaultPct : Number(val));
             }, 0);
 
-            // 100% 기준으로 비율 재계산 (정규화)
-            const normalizedTargets = validSectors.map(key => {
-                const value = targets[key] ?? defaultPct;
+            const sectorColorMap = {
+                deposit: '#3B82F6',
+                savings: '#10B981',
+                investment: '#F97316',
+                pension: '#A855F7',
+                realestate: '#F59E0B',
+                car: '#06B6D4',
+                misc: '#6366F1'
+            };
+
+            const segments = validSectors.map(key => {
+                const val = targets[key];
+                const rawVal = (val === undefined || val === null) ? defaultPct : Number(val);
+                const color = sectorColorMap[key] || '#64748B';
                 return {
-                    key: key,
-                    name: sectorInfo[key].name,
-                    color: sectorInfo[key].color,
-                    percentage: total === 0 ? 0 : (value / total) * 100,
-                    originalValue: value
+                    key,
+                    name: sectorInfo[key]?.name || key,
+                    icon: sectorInfo[key]?.icon || '📁',
+                    color,
+                    targetPct: rawVal,
+                    widthPct: total === 0 ? 0 : (rawVal / total) * 100
                 };
             });
 
             return (
-                <div className="w-full mb-4">
-                    <div className="flex h-6 w-full rounded-full overflow-hidden border border-gray-300 dark:border-gray-600 bg-gray-200 dark:bg-gray-700">
-                        {normalizedTargets.map(item => (
+                <div className="w-full space-y-2.5 mb-2">
+                    {/* 분리형 멀티 컬러 캡슐 막대바 */}
+                    <div className="h-4 sm:h-5 w-full rounded-2xl bg-amber-100/60 dark:bg-slate-800 p-1 flex gap-1 shadow-inner border border-amber-200/80 dark:border-slate-700/60 overflow-hidden">
+                        {segments.map((item) => (
                             <div
                                 key={item.key}
-                                className={`flex items-center justify-center bg-${item.color}-500 transition-all duration-300`}
-                                style={{ width: `${item.percentage}%` }}
-                                title={`${item.name}: ${item.originalValue}%`}
-                            >
-                                <span className="text-xs font-medium text-white overflow-hidden whitespace-nowrap px-1">
-                                    {item.percentage > 10 ? `${item.originalValue}%` : ''}
-                                </span>
+                                style={{ width: `${item.widthPct}%`, backgroundColor: item.color }}
+                                className="h-full first:rounded-l-lg last:rounded-r-lg rounded-xs transition-all duration-300 hover:opacity-90 hover:scale-y-105"
+                                title={`${item.icon} ${item.name}: 목표 ${item.targetPct}%`}
+                            />
+                        ))}
+                    </div>
+
+                    {/* 섹터 미니 범례 칩 목록 */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        {segments.map(item => (
+                            <div key={item.key} className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/95 dark:bg-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-300 border border-amber-200/70 dark:border-slate-700/50 shadow-2xs">
+                                <span className="w-2 h-2 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: item.color }}></span>
+                                <span className="text-xs">{item.icon}</span>
+                                <span className="truncate max-w-[80px]">{item.name}</span>
+                                <span className="font-mono font-bold text-slate-900 dark:text-white ml-0.5">{item.targetPct}%</span>
                             </div>
                         ))}
                     </div>
-                    {total !== 100 && (
-                        <div className="text-right text-xs text-red-600 dark:text-red-400 mt-1">
-                            총합이 {total}%입니다. 100%로 조정해주세요.
-                        </div>
-                    )}
                 </div>
             );
         };
@@ -804,7 +830,11 @@ import CommunityView from './components/Community/CommunityView';
             const [isDemoMode, setIsDemoMode] = useState(false); // [추가] 데모 모드 상태
             const [isPro, setIsPro] = useState(false); // [추가] 유료 이용자 여부
             const [isAdmin, setIsAdmin] = useState(false); // [추가] 관리자 여부
-            const isLocalEnv = Boolean(import.meta.env.DEV);
+            const isLocalEnv = Boolean(import.meta.env.DEV) || (typeof window !== 'undefined' && (
+                window.location.hostname === 'localhost' ||
+                window.location.hostname === '127.0.0.1' ||
+                window.location.hostname === '0.0.0.0'
+            ));
             const [adminSuggestions, setAdminSuggestions] = useState([]); // [추가] 관리자용 사용자 의견 목록
             const [verifiedEmail, setVerifiedEmail] = useState(null);
             const [userProfile, setUserProfile] = useState(null); // [추가] 사용자 프로필 정보
@@ -1045,6 +1075,7 @@ import CommunityView from './components/Community/CommunityView';
             };
 
             const [editingRebalanceSector, setEditingRebalanceSector] = useState(null); // [추가] 리밸런싱 상세 편집 섹터
+            const [isRebalanceThresholdOpen, setIsRebalanceThresholdOpen] = useState(false); // [추가] 리밸런싱 임계값 접기/펼치기 상태
             const [iconPickerState, setIconPickerState] = useState(null); // [추가] 아이콘 선택기 상태 { sector, index }
             const [isAIModalOpen, setIsAIModalOpen] = useState(false); // [추가] AI 분석 모달 상태
             const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false); // [추가] API 키 설정 모달 상태
@@ -3221,11 +3252,12 @@ import CommunityView from './components/Community/CommunityView';
                 }
             };
 
+
             const titleText = isDemoMode
                 ? <span className="text-sm font-bold text-red-500 animate-in fade-in">(데모 모드)</span>
                 : appData?.displayMode === 'percent'
                     ? <span className="text-sm font-bold text-blue-500 animate-in fade-in">(프라이빗 모드)</span>
-                    : isAdmin
+                    : (isAdmin && isLocalEnv)
                         ? <span className="text-sm font-bold text-purple-600 dark:text-purple-400 animate-in fade-in">(관리자 모드)</span>
                         : null;
 
@@ -7406,167 +7438,480 @@ import CommunityView from './components/Community/CommunityView';
                     }));
                 };
 
+                // 세부 종목 100% 자동 맞춤
+                const handleNormalizeItems = (sectorAssets) => {
+                    if (!sectorAssets || sectorAssets.length === 0) return;
+                    const defaultItemPct = Math.round(100 / sectorAssets.length);
+                    const total = sectorAssets.reduce((sum, a) => sum + (currentItemTargets[a.id] ?? defaultItemPct), 0);
+                    if (total === 0) return;
+                    const newItems = {};
+                    sectorAssets.forEach(a => {
+                        const cur = currentItemTargets[a.id] ?? defaultItemPct;
+                        newItems[a.id] = Math.round((cur / total) * 100);
+                    });
+                    const finalTotal = sectorAssets.reduce((sum, a) => sum + newItems[a.id], 0);
+                    const diff = 100 - finalTotal;
+                    if (diff !== 0 && sectorAssets.length > 0) {
+                        const maxAsset = sectorAssets.reduce((prev, curr) => (newItems[curr.id] > newItems[prev.id] ? curr : prev), sectorAssets[0]);
+                        newItems[maxAsset.id] += diff;
+                    }
+                    setItemTargets(prev => ({ ...prev, ...newItems }));
+                };
+
+                // 세부 종목 균등(1/N) 배분
+                const handleEvenSplitItems = (sectorAssets) => {
+                    if (!sectorAssets || sectorAssets.length === 0) return;
+                    const count = sectorAssets.length;
+                    const base = Math.floor(100 / count);
+                    const remainder = 100 % count;
+                    const newItems = {};
+                    sectorAssets.forEach((a, idx) => {
+                        newItems[a.id] = base + (idx < remainder ? 1 : 0);
+                    });
+                    setItemTargets(prev => ({ ...prev, ...newItems }));
+                };
+
+                // 섹터 테마 컬러 매핑
+                const sectorThemeMap = {
+                    deposit: { color: '#3B82F6', icon: '🏦', label: '입출금통장' },
+                    savings: { color: '#10B981', icon: '💰', label: '예적금/저축' },
+                    investment: { color: '#F97316', icon: '📈', label: '주식/투자' },
+                    pension: { color: '#A855F7', icon: '🏛️', label: '연금/퇴직' },
+                    realestate: { color: '#F59E0B', icon: '🏠', label: '부동산' },
+                    car: { color: '#06B6D4', icon: '🚗', label: '자동차' },
+                    misc: { color: '#6366F1', icon: '📦', label: '기타자산' }
+                };
+
                 return (
-                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl border-4 border-amber-100/50 dark:border-amber-900/20 p-6"> 
-                        {/* 공통 임계값 설정 패널 */}
-                        <div className="mb-8 bg-white dark:bg-slate-800 p-5 rounded-xl border-4 border-amber-200 dark:border-amber-900/40 shadow-sm">
-                            <h4 className="text-xs font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-4 flex items-center gap-2">⚙️ 리밸런싱 실행 임계값 설정</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <div>
-                                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">섹터 단위</div>
-                                    <div className="flex gap-4">
-                                        <div className="flex-1">
-                                            <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">경고 임계값 ±%</label>
-                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingGlobal.sector?.warning ?? 5} onChange={(e) => updateGlobalSetting('sector', 'warning', e.target.value)} />
+                    <div className="bg-amber-50/70 dark:bg-slate-900 rounded-3xl border border-amber-200/80 dark:border-amber-900/40 shadow-xs p-5 sm:p-7 space-y-6"> 
+                        {/* 1. 상단 타이틀 & 임계값 접기/펼치기 버튼 */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-amber-200/60 dark:border-amber-900/30">
+                            <div>
+                                <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                    <span>⚖️</span> 리밸런싱 포트폴리오 목표 설정
+                                </h3>
+                                <p className="text-xs text-amber-800/70 dark:text-amber-400/70 mt-0.5 font-medium">
+                                    섹터 카드를 클릭하면 각 종목별 세부 비중 설정으로 회전합니다.
+                                </p>
+                            </div>
+
+                            {/* 세련된 임계값 토글 버튼 */}
+                            <button
+                                type="button"
+                                onClick={() => setIsRebalanceThresholdOpen(prev => !prev)}
+                                className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    isRebalanceThresholdOpen 
+                                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs' 
+                                        : 'bg-amber-100/70 dark:bg-slate-800 text-amber-900 dark:text-amber-200 border-amber-300/80 dark:border-amber-900/50 hover:bg-amber-200/70'
+                                }`}
+                            >
+                                <span>⚙️</span>
+                                <span>임계값 설정</span>
+                                <span className="text-[10px] font-bold bg-amber-200/80 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 px-1.5 py-0.5 rounded">
+                                    섹터 ±{rebalancingGlobal.sector?.warning ?? 5}% · 항목 ±{rebalancingGlobal.item?.warning ?? 5}%
+                                </span>
+                                <span className="text-[10px] transition-transform duration-200">
+                                    {isRebalanceThresholdOpen ? '▲' : '▼'}
+                                </span>
+                            </button>
+                        </div>
+
+                        {/* 2. 접이식 임계값 세부 패널 */}
+                        {isRebalanceThresholdOpen && (
+                            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/60 via-slate-50 to-orange-50/40 dark:from-slate-850 dark:via-slate-800 dark:to-slate-850 border border-amber-200/80 dark:border-amber-900/40 shadow-xs animate-in fade-in duration-200 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-black text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                                        <span>⚙️</span> 리밸런싱 실행 임계값 상세 설정
+                                    </span>
+                                    <span className="text-[11px] text-slate-400">목표 비중 대비 허용 오차 범위</span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                                    <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/70 dark:border-slate-700 space-y-2">
+                                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1">
+                                            <span>📊</span> 섹터 단위 임계값
                                         </div>
-                                        <div className="flex-1">
-                                            <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">위험 임계값 ±%</label>
-                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingGlobal.sector?.danger ?? 10} onChange={(e) => updateGlobalSetting('sector', 'danger', e.target.value)} />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-400 mb-1">경고 편차 (±%)</label>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-xs font-bold text-amber-500 font-mono">±</span>
+                                                    <input 
+                                                        type="number" 
+                                                        min="1"
+                                                        max="50"
+                                                        className="w-full border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:border-amber-500 outline-none" 
+                                                        value={rebalancingGlobal.sector?.warning ?? 5} 
+                                                        onChange={(e) => updateGlobalSetting('sector', 'warning', e.target.value)} 
+                                                    />
+                                                    <span className="text-xs font-bold text-slate-400">%</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-400 mb-1">위험 편차 (±%)</label>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-xs font-bold text-rose-500 font-mono">±</span>
+                                                    <input 
+                                                        type="number" 
+                                                        min="1"
+                                                        max="50"
+                                                        className="w-full border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:border-rose-500 outline-none" 
+                                                        value={rebalancingGlobal.sector?.danger ?? 10} 
+                                                        onChange={(e) => updateGlobalSetting('sector', 'danger', e.target.value)} 
+                                                    />
+                                                    <span className="text-xs font-bold text-slate-400">%</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/70 dark:border-slate-700 space-y-2">
+                                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1">
+                                            <span>📦</span> 개별 종목(항목) 단위 임계값
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-400 mb-1">경고 편차 (±%)</label>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-xs font-bold text-amber-500 font-mono">±</span>
+                                                    <input 
+                                                        type="number" 
+                                                        min="1"
+                                                        max="50"
+                                                        className="w-full border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:border-amber-500 outline-none" 
+                                                        value={rebalancingGlobal.item?.warning ?? 5} 
+                                                        onChange={(e) => updateGlobalSetting('item', 'warning', e.target.value)} 
+                                                    />
+                                                    <span className="text-xs font-bold text-slate-400">%</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-400 mb-1">위험 편차 (±%)</label>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-xs font-bold text-rose-500 font-mono">±</span>
+                                                    <input 
+                                                        type="number" 
+                                                        min="1"
+                                                        max="50"
+                                                        className="w-full border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:border-rose-500 outline-none" 
+                                                        value={rebalancingGlobal.item?.danger ?? 10} 
+                                                        onChange={(e) => updateGlobalSetting('item', 'danger', e.target.value)} 
+                                                    />
+                                                    <span className="text-xs font-bold text-slate-400">%</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {/* 3. 목표 비중 분리 세그먼트 막대바 & 범례 */}
+                        <StackedBarDisplay targets={rebalancingTargets} sectorInfo={sectorInfo} excludedSectors={excludedSectors} darkMode={darkMode} assetSectorOrder={assetSectorOrder} />
+
+                        {/* 4. 컨트롤 바 (목표 비중 합계 & 목표 달성 기간 설정) */}
+                        <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-amber-100/50 dark:bg-slate-800/60 border border-amber-200/80 dark:border-amber-900/40">
+                            {/* 좌측: 목표 비중 총합 및 100% 자동 맞춤 */}
+                            <div className="flex items-center gap-3">
                                 <div>
-                                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">항목 단위</div>
-                                    <div className="flex gap-4">
-                                        <div className="flex-1">
-                                            <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">경고 임계값 ±%</label>
-                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingGlobal.item?.warning ?? 5} onChange={(e) => updateGlobalSetting('item', 'warning', e.target.value)} />
-                                        </div>
-                                        <div className="flex-1">
-                                            <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">위험 임계값 ±%</label>
-                                            <input type="number" className="w-full border rounded px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" value={rebalancingGlobal.item?.danger ?? 10} onChange={(e) => updateGlobalSetting('item', 'danger', e.target.value)} />
-                                        </div>
+                                    <span className="text-[10px] font-bold text-amber-900/60 dark:text-slate-400 block">목표 비중 총합</span>
+                                    <div className="flex items-baseline gap-1.5">
+                                        <span className={`text-2xl font-black font-mono tracking-tight ${totalTarget === 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`}>
+                                            {totalTarget}%
+                                        </span>
+                                        {totalTarget === 100 ? (
+                                            <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200/60">
+                                                ✓ 정상
+                                            </span>
+                                        ) : (
+                                            <span className="text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md border border-rose-200/60 animate-pulse">
+                                                {totalTarget > 100 ? `+${totalTarget - 100}% 초과` : `${100 - totalTarget}% 부족`}
+                                            </span>
+                                        )}
                                     </div>
+                                </div>
+                                <button 
+                                    type="button"
+                                    onClick={handleNormalize} 
+                                    disabled={totalTarget === 100}
+                                    className="px-3 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black rounded-xl transition-all shadow-xs active:scale-95 disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 cursor-pointer"
+                                >
+                                    <span>⚡</span>
+                                    <span>비중 100% 맞춤</span>
+                                </button>
+                            </div>
+
+                            {/* 우측: 목표 달성 기간 설정 */}
+                            <div className="flex items-center gap-3">
+                                <div className="text-right">
+                                    <span className="text-[10px] font-bold text-amber-900/60 dark:text-slate-400 block">목표 달성 기간</span>
+                                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">리밸런싱 제안 기간</span>
+                                </div>
+                                <div className="flex items-center gap-1 bg-white/90 dark:bg-slate-800 p-1 rounded-xl border border-amber-200/80 dark:border-slate-700 shadow-2xs">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRebalanceMonths(Math.max(1, (rebalanceMonths || 12) - 1))}
+                                        className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 font-bold text-sm flex items-center justify-center transition-colors cursor-pointer"
+                                        title="1개월 감소"
+                                    >
+                                        -
+                                    </button>
+                                    <input 
+                                        type="number" 
+                                        min="1"
+                                        max="120"
+                                        className="w-12 text-center text-sm font-black font-mono bg-transparent text-slate-900 dark:text-white outline-none" 
+                                        value={rebalanceMonths} 
+                                        onChange={(e) => setRebalanceMonths(Math.max(1, Number(e.target.value)))} 
+                                    />
+                                    <span className="text-xs font-bold text-slate-400 pr-1">개월</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setRebalanceMonths(Math.min(120, (rebalanceMonths || 12) + 1))}
+                                        className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 font-bold text-sm flex items-center justify-center transition-colors cursor-pointer"
+                                        title="1개월 증가"
+                                    >
+                                        +
+                                    </button>
                                 </div>
                             </div>
                         </div>
 
-                        <StackedBarDisplay targets={rebalancingTargets} sectorInfo={sectorInfo} excludedSectors={excludedSectors} darkMode={darkMode} assetSectorOrder={assetSectorOrder} />
-                        <div className="mb-6 flex flex-col sm:flex-row justify-between items-center gap-4 bg-amber-50/50 dark:bg-amber-900/10 p-4 rounded-xl border-4 border-amber-200 dark:border-amber-900/40">                                        
-                            <div className="flex items-center gap-4">
-                                <div>
-                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 block mb-0.5">목표 비중 총합</span>
-                                    <span className={`text-xl font-black ${totalTarget !== 100 ? 'text-red-500' : 'text-amber-600 dark:text-amber-400'}`}>
-                                        {totalTarget}%
-                                    </span>
-                                </div>
-                                <button 
-                                    onClick={handleNormalize} 
-                                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-lg transition-all shadow-md active:scale-95 disabled:bg-slate-300 dark:disabled:bg-slate-700"
-                                    disabled={totalTarget === 100}
-                                >
-                                    비중 100% 맞춤
-                                </button>
-                            </div>
-                            <div className="flex flex-col items-end">
-                                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">목표 달성 기간 설정</span>
-                                <div className="flex items-center gap-2">
-                                    <input 
-                                        type="number" 
-                                        className="w-20 border-2 rounded-lg px-3 py-1.5 text-sm font-black bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-amber-600 focus:border-amber-500 outline-none transition-all" 
-                                        value={rebalanceMonths} 
-                                        onChange={(e) => setRebalanceMonths(Number(e.target.value))} 
-                                    />
-                                    <span className="text-sm font-bold text-slate-400">개월</span>
-                                </div>
-                            </div>
-                        </div>
+                        {/* 5. 예산 제약 알림 배너 */}
                         {calculation.rebalanceInfo && (
-                            <div className={`mb-4 p-3 rounded-lg border text-xs font-medium ${calculation.rebalanceInfo.budgetLimited ? 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-300' : 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300'}`}>
-                                {calculation.rebalanceInfo.budgetLimited 
-                                    ? `⚠️ 예산 부족으로 ${calculation.rebalanceInfo.targetMonths}개월 내 달성이 어렵습니다. 현재 자산 비중 결손율에 따라 비례 배분된 수치를 제안합니다.` 
-                                    : `✅ 현재 예산으로 ${calculation.rebalanceInfo.targetMonths}개월 내 목표 비중 달성이 가능합니다.`}
+                            <div className={`p-3.5 rounded-2xl border text-xs font-medium flex items-start sm:items-center gap-2.5 transition-all shadow-2xs ${
+                                calculation.rebalanceInfo.budgetLimited 
+                                    ? 'bg-amber-100/70 border-amber-300/80 text-amber-900 dark:bg-amber-950/40 dark:border-amber-800/60 dark:text-amber-200' 
+                                    : 'bg-emerald-50 border-emerald-300/80 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-200'
+                            }`}>
+                                <span className="text-base shrink-0 mt-0.5 sm:mt-0">{calculation.rebalanceInfo.budgetLimited ? '⚠️' : '✅'}</span>
+                                <div className="flex-1 leading-relaxed">
+                                    {calculation.rebalanceInfo.totalGap === 0 ? (
+                                        <span>현재 모든 자산 섹터가 설정된 목표 비중에 부합하여 균형을 유지하고 있습니다.</span>
+                                    ) : calculation.rebalanceInfo.budgetLimited ? (
+                                        <span>
+                                            {calculation.rebalanceInfo.hasOverweightSurplus ? (
+                                                <>기존 비중 초과 자산이 있거나 월 가용 예산(월 {formatNumber(calculation.rebalanceInfo.disposableIncome ?? 0)}만원) 대비 필요 납입액(월 {formatNumber(Math.round(calculation.rebalanceInfo.monthlyNeeded ?? 0))}만원)이 초과되어 <strong>{calculation.rebalanceInfo.targetMonths}개월 내 순수 적립만으로는 달성이 어렵습니다.</strong> 현재 결손율에 맞춰 월 가용 예산 내 비례 배분 수치를 제안합니다.</>
+                                            ) : (
+                                                <>예산 제약으로 <strong>{calculation.rebalanceInfo.targetMonths}개월 내 달성이 어렵습니다.</strong> (월 필요: {formatNumber(Math.round(calculation.rebalanceInfo.monthlyNeeded ?? 0))}만원 / 가용: {formatNumber(calculation.rebalanceInfo.disposableIncome ?? 0)}만원). 결손율에 따라 비례 배분된 수치를 제안합니다.</>
+                                            )}
+                                        </span>
+                                    ) : (
+                                        <span>
+                                            현재 월 가용 예산(월 {formatNumber(calculation.rebalanceInfo.disposableIncome ?? 0)}만원)으로 <strong>{calculation.rebalanceInfo.targetMonths}개월 내 목표 비중 달성이 가능합니다.</strong> (월 권장 총 납입: {formatNumber(Math.round(calculation.rebalanceInfo.monthlyNeeded ?? 0))}만원)
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         )}
+
+                        {/* 6. 섹터별 카드 그리드 (앞면: 섹터 목표 비중 / 뒷면: 종목별 세부 비중 플립) */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             {validSectors.map(sectorKey => {
                                 const currentValue = rebalancingTargets[sectorKey] ?? defaultPct;
                                 const actualValue = currentSectorTotals[sectorKey]?.percentage || 0;
                                 const isEditing = editingRebalanceSector === sectorKey;
                                 const sectorAssets = assets[sectorKey] || [];
-                                const totalItemWeight = sectorAssets.reduce((sum, a) => sum + (currentItemTargets[a.id] ?? Math.round(100/sectorAssets.length)), 0);
-                                
-                                // Gap 계산
+                                const totalItemWeight = sectorAssets.reduce((sum, a) => sum + (currentItemTargets[a.id] ?? Math.round(100 / sectorAssets.length)), 0);
                                 const gap = currentValue - actualValue;
+                                const secTheme = sectorThemeMap[sectorKey] || { color: '#6366F1', icon: '📁', label: sectorKey };
 
                                 return (
-                                    <div key={sectorKey} className={`rounded-2xl p-5 transition-all duration-300 relative border-4 ${isEditing ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 shadow-xl scale-105 z-10' : 'bg-white dark:bg-slate-800 border-amber-100 dark:border-amber-900/20 hover:border-amber-400 dark:hover:border-amber-600 hover:shadow-md cursor-pointer'}`} onClick={() => !isEditing && setEditingRebalanceSector(sectorKey)}>
+                                    <div 
+                                        key={sectorKey} 
+                                        className={`rounded-3xl p-5 transition-all duration-300 relative border flex flex-col justify-between select-none ${
+                                            isEditing 
+                                                ? 'bg-gradient-to-b from-amber-100/90 via-white to-amber-50/50 dark:from-slate-800 dark:via-slate-850 dark:to-amber-950/30 border-amber-500 shadow-xl ring-2 ring-amber-400/40 scale-[1.02] z-20' 
+                                                : 'bg-white/95 dark:bg-slate-800/90 border-amber-200/70 dark:border-slate-700/60 hover:border-amber-400 dark:hover:border-amber-500 hover:shadow-md cursor-pointer group'
+                                        }`} 
+                                        onClick={() => {
+                                            if (!isEditing) setEditingRebalanceSector(sectorKey);
+                                        }}
+                                    >
                                         {!isEditing ? (
-                                            // [Front Side] 섹터 비중 설정
+                                            // [Front Side] 섹터 목표 비중 설정
                                             <div className="space-y-4">
+                                                {/* 상단: 섹터 아이콘 + 이름 + 세부 종목 힌트 */}
                                                 <div className="flex justify-between items-start">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xl">{sectorInfo[sectorKey].icon}</span>
-                                                        <h4 className="font-black text-slate-800 dark:text-slate-100">{sectorInfo[sectorKey].name}</h4>
+                                                    <div className="flex items-center gap-2.5">
+                                                        <span 
+                                                            className="w-9 h-9 rounded-xl flex items-center justify-center text-lg shadow-2xs shrink-0" 
+                                                            style={{ backgroundColor: `${secTheme.color}18`, color: secTheme.color }}
+                                                        >
+                                                            {sectorInfo[sectorKey]?.icon || secTheme.icon}
+                                                        </span>
+                                                        <div>
+                                                            <h4 className="font-black text-slate-800 dark:text-slate-100 text-sm">
+                                                                {sectorInfo[sectorKey]?.name || secTheme.label}
+                                                            </h4>
+                                                            <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                                                                {sectorAssets.length}개 보유 항목
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setEditingRebalanceSector(sectorKey);
+                                                        }}
+                                                        className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/80 text-slate-500 group-hover:text-indigo-600 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/50 flex items-center gap-1 transition-all cursor-pointer"
+                                                        title="클릭하여 세부 종목별 목표 비중 설정"
+                                                    >
+                                                        <span>세부설정</span>
+                                                        <span className="text-xs group-hover:rotate-180 transition-transform duration-300">↻</span>
+                                                    </button>
                                                 </div>
                                                 
-                                                {/* Gap Meter Visualization */}
-                                                <div className="space-y-1.5">
-                                                    <div className="flex justify-between text-[10px] font-black uppercase tracking-tighter">
-                                                        <span className="text-slate-400">현재 비중: {actualValue.toFixed(1)}%</span>
-                                                        <span className={Math.abs(gap) < 1 ? "text-emerald-500" : "text-amber-500"}>
-                                                            차이: {gap > 0 ? '+' : ''}{gap.toFixed(1)}%
+                                                {/* 실제 비중 vs 목표 비중 듀얼 게이지 & Gap 표시 */}
+                                                <div className="space-y-1.5 pt-1">
+                                                    <div className="flex justify-between items-center text-[11px] font-bold">
+                                                        <span className="text-slate-500 dark:text-slate-400">
+                                                            현재 <strong className="font-mono text-slate-800 dark:text-slate-200">{actualValue.toFixed(1)}%</strong>
+                                                        </span>
+                                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                                                            Math.abs(gap) < 0.5 
+                                                                ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200/60' 
+                                                                : gap > 0 
+                                                                    ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400 border border-indigo-200/60' 
+                                                                    : 'bg-orange-50 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400 border border-orange-200/60'
+                                                        }`}>
+                                                            {Math.abs(gap) < 0.5 ? '✓ 균형 유지' : `${gap > 0 ? '+' : ''}${gap.toFixed(1)}% ${gap > 0 ? '확대 필요' : '축소 필요'}`}
                                                         </span>
                                                     </div>
-                                                    <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden flex relative">
-                                                        {/* Actual Progress */}
-                                                        <div className={`h-full transition-all duration-500 ${isEditing ? 'bg-indigo-400' : 'bg-slate-300 dark:bg-slate-600'}`} style={{ width: `${actualValue}%` }}></div>
-                                                        {/* Target Marker */}
-                                                        <div className="absolute top-0 h-full w-1 bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.5)] transition-all duration-500" style={{ left: `${currentValue}%` }}></div>
+                                                    <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-700/80 rounded-full overflow-hidden flex relative shadow-inner">
+                                                        {/* 실제 현재 비중 게이지 */}
+                                                        <div 
+                                                            className="h-full rounded-full transition-all duration-500" 
+                                                            style={{ width: `${Math.min(100, Math.max(0, actualValue))}%`, backgroundColor: secTheme.color }}
+                                                        />
+                                                        {/* 목표 비중 핀 마커 */}
+                                                        <div 
+                                                            className="absolute top-0 bottom-0 w-1.5 bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.9)] rounded-full transition-all duration-500 -ml-0.5" 
+                                                            style={{ left: `${Math.min(99, Math.max(0, currentValue))}%` }}
+                                                            title={`목표: ${currentValue}%`}
+                                                        />
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center justify-between gap-3 pt-2" onClick={(e) => e.stopPropagation()}>
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase">목표 비중 설정</span>
-                                                    <div className="flex items-center gap-1.5">
+                                                {/* 목표 비중 인라인 조정 인풋 & 스테퍼 */}
+                                                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/50" onClick={(e) => e.stopPropagation()}>
+                                                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                                        목표 비중
+                                                    </span>
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setRebalancingTargets(prev => ({ ...prev, [sectorKey]: Math.max(0, currentValue - 1) }))}
+                                                            className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600 font-bold flex items-center justify-center text-xs transition-colors cursor-pointer"
+                                                            title="1% 감소"
+                                                        >
+                                                            -
+                                                        </button>
                                                         <input 
                                                             type="number" 
                                                             min="0" 
                                                             max="100" 
-                                                            className="w-16 border-2 border-slate-100 dark:border-slate-700 rounded-lg px-2 py-1 text-sm bg-slate-50 dark:bg-slate-900 text-gray-900 dark:text-white font-black text-right focus:border-amber-500 outline-none transition-all" 
+                                                            className="w-14 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 py-1 text-sm bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-black text-right focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all" 
                                                             value={currentValue} 
-                                                            onChange={(e)=> setRebalancingTargets(prev=> ({ ...prev, [sectorKey]: Number(e.target.value) }))} 
+                                                            onChange={(e) => setRebalancingTargets(prev => ({ ...prev, [sectorKey]: Number(e.target.value) }))} 
                                                         />
                                                         <span className="text-xs font-bold text-slate-400">%</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setRebalancingTargets(prev => ({ ...prev, [sectorKey]: Math.min(100, currentValue + 1) }))}
+                                                            className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600 font-bold flex items-center justify-center text-xs transition-colors cursor-pointer"
+                                                            title="1% 증가"
+                                                        >
+                                                            +
+                                                        </button>
                                                     </div>
                                                 </div>
 
-                                                <div className="text-[10px] text-slate-400 font-bold text-center pt-2 border-t border-slate-50 dark:border-slate-700">
-                                                    클릭하여 항목별 설정
+                                                {/* 하단 카드 회전 유도 힌트 */}
+                                                <div className="text-[10px] text-indigo-600/80 dark:text-indigo-400/80 font-bold text-center pt-1.5 flex items-center justify-center gap-1">
+                                                    <span>클릭하여 세부 종목별 설정</span>
+                                                    <span className="group-hover:rotate-180 transition-transform duration-300">↻</span>
                                                 </div>
                                             </div>
                                         ) : (
                                             // [Back Side] 항목별 비중 설정 (Flip Effect Content)
-                                            <div className="animate-flip h-full flex flex-col">
-                                                <div className="flex justify-between items-center mb-3 border-b dark:border-blue-800/50 pb-2">
-                                                    <h4 className="text-sm font-bold text-blue-800 dark:text-blue-200">{sectorInfo[sectorKey].name} 항목</h4>
-                                                    <button onClick={(e) => { e.stopPropagation(); setEditingRebalanceSector(null); }} className="text-xs bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-100 px-2 py-1 rounded hover:bg-blue-300">완료</button>
+                                            <div className="animate-flip h-full flex flex-col justify-between space-y-3" onClick={(e) => e.stopPropagation()}>
+                                                {/* 백사이드 헤더 */}
+                                                <div className="flex justify-between items-center pb-2 border-b border-indigo-100 dark:border-slate-700">
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                        <span className="text-base shrink-0">{sectorInfo[sectorKey]?.icon || secTheme.icon}</span>
+                                                        <h4 className="text-xs font-black text-indigo-950 dark:text-indigo-200 truncate">
+                                                            {sectorInfo[sectorKey]?.name} 세부 종목
+                                                        </h4>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        {sectorAssets.length > 1 && (
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => handleEvenSplitItems(sectorAssets)}
+                                                                className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 transition-colors cursor-pointer"
+                                                                title="100% 균등 배분"
+                                                            >
+                                                                1/N
+                                                            </button>
+                                                        )}
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => setEditingRebalanceSector(null)} 
+                                                            className="text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                                                        >
+                                                            <span>✓</span> 완료
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <div className="flex-1 overflow-y-auto max-h-[200px] custom-scrollbar space-y-2 pr-1">
+
+                                                {/* 세부 항목 리스트 */}
+                                                <div className="flex-1 overflow-y-auto max-h-[190px] custom-scrollbar space-y-2 pr-1">
                                                     {sectorAssets.length > 0 ? sectorAssets.map(asset => (
-                                                        <div key={asset.id} className="flex items-center justify-between text-xs">
-                                                            <span className="truncate mr-2 text-gray-700 dark:text-gray-300 flex-1" title={asset.name}>{asset.name}</span>
-                                                            <div className="flex items-center gap-1 w-16">
+                                                        <div key={asset.id} className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/60 shadow-2xs flex items-center justify-between gap-2">
+                                                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate flex-1" title={asset.name}>
+                                                                {asset.name}
+                                                            </span>
+                                                            <div className="flex items-center gap-1 shrink-0 w-20 justify-end">
                                                                 <input 
                                                                     type="number" 
-                                                                    className="w-full border rounded px-1 py-0.5 text-right bg-white dark:bg-gray-700 border-blue-200 dark:border-blue-800"
-                                                                    value={currentItemTargets[asset.id] ?? Math.round(100/sectorAssets.length)}
+                                                                    min="0"
+                                                                    max="100"
+                                                                    className="w-14 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 py-0.5 text-xs font-mono font-bold text-right bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none" 
+                                                                    value={currentItemTargets[asset.id] ?? Math.round(100 / sectorAssets.length)}
                                                                     onChange={(e) => setItemTargets(prev => ({ ...prev, [asset.id]: Number(e.target.value) }))}
                                                                 />
+                                                                <span className="text-[11px] font-bold text-slate-400">%</span>
                                                             </div>
                                                         </div>
-                                                    )) : <div className="text-xs text-gray-400 text-center py-4">항목 없음</div>}
+                                                    )) : (
+                                                        <div className="text-xs text-slate-400 text-center py-6">등록된 보유 항목이 없습니다</div>
+                                                    )}
                                                 </div>
-                                                <div className="mt-3 pt-2 border-t dark:border-blue-800/50 flex justify-between items-center text-xs">
-                                                    <span className="text-gray-500 dark:text-gray-400">합계</span>
-                                                    <span className={`font-bold ${totalItemWeight !== 100 ? 'text-red-500' : 'text-green-600'}`}>{totalItemWeight}%</span>
+
+                                                {/* 백사이드 푸터 (합계 및 100% 맞춤 버튼) */}
+                                                <div className="pt-2 border-t border-indigo-100 dark:border-slate-700 flex justify-between items-center text-xs font-bold">
+                                                    <span className="text-slate-500 dark:text-slate-400">항목 합계</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`font-mono font-black ${totalItemWeight === 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`}>
+                                                            {totalItemWeight}%
+                                                        </span>
+                                                        {totalItemWeight !== 100 && sectorAssets.length > 0 && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleNormalizeItems(sectorAssets)}
+                                                                className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors shadow-2xs cursor-pointer"
+                                                                title="항목 비중 100%로 맞춤"
+                                                            >
+                                                                100% 맞춤
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
                                     </div>
-                                )
+                                );
                             })}
                         </div>
                     </div>

@@ -39,6 +39,11 @@ export default function PostCard({ post, onClick, onLikeToggle, isLiked = false 
                         <span>📌</span> 전체 공지
                     </span>
                 )}
+                {post.visibility === 'private' && (
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 flex items-center gap-1 shadow-xs border border-amber-400/40">
+                        <span>🔒</span> 나만보기
+                    </span>
+                )}
                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
                     {categoryLabels[post.category] || post.category || '자유주제'}
                 </span>
@@ -123,7 +128,12 @@ export default function PostCard({ post, onClick, onLikeToggle, isLiked = false 
                             </span>
                         );
                     })()}
-                    <span className="text-[11px] text-slate-400">· {formatDate(post.created_at)}</span>
+                    <span className="text-[11px] text-slate-400">
+                        · {formatDate(post.created_at)}
+                        {(post.is_edited || (post.updated_at && post.created_at && new Date(post.updated_at).getTime() - new Date(post.created_at).getTime() > 1000)) && (
+                            <span className="text-[10px] text-slate-400 font-normal"> (수정됨)</span>
+                        )}
+                    </span>
                 </div>
 
                 <div className="flex items-center gap-3 font-medium text-slate-400">

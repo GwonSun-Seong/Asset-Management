@@ -730,32 +730,33 @@ function runAllCalculations({ appData, projectionMonths, inflationRate, baseDate
     const swr4PercentCapital = annualFixedExpPostDebt * 25;
 
     const disposableIncome = Math.max(0, (appData.monthlySalary || 0) - localTotalMonthlyExpense);
-    const targetMonths = appData.rebalanceMonths || 12;
+    const targetMonths = Math.max(1, appData.rebalanceMonths || 12);
     const excludedSectors = Array.isArray(appData.excludedSectors) ? appData.excludedSectors : [];
     const excludedAssetIds = Array.isArray(appData.excludedAssetIds) ? appData.excludedAssetIds : [];
-    
-    // 제외된 섹터 및 개별 제외 항목의 현재 자산 총액 계산
-    let excludedTotalAmount = 0;
-    excludedSectors.forEach(sec => {
-        excludedTotalAmount += sectorSums[sec] || 0;
-    });
-    
-    // 섹터 내에서 개별 제외된 항목들의 금액 추가 합산
-    Object.keys(appData.assets || {}).forEach(sec => {
-        if (!excludedSectors.includes(sec)) {
-            (appData.assets[sec] || []).forEach(a => {
+    const validSectors = Object.keys(sectorInfo).filter(k => k !== 'loan' && !excludedSectors.includes(k));
+
+    // 리밸런싱 대상 자산의 현재 총액 (부채는 자산 배분 대상이 아니므로 차감하지 않음)
+    let rebalanceCurrentAssets = 0;
+    const currentSectorBalances = {};
+    validSectors.forEach(sec => {
+        let secSum = sectorSums[sec] || 0;
+        if (Array.isArray(appData.assets[sec])) {
+            appData.assets[sec].forEach(a => {
                 if (a.id && excludedAssetIds.includes(a.id)) {
-                    excludedTotalAmount += (a.amount || 0);
+                    secSum -= Number(a.amount || 0);
                 }
             });
         }
+        secSum = Math.max(0, secSum);
+        currentSectorBalances[sec] = secSum;
+        rebalanceCurrentAssets += secSum;
     });
 
-    // 리밸런싱 계산용 미래 총자산액 (제외된 섹터 자산액 차감)
-    const rebalanceFutureValue = Math.max(0, currentTotal - excludedTotalAmount + (disposableIncome * targetMonths));
+    // 리밸런싱 계산용 미래 총자산액 (현재 대상 자산 총액 + 월 가용예산 * 목표달성개월)
+    const rebalanceFutureValue = Math.max(0, rebalanceCurrentAssets + (disposableIncome * targetMonths));
     const sectorGaps = {};
     let totalGap = 0;
-    const validSectors = Object.keys(sectorInfo).filter(k => k !== 'loan' && !excludedSectors.includes(k));
+    let hasOverweightSurplus = false;
     const itemRecs = {};
     
     validSectors.forEach(sector => {
@@ -763,13 +764,18 @@ function runAllCalculations({ appData, projectionMonths, inflationRate, baseDate
             ? appData.rebalancingTargets[sector] 
             : Math.round(100 / validSectors.length);
         const targetBalance = rebalanceFutureValue * (targetPct / 100);
-        const currentBalance = sectorSums[sector] || 0;
+        const currentBalance = currentSectorBalances[sector] || 0;
         const gap = Math.max(0, targetBalance - currentBalance);
         sectorGaps[sector] = gap;
         totalGap += gap;
+        // 특정 섹터의 현재 잔액이 미래 목표치를 초과하면 단순 적립만으로는 해당 기간 내 비중 도달 불가
+        if (targetPct > 0 && currentBalance > targetBalance + 0.1) {
+            hasOverweightSurplus = true;
+        }
     });
 
-    const budgetLimited = (totalGap / targetMonths) > disposableIncome;
+    const monthlyNeeded = targetMonths > 0 ? (totalGap / targetMonths) : 0;
+    const budgetLimited = monthlyNeeded > disposableIncome || (disposableIncome <= 0 && totalGap > 0) || hasOverweightSurplus;
     const sectorRecs = {};
     validSectors.forEach(sector => {
         if (totalGap === 0) sectorRecs[sector] = 0;
@@ -855,6 +861,10 @@ function runAllCalculations({ appData, projectionMonths, inflationRate, baseDate
             recs: sectorRecs,
             budgetLimited,
             targetMonths: targetMonths,
+            totalGap,
+            monthlyNeeded,
+            disposableIncome,
+            hasOverweightSurplus,
             itemRecs
         }
     };
