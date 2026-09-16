@@ -74,7 +74,8 @@ window.navLabels = {
     'detail-analysis': { title: "상세 분석", icon: "🔍" },
     'capital-income': { title: "자본소득 분석", icon: "💹" },
     assumptions: { title: "가정 사항", icon: "💡" },
-    community: { title: "커뮤니티 광장", icon: "💬" }
+    community: { title: "커뮤니티 광장", icon: "💬" },
+    tools: { title: "추가 기능", icon: "✨" }
 };
 
 // UI 텍스트 리소스 (i18n 준비)

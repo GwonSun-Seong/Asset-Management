@@ -5,6 +5,7 @@ import MarketTickerSlide from './components/MarketTickerSlide';
 import WeatherAtmosphere from './components/WeatherAtmosphere';
 import { AssetGrowthModernView } from './components/AssetGrowthVariations';
 import CommunityView from './components/Community/CommunityView';
+import ExtraFeaturesView from './components/ExtraFeatures/ExtraFeaturesView';
 
         const CoreSettingsCard = ({
             monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
@@ -893,7 +894,8 @@ import CommunityView from './components/Community/CommunityView';
                 input: ['assets', 'expenses', 'events', 'memo', 'rebalance'], // 입력
                 visualization: ['budget', 'charts', 'history', 'scenario'], // 시각화 (요약은 항상 표시되므로 메뉴에서 제외)
                 analysis: ['detail-analysis', 'assumptions'], // 분석
-                community: ['community'] // 커뮤니티
+                community: ['community'], // 커뮤니티
+                tools: ['tools'] // 추가 기능
             };
             
 
@@ -908,7 +910,8 @@ import CommunityView from './components/Community/CommunityView';
                     { id: 'input', label: '📥 데이터 입력' },
                     { id: 'visualization', label: '📈 시각화' },
                     { id: 'analysis', label: '🔍 분석' },
-                    { id: 'community', label: '💬 커뮤니티' }
+                    { id: 'community', label: '💬 커뮤니티' },
+                    { id: 'tools', label: '✨ 추가 기능' }
                 ];
                 try {
                     const saved = localStorage.getItem('assetDashboardSidebarSectorOrder');
@@ -916,6 +919,9 @@ import CommunityView from './components/Community/CommunityView';
                         const parsed = JSON.parse(saved);
                         if (!parsed.some(s => s.id === 'community')) {
                             parsed.push({ id: 'community', label: '💬 커뮤니티' });
+                        }
+                        if (!parsed.some(s => s.id === 'tools')) {
+                            parsed.push({ id: 'tools', label: '✨ 추가 기능' });
                         }
                         return parsed;
                     }
@@ -9145,7 +9151,8 @@ import CommunityView from './components/Community/CommunityView';
                                         { id: 'input', label: '데이터 입력' },
                                         { id: 'visualization', label: '시각화' },
                                         { id: 'analysis', label: '분석' },
-                                        { id: 'community', label: '커뮤니티' }
+                                        { id: 'community', label: '커뮤니티' },
+                                        { id: 'tools', label: '추가 기능' }
                                     ].map(tab => (
                                         <button
                                             key={tab.id}
@@ -9167,7 +9174,8 @@ import CommunityView from './components/Community/CommunityView';
                                         { id: 'input', label: '입력' },
                                         { id: 'visualization', label: '시각화' },
                                         { id: 'analysis', label: '분석' },
-                                        { id: 'community', label: '커뮤니티' }
+                                        { id: 'community', label: '커뮤니티' },
+                                        { id: 'tools', label: '추가 기능' }
                                     ].map(tab => (
                                         <button
                                             key={tab.id}
@@ -9407,7 +9415,7 @@ import CommunityView from './components/Community/CommunityView';
                                                     onDrop={(e) => handlePanelDrop(e, id)}
                                                     onClick={() => {
                                                         setActiveTab(sector.id);
-                                                        if (id === 'community') {
+                                                        if (id === 'community' || id === 'tools') {
                                                             window.scrollTo({ top: 0, behavior: 'smooth' });
                                                         } else {
                                                             setTimeout(() => scrollToPanel(id), 50);
@@ -9420,14 +9428,14 @@ import CommunityView from './components/Community/CommunityView';
                                                             ? 'font-black text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 translate-x-1' 
                                                             : (isSameTab 
                                                                 ? 'font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 opacity-100'
-                                                            : 'font-normal text-gray-500 dark:text-gray-500 hover:text-blue-500'
+                                                             : 'font-normal text-gray-500 dark:text-gray-500 hover:text-blue-500'
                                                               )
-                                                           )
+                                                            )
                                                     }`}
                                                 >
                                                     <span className={`w-1 h-3 rounded-full transition-all ${isCurrentPanel ? 'bg-blue-500 scale-y-110' : 'bg-transparent'}`}></span>
-                                                    <span className={`transition-transform ${isCurrentPanel ? 'scale-110' : 'opacity-70'}`}>{navLabels[id]?.icon || '💬'}</span>
-                                                    <span className="truncate">{navLabels[id]?.title || '커뮤니티 광장'}</span>
+                                                    <span className={`transition-transform ${isCurrentPanel ? 'scale-110' : 'opacity-70'}`}>{navLabels[id]?.icon || (id === 'tools' ? '✨' : '💬')}</span>
+                                                    <span className="truncate">{navLabels[id]?.title || (id === 'tools' ? '추가 기능' : '커뮤니티 광장')}</span>
                                                 </button>
                                             );})}
                                         </div>
@@ -9470,6 +9478,16 @@ import CommunityView from './components/Community/CommunityView';
                                     currentAppData={appData}
                                     currentCalculation={calculation}
                                     onLogin={handleLogin}
+                                />
+                            ) : activeTab === 'tools' ? (
+                                <ExtraFeaturesView
+                                    monthlySalary={monthlySalary}
+                                    currentAppData={appData}
+                                    currentCalculation={calculation}
+                                    currentUser={communityCurrentUser}
+                                    supabase={supabase}
+                                    verifiedEmail={verifiedEmail}
+                                    addToast={addToast}
                                 />
                             ) : (
                             <>
