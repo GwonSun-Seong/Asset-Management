@@ -1,6 +1,7 @@
 // ExtraFeaturesView.jsx - 추가 기능 및 금융 실험실 허브 패널
 import React, { useState } from 'react';
 import TaxSettlementPreview from './TaxSettlementPreview';
+import ParkingGame from './ParkingGame';
 
 // 추가 기능 카탈로그 정의 (버튼 형태로 나열)
 const FEATURE_CATALOG = [
@@ -15,14 +16,14 @@ const FEATURE_CATALOG = [
         detail: '총급여, 신용/체크카드 사용액, 의료비, 기부금 등 2026년 세법 산출과정에 맞춘 정밀 모의계산.'
     },
     {
-        id: 'loan-calculator',
-        name: '[개발 중] 대출 상환 & 중도상환',
-        icon: '🏦',
-        category: '부채관리',
-        tag: '개발 중',
-        isAvailable: false,
-        summary: '현재 개발 준비 중인 기능입니다',
-        detail: '현재 개발 준비 중인 기능입니다.'
+        id: 'parking-game',
+        name: '정밀 주차 게임',
+        icon: '🚗',
+        category: '미니게임',
+        tag: 'HOT',
+        isAvailable: true,
+        summary: '30초 정밀 주차! 평행주차, T자 직각, 사선주차 완벽 도전',
+        detail: '방향키(또는 WASD)로 조작하여 30초 내에 주차 구역에 정확히 주차하고 P(파킹)를 누르세요. 정중앙 100점 만점, 충돌 시 게임오버!'
     },
     {
         id: 'savings-calculator',
@@ -175,7 +176,7 @@ export default function ExtraFeaturesView({
 
             {/* 선택된 기능 콘텐츠 영역 */}
             <div className="pt-2">
-                {activeFeature.id === 'tax-preview' ? (
+                {activeFeature.id === 'tax-preview' && (
                     <TaxSettlementPreview
                         monthlySalary={monthlySalary}
                         currentAppData={currentAppData}
@@ -185,7 +186,11 @@ export default function ExtraFeaturesView({
                         verifiedEmail={verifiedEmail}
                         addToast={addToast}
                     />
-                ) : (
+                )}
+                {activeFeature.id === 'parking-game' && (
+                    <ParkingGame addToast={addToast} />
+                )}
+                {activeFeature.id !== 'tax-preview' && activeFeature.id !== 'parking-game' && (
                     /* 준비 중인 기능 안내 카드 */
                     <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 shadow-xs text-center space-y-3">
                         <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center text-2xl mx-auto">
