@@ -6,6 +6,7 @@ import WeatherAtmosphere from './components/WeatherAtmosphere';
 import { AssetGrowthModernView } from './components/AssetGrowthVariations';
 import CommunityView from './components/Community/CommunityView';
 import ExtraFeaturesView from './components/ExtraFeatures/ExtraFeaturesView';
+import AssetGhostRacing from './components/AssetGhostRacing';
 
         const CoreSettingsCard = ({
             monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
@@ -851,7 +852,7 @@ import ExtraFeaturesView from './components/ExtraFeatures/ExtraFeaturesView';
             const lastSavedDataRef = useRef(''); // [추가] 중복 저장 방지를 위한 데이터 스냅샷
             const isCheckingSubscriptionRef = useRef(false); // [추가] 구독 확인 중복 실행 방지 Ref
             const [lastSyncTime, setLastSyncTime] = useState(null); // [추가] 마지막 동기화 시간
-            const [analysisMode, setAnalysisMode] = useState('growth-modern'); // [변경] 상세 분석 모드 ('growth-modern' | 'income')
+            const [analysisMode, setAnalysisMode] = useState('growth-modern'); // [변경] 상세 분석 모드 ('growth-modern' | 'income' | 'ghost-race')
             const [editingPhase, setEditingPhase] = useState(null); // [추가] 페이즈 편집 상태 추적
             const editingPhaseRef = useRef(null); // [보안] 단축키 강제 저장을 위한 실시간 상태 추적 Ref
 
@@ -8739,6 +8740,9 @@ import ExtraFeaturesView from './components/ExtraFeatures/ExtraFeaturesView';
                                 <button onClick={() => setAnalysisMode('income')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'income' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                                     <span>💰</span> 자본 소득 분석
                                 </button>
+                                <button onClick={() => setAnalysisMode('ghost-race')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'ghost-race' ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm ring-1 ring-purple-500/20' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                                    <span>🏎️</span> 고스트 레이싱
+                                </button>
                             </div>
                         </div>
                     )}
@@ -9035,6 +9039,19 @@ import ExtraFeaturesView from './components/ExtraFeatures/ExtraFeaturesView';
                             </table>
                         </div>
                     </div>
+                    )}
+
+                    {/* [고스트 레이싱] 과거의 나와 달리는 자산 고스트 레이스 */}
+                    {analysisMode === 'ghost-race' && !isExporting && (
+                        <AssetGhostRacing 
+                            assetHistory={assetHistory}
+                            currentNet={calculation?.currentNet || 0}
+                            currentGross={calculation?.currentGross || 0}
+                            formatNumber={formatNumber}
+                            displayMode={displayMode}
+                            isDarkMode={darkMode}
+                            addToast={addToast}
+                        />
                     )}
                 </div>
             )};
