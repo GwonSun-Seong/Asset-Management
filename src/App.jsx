@@ -9051,6 +9051,8 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                             displayMode={displayMode}
                             isDarkMode={darkMode}
                             addToast={addToast}
+                            targetAmount={targetAmount || appData?.targetAmount || 10000}
+                            monthlyProjections={calculation?.monthlyProjections || []}
                         />
                     )}
                 </div>
