@@ -154,19 +154,19 @@ export const SavedScenariosCarousel = ({
     return (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs overflow-hidden">
             {/* Header: Title, Count, View Mode Switcher */}
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-700/60 bg-gray-50/70 dark:bg-gray-800/80">
-                <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-gray-700 dark:text-gray-200 flex items-center gap-1.5">
-                        <span>📁</span> 저장된 시나리오 보관함
+            <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 border-b border-gray-100 dark:border-gray-700/60 bg-gray-50/70 dark:bg-gray-800/80">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                    <span className="text-xs font-bold text-gray-700 dark:text-gray-200 flex items-center gap-1 shrink-0">
+                        <span>📁</span> <span className="hidden sm:inline">저장된 </span>시나리오 보관함
                     </span>
-                    <span className="text-[11px] font-bold px-2 py-0.2 rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
+                    <span className="text-[10px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.2 rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 shrink-0">
                         {scenarios.length}개
                     </span>
                 </div>
-                <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-0.5 rounded-lg text-xs">
+                <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-0.5 rounded-lg text-xs shrink-0">
                     <button
                         onClick={() => setViewMode('carousel')}
-                        className={`px-2.5 py-0.8 rounded-md font-semibold text-xs transition-all ${
+                        className={`px-2 sm:px-2.5 py-0.8 rounded-md font-semibold text-xs whitespace-nowrap transition-all ${
                             viewMode === 'carousel'
                                 ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-xs'
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
@@ -177,7 +177,7 @@ export const SavedScenariosCarousel = ({
                     </button>
                     <button
                         onClick={() => setViewMode('list')}
-                        className={`px-2.5 py-0.8 rounded-md font-semibold text-xs transition-all ${
+                        className={`px-2 sm:px-2.5 py-0.8 rounded-md font-semibold text-xs whitespace-nowrap transition-all ${
                             viewMode === 'list'
                                 ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-xs'
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
@@ -797,23 +797,23 @@ export const ScenarioCompare = ({
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-xs">
                     {/* Tab 1: Sector Breakdown Comparison */}
                     {compareTab === 'sector' && (
-                        <div className="w-full">
-                            <table className="w-full text-xs text-left table-fixed">
+                        <div className="w-full overflow-x-auto no-scrollbar">
+                            <table className="w-full min-w-[480px] sm:min-w-full text-xs text-left">
                                 <thead>
                                     <tr className="bg-gray-50/80 dark:bg-gray-900/60 text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                                        <th className="py-3 px-4 font-bold w-[28%]">섹터 및 세부 항목</th>
+                                        <th className="py-2.5 sm:py-3 px-3 sm:px-4 font-bold min-w-[125px] sm:w-[28%] whitespace-nowrap">섹터 및 세부 항목</th>
                                         {results.map((r, idx) => (
-                                            <th key={r.id} className="py-3 px-4 text-right font-bold w-[24%]">
+                                            <th key={r.id} className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-bold whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-1.5">
                                                     <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border shrink-0 ${SCENARIO_TAG_COLORS[idx]?.badge}`}>
                                                         {SCENARIO_TAG_COLORS[idx]?.label}
                                                     </span>
-                                                    <span className="text-gray-900 dark:text-white truncate" title={r.name}>{r.name}</span>
+                                                    <span className="text-gray-900 dark:text-white truncate max-w-[100px] sm:max-w-none" title={r.name}>{r.name}</span>
                                                 </div>
                                             </th>
                                         ))}
                                         {results.length === 2 && (
-                                            <th className="py-3 px-4 text-right font-bold text-indigo-700 dark:text-indigo-400 w-[24%]">
+                                            <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-bold text-indigo-700 dark:text-indigo-400 whitespace-nowrap">
                                                 격차 (B - A)
                                             </th>
                                         )}
@@ -826,24 +826,24 @@ export const ScenarioCompare = ({
                                             <React.Fragment key={sectorKey}>
                                                 {/* Sector Parent Row */}
                                                 <tr className="hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors">
-                                                    <td className="py-3 px-4 font-bold text-gray-900 dark:text-white">
+                                                    <td className="py-2.5 sm:py-3 px-3 sm:px-4 font-bold text-gray-900 dark:text-white whitespace-nowrap">
                                                         <button 
                                                             onClick={() => toggleSectorExpand(sectorKey)} 
-                                                            className="inline-flex items-center gap-1.5 text-left group w-full"
+                                                            className="inline-flex items-center gap-1.5 text-left group"
                                                             title="세부 항목 펼치기/접기"
                                                         >
                                                             <span className="text-xs text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 w-3 shrink-0">
                                                                 {isExpanded ? '▼' : '▶'}
                                                             </span>
                                                             <span className="mr-0.5 shrink-0">{sectorInfo[sectorKey]?.icon}</span>
-                                                            <span className="truncate">{sectorInfo[sectorKey]?.name || sectorKey}</span>
+                                                            <span className="font-bold">{sectorInfo[sectorKey]?.name || sectorKey}</span>
                                                         </button>
                                                     </td>
                                                     {results.map(r => {
                                                         const finalProjection = r.projections[r.projections.length - 1];
                                                         const sectorTotal = finalProjection?.sectorTotals?.[sectorKey] || { amount: 0, percentage: 0 };
                                                         return (
-                                                            <td key={r.id} className="py-3 px-4 text-right font-semibold text-gray-800 dark:text-gray-200">
+                                                            <td key={r.id} className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-semibold text-gray-800 dark:text-gray-200 whitespace-nowrap">
                                                                 <div>{formatMoney(sectorTotal.amount)}</div>
                                                                 <div className="text-[10px] text-gray-400 font-normal">
                                                                     {(sectorTotal.percentage || 0).toFixed(1)}%
@@ -852,7 +852,7 @@ export const ScenarioCompare = ({
                                                         );
                                                     })}
                                                     {results.length === 2 && (
-                                                        <td className="py-3 px-4 text-right">
+                                                        <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right whitespace-nowrap">
                                                             {(() => {
                                                                 const finalA = results[0].projections[results[0].projections.length - 1];
                                                                 const finalB = results[1].projections[results[1].projections.length - 1];
@@ -895,7 +895,7 @@ export const ScenarioCompare = ({
                                                     if (itemsList.length === 0) {
                                                         return (
                                                             <tr key={`${sectorKey}-empty`} className="bg-gray-50/40 dark:bg-gray-900/30">
-                                                                <td colSpan={results.length + (results.length === 2 ? 2 : 1)} className="py-2 px-8 text-gray-400 italic">
+                                                                <td colSpan={results.length + (results.length === 2 ? 2 : 1)} className="py-2 px-8 text-gray-400 italic whitespace-nowrap">
                                                                     등록된 세부 항목이 없습니다.
                                                                 </td>
                                                             </tr>
@@ -903,7 +903,7 @@ export const ScenarioCompare = ({
                                                     }
                                                     return itemsList.map(([key, { name }]) => (
                                                         <tr key={`${sectorKey}-${key}`} className="bg-gray-50/40 dark:bg-gray-900/30 border-t border-gray-100 dark:border-gray-800">
-                                                            <td className="py-2 px-8 text-gray-600 dark:text-gray-400 font-medium truncate" title={name}>
+                                                            <td className="py-2 px-6 sm:px-8 text-gray-600 dark:text-gray-400 font-medium whitespace-nowrap" title={name}>
                                                                 └ {name}
                                                             </td>
                                                             {results.map(r => {
@@ -911,13 +911,13 @@ export const ScenarioCompare = ({
                                                                 const items = finalProjection?.itemTotals?.[sectorKey] || [];
                                                                 const itemData = items.find(item => (item.id || item.name) === key) || { amount: 0, percentage: 0 };
                                                                 return (
-                                                                    <td key={r.id} className="py-2 px-4 text-right text-gray-700 dark:text-gray-300">
+                                                                    <td key={r.id} className="py-2 px-3 sm:px-4 text-right text-gray-700 dark:text-gray-300 whitespace-nowrap">
                                                                         {formatMoney(itemData.amount)}
                                                                     </td>
                                                                 );
                                                             })}
                                                             {results.length === 2 && (
-                                                                <td className="py-2 px-4 text-right">
+                                                                <td className="py-2 px-3 sm:px-4 text-right whitespace-nowrap">
                                                                     {(() => {
                                                                         const finalA = results[0].projections[results[0].projections.length - 1];
                                                                         const finalB = results[1].projections[results[1].projections.length - 1];
@@ -946,20 +946,20 @@ export const ScenarioCompare = ({
 
                                     {/* Grand Total Row */}
                                     <tr className="bg-gray-100/80 dark:bg-gray-700/60 font-bold border-t-2 border-gray-300 dark:border-gray-600">
-                                        <td className="py-3 px-4 text-gray-900 dark:text-white">
+                                        <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-gray-900 dark:text-white whitespace-nowrap">
                                             총계 ({compareMode === 'gross' ? '총자산' : '순자산'})
                                         </td>
                                         {results.map(r => {
                                             const finalProjection = r.projections[r.projections.length - 1];
                                             const val = compareMode === 'gross' ? finalProjection?.gross : finalProjection?.net;
                                             return (
-                                                <td key={r.id} className="py-3 px-4 text-right text-gray-900 dark:text-white font-extrabold">
+                                                <td key={r.id} className="py-2.5 sm:py-3 px-3 sm:px-4 text-right text-gray-900 dark:text-white font-extrabold whitespace-nowrap">
                                                     {formatMoney(val || 0)}
                                                 </td>
                                             );
                                         })}
                                         {results.length === 2 && (
-                                            <td className="py-3 px-4 text-right font-extrabold">
+                                            <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-extrabold whitespace-nowrap">
                                                 {(() => {
                                                     const finalA = results[0].projections[results[0].projections.length - 1];
                                                     const finalB = results[1].projections[results[1].projections.length - 1];
@@ -981,13 +981,13 @@ export const ScenarioCompare = ({
 
                     {/* Tab 2: Monthly Timeline Comparison */}
                     {compareTab === 'monthly' && (
-                        <div className="w-full">
+                        <div className="w-full overflow-x-auto no-scrollbar">
                             {/* Monthly Interval Selector */}
-                            <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/60 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-700">
-                                <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
+                            <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 bg-gray-50/60 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-700 min-w-[480px]">
+                                <span className="text-xs font-bold text-gray-600 dark:text-gray-300 whitespace-nowrap">
                                     월별 추이 비교 ({compareMode === 'gross' ? '총자산' : '순자산'})
                                 </span>
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1 shrink-0">
                                     <span className="text-[10px] text-gray-400 dark:text-gray-500 mr-1">표시 간격:</span>
                                     {[1, 3, 6, 12].map(intv => (
                                         <button
@@ -1005,22 +1005,22 @@ export const ScenarioCompare = ({
                                 </div>
                             </div>
 
-                            <table className="w-full text-xs text-left table-fixed">
+                            <table className="w-full min-w-[480px] sm:min-w-full text-xs text-left">
                                 <thead>
                                     <tr className="bg-gray-50/80 dark:bg-gray-900/40 text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                                        <th className="py-2.5 px-4 font-bold w-[28%]">월차 / 시점</th>
+                                        <th className="py-2.5 px-3 sm:px-4 font-bold min-w-[120px] sm:w-[28%] whitespace-nowrap">월차 / 시점</th>
                                         {results.map((r, idx) => (
-                                            <th key={r.id} className="py-2.5 px-4 text-right font-bold w-[24%]">
+                                            <th key={r.id} className="py-2.5 px-3 sm:px-4 text-right font-bold whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-1.5">
                                                     <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border shrink-0 ${SCENARIO_TAG_COLORS[idx]?.badge}`}>
                                                         {SCENARIO_TAG_COLORS[idx]?.label}
                                                     </span>
-                                                    <span className="truncate" title={r.name}>{r.name}</span>
+                                                    <span className="truncate max-w-[100px] sm:max-w-none" title={r.name}>{r.name}</span>
                                                 </div>
                                             </th>
                                         ))}
                                         {results.length === 2 && (
-                                            <th className="py-2.5 px-4 text-right font-bold text-indigo-700 dark:text-indigo-400 w-[24%]">
+                                            <th className="py-2.5 px-3 sm:px-4 text-right font-bold text-indigo-700 dark:text-indigo-400 whitespace-nowrap">
                                                 차이 (B - A)
                                             </th>
                                         )}
@@ -1031,7 +1031,7 @@ export const ScenarioCompare = ({
                                         const monthLabel = getMonthLabel(monthIndex, results[0]?.data?.baseMonth);
                                         return (
                                             <tr key={monthIndex} className="hover:bg-gray-50/60 dark:hover:bg-gray-700/30">
-                                                <td className="py-2.5 px-4 font-semibold text-gray-800 dark:text-gray-200">
+                                                <td className="py-2.5 px-3 sm:px-4 font-semibold text-gray-800 dark:text-gray-200 whitespace-nowrap">
                                                     <span>{monthLabel}</span>
                                                     <span className="text-[10px] text-gray-400 font-normal ml-1.5">
                                                         ({monthIndex}개월차)
@@ -1041,13 +1041,13 @@ export const ScenarioCompare = ({
                                                     const projection = r.projections.find(p => p.month === monthIndex);
                                                     const val = compareMode === 'gross' ? projection?.gross : projection?.net;
                                                     return (
-                                                        <td key={r.id} className="py-2.5 px-4 text-right font-medium text-gray-800 dark:text-gray-200">
+                                                        <td key={r.id} className="py-2.5 px-3 sm:px-4 text-right font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap">
                                                             {projection ? formatMoney(val) : '-'}
                                                         </td>
                                                     );
                                                 })}
                                                 {results.length === 2 && (
-                                                    <td className="py-2.5 px-4 text-right">
+                                                    <td className="py-2.5 px-3 sm:px-4 text-right whitespace-nowrap">
                                                         {(() => {
                                                             const projA = results[0].projections.find(p => p.month === monthIndex);
                                                             const projB = results[1].projections.find(p => p.month === monthIndex);

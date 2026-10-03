@@ -112,6 +112,10 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.5); border-radius: 3px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(107, 114, 128, 0.8); }
         
+        /* 스크롤바 숨김 (모바일 탭 및 칩 전용) */
+        .no-scrollbar::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+        .no-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }
+        
         /* 인쇄(PDF 저장) 최적화 스타일 */
         @media print {
             @page { margin: 10mm; size: auto; }

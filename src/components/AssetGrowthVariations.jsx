@@ -84,18 +84,26 @@ export const AssetGrowthModernView = ({
     };
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
+            {/* 모바일 가로 스크롤 안내 힌트 */}
+            <div className="sm:hidden flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-3 py-1.5 font-medium bg-slate-100/80 dark:bg-slate-800/60 rounded-xl border border-slate-200/70 dark:border-slate-700/60">
+                <span className="flex items-center gap-1.5">
+                    <span>↔️</span>
+                    <span>좌우로 밀어서 <b>예상 순증감, 비중</b> 등 전체 지표를 확인하세요</span>
+                </span>
+            </div>
+
             {/* 메인 테이블 */}
-            <div className="overflow-x-auto rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                <table className="w-full text-sm dark:text-slate-200 min-w-[950px] border-collapse">
+            <div className="overflow-x-auto no-scrollbar rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
+                <table className="w-full text-xs sm:text-sm dark:text-slate-200 min-w-[820px] sm:min-w-[950px] border-collapse">
                     <thead>
-                        <tr className="border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/85 dark:bg-slate-800/60 text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                            <th className="py-3.5 px-4 text-left w-1/4">섹터 / 자산 항목</th>
-                            <th className="py-3.5 px-4 text-right">금액 추이 (현재 → 예상)</th>
-                            <th className="py-3.5 px-4 text-right">예상 순증감 (수익률)</th>
-                            <th className="py-3.5 px-4 text-center">현재 비중</th>
-                            <th className="py-3.5 px-4 text-center">예상 비중</th>
-                            <th className="py-3.5 px-4 text-right">목표 비중</th>
+                        <tr className="border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/85 dark:bg-slate-800/60 text-[10px] sm:text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                            <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-left w-1/4">섹터 / 자산 항목</th>
+                            <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-right">금액 추이 (현재 → 예상)</th>
+                            <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-right">예상 순증감 (수익률)</th>
+                            <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-center">현재 비중</th>
+                            <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-center">예상 비중</th>
+                            <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-right">목표 비중</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
