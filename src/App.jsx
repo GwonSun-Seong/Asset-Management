@@ -973,6 +973,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
             const [assetHistory, setAssetHistory] = useState([]);
             const [showProjectionInHistory, setShowProjectionInHistory] = useState(false);
             const [historyPeriod, setHistoryPeriod] = useState(() => localStorage.getItem('asset_history_period') || 'ALL');
+            const [isHistoryFullscreen, setIsHistoryFullscreen] = useState(false);
             const [isManualHistoryModalOpen, setIsManualHistoryModalOpen] = useState(false);
             const [editingManualHistoryData, setEditingManualHistoryData] = useState(null);
             const [snowballStep, setSnowballStep] = useState(() => {
@@ -1235,7 +1236,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
             const [isEditingMemoTitle, setIsEditingMemoTitle] = useState(false);
             const [tempMemoTitle, setTempMemoTitle] = useState('');
             const [isMemoGridView, setIsMemoGridView] = useState(false); // [STEP 1] 모아보기
-            const [isMemoPreview, setIsMemoPreview] = useState(false); // [추가] 메모 미리보기 모드
+            const [isMemoPreview, setIsMemoPreview] = useState(true); // [기본값] 마크다운/볼드 미리보기 모드 활성화
             const [isMemoExpanded, setIsMemoExpanded] = useState(false); // [STEP 1] 펼쳐보기
             const [toasts, setToasts] = useState([]);
             const addToast = React.useCallback((message, type = 'info') => {
@@ -1253,6 +1254,23 @@ import AssetGhostRacing from './components/AssetGhostRacing';
             const chartInstancesRef = useRef({}); // [추가] 차트 인스턴스 관리용 Ref
             const pendingCiphertext = useRef(null);
             const pendingSave = useRef(false);
+
+            useEffect(() => {
+                if (isHistoryFullscreen) {
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    document.body.style.overflow = '';
+                }
+                const timer = setTimeout(() => {
+                    if (chartInstancesRef.current && chartInstancesRef.current['historyChart']) {
+                        chartInstancesRef.current['historyChart'].resize();
+                    }
+                }, 100);
+                return () => {
+                    clearTimeout(timer);
+                    document.body.style.overflow = '';
+                };
+            }, [isHistoryFullscreen]);
 
             const [layoutOrder, setLayoutOrder] = useState(() => {
                 try {
@@ -4835,7 +4853,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
 
                     const timerId = setTimeout(renderHistoryChart, 150);
                 return () => clearTimeout(timerId); 
-                }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo, scenarioSortOrder, historyViewMode, activeTab, isExporting, showSnowballAnalysis, snowballStep, historyPeriod]);
+                }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo, scenarioSortOrder, historyViewMode, activeTab, isExporting, showSnowballAnalysis, snowballStep, historyPeriod, isHistoryFullscreen]);
 
             const addAsset = (sector) => {
                 // [보안/개선] 미래 시점 편집 중일 경우, 새 대출의 시작일을 해당 페이즈 시작월로 똑똑하게 자동 맞춤
@@ -6564,8 +6582,8 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                             </div>
                         </div>
 
-                        {/* 우측 델타 뱃지 */}
-                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                        {/* 우측 델타 뱃지 및 전체화면 토글 */}
+                        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
                             {historyChartInfo?.diffFromStart !== undefined && historyChartInfo?.diffFromStart !== null ? (
                                 <div className={`px-3.5 py-2 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
                                     historyChartInfo.diffFromStart > 0
@@ -6585,15 +6603,74 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                     <span className="text-[10px] text-slate-400 font-mono">({historyMetrics.athDate})</span>
                                 </div>
                             )}
+
+                            {/* [추가] 모바일/데스크탑 차트 전체화면 토글 버튼 */}
+                            <button
+                                type="button"
+                                onClick={() => setIsHistoryFullscreen(prev => !prev)}
+                                className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 ${
+                                    isHistoryFullscreen
+                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20'
+                                        : 'bg-slate-50 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 border-slate-200/90 dark:border-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400'
+                                }`}
+                                title={isHistoryFullscreen ? "차트 축소" : "차트 전체화면으로 크게 보기"}
+                            >
+                                <span className="text-sm leading-none">{isHistoryFullscreen ? "✕" : "⛶"}</span>
+                                <span className="text-xs font-bold">{isHistoryFullscreen ? "축소" : "전체화면"}</span>
+                            </button>
                         </div>
                     </div>
                     
-                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 h-[600px] relative">
-                        <canvas ref={historyChartRef} onContextMenu={handleHistoryContextMenu}></canvas>
-                        {/* [추가] 우클릭 이벤트 리스너를 위한 투명 오버레이 또는 캔버스 직접 제어 */}
-                        {/* Chart.js는 캔버스에 이벤트를 바인딩하므로, ref에 직접 리스너를 추가하는 것이 가장 확실함 */}
-                        {/* React ref callback을 사용하여 이벤트 리스너 부착 */}
-                        <div className="absolute top-2 right-2 text-[10px] text-gray-400 pointer-events-none">Tip: 점을 클릭하여 메뉴 열기, 시나리오 호버 시 강조</div>
+                    <div className={`transition-all ${
+                        isHistoryFullscreen
+                            ? 'fixed inset-0 z-[200] bg-white dark:bg-slate-900 p-3 sm:p-6 flex flex-col h-screen w-screen overflow-hidden'
+                            : 'bg-gray-50 dark:bg-gray-900/50 rounded-xl p-2.5 sm:p-4 h-[330px] sm:h-[480px] lg:h-[580px] relative'
+                    }`}>
+                        {/* 전체화면 전용 상단 툴바 */}
+                        {isHistoryFullscreen && (
+                            <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                        <span>📈</span>
+                                        <span>자산 히스토리 전체화면</span>
+                                    </span>
+                                    <span className="text-xs text-slate-400 hidden sm:inline">
+                                        (스마트폰 가로 회전 시 더 넓게 볼 수 있습니다)
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsHistoryFullscreen(false)}
+                                    className="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors shadow-sm"
+                                >
+                                    <span>✕</span>
+                                    <span>닫기</span>
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="flex-1 w-full h-full min-h-0 relative">
+                            <canvas 
+                                ref={historyChartRef} 
+                                onContextMenu={handleHistoryContextMenu}
+                                className="w-full h-full"
+                                style={{ touchAction: isHistoryFullscreen ? 'none' : 'pan-y' }}
+                            ></canvas>
+                            {/* [추가] 우클릭 이벤트 리스너를 위한 투명 오버레이 또는 캔버스 직접 제어 */}
+                            <div className="absolute top-2 right-2 flex items-center gap-1.5 pointer-events-none">
+                                <span className="text-[10px] text-gray-400 hidden sm:inline">Tip: 점을 클릭하여 메뉴 열기, 시나리오 호버 시 강조</span>
+                                {!isHistoryFullscreen && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsHistoryFullscreen(true)}
+                                        className="sm:hidden pointer-events-auto px-2 py-1 rounded-lg bg-white/90 dark:bg-slate-800/90 backdrop-blur border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-[11px] font-bold shadow-sm active:scale-95 flex items-center gap-1"
+                                        title="전체화면"
+                                    >
+                                        <span>⛶</span>
+                                        <span>크게보기</span>
+                                    </button>
+                                )}
+                            </div>
                         
                         {/* [추가] 고정 위치 툴팁 (Option 4) - 차트 내부 좌측 상단 고정 */}
                         {historyChartInfo && (
@@ -6731,6 +6808,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                 )}
                             </>
                         )}
+                        </div>
                     </div>
                 </>
             );
@@ -7456,12 +7534,31 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                 </div>
                             </div>
                         ) : isMemoPreview ? (
-                            <div className={`w-full p-4 dark:bg-gray-900 dark:text-gray-200 overflow-y-auto custom-scrollbar leading-relaxed text-sm ${isExpanded ? 'flex-1 rounded-b-xl' : 'h-40 border-x border-b dark:border-gray-600 rounded-b-lg'}`}>
+                            <div 
+                                onClick={() => {
+                                    setIsMemoPreview(false);
+                                    setTimeout(() => {
+                                        const el = document.getElementById('memo-textarea');
+                                        if (el) {
+                                            el.focus();
+                                            el.selectionStart = el.selectionEnd = el.value.length;
+                                        }
+                                    }, 40);
+                                }}
+                                className={`w-full p-4 sm:p-5 dark:bg-gray-900 dark:text-gray-200 overflow-y-auto custom-scrollbar leading-relaxed text-sm cursor-text hover:border-blue-400 dark:hover:border-blue-500 transition-colors ${
+                                    isExpanded 
+                                        ? 'flex-1 rounded-b-xl min-h-[400px]' 
+                                        : 'h-[600px] sm:h-[720px] min-h-[500px] border-x border-b border-gray-200 dark:border-gray-700 rounded-b-lg'
+                                }`}
+                                title="클릭하여 편집 모드로 전환"
+                            >
                                 {renderFormattedMemo(currentMemo.content)}
                             </div>
                         ) : (
                             <textarea 
                                 id="memo-textarea"
+                                autoFocus
+                                onBlur={() => setIsMemoPreview(true)}
                                 onKeyDown={(e) => {
                                     if (e.ctrlKey || e.metaKey) {
                                         if (e.key.toLowerCase() === 'b') {
@@ -7473,8 +7570,12 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                         }
                                     }
                                 }}
-                                className={`w-full p-4 focus:outline-none dark:bg-gray-900 dark:text-white ${isExpanded ? 'flex-1 rounded-b-xl' : 'h-40 border-x border-b dark:border-gray-600 rounded-b-lg focus:ring-2 focus:ring-blue-500'} resize-none`} 
-                                placeholder="여기에 자유롭게 메모를 남겨보세요." 
+                                className={`w-full p-4 sm:p-5 focus:outline-none dark:bg-gray-900 dark:text-white leading-relaxed text-sm ${
+                                    isExpanded 
+                                        ? 'flex-1 rounded-b-xl min-h-[400px]' 
+                                        : 'h-[600px] sm:h-[720px] min-h-[500px] border-x border-b border-gray-200 dark:border-gray-700 rounded-b-lg focus:ring-2 focus:ring-blue-500'
+                                } resize-none`} 
+                                placeholder="여기에 자유롭게 메모를 남겨보세요. (작성 후 다른 곳을 클릭하면 자동으로 볼드 미리보기가 적용됩니다)" 
                                 value={currentMemo.content} 
                                 onChange={(e) => handleUpdateMemo('content', e.target.value)} 
                             />
@@ -7485,7 +7586,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                 if (isMemoExpanded) {
                     return (
                         <>
-                            <div className="h-40 bg-gray-50 dark:bg-gray-800/50 rounded-lg flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 dark:border-gray-700">
+                            <div className="h-[600px] sm:h-[720px] bg-gray-50 dark:bg-gray-800/50 rounded-lg flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 dark:border-gray-700">
                                 <svg className="w-8 h-8 mb-2 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
                                 <span className="text-sm font-medium">메모 확장 모드 사용 중</span>
                                 <button onClick={() => setIsMemoExpanded(false)} className="mt-2 text-xs text-blue-500 hover:underline">원래 크기로 돌아가기</button>

@@ -404,6 +404,13 @@ export default function AssetGhostRacing({
     const [boostLevel, setBoostLevel] = useState(0); // 0 (순항) ~ 1..5 (부스트 레벨)
     const [nitroGauge, setNitroGauge] = useState(100);
     const [isDemoMode, setIsDemoMode] = useState(false);
+    const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 640 : false);
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 640);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     // 자동 감쇠 타이머 ref (일정 시간 추가 입력 없으면 단계적 하향)
     const decayTimerRef = useRef(null);
@@ -732,13 +739,16 @@ export default function AssetGhostRacing({
 
     const getKartXPosition = (val, isPlayer) => {
         if (maxVal === minVal) return 42;
-        let pct = ((val - minVal) / (maxVal - minVal)) * 50 + 15;
-        // 1단(+3%) ~ 5단(+15%) 레벨별 가속 전방 서징
+        // 모바일에서는 카트가 컴팩트해진 만큼 좌우 주행 가용폭을 시원하게 확장 (모바일 64% vs PC 50%)
+        const range = isMobile ? 64 : 50;
+        const offset = isMobile ? 10 : 15;
+        let pct = ((val - minVal) / (maxVal - minVal)) * range + offset;
+        // 1단(+2.5~3%) ~ 5단(+12~15%) 레벨별 가속 전방 서징
         if (isPlayer && boostLevel > 0) {
-            const surgeBonus = boostLevel * 3; // 3%, 6%, 9%, 12%, 15%
+            const surgeBonus = boostLevel * (isMobile ? 2.5 : 3);
             pct = pct + surgeBonus;
         }
-        return Math.min(75, Math.max(14, pct));
+        return Math.min(isMobile ? 82 : 75, Math.max(isMobile ? 8 : 14, pct));
     };
 
     return (
@@ -1061,14 +1071,14 @@ export default function AssetGhostRacing({
             </div>
 
             {/* 3. 2D 멀티레인 서킷 (정돈된 다크 아스팔트 트랙) */}
-            <div className="bg-slate-950 rounded-2xl border-2 border-slate-800 shadow-2xl p-4 sm:p-5 relative overflow-hidden">
+            <div className="bg-slate-950 rounded-2xl border-2 border-slate-800 shadow-2xl p-2 sm:p-5 relative overflow-hidden">
                 {/* 상단 F1 연석 */}
-                <div className="w-full h-3 rounded-t-lg animate-curbs border-b border-black opacity-80" />
+                <div className="w-full h-2 sm:h-3 rounded-t-lg animate-curbs border-b border-black opacity-80" />
 
                 {/* 서킷 트랙 바디 */}
-                <div className="relative py-2.5 space-y-3 bg-slate-900/90 border-x border-slate-800">
-                    {/* 피니시 라인 체커기 바 (우측 숫자 영역 앞쪽에 배치하여 겹침 방지) */}
-                    <div className="absolute top-0 bottom-0 right-[115px] sm:right-[135px] w-5 z-20 pointer-events-none opacity-45 bg-[repeating-conic-gradient(#fff_0_25%,#000_0_50%)] [background-size:10px_10px] border-r border-amber-400/60 shadow-lg" />
+                <div className="relative py-1.5 sm:py-2.5 space-y-1.5 sm:space-y-3 bg-slate-900/90 border-x border-slate-800">
+                    {/* 피니시 라인 체커기 바 */}
+                    <div className="absolute top-0 bottom-0 right-[68px] sm:right-[135px] w-3.5 sm:w-5 z-20 pointer-events-none opacity-45 bg-[repeating-conic-gradient(#fff_0_25%,#000_0_50%)] [background-size:6px_6px] sm:[background-size:10px_10px] border-r border-amber-400/60 shadow-lg" />
 
                     {/* 각 레인별 카트 주행 */}
                     {racers.map((racer) => {
@@ -1078,7 +1088,7 @@ export default function AssetGhostRacing({
                         return (
                             <div 
                                 key={racer.id}
-                                className={`relative h-20 sm:h-22 rounded-xl border flex items-center transition-all ${
+                                className={`relative h-[52px] sm:h-20 rounded-lg sm:rounded-xl border flex items-center transition-all ${
                                     isPlayer 
                                         ? boostLevel === 5
                                             ? 'bg-slate-950/95 border-pink-500 shadow-[0_0_30px_rgba(236,72,153,0.4)] z-25'
@@ -1097,11 +1107,11 @@ export default function AssetGhostRacing({
                                 }`}
                             >
                                 {/* 도로 중앙 점선 마커 */}
-                                <div className="absolute inset-x-0 h-1 top-1/2 -translate-y-1/2 animate-road-scroll pointer-events-none opacity-40" />
+                                <div className="absolute inset-x-0 h-0.5 sm:h-1 top-1/2 -translate-y-1/2 animate-road-scroll pointer-events-none opacity-40" />
 
                                 {/* 좌측 순위 & 라벨 뱃지 */}
-                                <div className="absolute left-3 top-2 z-10 flex items-center gap-2 pointer-events-none">
-                                    <span className={`text-[11px] font-black px-2 py-0.5 rounded shadow ${
+                                <div className="absolute left-1.5 sm:left-3 top-1 sm:top-2 z-10 flex items-center gap-1 sm:gap-2 pointer-events-none">
+                                    <span className={`text-[9px] sm:text-[11px] font-black px-1.5 sm:px-2 py-0.5 rounded shadow ${
                                         isPlayer ? 'bg-rose-600 text-white' :
                                         racer.isPaceCar ? 'bg-amber-400 text-black font-extrabold' :
                                         racer.isFuture ? 'bg-purple-600 text-white' :
@@ -1110,20 +1120,20 @@ export default function AssetGhostRacing({
                                     }`}>
                                         {racer.isPaceCar ? '🚨 PACE' : racer.isFuture ? '🔮 FUTURE' : racer.isAth ? '👑 ATH' : `P${racer.rank}`}
                                     </span>
-                                    <span className="text-xs font-bold text-slate-200">
+                                    <span className="text-[10px] sm:text-xs font-bold text-slate-200 truncate max-w-[65px] sm:max-w-none">
                                         {racer.name}
                                     </span>
-                                    <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
+                                    <span className="text-[9px] sm:text-[10px] text-slate-400 font-mono hidden sm:inline">
                                         ({racer.date})
                                     </span>
                                 </div>
 
                                 {/* 우측 자산 금액 & 격차 HUD (z-30 플로팅 배지) */}
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2 z-30 text-right pointer-events-none bg-slate-950/95 border border-slate-700/80 px-2.5 py-1.5 rounded-lg shadow-md min-w-[95px]">
-                                    <div className="text-xs sm:text-sm font-black font-mono text-white">
+                                <div className="absolute right-1.5 sm:right-3 top-1/2 -translate-y-1/2 z-30 text-right pointer-events-none bg-slate-950/95 border border-slate-700/80 px-1.5 py-0.5 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg shadow-md min-w-[58px] sm:min-w-[95px]">
+                                    <div className="text-[10px] sm:text-sm font-black font-mono text-white leading-tight">
                                         {formatNumber(racer.value, displayMode)}만
                                     </div>
-                                    <div className={`text-[10px] font-mono font-bold ${
+                                    <div className={`text-[8px] sm:text-[10px] font-mono font-bold leading-tight ${
                                         isPlayer 
                                             ? 'text-rose-400' 
                                             : racer.diffFromPlayer > 0 
@@ -1156,7 +1166,7 @@ export default function AssetGhostRacing({
                                         isPaceCar={racer.isPaceCar}
                                         boostLevel={isPlayer ? boostLevel : 0}
                                         nitroGauge={nitroGauge}
-                                        scale={0.92}
+                                        scale={isMobile ? 0.52 : 0.92}
                                     />
                                 </div>
                             </div>
@@ -1165,7 +1175,7 @@ export default function AssetGhostRacing({
                 </div>
 
                 {/* 하단 F1 연석 */}
-                <div className="w-full h-3 rounded-b-lg animate-curbs border-t border-black opacity-80" />
+                <div className="w-full h-2 sm:h-3 rounded-b-lg animate-curbs border-t border-black opacity-80" />
             </div>
 
             {/* 4. 고스트 해금 현황 (Ghost Roster) */}

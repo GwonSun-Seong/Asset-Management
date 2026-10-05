@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#0b1320"/>
+
+  <!-- Subtle ambient glow in top-right -->
+  <defs>
+    <radialGradient id="bg-glow" cx="80%" cy="25%" r="50%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#0b1320" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="subtle-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg-glow)"/>
+
+  <!-- 3 Accumulation Step Bars (자산 축적 3단계 바) -->
+  <g filter="url(#subtle-shadow)">
+    <!-- 1단계: 씨앗 자산 -->
+    <rect x="112" y="288" width="48" height="128" rx="24" fill="#10b981" opacity="0.35"/>
+    <!-- 2단계: 도약 자산 -->
+    <rect x="200" y="224" width="48" height="192" rx="24" fill="#10b981" opacity="0.65"/>
+    <!-- 3단계: 복리 폭발 자산 -->
+    <rect x="288" y="152" width="48" height="264" rx="24" fill="#10b981" opacity="1.0"/>
+  </g>
+
+  <!-- Breakthrough Trendline & Arrow (상단 돌파 우상향 화살표) -->
+  <g filter="url(#subtle-shadow)">
+    <path d="M 96 344 L 200 248 L 288 276 L 416 128" 
+          fill="none" 
+          stroke="#ffffff" 
+          stroke-width="36" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"/>
+    <!-- 화살촉 -->
+    <polyline points="336,128 416,128 416,208" 
+              fill="none" 
+              stroke="#ffffff" 
+              stroke-width="36" 
+              stroke-linecap="round" 
+              stroke-linejoin="round"/>
+    <!-- 시작 앵커 포인트 -->
+    <circle cx="96" cy="344" r="18" fill="#ffffff"/>
+  </g>
+</svg>
