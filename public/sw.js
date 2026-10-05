@@ -15,8 +15,8 @@ self.addEventListener('push', function(event) {
 
     const options = {
         body: payload.body || '새로운 자산 변동 사항이 있습니다.',
-        icon: payload.icon || 'https://cdn-icons-png.flaticon.com/512/2503/2503939.png',
-        badge: payload.badge || 'https://cdn-icons-png.flaticon.com/512/2503/2503939.png',
+        icon: payload.icon || '/icon-192.png',
+        badge: payload.badge || '/icon-192.png',
         vibrate: payload.vibrate || [100, 50, 100],
         data: {
             url: payload.url || self.location.origin

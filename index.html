@@ -4,12 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>자산 플래너</title>
-    <!-- PWA 설정 -->
-    <link rel="manifest" href="/manifest.json">
+    <!-- PWA 및 파비콘 설정 -->
+    <link rel="manifest" href="/manifest.json?v=2.5.4">
     <meta name="theme-color" content="#0b1320">
-    <link rel="icon" type="image/svg+xml" href="/icon.svg">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="자산플래너">
+    
+    <!-- 파비콘 및 터치 아이콘 (캐시 버스팅 적용) -->
+    <link rel="shortcut icon" href="/favicon.ico?v=2.5.4">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2.5.4">
+    <link rel="icon" type="image/svg+xml" href="/icon.svg?v=2.5.4">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=2.5.4">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2.5.4">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2.5.4">
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png?v=2.5.4">
+    
+    <!-- 소셜 공유 썸네일 (카카오톡, 슬랙 등) -->
+    <meta property="og:title" content="자산 플래너">
+    <meta property="og:image" content="/icon-512.png?v=2.5.4">
     <script>
         // HTTPS 강제 리다이렉트 (로컬 개발 환경 제외)
         if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && window.location.protocol === 'http:') {
