@@ -387,18 +387,25 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
 
                 if (loanMonthAtSimMonth <= 0 || loan.amount <= 0) return;
 
-                const repaymentAccount = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
+                let repaymentAccount = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
                 
-                if (!repaymentAccount && loan.repaymentAccount && loan.repaymentAccount !== 'salary' && !loan._missingAccountWarned) {
-                    warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 상환계좌(${loan.repaymentAccount})가 없거나 삭제되어 대출 이자만 누적됩니다.` });
-                    loan._missingAccountWarned = true;
+                if (!repaymentAccount && loan.repaymentAccount && loan.repaymentAccount !== 'salary' && loan.repaymentAccount !== '월급(고정수입)') {
+                    repaymentAccount = cashFlowAccount || allAccountsFlat.find(a => a.name === currentResidualAccount);
+                    if (!loan._missingAccountWarned) {
+                        if (repaymentAccount) {
+                            warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 지정 상환계좌(${loan.repaymentAccount})가 없어 주계좌(${repaymentAccount.name})에서 대체 출금합니다.` });
+                        } else {
+                            warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 상환계좌(${loan.repaymentAccount}) 및 대체 주계좌가 없어 상환이 보류됩니다.` });
+                        }
+                        loan._missingAccountWarned = true;
+                    }
                 }
                 const isRepaymentDayPassed = false; 
 
                 const monthlyRate = (loan.rate / 100) / 12;
                 const interestForMonth = loan.amount * monthlyRate;
 
-                if (!loan._skipTransactionsThisMonth) {
+                if (!loan._skipTransactionsThisMonth && repaymentAccount) {
                     loan.amount += interestForMonth;
                 }
 
@@ -639,18 +646,39 @@ function runAllCalculations({ appData, projectionMonths, inflationRate, baseDate
             if (simAssets.loan) {
                 simAssets.loan.forEach(loan => {
                     if (loan.amount > 0) {
-                        const interest = loan.amount * (Number(loan.rate || 0) / 1200);
-                        const monthlyPayment = Number(loan.monthlyContrib || 0);
+                        const monthlyRate = Number(loan.rate || 0) / 1200;
+                        const interest = loan.amount * monthlyRate;
                         
-                        let cashOutflow = monthlyPayment;
-                        let principalPayment = monthlyPayment - interest;
+                        let scheduledPayment = 0;
+                        let isMaturity = false;
 
-                        if (loan.amount + interest <= monthlyPayment) {
-                            cashOutflow = loan.amount + interest;
-                            principalPayment = loan.amount;
+                        if (Number(loan.monthlyContrib || 0) > 0) {
+                            scheduledPayment = Number(loan.monthlyContrib);
+                        } else {
+                            const remainingMonths = Math.max(1, (loan.maturityMonth || 36) - m + 1);
+                            const payInfo = calculateLoanPayment(loan.amount, Number(loan.rate || 0), remainingMonths, loan.repaymentMethod);
+                            scheduledPayment = payInfo.payment;
+                        }
+
+                        if (loan.repaymentMethod === '만기일시') {
+                            if (loan.maturityMonth && m >= loan.maturityMonth) {
+                                isMaturity = true;
+                                scheduledPayment = interest;
+                            } else {
+                                scheduledPayment = interest;
+                            }
+                        } else if (loan.maturityMonth && m > loan.maturityMonth) {
+                            scheduledPayment = loan.amount + interest;
+                        }
+
+                        let cashOutflow = 0;
+                        if (isMaturity) {
+                            cashOutflow = scheduledPayment + loan.amount;
                             loan.amount = 0;
                         } else {
-                            loan.amount -= principalPayment;
+                            cashOutflow = Math.min(scheduledPayment, loan.amount + interest);
+                            const principalPart = Math.max(0, cashOutflow - interest);
+                            loan.amount = Math.max(0, loan.amount - principalPart);
                         }
                         
                         totalLoanRepayment += cashOutflow;

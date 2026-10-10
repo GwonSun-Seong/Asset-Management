@@ -541,11 +541,18 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 if (loanMonthAtSimMonth <= 0 || loan.amount <= 0) return;
 
                 // [Fix] 매번 상환 계좌를 직접 조회하여 분기점 통과 후 발생하는 stale reference 버그를 원천 차단
-                const repaymentAccount = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
+                let repaymentAccount = allAccountsFlat.find(a => a.name === loan.repaymentAccount);
                 
-                if (!repaymentAccount && loan.repaymentAccount && loan.repaymentAccount !== 'salary' && !loan._missingAccountWarned) {
-                    warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 상환계좌(${loan.repaymentAccount})가 없거나 삭제되어 대출 이자만 누적됩니다.` });
-                    loan._missingAccountWarned = true;
+                if (!repaymentAccount && loan.repaymentAccount && loan.repaymentAccount !== 'salary' && loan.repaymentAccount !== '월급(고정수입)') {
+                    repaymentAccount = cashFlowAccount || allAccountsFlat.find(a => a.name === currentResidualAccount);
+                    if (!loan._missingAccountWarned) {
+                        if (repaymentAccount) {
+                            warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 지정 상환계좌(${loan.repaymentAccount})가 없어 주계좌(${repaymentAccount.name})에서 대체 출금합니다.` });
+                        } else {
+                            warnings.push({ month, year: simYear, monthNum: simMonth + 1, type: 'repayment', message: `[${loan.name}] 상환계좌(${loan.repaymentAccount}) 및 대체 주계좌가 없어 상환이 보류됩니다.` });
+                        }
+                        loan._missingAccountWarned = true;
+                    }
                 }
                 // 예산 완결성을 위해 상환 스킵 방지
                 const isRepaymentDayPassed = false; 
@@ -553,8 +560,8 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
                 const monthlyRate = (loan.rate / 100) / 12;
                 const interestForMonth = loan.amount * monthlyRate;
 
-                // 1. 이자 가산
-                if (!loan._skipTransactionsThisMonth) {
+                // 1. 이자 가산 (상환 계좌가 연결된 경우에만 정상 가산, 완전 미지정 시 폭증 방지)
+                if (!loan._skipTransactionsThisMonth && repaymentAccount) {
                     loan.amount += interestForMonth;
                 }
 

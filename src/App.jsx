@@ -4876,7 +4876,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                     monthlyContributionFrom: window.MONTHLY_INCOME_SOURCE, // [수정] 납입 출처 기본값 명시
                     // [수정] 대출 전용 필드 추가
                     repaymentMethod: '원리금균등', // 상환방식
-                    repaymentAccount: (Object.values(prev).flat().find(a => a.name === '생활비통장')?.name) || (Object.values(prev).flat()[0]?.name) || '',
+                    repaymentAccount: 'salary', // 안전한 기본값 (월급/고정수입에서 상환)
                     maturityMonth: 36,
                     loanStartDate: defaultLoanStart // [적용] 보정된 날짜 적용
                 }]
@@ -8540,7 +8540,21 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                                                                 </div>
                                                                                 <div className="grid grid-cols-2 gap-2">
                                                                                     <div>
-                                                                                        <label className="text-[10px] font-bold text-slate-400 mb-0.5 block">만기 (개월)</label>
+                                                                                        <div className="flex items-center justify-between mb-0.5">
+                                                                                            <label className="text-[10px] font-bold text-slate-400 block">만기 (개월)</label>
+                                                                                            {(() => {
+                                                                                                if (!asset.loanStartDate) return null;
+                                                                                                const [sY, sM] = asset.loanStartDate.split('-').map(Number);
+                                                                                                const [bY, bM] = (baseDate || getLocalToday()).slice(0, 7).split('-').map(Number);
+                                                                                                const elapsed = (bY - sY) * 12 + (bM - sM);
+                                                                                                const totalM = Number(asset.maturityMonth || 0);
+                                                                                                const remaining = Math.max(0, totalM - elapsed);
+                                                                                                if (elapsed > 0 && totalM > 0) {
+                                                                                                    return <span className="text-[9px] font-bold text-indigo-500 dark:text-indigo-400">잔여 {remaining}개월</span>;
+                                                                                                }
+                                                                                                return null;
+                                                                                            })()}
+                                                                                        </div>
                                                                                         <input 
                                                                                             type="number" 
                                                                                             value={asset.maturityMonth ?? 12} 
@@ -10053,26 +10067,6 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                             {/* [추가] 토스 실시간 장 운영 캘린더 & 환율 좌우 슬라이더 위젯 (API 키 미등록 시 자동 숨김) */}
                             <MarketTickerSlide />
 
-                            {/* [추가] 노후 인생 가챠 배너 단일 노출 */}
-                            <div className="mt-4 relative group">
-                                <div className="p-4 bg-gradient-to-br from-fuchsia-500 via-purple-600 to-indigo-600 dark:from-fuchsia-950 dark:to-indigo-950 rounded-xl shadow-lg text-white relative overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_8px_20px_rgba(217,70,239,0.35)]" onClick={() => setIsGameModalOpen(true)}>
-                                    <div className="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-white opacity-10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
-                                    <div className="relative z-10 pb-1">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <span className="text-xl">🎰</span>
-                                            <h3 className="font-bold text-sm tracking-tight text-white flex items-center gap-1">
-                                                내 노후 인생 가챠
-                                            </h3>
-                                        </div>
-                                        <p className="text-fuchsia-100 text-[10px] leading-relaxed mb-3">
-                                            내 저축률로 돌려보는 운명 가챠<br/>펜트하우스냐, 자연인 텐트냐?
-                                        </p>
-                                        <button className="w-full py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-[10px] font-bold transition-all border border-white/10 flex items-center justify-center gap-1">
-                                            가챠 돌리기 →
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
                             </div>
                         </aside>
 
@@ -10095,6 +10089,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                     supabase={supabase}
                                     verifiedEmail={verifiedEmail}
                                     addToast={addToast}
+                                    savingsRate={monthlySalary > 0 ? ((totalSectorMonthlyContrib + autoDepositAmount) / monthlySalary * 100) : 0}
                                 />
                             ) : (
                             <>
@@ -10686,7 +10681,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                 <div className="flex gap-0 shadow-sm rounded-md">
                                     <CalculatorInput aria-label="월 상환액" placeholder="0=자동" className="flex-1 border rounded-l px-2 py-1 text-xs bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-right focus:z-10" value={asset.monthlyContrib} onChange={(e) => updateAsset(sectorKey, index, 'monthlyContrib', e.target.value)} displayMode={displayMode} />
                                     <select aria-label="상환 출금 계좌" className="w-24 border-y border-r rounded-r border-l-0 px-1 py-1 text-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white truncate focus:z-10" value={asset.repaymentAccount} onChange={(e) => updateAsset(sectorKey, index, 'repaymentAccount', e.target.value)} title="상환 계좌">
-                                        <option value="salary">월급</option>
+                                        <option value="salary">월급 (고정수입)</option>
                                         {accountOptions.filter(name => name !== asset.name).map((name, i) => (
                                             <option key={i} value={name}>{name}</option>
                                         ))}

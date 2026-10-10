@@ -1,7 +1,8 @@
-// ExtraFeaturesView.jsx - 추가 기능 및 금융 실험실 허브 패널
 import React, { useState } from 'react';
 import TaxSettlementPreview from './TaxSettlementPreview';
 import ParkingGame from './ParkingGame';
+import KoreaLifeSimulator from './KoreaLifeSimulator';
+import RetirementGachaGame from './RetirementGachaGame';
 
 // 추가 기능 카탈로그 정의 (버튼 형태로 나열)
 const FEATURE_CATALOG = [
@@ -16,34 +17,34 @@ const FEATURE_CATALOG = [
         detail: '총급여, 신용/체크카드 사용액, 의료비, 기부금 등 2026년 세법 산출과정에 맞춘 정밀 모의계산.'
     },
     {
+        id: 'retirement-gacha',
+        name: '노후 인생 가챠',
+        icon: '🎰',
+        category: '노후은퇴',
+        tag: 'HOT',
+        isAvailable: true,
+        summary: '내 순자산·저축률 스탯으로 돌려보는 65세 은퇴 5대 라이프스타일 슬롯',
+        detail: '주거(한강뷰 vs 텐트), 이동(포르쉐 vs 뚜벅이), 식사(오마카세 vs 단식) 등 내 종합 재무 점수로 확률이 달라지는 대화형 노후 운명 셔플 게임.'
+    },
+    {
         id: 'parking-game',
         name: '정밀 주차 게임',
         icon: '🚗',
         category: '미니게임',
-        tag: 'HOT',
+        tag: 'NEW',
         isAvailable: true,
         summary: '30초 정밀 주차! 평행주차, T자 직각, 사선주차 완벽 도전',
         detail: '방향키(또는 WASD)로 조작하여 30초 내에 주차 구역에 정확히 주차하고 P(파킹)를 누르세요. 정중앙 100점 만점, 충돌 시 게임오버!'
     },
     {
-        id: 'savings-calculator',
-        name: '[개발 중] 예·적금 만기 수령액',
-        icon: '💰',
-        category: '수익계산',
-        tag: '개발 중',
-        isAvailable: false,
-        summary: '현재 개발 준비 중인 기능입니다',
-        detail: '현재 개발 준비 중인 기능입니다.'
-    },
-    {
-        id: 'pension-optimizer',
-        name: '[개발 중] 연금저축/IRP 최적화',
-        icon: '🪙',
-        category: '노후은퇴',
-        tag: '개발 중',
-        isAvailable: false,
-        summary: '현재 개발 준비 중인 기능입니다',
-        detail: '현재 개발 준비 중인 기능입니다.'
+        id: 'korea-life-simulator',
+        name: '5천만 분의 1',
+        icon: '🇰🇷',
+        category: '인생시뮬',
+        tag: '인기',
+        isAvailable: true,
+        summary: '내 자산·소득으로 살아보는 대한민국 상위 % 인생 시뮬레이터',
+        detail: '통계청 가계금융복지조사 실데이터와 나의 실제 자산 포트폴리오를 결합하여, 5초에 1년씩 85세까지의 한국 인생 여정을 살아보는 시뮬레이션입니다.'
     },
     {
         id: 'fx-calculator',
@@ -74,7 +75,8 @@ export default function ExtraFeaturesView({
     currentUser = null,
     supabase = null,
     verifiedEmail = null,
-    addToast = null
+    addToast = null,
+    savingsRate = 0
 }) {
     // 현재 선택된 기능 (기본값: 'tax-preview' 연말정산 미리보기)
     const [selectedFeatureId, setSelectedFeatureId] = useState('tax-preview');
@@ -187,10 +189,27 @@ export default function ExtraFeaturesView({
                         addToast={addToast}
                     />
                 )}
+                {activeFeature.id === 'retirement-gacha' && (
+                    <RetirementGachaGame
+                        monthlySalary={monthlySalary}
+                        currentAppData={currentAppData}
+                        currentCalculation={currentCalculation}
+                        addToast={addToast}
+                        savingsRate={savingsRate}
+                    />
+                )}
                 {activeFeature.id === 'parking-game' && (
                     <ParkingGame addToast={addToast} />
                 )}
-                {activeFeature.id !== 'tax-preview' && activeFeature.id !== 'parking-game' && (
+                {activeFeature.id === 'korea-life-simulator' && (
+                    <KoreaLifeSimulator
+                        monthlySalary={monthlySalary}
+                        currentAppData={currentAppData}
+                        currentCalculation={currentCalculation}
+                        addToast={addToast}
+                    />
+                )}
+                {activeFeature.id !== 'tax-preview' && activeFeature.id !== 'retirement-gacha' && activeFeature.id !== 'parking-game' && activeFeature.id !== 'korea-life-simulator' && (
                     /* 준비 중인 기능 안내 카드 */
                     <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 shadow-xs text-center space-y-3">
                         <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center text-2xl mx-auto">
