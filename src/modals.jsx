@@ -1699,11 +1699,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                 ]
             };
 
-            const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+            const models = window.GEMINI_IMAGE_MODELS || ['gemini-3.1-flash-image', 'gemini-3.8-flash', 'gemini-3.6-flash'];
             
             const tryModel = (index) => {
                 if (index >= models.length) {
-                    setOcrError('모든 AI 모델 이미지 분석에 실패했습니다. API 키나 크기 제한을 확인해 주세요.');
+                    setOcrError('모든 AI 이미지 모델(3.1 Image, 3.8 Flash, 3.6 Flash) 분석에 실패했습니다. API 키나 크기 제한을 확인해 주세요.');
                     setOcrLoading(false);
                     return;
                 }
@@ -2967,8 +2967,27 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                         .map(item => item.syncErrorReason)
                                 ));
                                 if (uniqueErrors.length === 0) return null;
+                                const isBlocked = uniqueErrors.some(e => /403|429|edge-blocked/.test(e));
                                 return (
                                     <div className="mt-4 flex flex-col gap-2 select-none animate-in fade-in slide-in-from-top-1 duration-200">
+                                        {isBlocked && (
+                                            <div className="flex items-center justify-between gap-2 bg-amber-50 dark:bg-amber-950/40 px-3.5 py-2.5 rounded-2xl border border-amber-200 dark:border-amber-800/40 text-[11px] text-amber-700 dark:text-amber-300 font-bold">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span>🛡️</span>
+                                                    <span>IP 차단 방지를 위해 자동 갱신이 15분간 일시 정지(Circuit Breaker)되었습니다.</span>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        localStorage.removeItem('toss_circuit_breaker_until');
+                                                        localStorage.removeItem('toss_circuit_breaker_reason');
+                                                        handleManualRefresh();
+                                                    }}
+                                                    className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black px-2.5 py-1 rounded-xl shadow-xs transition-all flex-shrink-0"
+                                                >
+                                                    지금 즉시 재시도
+                                                </button>
+                                            </div>
+                                        )}
                                         {uniqueErrors.map((err, i) => (
                                             <div key={i} className="flex items-center gap-1.5 bg-red-50/50 dark:bg-red-950/30 px-3 py-2.5 rounded-2xl border border-red-100 dark:border-red-900/30 text-[10px] text-red-500 dark:text-red-400/90 font-bold w-fit">
                                                 <span>⚠️ 연동 오류 사유: {err}</span>
@@ -3370,7 +3389,8 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
     );
 };
 
-window.GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+window.GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+window.GEMINI_IMAGE_MODELS = ['gemini-3.1-flash-image', 'gemini-3.8-flash', 'gemini-3.6-flash'];
 window.streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) => {
     try {
         const response = await fetch(url, {
@@ -3481,11 +3501,11 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
     };
 
     const streamGeminiWithFallback = async (urlGenerator, body, onUpdate, onComplete, onError) => {
-        const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+        const models = window.GEMINI_MODELS || ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
         
         const tryModel = (index) => {
             if (index >= models.length) {
-                onError(new Error('모든 AI 모델(3.1, 3.5, 2.5) 호출에 실패했습니다. API 키나 할당량을 확인해주세요.'));
+                onError(new Error('모든 AI 모델(3.8 Flash, 3.6 Flash, 3.5 Lite) 호출에 실패했습니다. API 키나 할당량을 확인해주세요.'));
                 return;
             }
             
@@ -3518,12 +3538,53 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
         
         try {
             const sectorTotals = window.getSectorTotals(appData.assets, calculation.currentTotal);
+
+            // 날짜별 자산 히스토리 전체 변동 타임라인 정렬 및 가공
+            const sortedHistory = [...(assetHistory || [])]
+                .sort((a, b) => new Date(a.date) - new Date(b.date))
+                .map((h, idx, arr) => {
+                    const prev = idx > 0 ? arr[idx - 1] : null;
+                    const net = Math.round(Number(h.netWorth) || 0);
+                    const gross = Math.round(Number(h.grossWorth || h.netWorth) || 0);
+                    const diffFromPrev = prev ? Math.round(net - (Number(prev.netWorth) || 0)) : 0;
+                    return {
+                        date: h.date,
+                        netWorth: `${net}만원`,
+                        grossWorth: `${gross}만원`,
+                        change: idx === 0 ? '기준시점' : `${diffFromPrev >= 0 ? '+' : ''}${diffFromPrev}만원`,
+                        memo: h.memo || undefined
+                    };
+                });
+
+            // 주식/ETF 실시간 연동 종목 상세 현황 수집
+            const stockHoldings = [];
+            Object.keys(appData.assets || {}).forEach(sec => {
+                (appData.assets[sec] || []).forEach(asset => {
+                    if (Array.isArray(asset.linkedItems)) {
+                        asset.linkedItems.forEach(item => {
+                            if (item.ticker && item.shares > 0) {
+                                stockHoldings.push({
+                                    accountName: asset.name,
+                                    ticker: item.ticker,
+                                    name: item.name,
+                                    shares: item.shares,
+                                    avgPrice: item.avgPrice,
+                                    currentPrice: item.currentPrice,
+                                    currentValueManwon: Math.round(((Number(item.currentPrice) || 0) * (Number(item.shares) || 0)) / 10000)
+                                });
+                            }
+                        });
+                    }
+                });
+            });
+
             const summary = {
                 totalAsset: Math.round(calculation.currentTotal) + '만원',
                 netWorth: Math.round(calculation.currentNet) + '만원',
                 monthlyIncome: appData.monthlySalary + '만원',
                 monthlyExpense: Math.round(calculation.totalMonthlyExpense) + '만원',
                 targetAsset: appData.targetAmount + '만원',
+                runwaySurvivalMonths: calculation?.runwayMonths ? `${calculation.runwayMonths}개월 (소득 중단 시 생존 가능 기간)` : undefined,
                 portfolio: Object.keys(appData.assets).map(k => {
                     if (!sectorTotals[k] || sectorTotals[k].percentage < 1) return null;
                     return `${window.sectorInfo[k].name}: ${Math.round(sectorTotals[k].percentage)}%`;
@@ -3540,6 +3601,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                     }
                     return acc;
                 }, {}),
+                stockHoldings: stockHoldings.length > 0 ? stockHoldings : undefined,
                 targetRatios: appData.rebalancingTargets,
                 memo: appData.memo || '내용 없음',
                 fixedExpenses: (appData.monthlyExpenses || []).map(e => `${e.name}(${e.amount}만원)`).join(', '),
@@ -3547,11 +3609,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                     income: (appData.incomeEvents || []).map(e => `${e.name}(${e.amount}만원, ${e.startMonth}~${e.endMonth})`).join(', '),
                     expense: (appData.expenseEvents || []).map(e => `${e.name}(${e.amount}만원, ${e.startMonth}~${e.endMonth})`).join(', ')
                 },
-                history: (assetHistory || []).map(h => ({
-                    date: h.date,
-                    asset: h.netWorth,
-                    memo: h.memo
-                })),
+                assetHistoryTimeline: sortedHistory, // [추가] 날짜별 순자산/총자산 변동 그래프 전체 내역
                 futurePhases: (appData.futurePhases || []).filter(p => p.startDate).map(p => {
                     const changes = [];
                     if (p.data) {
@@ -3651,12 +3709,28 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
         if (!currentContext) {
             try {
                 const sectorTotals = window.getSectorTotals(appData.assets, calculation.currentTotal);
+                const sortedHistory = [...(assetHistory || [])]
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .map((h, idx, arr) => {
+                        const prev = idx > 0 ? arr[idx - 1] : null;
+                        const net = Math.round(Number(h.netWorth) || 0);
+                        const diffFromPrev = prev ? Math.round(net - (Number(prev.netWorth) || 0)) : 0;
+                        return {
+                            date: h.date,
+                            netWorth: `${net}만원`,
+                            grossWorth: `${Math.round(Number(h.grossWorth || h.netWorth) || 0)}만원`,
+                            change: idx === 0 ? '기준시점' : `${diffFromPrev >= 0 ? '+' : ''}${diffFromPrev}만원`,
+                            memo: h.memo || undefined
+                        };
+                    });
+
                 const summary = {
                     totalAsset: Math.round(calculation.currentTotal) + '만원',
                     netWorth: Math.round(calculation.currentNet) + '만원',
                     monthlyIncome: appData.monthlySalary + '만원',
                     monthlyExpense: Math.round(calculation.totalMonthlyExpense) + '만원',
                     targetAsset: appData.targetAmount + '만원',
+                    runwaySurvivalMonths: calculation?.runwayMonths ? `${calculation.runwayMonths}개월` : undefined,
                     portfolio: Object.keys(appData.assets).map(k => {
                         if (!sectorTotals[k] || sectorTotals[k].percentage < 1) return null;
                         return `${window.sectorInfo[k].name}: ${Math.round(sectorTotals[k].percentage)}%`;
@@ -3667,7 +3741,8 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                             acc[window.sectorInfo[k].name] = assets.map(a => `${a.name}(현재 ${Math.round(a.amount)}만원, 수익률 ${a.rate || 0}%, 월납입 ${a.monthlyContrib || 0}만원)`).join(', ');
                         }
                         return acc;
-                    }, {})
+                    }, {}),
+                    assetHistoryTimeline: sortedHistory
                 };
                 currentContext = `당신은 ${persona}입니다. 아래 재무 데이터를 참고하여 사용자의 질문에 답해 주세요. 데이터: ${JSON.stringify(summary)}`;
                 setContextPrompt(currentContext);
@@ -4781,11 +4856,11 @@ ${JSON.stringify(currentAssetsList, null, 2)}
                 ]
             };
 
-            const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+            const models = window.GEMINI_IMAGE_MODELS || ['gemini-3.1-flash-image', 'gemini-3.8-flash', 'gemini-3.6-flash'];
             
             const tryModel = (index) => {
                 if (index >= models.length) {
-                    setError('모든 AI 모델(3.1, 3.5, 2.5) 이미지 분석에 실패했습니다. API 키나 크기 제한을 확인해 주세요.');
+                    setError('모든 AI 모델(3.1 Image, 3.8 Flash, 3.6 Flash) 이미지 분석에 실패했습니다. API 키나 크기 제한을 확인해 주세요.');
                     setLoading(false);
                     return;
                 }

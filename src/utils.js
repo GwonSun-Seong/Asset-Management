@@ -1262,6 +1262,11 @@ const getTossToken = async (clientId, clientSecret, forceRefresh = false) => {
         
         if (!response.ok) {
             const errText = await response.text();
+            if (response.status === 403 || response.status === 429) {
+                if (typeof window !== 'undefined' && window.triggerTossCircuitBreaker) {
+                    window.triggerTossCircuitBreaker(response.status, errText);
+                }
+            }
             throw new Error(`Token fetch failed: ${response.status} ${errText}`);
         }
         
@@ -1486,6 +1491,14 @@ const fetchTossQuotes = async (symbols) => {
                         method: 'GET',
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
+                }
+                
+                if (response.status === 403 || response.status === 429) {
+                    const errText = await response.text();
+                    if (typeof window !== 'undefined' && window.triggerTossCircuitBreaker) {
+                        window.triggerTossCircuitBreaker(response.status, errText);
+                    }
+                    throw new Error(`Toss prices API rate-limit/blocked (${response.status})`);
                 }
                 
                 if (response.ok) {

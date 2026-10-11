@@ -1323,12 +1323,70 @@ import AssetGhostRacing from './components/AssetGhostRacing';
             // [추가] 토스 실시간 시세 연동 동시 요청 방지 가드 (In-Flight Guard)
             const isSyncingRef = useRef(false);
 
+            // [추가] 토스 API 403/429 안전 서킷 브레이커 (Circuit Breaker) 상태 (15분 자동 쿨다운)
+            const [tossCircuitBreaker, setTossCircuitBreaker] = useState(() => {
+                try {
+                    const until = Number(localStorage.getItem('toss_circuit_breaker_until')) || 0;
+                    if (until > Date.now()) {
+                        const reason = localStorage.getItem('toss_circuit_breaker_reason') || 'API 요청 제한 또는 접근 차단';
+                        return { active: true, until, reason };
+                    }
+                } catch {}
+                return { active: false, until: 0, reason: '' };
+            });
+
+            // 서킷 브레이커 발동 전역 리스너 & 수동 리셋 핸들러
+            const triggerCircuitBreaker = useCallback((status, rawError) => {
+                const cooldownMs = 15 * 60 * 1000; // 15분
+                const until = Date.now() + cooldownMs;
+                let reason = `토스 OpenAPI ${status} 응답`;
+                if (status === 403) {
+                    reason = 'IP 차단(edge-blocked) 또는 비인가 요청 감지로 15분간 자동 갱신 중단';
+                } else if (status === 429) {
+                    reason = '요청 한도(Rate Limit) 초과로 15분간 자동 갱신 중단';
+                }
+                localStorage.setItem('toss_circuit_breaker_until', until.toString());
+                localStorage.setItem('toss_circuit_breaker_reason', reason);
+                setTossCircuitBreaker({ active: true, until, reason });
+                if (window.addToast) {
+                    window.addToast(`⚠️ [안전 차단] ${reason}`, 'warning');
+                }
+            }, []);
+
+            const resetCircuitBreaker = useCallback(() => {
+                localStorage.removeItem('toss_circuit_breaker_until');
+                localStorage.removeItem('toss_circuit_breaker_reason');
+                setTossCircuitBreaker({ active: false, until: 0, reason: '' });
+                if (window.addToast) {
+                    window.addToast('⚡ 토스 시세 연동 서킷 브레이커가 해제되었습니다. 시세를 다시 조회합니다.', 'info');
+                }
+                setTimeout(() => runTossLivePriceSync(), 100);
+            }, []);
+
+            useEffect(() => {
+                window.triggerTossCircuitBreaker = triggerCircuitBreaker;
+                return () => {
+                    window.triggerTossCircuitBreaker = null;
+                };
+            }, [triggerCircuitBreaker]);
+
             // [수정] 토스 실시간 시세 연동 타이머 & 락 해제 보장 엔진
             const runTossLivePriceSync = async () => {
                 const clientId = localStorage.getItem('toss_client_id');
                 const clientSecret = localStorage.getItem('toss_client_secret');
                 const isExplicitlyDisabled = localStorage.getItem('toss_live_price_enabled') === 'false';
                 if (isExplicitlyDisabled || !clientId || !clientSecret || !clientId.trim() || !clientSecret.trim()) return;
+
+                // [안전 가드] 서킷 브레이커 작동 중이면 추가 요청 차단
+                const breakerUntil = Number(localStorage.getItem('toss_circuit_breaker_until')) || 0;
+                if (breakerUntil > Date.now()) {
+                    return;
+                } else if (breakerUntil > 0) {
+                    // 15분 경과 시 자동 리셋
+                    localStorage.removeItem('toss_circuit_breaker_until');
+                    localStorage.removeItem('toss_circuit_breaker_reason');
+                    setTossCircuitBreaker({ active: false, until: 0, reason: '' });
+                }
                 
                 if (isSyncingRef.current) return;
                 isSyncingRef.current = true;
@@ -1498,6 +1556,11 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                 } catch (e) {
                     console.error("Toss sync failed, fallback to error status:", e);
                     const errorMsg = e.message || '알 수 없는 API 에러';
+                    
+                    if (/403|429|edge-blocked/.test(errorMsg)) {
+                        const status = /429/.test(errorMsg) ? 429 : 403;
+                        triggerCircuitBreaker(status, errorMsg);
+                    }
                     
                     // 에러 상태로 뱃지를 전환하기 위한 상태 갱신
                     setAppData(prevData => {
@@ -9602,6 +9665,34 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                         <div className="bg-green-600 text-white px-4 py-2 text-sm font-medium text-center relative animate-in slide-in-from-top duration-500 border-t border-green-500">
                             <span className="mr-2">📬</span> <b>관리자 답변:</b> {activeReply}
                             <button onClick={handleDismissReply} className="absolute right-4 top-1/2 -translate-y-1/2 text-green-200 hover:text-white" title="확인 및 닫기">✕</button>
+                        </div>
+                    )}
+                    {/* [추가] 토스 OpenAPI 403/429 안전 서킷 브레이커 알림 배너 */}
+                    {tossCircuitBreaker.active && (
+                        <div className="bg-amber-600 dark:bg-amber-700 text-white px-4 py-2.5 text-xs sm:text-sm font-bold flex flex-wrap items-center justify-between gap-3 shadow-md border-b border-amber-500 animate-in slide-in-from-top duration-300">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-base flex-shrink-0 animate-bounce">🛡️</span>
+                                <span className="truncate">
+                                    <b>[IP 차단 방지 브레이크]</b> 토스 API 접근 거절(403/429)이 감지되어 자동 갱신을 15분간 일시 중지했습니다. ({Math.max(1, Math.ceil((tossCircuitBreaker.until - Date.now()) / 60000))}분 남음)
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                <button
+                                    onClick={resetCircuitBreaker}
+                                    className="bg-white/20 hover:bg-white/30 text-white text-[11px] sm:text-xs font-black px-3 py-1 rounded-lg border border-white/30 transition-all active:scale-95 flex items-center gap-1"
+                                    title="서킷 브레이커를 즉시 해제하고 시세를 다시 조회합니다"
+                                >
+                                    <span>🔄</span>
+                                    <span>수동 즉시 재시도</span>
+                                </button>
+                                <button
+                                    onClick={() => setTossCircuitBreaker(prev => ({ ...prev, active: false }))}
+                                    className="text-amber-200 hover:text-white text-base leading-none px-1"
+                                    title="배너 숨기기 (자동 쿨다운은 유지됨)"
+                                >
+                                    ✕
+                                </button>
+                            </div>
                         </div>
                     )}
                     <div className="sticky top-0 z-50 bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700">
