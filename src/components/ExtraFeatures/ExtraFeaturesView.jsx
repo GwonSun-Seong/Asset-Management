@@ -3,6 +3,10 @@ import TaxSettlementPreview from './TaxSettlementPreview';
 import ParkingGame from './ParkingGame';
 import KoreaLifeSimulator from './KoreaLifeSimulator';
 import RetirementGachaGame from './RetirementGachaGame';
+import ImpulseBuyJudge from './ImpulseBuyJudge';
+import MonthlyCfoAuditReport from './MonthlyCfoAuditReport';
+import FireClockSimulator from './FireClockSimulator';
+import SnapshotDiffViewer from './SnapshotDiffViewer';
 
 // 추가 기능 카탈로그 정의 (버튼 형태로 나열)
 const FEATURE_CATALOG = [
@@ -47,24 +51,44 @@ const FEATURE_CATALOG = [
         detail: '통계청 가계금융복지조사 실데이터와 나의 실제 자산 포트폴리오를 결합하여, 5초에 1년씩 85세까지의 한국 인생 여정을 살아보는 시뮬레이션입니다.'
     },
     {
-        id: 'fx-calculator',
-        name: '[개발 중] 환율 우대 & 분할 환전',
-        icon: '💱',
-        category: '외환투자',
-        tag: '개발 중',
-        isAvailable: false,
-        summary: '현재 개발 준비 중인 기능입니다',
-        detail: '현재 개발 준비 중인 기능입니다.'
+        id: 'impulse-buy-judge',
+        name: 'AI 기회비용 판독기',
+        icon: '🛒',
+        category: '소비통제',
+        tag: 'AI 판사',
+        isAvailable: true,
+        summary: '"이거 사도 될까?" 내 자본 체급·시급·복리 기반 은퇴 지연 판결',
+        detail: '사고 싶은 물건의 가격과 할부 조건을 넣으면 내 순자산 체급과 일일 주가 변동폭에 비례하여 합리적 승인 또는 팩폭 판결을 내립니다.'
     },
     {
-        id: 'housing-diagnostic',
-        name: '[개발 중] 청약 가점 & 특공 진단',
-        icon: '🎯',
-        category: '부동산',
-        tag: '개발 중',
-        isAvailable: false,
-        summary: '현재 개발 준비 중인 기능입니다',
-        detail: '현재 개발 준비 중인 기능입니다.'
+        id: 'cfo-audit-report',
+        name: '월간 CFO 감사보고서',
+        icon: '📊',
+        category: '재무감사',
+        tag: 'AI CFO',
+        isAvailable: true,
+        summary: '순자산 증감을 [근로저축·투자수익·부채상환]으로 요인분해하는 결산 리포트',
+        detail: '지난 기간 동안 내 순자산이 왜 늘었는지 근로저축 기여분, 주식/환율 평가 변동, 부채 원금 축소분으로 분해하여 감사 보고서를 발행합니다.'
+    },
+    {
+        id: 'fire-clock-simulator',
+        name: '4대 FIRE 은퇴 시계',
+        icon: '🔥',
+        category: '은퇴설계',
+        tag: 'SWR 정밀',
+        isAvailable: true,
+        summary: 'Lean · Barista · Regular · Fat 4가지 은퇴 모델별 필요 시드 & D-Day',
+        detail: '안전인출률(3.0%~4.5%)과 바리스타 부수입 슬라이더를 조절하며 4가지 FIRE 모델별 달성 시점과 지금 당장 은퇴 시 월 가능 인출액을 계산합니다.'
+    },
+    {
+        id: 'snapshot-diff-viewer',
+        name: '스냅샷 타임머신 Diff',
+        icon: '🕰️',
+        category: '히스토리',
+        tag: '1:1 대조',
+        isAvailable: true,
+        summary: '과거 특정 스냅샷 vs 현재 포트폴리오의 계좌·보유주식 수량 1:1 비교',
+        detail: '과거 기록과 현재 상태를 Git Diff처럼 비교하여 새로 개설/해지된 계좌와 종목별 추매/매도 수량 및 평가액 변동을 한눈에 추적합니다.'
     }
 ];
 
@@ -72,6 +96,7 @@ export default function ExtraFeaturesView({
     monthlySalary = 0,
     currentAppData = null,
     currentCalculation = null,
+    assetHistory = [],
     currentUser = null,
     supabase = null,
     verifiedEmail = null,
@@ -124,7 +149,7 @@ export default function ExtraFeaturesView({
                 </div>
 
                 {/* 가로 스크롤 및 반응형 그리드 버튼 바 */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
                     {FEATURE_CATALOG.map((feature) => {
                         const isSelected = selectedFeatureId === feature.id;
                         return (
@@ -209,35 +234,43 @@ export default function ExtraFeaturesView({
                         addToast={addToast}
                     />
                 )}
-                {activeFeature.id !== 'tax-preview' && activeFeature.id !== 'retirement-gacha' && activeFeature.id !== 'parking-game' && activeFeature.id !== 'korea-life-simulator' && (
-                    /* 준비 중인 기능 안내 카드 */
-                    <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 shadow-xs text-center space-y-3">
-                        <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center text-2xl mx-auto">
-                            {activeFeature.icon}
-                        </div>
-                        <div>
-                            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
-                                {activeFeature.tag}
-                            </span>
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white mt-2">
-                                {activeFeature.name}
-                            </h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mt-1">
-                                {activeFeature.detail}
-                            </p>
-                        </div>
-
-                        <div className="pt-2">
-                            <button
-                                onClick={() => setSelectedFeatureId('tax-preview')}
-                                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all cursor-pointer"
-                            >
-                                🧾 연말정산 미리보기로 이동
-                            </button>
-                        </div>
-                    </div>
+                {activeFeature.id === 'impulse-buy-judge' && (
+                    <ImpulseBuyJudge
+                        monthlySalary={monthlySalary}
+                        currentAppData={currentAppData}
+                        currentCalculation={currentCalculation}
+                        assetHistory={assetHistory}
+                        addToast={addToast}
+                    />
+                )}
+                {activeFeature.id === 'cfo-audit-report' && (
+                    <MonthlyCfoAuditReport
+                        monthlySalary={monthlySalary}
+                        currentAppData={currentAppData}
+                        currentCalculation={currentCalculation}
+                        assetHistory={assetHistory}
+                        addToast={addToast}
+                    />
+                )}
+                {activeFeature.id === 'fire-clock-simulator' && (
+                    <FireClockSimulator
+                        monthlySalary={monthlySalary}
+                        currentAppData={currentAppData}
+                        currentCalculation={currentCalculation}
+                        addToast={addToast}
+                    />
+                )}
+                {activeFeature.id === 'snapshot-diff-viewer' && (
+                    <SnapshotDiffViewer
+                        monthlySalary={monthlySalary}
+                        currentAppData={currentAppData}
+                        currentCalculation={currentCalculation}
+                        assetHistory={assetHistory}
+                        addToast={addToast}
+                    />
                 )}
             </div>
         </div>
     );
 }
+

@@ -1837,6 +1837,111 @@ import AssetGhostRacing from './components/AssetGhostRacing';
         const scenariosRef = useRef(scenarios);
         const assetHistoryRef = useRef(assetHistory);
 
+        // [추가] 히스토리 저장 시 당일 보유 주식(명칭·티커·수량·가격), 적용 환율, 계좌 잔액을 안전하게 추출하는 헬퍼 (0원 덮어쓰기 및 NaN 완벽 방어)
+        const buildHistoryDetailSnapshot = React.useCallback((sourceAppData, existingPoint = null) => {
+            try {
+                const targetAssets = sourceAppData?.assets || appDataRef.current?.assets || {};
+                const rawFx = Number(localStorage.getItem('asset_last_usd_krw'));
+                const safeFxRate = (!isNaN(rawFx) && isFinite(rawFx) && rawFx > 0)
+                    ? Math.round(rawFx * 100) / 100
+                    : (Number(existingPoint?.fxRate) > 0 ? Number(existingPoint.fxRate) : 1350);
+
+                const prevStocksMap = new Map();
+                if (existingPoint && Array.isArray(existingPoint.stocks)) {
+                    existingPoint.stocks.forEach(ps => {
+                        if (ps && ps.ticker) {
+                            const key = `${ps.accountName || ''}::${String(ps.ticker).trim().toUpperCase()}`;
+                            prevStocksMap.set(key, ps);
+                        }
+                    });
+                }
+
+                const stocks = [];
+                const accounts = [];
+
+                if (targetAssets && typeof targetAssets === 'object') {
+                    Object.keys(targetAssets).forEach(secKey => {
+                        const list = Array.isArray(targetAssets[secKey]) ? targetAssets[secKey] : [];
+                        list.forEach(acc => {
+                            if (!acc || typeof acc !== 'object') return;
+                            const accName = String(acc.name || '미지정 계좌').trim();
+                            const accAmt = Number(acc.amount);
+                            const safeAmt = (!isNaN(accAmt) && isFinite(accAmt)) ? Math.round(accAmt * 100) / 100 : 0;
+                            const accContrib = Number(acc.monthlyContrib);
+                            const safeContrib = (!isNaN(accContrib) && isFinite(accContrib)) ? Math.round(accContrib * 10) / 10 : 0;
+                            const accRate = Number(acc.rate);
+                            const safeRate = (!isNaN(accRate) && isFinite(accRate)) ? Math.round(accRate * 100) / 100 : 0;
+
+                            accounts.push({
+                                sec: secKey,
+                                name: accName,
+                                amount: safeAmt,
+                                monthlyContrib: safeContrib,
+                                rate: safeRate
+                            });
+
+                            if (Array.isArray(acc.linkedItems)) {
+                                acc.linkedItems.forEach(item => {
+                                    if (!item || typeof item !== 'object') return;
+                                    const rawTicker = String(item.ticker || '').trim();
+                                    if (!rawTicker || rawTicker === '사용자 입력 필요') return;
+                                    const shares = Number(item.shares);
+                                    if (isNaN(shares) || !isFinite(shares) || shares <= 0) return;
+
+                                    const mapKey = `${accName}::${rawTicker.toUpperCase()}`;
+                                    const prevStock = prevStocksMap.get(mapKey);
+
+                                    let price = Number(item.currentPrice);
+                                    // [핵심 예외처리] 토스 시세 연동 전이거나 일시 오류로 currentPrice가 0/NaN일 때 기존 정상 가격 또는 basePrice/avgPrice로 방어
+                                    if (isNaN(price) || !isFinite(price) || price <= 0) {
+                                        const fallbackPrice = Number(prevStock?.price) || Number(item.basePrice) || Number(item.avgPrice) || 0;
+                                        price = (!isNaN(fallbackPrice) && isFinite(fallbackPrice) && fallbackPrice > 0) ? fallbackPrice : 0;
+                                    }
+
+                                    const avgPrice = Number(item.avgPrice);
+                                    const safeAvgPrice = (!isNaN(avgPrice) && isFinite(avgPrice) && avgPrice > 0)
+                                        ? Math.round(avgPrice)
+                                        : (Number(prevStock?.avgPrice) > 0 ? Math.round(Number(prevStock.avgPrice)) : Math.round(price));
+
+                                    stocks.push({
+                                        name: String(item.name || rawTicker).trim(),
+                                        ticker: rawTicker,
+                                        shares: Math.round(shares * 10000) / 10000,
+                                        price: Math.round(price),
+                                        avgPrice: safeAvgPrice,
+                                        accountName: accName,
+                                        sector: secKey
+                                    });
+                                });
+                            }
+                        });
+                    });
+                }
+
+                // 만약 전체 종목 가격이 모두 0원이고 기존 스냅샷에 유효한 주식이 있다면 기존 주식 보존
+                const hasValidNewPrices = stocks.some(s => s.price > 0);
+                const finalStocks = (!hasValidNewPrices && Array.isArray(existingPoint?.stocks) && existingPoint.stocks.some(s => s.price > 0))
+                    ? existingPoint.stocks
+                    : stocks;
+                const finalAccounts = (accounts.length === 0 && Array.isArray(existingPoint?.accounts) && existingPoint.accounts.length > 0)
+                    ? existingPoint.accounts
+                    : accounts;
+
+                return {
+                    fxRate: safeFxRate,
+                    stocks: finalStocks,
+                    accounts: finalAccounts
+                };
+            } catch (snapErr) {
+                console.warn('히스토리 상세 스냅샷 생성 중 예외 발생 (기본값 유지):', snapErr);
+                return {
+                    fxRate: Number(existingPoint?.fxRate) || 1350,
+                    stocks: Array.isArray(existingPoint?.stocks) ? existingPoint.stocks : [],
+                    accounts: Array.isArray(existingPoint?.accounts) ? existingPoint.accounts : []
+                };
+            }
+        }, []);
+
         const saveToCloud = React.useCallback(async (unifiedData, force = false, emailOverride = null, proOverride = null, keyOverride = null, modeOverride = null) => {
             if (!supabase) {
                 if (force) console.warn("Cloud save skipped: Supabase not initialized.");
@@ -1858,43 +1963,62 @@ import AssetGhostRacing from './components/AssetGhostRacing';
 
             let payloadData = unifiedData;
 
-            // [추가] DB 동기화 시 히스토리 자동 저장 처리 (KST 한국 표준시 보장)
-            if (autoSaveHistoryOnSync && unifiedData && unifiedData.assetHistory) {
-                const now = new Date();
-                const currentDate = typeof getKSTTodayString === 'function' ? getKSTTodayString(now) : (window.getKSTTodayString ? window.getKSTTodayString(now) : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
-                const currentTime = typeof getKSTTimeString === 'function' ? getKSTTimeString(now) : (window.getKSTTimeString ? window.getKSTTimeString(now) : '12:00:00');
-                const netWorth = calculation?.currentNet || 0;
-                const grossWorth = calculation?.currentGross || 0;
+            // [추가] DB 동기화 시 히스토리 자동 저장 처리 (KST 한국 표준시 보장 + 보유주식·환율·계좌 상세 스냅샷 포함)
+            if (autoSaveHistoryOnSync && unifiedData && Array.isArray(unifiedData.assetHistory)) {
+                try {
+                    const now = new Date();
+                    const currentDate = typeof getKSTTodayString === 'function' ? getKSTTodayString(now) : (window.getKSTTodayString ? window.getKSTTodayString(now) : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
+                    const currentTime = typeof getKSTTimeString === 'function' ? getKSTTimeString(now) : (window.getKSTTimeString ? window.getKSTTimeString(now) : '12:00:00');
+                    const netWorth = calculation?.currentNet || 0;
+                    const grossWorth = calculation?.currentGross || 0;
 
-                const existingIndex = unifiedData.assetHistory.findIndex(item => item.date === currentDate);
-                const newPoint = { 
-                    date: currentDate, 
-                    time: currentTime,
-                    netWorth,
-                    grossWorth,
-                    timestamp: now.getTime()
-                };
+                    const existingIndex = unifiedData.assetHistory.findIndex(item => item && item.date === currentDate);
+                    const existingPoint = existingIndex >= 0 ? unifiedData.assetHistory[existingIndex] : null;
+                    const detailSnap = buildHistoryDetailSnapshot(unifiedData.appData || appDataRef.current, existingPoint);
 
-                let updatedHistory = [...unifiedData.assetHistory];
-                let isChanged = false;
+                    const newPoint = {
+                        ...(existingPoint || {}),
+                        date: currentDate,
+                        time: currentTime,
+                        netWorth,
+                        grossWorth,
+                        timestamp: now.getTime(),
+                        fxRate: detailSnap.fxRate,
+                        stocks: detailSnap.stocks,
+                        accounts: detailSnap.accounts
+                    };
 
-                if (existingIndex >= 0) {
-                    const existing = updatedHistory[existingIndex];
-                    if (existing.netWorth !== netWorth || existing.grossWorth !== grossWorth) {
-                        updatedHistory[existingIndex] = newPoint;
+                    let updatedHistory = [...unifiedData.assetHistory];
+                    let isChanged = false;
+
+                    if (existingIndex >= 0) {
+                        const prevStocksStr = JSON.stringify(existingPoint?.stocks || []);
+                        const nextStocksStr = JSON.stringify(detailSnap.stocks || []);
+                        const prevAccStr = JSON.stringify(existingPoint?.accounts || []);
+                        const nextAccStr = JSON.stringify(detailSnap.accounts || []);
+                        if (
+                            existingPoint.netWorth !== netWorth ||
+                            existingPoint.grossWorth !== grossWorth ||
+                            prevStocksStr !== nextStocksStr ||
+                            prevAccStr !== nextAccStr
+                        ) {
+                            updatedHistory[existingIndex] = newPoint;
+                            isChanged = true;
+                        }
+                    } else {
+                        updatedHistory.push(newPoint);
+                        updatedHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
                         isChanged = true;
                     }
-                } else {
-                    updatedHistory.push(newPoint);
-                    updatedHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-                    isChanged = true;
-                }
 
-                if (isChanged) {
-                    payloadData = { ...unifiedData, assetHistory: updatedHistory };
-                    setTimeout(() => {
-                        setAssetHistory(updatedHistory);
-                    }, 0);
+                    if (isChanged) {
+                        payloadData = { ...unifiedData, assetHistory: updatedHistory };
+                        setTimeout(() => {
+                            setAssetHistory(updatedHistory);
+                        }, 0);
+                    }
+                } catch (histSyncErr) {
+                    console.warn('자동 히스토리 스냅샷 병합 중 예외 무시:', histSyncErr);
                 }
             }
 
@@ -2685,32 +2809,35 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                     const grossWorth = calculation?.currentGross || 0;
                     
                     setAssetHistory(prev => {
-                        const newHistory = [...prev];
-                        const existingIndex = newHistory.findIndex(item => item.date === currentDate);
-                        
+                        const safePrev = Array.isArray(prev) ? prev : [];
+                        const newHistory = [...safePrev];
+                        const existingIndex = newHistory.findIndex(item => item && item.date === currentDate);
+                        const existingPoint = existingIndex >= 0 ? newHistory[existingIndex] : null;
+                        const detailSnap = buildHistoryDetailSnapshot(appDataRef.current || appData, existingPoint);
+
+                        const updatedPoint = {
+                            ...(existingPoint || {}),
+                            date: currentDate, 
+                            time: currentTime,
+                            netWorth,
+                            grossWorth,
+                            timestamp: now.getTime(),
+                            fxRate: detailSnap.fxRate,
+                            stocks: detailSnap.stocks,
+                            accounts: detailSnap.accounts
+                        };
+
                         if (existingIndex >= 0) {
-                            newHistory[existingIndex] = { 
-                                date: currentDate, 
-                                time: currentTime,
-                                netWorth,
-                                grossWorth,
-                                timestamp: now.getTime()
-                            };
+                            newHistory[existingIndex] = updatedPoint;
                         } else {
-                            newHistory.push({ 
-                                date: currentDate, 
-                                time: currentTime,
-                                netWorth,
-                                grossWorth,
-                                timestamp: now.getTime()
-                            });
+                            newHistory.push(updatedPoint);
                         }
                         
                         // 날짜순으로 정확히 정렬 (수동 기록 누락 방지)
                         return newHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
                     });
                     
-                    addToast(`현재 순자산 ${formatNumber(netWorth, displayMode)}만원이 히스토리에 저장되었습니다.`, 'success');
+                    addToast(`현재 순자산 ${formatNumber(netWorth, displayMode)}만원 및 보유주식 스냅샷이 히스토리에 저장되었습니다.`, 'success');
                 } catch (error) {
                     console.error('자산 저장 오류:', error);
                     addToast('자산 저장 중 오류가 발생했습니다.', 'error');
@@ -10181,6 +10308,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                     verifiedEmail={verifiedEmail}
                                     addToast={addToast}
                                     savingsRate={monthlySalary > 0 ? ((totalSectorMonthlyContrib + autoDepositAmount) / monthlySalary * 100) : 0}
+                                    assetHistory={assetHistory}
                                 />
                             ) : (
                             <>

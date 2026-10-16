@@ -3657,6 +3657,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
             
             prompt += `
                 너무 길지 않게 핵심만 요약해서 답변해주세요.
+                ⚠️ 주의: 답변 내에 '202X년 X월 X일', '작성일', '기준일' 등 어떠한 연도나 날짜 표기도 절대 적지 마세요.
                 이후 사용자의 질문에 대해서도 위 데이터를 바탕으로 답변해주세요.
             `;
 
@@ -3716,7 +3717,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                         const net = Math.round(Number(h.netWorth) || 0);
                         const diffFromPrev = prev ? Math.round(net - (Number(prev.netWorth) || 0)) : 0;
                         return {
-                            date: h.date,
+                            step: `${idx + 1}번째 기록`,
                             netWorth: `${net}만원`,
                             grossWorth: `${Math.round(Number(h.grossWorth || h.netWorth) || 0)}만원`,
                             change: idx === 0 ? '기준시점' : `${diffFromPrev >= 0 ? '+' : ''}${diffFromPrev}만원`,
@@ -3744,7 +3745,7 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                     }, {}),
                     assetHistoryTimeline: sortedHistory
                 };
-                currentContext = `당신은 ${persona}입니다. 아래 재무 데이터를 참고하여 사용자의 질문에 답해 주세요. 데이터: ${JSON.stringify(summary)}`;
+                currentContext = `당신은 ${persona}입니다. 아래 재무 데이터를 참고하여 사용자의 질문에 답해 주세요(답변에 날짜나 연도는 절대 적지 마세요). 데이터: ${JSON.stringify(summary)}`;
                 setContextPrompt(currentContext);
             } catch (e) {
                 currentContext = `당신은 ${persona}입니다. 사용자의 질문에 대해 조언해 주세요.`;
@@ -3868,23 +3869,11 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                                 }`}>
                                     {msg.role === 'user' ? (
                                         <div className="whitespace-pre-wrap text-sm break-words">{msg.text}</div>
+                                    ) : window.MarkdownRenderer ? (
+                                        <window.MarkdownRenderer content={(msg.text || '').replace(/---JSON_START---[\s\S]*?---JSON_END---/g, '')} />
                                     ) : (
                                         <div className="prose dark:prose-invert prose-sm max-w-none text-sm">
-                                            <div className="whitespace-pre-wrap break-words">
-                                                {msg.text.replace(/---JSON_START---[\s\S]*?---JSON_END---/g, '').split('\n').map((line, i) => {
-                                                    if (line.startsWith('#')) return <h4 key={i} className="text-sm font-black mt-3 mb-1.5 text-indigo-600 dark:text-indigo-400">{line.replace(/^#+\s/, '')}</h4>;
-                                                    const parts = line.split(/(\*\*.*?\*\*)/g);
-                                                    return (
-                                                        <p key={i} className="mb-1 text-gray-700 dark:text-gray-300">
-                                                            {parts.map((part, j) => (
-                                                                part.startsWith('**') && part.endsWith('**') 
-                                                                    ? <strong key={j} className="font-extrabold text-gray-900 dark:text-white">{part.slice(2, -2)}</strong> 
-                                                                    : part
-                                                            ))}
-                                                        </p>
-                                                    );
-                                                })}
-                                            </div>
+                                            <div className="whitespace-pre-wrap break-words">{(msg.text || '').replace(/---JSON_START---[\s\S]*?---JSON_END---/g, '')}</div>
                                         </div>
                                     )}
                                 </div>
