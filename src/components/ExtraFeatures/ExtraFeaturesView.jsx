@@ -1,12 +1,11 @@
-import React, { useState } from 'react';
-import TaxSettlementPreview from './TaxSettlementPreview';
-import ParkingGame from './ParkingGame';
-import KoreaLifeSimulator from './KoreaLifeSimulator';
-import RetirementGachaGame from './RetirementGachaGame';
-import ImpulseBuyJudge from './ImpulseBuyJudge';
-import MonthlyCfoAuditReport from './MonthlyCfoAuditReport';
-import FireClockSimulator from './FireClockSimulator';
-import SnapshotDiffViewer from './SnapshotDiffViewer';
+import React, { useState, Suspense, lazy } from 'react';
+
+const TaxSettlementPreview = lazy(() => import('./TaxSettlementPreview'));
+const ParkingGame = lazy(() => import('./ParkingGame'));
+const KoreaLifeSimulator = lazy(() => import('./KoreaLifeSimulator'));
+const RetirementGachaGame = lazy(() => import('./RetirementGachaGame'));
+const ImpulseBuyJudge = lazy(() => import('./ImpulseBuyJudge'));
+const MonthlyCfoAuditReport = lazy(() => import('./MonthlyCfoAuditReport'));
 
 // 추가 기능 카탈로그 정의 (버튼 형태로 나열)
 const FEATURE_CATALOG = [
@@ -71,24 +70,24 @@ const FEATURE_CATALOG = [
         detail: '지난 기간 동안 내 순자산이 왜 늘었는지 근로저축 기여분, 주식/환율 평가 변동, 부채 원금 축소분으로 분해하여 감사 보고서를 발행합니다.'
     },
     {
-        id: 'fire-clock-simulator',
-        name: '4대 FIRE 은퇴 시계',
-        icon: '🔥',
-        category: '은퇴설계',
-        tag: 'SWR 정밀',
-        isAvailable: true,
-        summary: 'Lean · Barista · Regular · Fat 4가지 은퇴 모델별 필요 시드 & D-Day',
-        detail: '안전인출률(3.0%~4.5%)과 바리스타 부수입 슬라이더를 조절하며 4가지 FIRE 모델별 달성 시점과 지금 당장 은퇴 시 월 가능 인출액을 계산합니다.'
+        id: 'upcoming-slot-1',
+        name: '신규 금융 도구 슬롯 A',
+        icon: '🧪',
+        category: '연구실',
+        tag: '준비중',
+        isAvailable: false,
+        summary: '(기존 4대 FIRE 은퇴 시계는 [시각화] 탭으로 승격 이동되었습니다)',
+        detail: '4대 FIRE 은퇴 시계는 핵심 분석 도구로 채택되어 상단 [시각화] 탭에서 상시 확인하실 수 있습니다. 이 슬롯에는 새로운 실험실 기능이 준비 중입니다.'
     },
     {
-        id: 'snapshot-diff-viewer',
-        name: '스냅샷 타임머신 Diff',
-        icon: '🕰️',
-        category: '히스토리',
-        tag: '1:1 대조',
-        isAvailable: true,
-        summary: '과거 특정 스냅샷 vs 현재 포트폴리오의 계좌·보유주식 수량 1:1 비교',
-        detail: '과거 기록과 현재 상태를 Git Diff처럼 비교하여 새로 개설/해지된 계좌와 종목별 추매/매도 수량 및 평가액 변동을 한눈에 추적합니다.'
+        id: 'upcoming-slot-2',
+        name: '신규 금융 도구 슬롯 B',
+        icon: '🛠️',
+        category: '연구실',
+        tag: '준비중',
+        isAvailable: false,
+        summary: '(기존 스냅샷 타임머신 Diff는 [시각화 > 자산 히스토리] 하단으로 통합되었습니다)',
+        detail: '스냅샷 타임머신 Diff 비교기는 [시각화 > 자산 히스토리] 그래프 하단에 폴딩 형태로 통합되어 그래프 핀(A·B)과 함께 더욱 직관적으로 이용하실 수 있습니다.'
     }
 ];
 
@@ -101,7 +100,8 @@ export default function ExtraFeaturesView({
     supabase = null,
     verifiedEmail = null,
     addToast = null,
-    savingsRate = 0
+    savingsRate = 0,
+    onNavigateToVisualization = null
 }) {
     // 현재 선택된 기능 (기본값: 'tax-preview' 연말정산 미리보기)
     const [selectedFeatureId, setSelectedFeatureId] = useState('tax-preview');
@@ -114,7 +114,11 @@ export default function ExtraFeaturesView({
             ...prev,
             [featureId]: (prev[featureId] || 0) + 1
         }));
-        alert(`'${featureName}' 기능에 우선 개발 투표가 등록되었습니다! 빠른 시일 내에 준비하겠습니다.`);
+        if (addToast) {
+            addToast(`'${featureName}' 슬롯에 아이디어 투표가 등록되었습니다!`, 'info');
+        } else {
+            alert(`'${featureName}' 기능에 우선 개발 투표가 등록되었습니다! 빠른 시일 내에 준비하겠습니다.`);
+        }
     };
 
     return (
@@ -201,74 +205,102 @@ export default function ExtraFeaturesView({
                 </div>
             </div>
 
-            {/* 선택된 기능 콘텐츠 영역 */}
+            {/* 선택된 기능 콘텐츠 영역 (Suspense 지연 로딩 적용) */}
             <div className="pt-2">
-                {activeFeature.id === 'tax-preview' && (
-                    <TaxSettlementPreview
-                        monthlySalary={monthlySalary}
-                        currentAppData={currentAppData}
-                        currentCalculation={currentCalculation}
-                        currentUser={currentUser}
-                        supabase={supabase}
-                        verifiedEmail={verifiedEmail}
-                        addToast={addToast}
-                    />
-                )}
-                {activeFeature.id === 'retirement-gacha' && (
-                    <RetirementGachaGame
-                        monthlySalary={monthlySalary}
-                        currentAppData={currentAppData}
-                        currentCalculation={currentCalculation}
-                        addToast={addToast}
-                        savingsRate={savingsRate}
-                    />
-                )}
-                {activeFeature.id === 'parking-game' && (
-                    <ParkingGame addToast={addToast} />
-                )}
-                {activeFeature.id === 'korea-life-simulator' && (
-                    <KoreaLifeSimulator
-                        monthlySalary={monthlySalary}
-                        currentAppData={currentAppData}
-                        currentCalculation={currentCalculation}
-                        addToast={addToast}
-                    />
-                )}
-                {activeFeature.id === 'impulse-buy-judge' && (
-                    <ImpulseBuyJudge
-                        monthlySalary={monthlySalary}
-                        currentAppData={currentAppData}
-                        currentCalculation={currentCalculation}
-                        assetHistory={assetHistory}
-                        addToast={addToast}
-                    />
-                )}
-                {activeFeature.id === 'cfo-audit-report' && (
-                    <MonthlyCfoAuditReport
-                        monthlySalary={monthlySalary}
-                        currentAppData={currentAppData}
-                        currentCalculation={currentCalculation}
-                        assetHistory={assetHistory}
-                        addToast={addToast}
-                    />
-                )}
-                {activeFeature.id === 'fire-clock-simulator' && (
-                    <FireClockSimulator
-                        monthlySalary={monthlySalary}
-                        currentAppData={currentAppData}
-                        currentCalculation={currentCalculation}
-                        addToast={addToast}
-                    />
-                )}
-                {activeFeature.id === 'snapshot-diff-viewer' && (
-                    <SnapshotDiffViewer
-                        monthlySalary={monthlySalary}
-                        currentAppData={currentAppData}
-                        currentCalculation={currentCalculation}
-                        assetHistory={assetHistory}
-                        addToast={addToast}
-                    />
-                )}
+                <Suspense
+                    fallback={
+                        <div className="p-12 rounded-3xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center gap-3 text-slate-400">
+                            <div className="w-7 h-7 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-xs font-bold">도구 모듈을 불러오는 중입니다...</span>
+                        </div>
+                    }
+                >
+                    {activeFeature.id === 'tax-preview' && (
+                        <TaxSettlementPreview
+                            monthlySalary={monthlySalary}
+                            currentAppData={currentAppData}
+                            currentCalculation={currentCalculation}
+                            currentUser={currentUser}
+                            supabase={supabase}
+                            verifiedEmail={verifiedEmail}
+                            addToast={addToast}
+                        />
+                    )}
+                    {activeFeature.id === 'retirement-gacha' && (
+                        <RetirementGachaGame
+                            monthlySalary={monthlySalary}
+                            currentAppData={currentAppData}
+                            currentCalculation={currentCalculation}
+                            addToast={addToast}
+                            savingsRate={savingsRate}
+                        />
+                    )}
+                    {activeFeature.id === 'parking-game' && (
+                        <ParkingGame addToast={addToast} />
+                    )}
+                    {activeFeature.id === 'korea-life-simulator' && (
+                        <KoreaLifeSimulator
+                            monthlySalary={monthlySalary}
+                            currentAppData={currentAppData}
+                            currentCalculation={currentCalculation}
+                            addToast={addToast}
+                        />
+                    )}
+                    {activeFeature.id === 'impulse-buy-judge' && (
+                        <ImpulseBuyJudge
+                            monthlySalary={monthlySalary}
+                            currentAppData={currentAppData}
+                            currentCalculation={currentCalculation}
+                            assetHistory={assetHistory}
+                            addToast={addToast}
+                        />
+                    )}
+                    {activeFeature.id === 'cfo-audit-report' && (
+                        <MonthlyCfoAuditReport
+                            monthlySalary={monthlySalary}
+                            currentAppData={currentAppData}
+                            currentCalculation={currentCalculation}
+                            assetHistory={assetHistory}
+                            addToast={addToast}
+                        />
+                    )}
+                    {!activeFeature.isAvailable && (
+                        <div className="p-10 rounded-3xl bg-white dark:bg-slate-850 border border-dashed border-slate-300 dark:border-slate-700 text-center space-y-4">
+                            <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/60 flex items-center justify-center text-3xl mx-auto">
+                                {activeFeature.icon}
+                            </div>
+                            <div className="space-y-1.5 max-w-xl mx-auto">
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                    차기 실험실 슬롯 준비중
+                                </span>
+                                <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                                    {activeFeature.name}
+                                </h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    {activeFeature.detail}
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                                {onNavigateToVisualization && (
+                                    <button
+                                        type="button"
+                                        onClick={onNavigateToVisualization}
+                                        className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+                                    >
+                                        📈 [시각화] 탭으로 이동하여 승격된 도구 보기
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => handleVoteUpcoming(activeFeature.id, activeFeature.name)}
+                                    className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer"
+                                >
+                                    👍 신규 실험실 기능 기대 투표 ({voteList[activeFeature.id] || 0})
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </Suspense>
             </div>
         </div>
     );

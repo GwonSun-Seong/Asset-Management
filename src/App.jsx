@@ -1,12 +1,15 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import AssetSummaryCard from './components/AssetSummaryCard';
 import { SavedScenariosCarousel, ScenarioCompare } from './components/ScenarioComponents';
 import MarketTickerSlide from './components/MarketTickerSlide';
 import WeatherAtmosphere from './components/WeatherAtmosphere';
 import { AssetGrowthModernView } from './components/AssetGrowthVariations';
-import CommunityView from './components/Community/CommunityView';
-import ExtraFeaturesView from './components/ExtraFeatures/ExtraFeaturesView';
-import AssetGhostRacing from './components/AssetGhostRacing';
+
+const CommunityView = lazy(() => import('./components/Community/CommunityView'));
+const ExtraFeaturesView = lazy(() => import('./components/ExtraFeatures/ExtraFeaturesView'));
+const FireClockSimulator = lazy(() => import('./components/ExtraFeatures/FireClockSimulator'));
+const SnapshotDiffViewer = lazy(() => import('./components/ExtraFeatures/SnapshotDiffViewer'));
+const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimelineBoard'));
 
         const CoreSettingsCard = ({
             monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
@@ -929,7 +932,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
             const [cashFlowReportPage, setCashFlowReportPage] = useState('receipt');
             const TAB_MAPPING = {
                 input: ['assets', 'expenses', 'events', 'memo', 'rebalance'], // 입력
-                visualization: ['budget', 'charts', 'history', 'scenario'], // 시각화 (요약은 항상 표시되므로 메뉴에서 제외)
+                visualization: ['budget', 'charts', 'history', 'life-timeline', 'fire-clock', 'scenario'], // 시각화 (요약은 항상 표시되므로 메뉴에서 제외)
                 analysis: ['detail-analysis', 'assumptions'], // 분석
                 community: ['community'], // 커뮤니티
                 tools: ['tools'] // 추가 기능
@@ -976,6 +979,20 @@ import AssetGhostRacing from './components/AssetGhostRacing';
             const [isHistoryFullscreen, setIsHistoryFullscreen] = useState(false);
             const [isManualHistoryModalOpen, setIsManualHistoryModalOpen] = useState(false);
             const [editingManualHistoryData, setEditingManualHistoryData] = useState(null);
+            // [추가] 자산 히스토리 하단 폴딩 스냅샷 타임머신 Diff 및 그래프 A·B 핀 연동 상태
+            const [isHistoryDiffOpen, setIsHistoryDiffOpen] = useState(false);
+            const [historyDiffBaseDate, setHistoryDiffBaseDate] = useState('');
+            const [historyDiffTargetDate, setHistoryDiffTargetDate] = useState('LIVE');
+            useEffect(() => {
+                if (Array.isArray(assetHistory) && assetHistory.length > 0 && !historyDiffBaseDate) {
+                    const sorted = [...assetHistory].filter(h => h && h.date).sort((a, b) => new Date(a.date) - new Date(b.date));
+                    const withDetail = sorted.filter(h => (Array.isArray(h.stocks) && h.stocks.length > 0) || (Array.isArray(h.accounts) && h.accounts.length > 0) || h.snapshot?.assets);
+                    const picked = withDetail.length > 0
+                        ? withDetail[Math.max(0, withDetail.length - 1)]
+                        : sorted[Math.max(0, sorted.length - 2)];
+                    if (picked?.date) setHistoryDiffBaseDate(picked.date);
+                }
+            }, [assetHistory, historyDiffBaseDate]);
             const [snowballStep, setSnowballStep] = useState(() => {
                 const saved = localStorage.getItem('asset_snowball_step');
                 return saved ? Number(saved) : 1000;
@@ -1273,22 +1290,31 @@ import AssetGhostRacing from './components/AssetGhostRacing';
             }, [isHistoryFullscreen]);
 
             const [layoutOrder, setLayoutOrder] = useState(() => {
+                const defaultOrder = window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'life-timeline', 'fire-clock', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions', 'community'];
                 try {
                     const savedOrder = localStorage.getItem('assetDashboardLayoutOrder');
-                    const defaultOrder = window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions', 'community'];
                     let order = defaultOrder;
                     if (savedOrder) {
                         const parsed = JSON.parse(savedOrder);
                         const missing = defaultOrder.filter(id => !parsed.includes(id));
                         order = [...parsed, ...missing];
                     }
+                    if (!order.includes('life-timeline')) {
+                        const histIdx = order.indexOf('history');
+                        if (histIdx >= 0) order.splice(histIdx + 1, 0, 'life-timeline');
+                        else order.push('life-timeline');
+                    }
+                    if (!order.includes('fire-clock')) {
+                        const tlIdx = order.indexOf('life-timeline');
+                        if (tlIdx >= 0) order.splice(tlIdx + 1, 0, 'fire-clock');
+                        else order.push('fire-clock');
+                    }
                     if (!order.includes('community')) {
                         order.push('community');
                     }
                     return order;
                 } catch {
-                    const fallback = window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions', 'community'];
-                    return fallback.includes('community') ? fallback : [...fallback, 'community'];
+                    return defaultOrder.includes('community') ? defaultOrder : [...defaultOrder, 'community'];
                 }
             });
             useEffect(() => {
@@ -4549,6 +4575,15 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                         return getDynamicPointRadius(context) > 0 ? 6 : 0;
                     };
 
+                    // [스냅샷 타임머신 Diff A/B 핀 매핑]
+                    const effectiveDiffA = isHistoryDiffOpen ? historyDiffBaseDate : null;
+                    const effectiveDiffB = isHistoryDiffOpen
+                        ? (historyDiffTargetDate === 'LIVE' ? (historyDates[historyDates.length - 1] || null) : historyDiffTargetDate)
+                        : null;
+
+                    const isPointA = (idx) => effectiveDiffA && pointRadii[idx] > 0 && historyDates[idx] === effectiveDiffA;
+                    const isPointB = (idx) => effectiveDiffB && pointRadii[idx] > 0 && historyDates[idx] === effectiveDiffB;
+
                     const datasets = [
                         {
                             label: historyViewMode === 'gross' ? '총자산 (만원)' : '순자산 (만원)',
@@ -4574,14 +4609,26 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                             },
                             tension: 0.35,
                             fill: true,
-                            pointBackgroundColor: darkMode ? '#1e1b4b' : '#ffffff',
-                            pointBorderColor: '#6366f1',
-                            pointBorderWidth: 2,
-                            pointHoverRadius: 6,
+                            pointBackgroundColor: (ctx) => {
+                                if (isPointA(ctx.dataIndex)) return '#f59e0b';
+                                if (isPointB(ctx.dataIndex)) return '#10b981';
+                                return darkMode ? '#1e1b4b' : '#ffffff';
+                            },
+                            pointBorderColor: (ctx) => {
+                                if (isPointA(ctx.dataIndex)) return '#ffffff';
+                                if (isPointB(ctx.dataIndex)) return '#ffffff';
+                                return '#6366f1';
+                            },
+                            pointBorderWidth: (ctx) => {
+                                if (isPointA(ctx.dataIndex) || isPointB(ctx.dataIndex)) return 3;
+                                return 2;
+                            },
+                            pointHoverRadius: 7,
                             pointHoverBackgroundColor: '#ffffff',
                             pointHoverBorderColor: '#4f46e5',
                             pointHoverBorderWidth: 3,
                             pointRadius: (ctx) => {
+                                if (isPointA(ctx.dataIndex) || isPointB(ctx.dataIndex)) return 7;
                                 if (pointRadii[ctx.dataIndex] !== undefined) {
                                     if (pointRadii[ctx.dataIndex] === 0) return 0;
                                     return getDynamicPointRadius(ctx);
@@ -4589,7 +4636,10 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                 return getDynamicPointRadius(ctx);
                             },
                             order: 1,
-                            pointHitRadius: getDynamicInteractionRadius
+                            pointHitRadius: (ctx) => {
+                                if (isPointA(ctx.dataIndex) || isPointB(ctx.dataIndex)) return 10;
+                                return getDynamicInteractionRadius(ctx);
+                            }
                         }
                     ];
 
@@ -4733,7 +4783,9 @@ import AssetGhostRacing from './components/AssetGhostRacing';
 
                     // 히스토리 데이터셋(0번)인 경우에만 팝오버 표시
                     if (datasetIndex === 0) {
-                        const point = assetHistory[index];
+                        const clickedDate = historyDates[index];
+                        const foundIdx = assetHistory.findIndex(h => h.date === clickedDate);
+                        const point = foundIdx >= 0 ? assetHistory[foundIdx] : assetHistory[index];
                         if (point) {
                             const rect = chart.canvas.getBoundingClientRect();
                             // 캔버스 내부 좌표 계산
@@ -4745,9 +4797,12 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                 date: point.date,
                                 netWorth: point.netWorth,
                                 grossWorth: point.grossWorth,
-                                index: index,
+                                index: foundIdx >= 0 ? foundIdx : index,
                                 memo: point.memo,
-                                isManual: !!point.isManual
+                                isManual: !!point.isManual,
+                                stocksCount: Array.isArray(point.stocks) ? point.stocks.length : 0,
+                                fxRate: point.fxRate || null,
+                                hasDetail: !!(point.detail && Object.keys(point.detail).length > 0)
                             });
                         }
                     } else {
@@ -4840,13 +4895,81 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                         chart.draw();
                     },
                     afterDraw: (chart, args, options) => {
+                        const ctx = chart.ctx;
+                        const topY = chart.scales.y.top;
+                        const bottomY = chart.scales.y.bottom;
+
+                        // [타임머신 Diff A/B] 비교 구간 하이라이트 및 A/B 플로팅 배지 렌더링
+                        if (isHistoryDiffOpen && chart.getDatasetMeta(0)) {
+                            const meta0 = chart.getDatasetMeta(0);
+                            const idxA = historyDates.findIndex((d, i) => pointRadii[i] > 0 && d === effectiveDiffA);
+                            const idxB = historyDates.findIndex((d, i) => pointRadii[i] > 0 && d === effectiveDiffB);
+                            const elA = idxA >= 0 ? meta0.data[idxA] : null;
+                            const elB = idxB >= 0 ? meta0.data[idxB] : null;
+
+                            if (elA && elB && !isNaN(elA.x) && !isNaN(elB.x)) {
+                                ctx.save();
+                                const leftX = Math.min(elA.x, elB.x);
+                                const rightX = Math.max(elA.x, elB.x);
+                                const spanGrad = ctx.createLinearGradient(leftX, 0, rightX, 0);
+                                spanGrad.addColorStop(0, darkMode ? 'rgba(245, 158, 11, 0.12)' : 'rgba(245, 158, 11, 0.09)');
+                                spanGrad.addColorStop(1, darkMode ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.09)');
+                                ctx.fillStyle = spanGrad;
+                                ctx.fillRect(leftX, topY, rightX - leftX, bottomY - topY);
+                                ctx.restore();
+                            }
+
+                            const drawPinMarker = (el, badgeText, colorHex) => {
+                                if (!el || isNaN(el.x) || isNaN(el.y)) return;
+                                ctx.save();
+                                ctx.beginPath();
+                                ctx.moveTo(el.x, topY);
+                                ctx.lineTo(el.x, bottomY);
+                                ctx.lineWidth = 1.5;
+                                ctx.strokeStyle = colorHex;
+                                ctx.setLineDash([3, 3]);
+                                ctx.stroke();
+                                ctx.setLineDash([]);
+
+                                // 외곽 글로우 링
+                                ctx.beginPath();
+                                ctx.arc(el.x, el.y, 11, 0, 2 * Math.PI);
+                                ctx.fillStyle = colorHex + '33';
+                                ctx.fill();
+
+                                // 상단 배지 라벨
+                                ctx.font = 'bold 10px Pretendard, sans-serif';
+                                const textWidth = ctx.measureText(badgeText).width;
+                                const padX = 6;
+                                const boxW = textWidth + padX * 2;
+                                const boxH = 18;
+                                const boxX = Math.min(Math.max(chart.scales.x.left + 2, el.x - boxW / 2), chart.scales.x.right - boxW - 2);
+                                const boxY = Math.max(topY + 4, el.y - 28);
+
+                                ctx.fillStyle = colorHex;
+                                ctx.beginPath();
+                                if (ctx.roundRect) {
+                                    ctx.roundRect(boxX, boxY, boxW, boxH, 6);
+                                } else {
+                                    ctx.rect(boxX, boxY, boxW, boxH);
+                                }
+                                ctx.fill();
+
+                                ctx.fillStyle = '#ffffff';
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.fillText(badgeText, boxX + boxW / 2, boxY + boxH / 2);
+                                ctx.restore();
+                            };
+
+                            drawPinMarker(elA, '⏪ 기준 A', '#f59e0b');
+                            drawPinMarker(elB, historyDiffTargetDate === 'LIVE' ? '⏩ 비교 B (현재)' : '⏩ 비교 B', '#10b981');
+                        }
+
                         if (chart.tooltip?._active?.length) {
                             const activePoint = chart.tooltip._active[0];
-                            const ctx = chart.ctx;
                             const x = activePoint.element.x;
                             const y = activePoint.element.y;
-                            const topY = chart.scales.y.top;
-                            const bottomY = chart.scales.y.bottom;
 
                             // 1. 수직 십자선 (Dashed Vertical Line)
                             ctx.save();
@@ -5043,7 +5166,7 @@ import AssetGhostRacing from './components/AssetGhostRacing';
 
                     const timerId = setTimeout(renderHistoryChart, 150);
                 return () => clearTimeout(timerId); 
-                }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo, scenarioSortOrder, historyViewMode, activeTab, isExporting, showSnowballAnalysis, snowballStep, historyPeriod, isHistoryFullscreen]);
+                }, [assetHistory, panelCollapseState['history'], historyTargetData, displayMode, historyProjectionData, darkMode, loadHistorySnapshot, deleteHistoryPoint, referenceScenarios, updateHistoryMemo, scenarioSortOrder, historyViewMode, activeTab, isExporting, showSnowballAnalysis, snowballStep, historyPeriod, isHistoryFullscreen, isHistoryDiffOpen, historyDiffBaseDate, historyDiffTargetDate]);
 
             const addAsset = (sector) => {
                 // [보안/개선] 미래 시점 편집 중일 경우, 새 대출의 시작일을 해당 페이즈 시작월로 똑똑하게 자동 맞춤
@@ -6887,17 +7010,55 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                             <>
                                 {/* PC용 플로팅 팝오버 */}
                                 <div 
-                                    className="hidden sm:block absolute z-20 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 w-56 animate-in zoom-in-95 duration-200"
+                                    className="hidden sm:block absolute z-20 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 w-64 animate-in zoom-in-95 duration-200"
                                     style={{ left: historyPopover.x, top: historyPopover.y + 10, transform: historyPopover.x > 300 ? 'translateX(-100%)' : 'none' }}
                                 >
-                                    <div className="flex justify-between items-start mb-3 pb-2 border-b dark:border-gray-700">
+                                    <div className="flex justify-between items-start mb-2.5 pb-2 border-b dark:border-gray-700">
                                         <div>
-                                            <div className="text-xs font-bold text-gray-500 dark:text-gray-400">{historyPopover.date}</div>
+                                            <div className="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                                                <span>{historyPopover.date}</span>
+                                                {historyDiffBaseDate === historyPopover.date && isHistoryDiffOpen && (
+                                                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">⏪ 기준 A</span>
+                                                )}
+                                                {historyDiffTargetDate === historyPopover.date && isHistoryDiffOpen && (
+                                                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">⏩ 비교 B</span>
+                                                )}
+                                            </div>
                                             <div className="text-gray-900 dark:text-white font-bold text-lg">{formatNumber(historyViewMode === 'gross' ? (historyPopover.grossWorth || historyPopover.netWorth) : historyPopover.netWorth, displayMode)}만원</div>
+                                            {(historyPopover.stocksCount > 0 || historyPopover.fxRate) && (
+                                                <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                                                    📦 주식 {historyPopover.stocksCount}종 {historyPopover.fxRate ? `· 💵 ${Math.round(historyPopover.fxRate).toLocaleString()}원` : ''}
+                                                </div>
+                                            )}
                                         </div>
                                         <button onClick={() => setHistoryPopover(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
                                     </div>
                                     <div className="space-y-1">
+                                        {/* 타임머신 Diff A/B 지정 퀵 버튼 */}
+                                        <div className="grid grid-cols-2 gap-1.5 pb-1.5 mb-1 border-b border-gray-100 dark:border-gray-700">
+                                            <button
+                                                onClick={() => {
+                                                    setHistoryDiffBaseDate(historyPopover.date);
+                                                    setIsHistoryDiffOpen(true);
+                                                    setHistoryPopover(null);
+                                                    addToast(`⏪ [${historyPopover.date}] 시점이 타임머신 기준(A)으로 지정되었습니다.`, 'info');
+                                                }}
+                                                className="px-2 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 text-[11px] font-black flex items-center justify-center gap-1 border border-amber-200/70 dark:border-amber-800/50 transition-colors"
+                                            >
+                                                <span>⏪</span> 기준 A 지정
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setHistoryDiffTargetDate(historyPopover.date);
+                                                    setIsHistoryDiffOpen(true);
+                                                    setHistoryPopover(null);
+                                                    addToast(`⏩ [${historyPopover.date}] 시점이 타임머신 비교(B)로 지정되었습니다.`, 'info');
+                                                }}
+                                                className="px-2 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[11px] font-black flex items-center justify-center gap-1 border border-emerald-200/70 dark:border-emerald-800/50 transition-colors"
+                                            >
+                                                <span>⏩</span> 비교 B 지정
+                                            </button>
+                                        </div>
                                         {historyPopover.isManual ? (
                                             <>
                                                 <div className="text-[10px] text-amber-700 dark:text-amber-300 font-bold px-2 py-1 bg-amber-50 dark:bg-amber-950/40 rounded-lg border border-amber-200/60 dark:border-amber-800/40 text-center">
@@ -6944,14 +7105,43 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                 {ReactDOM.createPortal(
                                     <div className="sm:hidden fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setHistoryPopover(null)}>
                                         <div className="bg-white dark:bg-gray-800 w-full rounded-t-2xl p-6 shadow-2xl animate-in slide-in-from-bottom-4 duration-300" onClick={e => e.stopPropagation()}>
-                                            <div className="flex justify-between items-start mb-5 pb-4 border-b dark:border-gray-700">
+                                            <div className="flex justify-between items-start mb-4 pb-3 border-b dark:border-gray-700">
                                                 <div>
                                                     <div className="text-sm font-bold text-gray-500 dark:text-gray-400">{historyPopover.date}</div>
                                                     <div className="text-gray-900 dark:text-white font-extrabold text-2xl mt-1">{formatNumber(historyViewMode === 'gross' ? (historyPopover.grossWorth || historyPopover.netWorth) : historyPopover.netWorth, displayMode)}만원</div>
+                                                    {(historyPopover.stocksCount > 0 || historyPopover.fxRate) && (
+                                                        <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+                                                            📦 보유주식 {historyPopover.stocksCount}종 {historyPopover.fxRate ? `· 💵 환율 ${Math.round(historyPopover.fxRate).toLocaleString()}원` : ''}
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <button onClick={() => setHistoryPopover(null)} className="p-2 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500">✕</button>
                                             </div>
-                                            <div className="space-y-3">
+                                            <div className="space-y-2.5">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            setHistoryDiffBaseDate(historyPopover.date);
+                                                            setIsHistoryDiffOpen(true);
+                                                            setHistoryPopover(null);
+                                                            addToast(`⏪ [${historyPopover.date}] 시점이 타임머신 기준(A)으로 지정되었습니다.`, 'info');
+                                                        }}
+                                                        className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-xs font-black flex items-center justify-center gap-1.5 border border-amber-200 dark:border-amber-800/50"
+                                                    >
+                                                        <span>⏪</span> 타임머신 기준(A) 지정
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setHistoryDiffTargetDate(historyPopover.date);
+                                                            setIsHistoryDiffOpen(true);
+                                                            setHistoryPopover(null);
+                                                            addToast(`⏩ [${historyPopover.date}] 시점이 타임머신 비교(B)로 지정되었습니다.`, 'info');
+                                                        }}
+                                                        className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-black flex items-center justify-center gap-1.5 border border-emerald-200 dark:border-emerald-800/50"
+                                                    >
+                                                        <span>⏩</span> 타임머신 비교(B) 지정
+                                                    </button>
+                                                </div>
                                                 {historyPopover.isManual ? (
                                                     <>
                                                         <div className="text-xs text-amber-700 dark:text-amber-300 font-bold p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200/60 dark:border-amber-800/40 text-center">
@@ -7000,6 +7190,65 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                         )}
                         </div>
                     </div>
+
+                    {/* [신규] 자산 히스토리 하단 폴딩형 스냅샷 타임머신 Diff 비교기 (차트 A/B 포인트 실시간 연동) */}
+                    {!isExporting && assetHistory.length >= 1 && (
+                        <div className="mt-4 rounded-2xl border border-indigo-200/80 dark:border-indigo-900/60 bg-gradient-to-r from-indigo-50/60 via-white to-emerald-50/50 dark:from-slate-800/90 dark:via-slate-900 dark:to-emerald-950/20 overflow-hidden shadow-xs transition-all">
+                            <button
+                                type="button"
+                                onClick={() => setIsHistoryDiffOpen(prev => !prev)}
+                                className="w-full px-4 sm:px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 text-left hover:bg-indigo-50/50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+                            >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                    <span className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-base shadow-xs shrink-0">🕰️</span>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">스냅샷 타임머신 시점별 차이 비교기</span>
+                                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                                                차트 A · B 포인트 연동
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                            위 히스토리 그래프의 점을 클릭해 <b className="text-amber-600 dark:text-amber-400">⏪ 기준 A</b>와 <b className="text-emerald-600 dark:text-emerald-400">⏩ 비교 B</b>로 지정하거나 아래에서 바로 비교하세요.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {isHistoryDiffOpen && historyDiffBaseDate && (
+                                        <div className="hidden md:flex items-center gap-1.5 text-[11px] font-black">
+                                            <span className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300/60">
+                                                ⏪ A: {historyDiffBaseDate}
+                                            </span>
+                                            <span className="text-slate-400">→</span>
+                                            <span className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300/60">
+                                                ⏩ B: {historyDiffTargetDate === 'LIVE' ? '현재 실시간' : historyDiffTargetDate}
+                                            </span>
+                                        </div>
+                                    )}
+                                    <span className="px-3 py-1 rounded-lg text-xs font-extrabold bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-slate-700 shadow-2xs">
+                                        {isHistoryDiffOpen ? '접기 ▲' : '시점 차이 비교 열기 ▼'}
+                                    </span>
+                                </div>
+                            </button>
+
+                            {isHistoryDiffOpen && (
+                                <div className="p-4 sm:p-5 border-t border-indigo-100 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90">
+                                    <React.Suspense fallback={<div className="py-12 text-center text-xs font-bold text-slate-400 animate-pulse">스냅샷 타임머신 분석기 로딩 중...</div>}>
+                                        <SnapshotDiffViewer
+                                            assetHistory={assetHistory}
+                                            currentAppData={appData}
+                                            currentCalculation={calculation}
+                                            externalBaseDate={historyDiffBaseDate}
+                                            externalTargetDate={historyDiffTargetDate}
+                                            onBaseDateChange={setHistoryDiffBaseDate}
+                                            onTargetDateChange={setHistoryDiffTargetDate}
+                                            isEmbedded={true}
+                                        />
+                                    </React.Suspense>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </>
             );
             };
@@ -9365,15 +9614,15 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                 <div className="space-y-4">
                     {!isExporting && (
                         <div className="flex flex-wrap items-center gap-2 mb-4">
-                            <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+                            <div className="flex flex-wrap gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
                                 <button onClick={() => setAnalysisMode('growth-modern')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'growth-modern' ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm ring-1 ring-indigo-500/20' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                                     <span>📊</span> 자산 증감 분석
                                 </button>
                                 <button onClick={() => setAnalysisMode('income')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'income' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                                     <span>💰</span> 자본 소득 분석
                                 </button>
-                                <button onClick={() => setAnalysisMode('ghost-race')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'ghost-race' ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm ring-1 ring-purple-500/20' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
-                                    <span>🏎️</span> 고스트 레이싱
+                                <button onClick={() => setAnalysisMode('fire-clock')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'fire-clock' ? 'bg-white dark:bg-gray-700 text-orange-600 dark:text-orange-400 shadow-sm ring-1 ring-orange-500/20' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                                    <span>🔥</span> 4대 FIRE 은퇴 시계
                                 </button>
                             </div>
                         </div>
@@ -9681,19 +9930,15 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                     </div>
                     )}
 
-                    {/* [고스트 레이싱] 과거의 나와 달리는 자산 고스트 레이스 */}
-                    {analysisMode === 'ghost-race' && !isExporting && (
-                        <AssetGhostRacing 
-                            assetHistory={assetHistory}
-                            currentNet={calculation?.currentNet || 0}
-                            currentGross={calculation?.currentGross || 0}
-                            formatNumber={formatNumber}
-                            displayMode={displayMode}
-                            isDarkMode={darkMode}
-                            addToast={addToast}
-                            targetAmount={targetAmount || appData?.targetAmount || 10000}
-                            monthlyProjections={calculation?.monthlyProjections || []}
-                        />
+                    {/* [4대 FIRE 은퇴 시계] 상세 분석 내에서도 바로 전환 가능 */}
+                    {analysisMode === 'fire-clock' && !isExporting && (
+                        <React.Suspense fallback={<div className="py-12 text-center text-xs font-bold text-slate-400 animate-pulse">4대 FIRE 은퇴 시계 로딩 중...</div>}>
+                            <FireClockSimulator
+                                currentAppData={appData}
+                                currentCalculation={calculation}
+                                monthlySalary={monthlySalary}
+                            />
+                        </React.Suspense>
                     )}
                 </div>
             )};
@@ -10290,26 +10535,34 @@ import AssetGhostRacing from './components/AssetGhostRacing';
 
                         <div id="main-dashboard-panel" className={`flex-1 space-y-8 min-w-0 transition-all duration-700 relative z-10 pb-36 sm:pb-8 ${editingPhase !== null ? 'p-4 sm:p-6 rounded-2xl bg-white/40 dark:bg-gray-800/40 backdrop-blur-md ring-4 ring-indigo-500/30 shadow-[0_0_30px_rgba(99,102,241,0.15)]' : ''}`}>
                             {activeTab === 'community' ? (
-                                <CommunityView
-                                    supabase={supabase}
-                                    currentUser={communityCurrentUser}
-                                    isAdmin={isAdmin}
-                                    currentAppData={appData}
-                                    currentCalculation={calculation}
-                                    onLogin={handleLogin}
-                                />
+                                <React.Suspense fallback={<div className="py-20 text-center text-sm font-bold text-slate-400 animate-pulse">커뮤니티 광장 불러오는 중...</div>}>
+                                    <CommunityView
+                                        supabase={supabase}
+                                        currentUser={communityCurrentUser}
+                                        isAdmin={isAdmin}
+                                        currentAppData={appData}
+                                        currentCalculation={calculation}
+                                        onLogin={handleLogin}
+                                    />
+                                </React.Suspense>
                             ) : activeTab === 'tools' ? (
-                                <ExtraFeaturesView
-                                    monthlySalary={monthlySalary}
-                                    currentAppData={appData}
-                                    currentCalculation={calculation}
-                                    currentUser={communityCurrentUser}
-                                    supabase={supabase}
-                                    verifiedEmail={verifiedEmail}
-                                    addToast={addToast}
-                                    savingsRate={monthlySalary > 0 ? ((totalSectorMonthlyContrib + autoDepositAmount) / monthlySalary * 100) : 0}
-                                    assetHistory={assetHistory}
-                                />
+                                <React.Suspense fallback={<div className="py-20 text-center text-sm font-bold text-slate-400 animate-pulse">추가 기능 연구소 불러오는 중...</div>}>
+                                    <ExtraFeaturesView
+                                        monthlySalary={monthlySalary}
+                                        currentAppData={appData}
+                                        currentCalculation={calculation}
+                                        currentUser={communityCurrentUser}
+                                        supabase={supabase}
+                                        verifiedEmail={verifiedEmail}
+                                        addToast={addToast}
+                                        savingsRate={monthlySalary > 0 ? ((totalSectorMonthlyContrib + autoDepositAmount) / monthlySalary * 100) : 0}
+                                        assetHistory={assetHistory}
+                                        onNavigateToVisualization={() => {
+                                            setActiveTab('visualization');
+                                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                                        }}
+                                    />
+                                </React.Suspense>
                             ) : (
                             <>
                             {/* [개선] PDF 내보내기 시에는 사용자의 커스텀 순서가 아닌 표준 보고서 순서(입력->시각화->분석)로 출력 */}
@@ -10405,6 +10658,39 @@ import AssetGhostRacing from './components/AssetGhostRacing';
                                         return assetHistory.length > 0 && (
                                             <PanelWrapper key={panelId} {...panelProps} title="📈 자산 히스토리">
                                                 {renderHistoryPanel()}
+                                            </PanelWrapper>
+                                        );
+                                    case 'life-timeline':
+                                        return (
+                                            <PanelWrapper key={panelId} {...panelProps} title="🗺️ 미래 생애주기 타임라인">
+                                                <React.Suspense fallback={<div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">미래 생애주기 타임라인 로딩 중...</div>}>
+                                                    <LifeEventTimelineBoard
+                                                        appData={appData}
+                                                        calculation={calculation}
+                                                        assets={assets}
+                                                        incomeEvents={incomeEvents}
+                                                        expenseEvents={expenseEvents}
+                                                        formatNumber={formatNumber}
+                                                        displayMode={displayMode}
+                                                        onStartEditingPhase={(idx) => {
+                                                            setActiveTab('input');
+                                                            startEditingPhase(idx);
+                                                        }}
+                                                        editingPhase={editingPhase}
+                                                    />
+                                                </React.Suspense>
+                                            </PanelWrapper>
+                                        );
+                                    case 'fire-clock':
+                                        return (
+                                            <PanelWrapper key={panelId} {...panelProps} title="🔥 4대 FIRE 은퇴 시계">
+                                                <React.Suspense fallback={<div className="py-12 text-center text-xs font-bold text-slate-400 animate-pulse">4대 FIRE 은퇴 시계 로딩 중...</div>}>
+                                                    <FireClockSimulator
+                                                        currentAppData={appData}
+                                                        currentCalculation={calculation}
+                                                        monthlySalary={monthlySalary}
+                                                    />
+                                                </React.Suspense>
                                             </PanelWrapper>
                                         );
                                     case 'budget':

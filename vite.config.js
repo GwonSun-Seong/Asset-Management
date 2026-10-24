@@ -21,6 +21,33 @@ export default defineConfig(({ mode }) => {
           secure: true
         }
       }
+    },
+    build: {
+      chunkSizeWarningLimit: 900,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('scheduler')) {
+                return 'vendor-react';
+              }
+              if (id.includes('chart.js') || id.includes('chartjs-') || id.includes('hammerjs')) {
+                return 'vendor-charts';
+              }
+              if (id.includes('jspdf') || id.includes('html2canvas')) {
+                return 'vendor-pdf';
+              }
+              if (id.includes('@supabase')) {
+                return 'vendor-supabase';
+              }
+              return 'vendor-utils';
+            }
+            if (id.includes('/src/data/')) {
+              return 'app-static-data';
+            }
+          }
+        }
+      }
     }
   };
 });

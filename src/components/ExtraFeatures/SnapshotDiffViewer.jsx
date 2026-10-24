@@ -32,7 +32,12 @@ export default function SnapshotDiffViewer({
     currentAppData = null,
     currentCalculation = null,
     assetHistory = [],
-    addToast = null
+    addToast = null,
+    externalBaseDate = '',
+    externalTargetDate = '',
+    onBaseDateChange = null,
+    onTargetDateChange = null,
+    isEmbedded = false
 }) {
     // 날짜순 정렬된 히스토리 목록 (신규 stocks/accounts 구조 및 구형 snapshot.assets 모두 호환)
     const sortedSnapshots = useMemo(() => {
@@ -65,17 +70,80 @@ export default function SnapshotDiffViewer({
     const [baseSnapshotId, setBaseSnapshotId] = useState('');
     const [targetSnapshotId, setTargetSnapshotId] = useState('LIVE');
     const [activeTab, setActiveTab] = useState('all'); // 'all' | 'stocks' | 'accounts' | 'sectors'
+    const [isStocksExpanded, setIsStocksExpanded] = useState(false);
+    const [isAccountsExpanded, setIsAccountsExpanded] = useState(false);
+    const INITIAL_STOCK_LIMIT = 7;
+    const INITIAL_ACCOUNT_LIMIT = 8;
 
+    // 외부(히스토리 차트 클릭 등)에서 전달된 날짜(externalBaseDate / externalTargetDate)와 양방향 동기화
     useEffect(() => {
-        if (sortedSnapshots.length > 0 && !baseSnapshotId) {
-            const withDetail = sortedSnapshots.filter(s => s.hasDetail);
-            if (withDetail.length > 0) {
-                setBaseSnapshotId(withDetail[0].id);
-            } else {
-                setBaseSnapshotId(sortedSnapshots[0].id);
+        if (sortedSnapshots.length === 0) return;
+        if (externalBaseDate) {
+            const matched = sortedSnapshots.find(s => s.date === externalBaseDate);
+            if (matched && matched.id !== baseSnapshotId) {
+                setBaseSnapshotId(matched.id);
+                return;
             }
         }
-    }, [sortedSnapshots, baseSnapshotId]);
+        if (!baseSnapshotId || !sortedSnapshots.some(s => s.id === baseSnapshotId)) {
+            const withDetail = sortedSnapshots.filter(s => s.hasDetail);
+            const fallback = withDetail.length > 0
+                ? withDetail[Math.max(0, withDetail.length - 1)]
+                : sortedSnapshots[Math.max(0, sortedSnapshots.length - 2)];
+            if (fallback) {
+                setBaseSnapshotId(fallback.id);
+                if (onBaseDateChange) onBaseDateChange(fallback.date);
+            }
+        }
+    }, [sortedSnapshots, externalBaseDate, baseSnapshotId]);
+
+    useEffect(() => {
+        if (!externalTargetDate) return;
+        if (externalTargetDate === 'LIVE') {
+            if (targetSnapshotId !== 'LIVE') setTargetSnapshotId('LIVE');
+        } else {
+            const matched = sortedSnapshots.find(s => s.date === externalTargetDate);
+            if (matched && matched.id !== targetSnapshotId) {
+                setTargetSnapshotId(matched.id);
+            }
+        }
+    }, [sortedSnapshots, externalTargetDate, targetSnapshotId]);
+
+    const handleSelectBase = (newId) => {
+        setBaseSnapshotId(newId);
+        const found = sortedSnapshots.find(s => s.id === newId);
+        if (found && onBaseDateChange) {
+            onBaseDateChange(found.date);
+        }
+    };
+
+    const handleSelectTarget = (newId) => {
+        setTargetSnapshotId(newId);
+        if (newId === 'LIVE') {
+            if (onTargetDateChange) onTargetDateChange('LIVE');
+        } else {
+            const found = sortedSnapshots.find(s => s.id === newId);
+            if (found && onTargetDateChange) {
+                onTargetDateChange(found.date);
+            }
+        }
+    };
+
+    const handleSwapPoints = () => {
+        if (targetSnapshotId === 'LIVE') {
+            if (sortedSnapshots.length > 0) {
+                const latest = sortedSnapshots[sortedSnapshots.length - 1];
+                const oldBaseId = baseSnapshotId;
+                handleSelectBase(latest.id);
+                handleSelectTarget(oldBaseId);
+            }
+        } else {
+            const oldBaseId = baseSnapshotId;
+            const oldTargetId = targetSnapshotId;
+            handleSelectBase(oldTargetId);
+            handleSelectTarget(oldBaseId);
+        }
+    };
 
     // raw assets 객체에서 정규화된 accountsList, stocksList 추출
     const extractFromAssetsObject = (assetsObj) => {
@@ -134,8 +202,8 @@ export default function SnapshotDiffViewer({
             const { accountsList, stocksList } = extractFromAssetsObject(currentAppData?.assets || {});
 
             return {
-                label: '현재 실시간 포트폴리오 (LIVE)',
-                shortLabel: '현재 (LIVE)',
+                label: '현재 실시간 자산 상태',
+                shortLabel: '현재 실시간',
                 hasDetail: true,
                 netWorth,
                 grossWorth,
@@ -217,7 +285,7 @@ export default function SnapshotDiffViewer({
         };
     };
 
-    // 1:1 정밀 Diff 연산
+    // 시점 간 차이 연산
     const diffResult = useMemo(() => {
         const base = resolveSnapshotState(baseSnapshotId);
         const target = resolveSnapshotState(targetSnapshotId);
@@ -234,7 +302,7 @@ export default function SnapshotDiffViewer({
         const fxDiff = Math.round((target.fxRate - base.fxRate) * 100) / 100;
         const fxDiffPct = base.fxRate > 0 ? ((fxDiff / base.fxRate) * 100).toFixed(2) : '0.00';
 
-        // 1. 섹터별 1:1 Diff
+        // 1. 섹터별 차이
         const sectorDiffs = CANONICAL_SECTORS.map(secMeta => {
             const secKey = secMeta.key;
             const baseList = base.accountsList.filter(a => a.sec === secKey);
@@ -262,7 +330,7 @@ export default function SnapshotDiffViewer({
             };
         });
 
-        // 2. 개별 계좌(Account) 1:1 Diff
+        // 2. 개별 계좌 차이
         const accountMap = new Map();
         const mergeAccountSide = (list, side) => {
             list.forEach(acc => {
@@ -310,7 +378,7 @@ export default function SnapshotDiffViewer({
 
                 if (!item.inBase && item.inTarget && targetAmt > 0) {
                     status = 'NEW';
-                    badgeLabel = item.isDebt ? '💳 신규 차입' : '🆕 신규 개설';
+                    badgeLabel = item.isDebt ? '💳 신규 대출' : '🆕 신규 개설';
                     badgeColor = item.isDebt ? 'rose' : 'emerald';
                 } else if (item.inBase && (!item.inTarget || targetAmt === 0) && baseAmt > 0) {
                     status = 'REMOVED';
@@ -338,7 +406,7 @@ export default function SnapshotDiffViewer({
             })
             .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
-        // 3. 보유 주식/ETF 종목(stocksList) 1:1 Diff
+        // 3. 보유 주식/ETF 종목 차이 (평가액 변동폭 큰 순서대로 정렬)
         const stockMap = new Map();
         const mergeStockSide = (list, side) => {
             list.forEach(li => {
@@ -451,70 +519,92 @@ export default function SnapshotDiffViewer({
         slate: 'bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
     };
 
+    const visibleStocks = isStocksExpanded
+        ? diffResult.stockDiffs
+        : diffResult.stockDiffs.slice(0, INITIAL_STOCK_LIMIT);
+    const hiddenStockCount = Math.max(0, diffResult.stockDiffs.length - INITIAL_STOCK_LIMIT);
+
+    const visibleAccounts = isAccountsExpanded
+        ? diffResult.accountDiffs
+        : diffResult.accountDiffs.slice(0, INITIAL_ACCOUNT_LIMIT);
+    const hiddenAccountCount = Math.max(0, diffResult.accountDiffs.length - INITIAL_ACCOUNT_LIMIT);
+
     return (
-        <div className="space-y-6 animate-in fade-in duration-300">
-            {/* 상단 히어로 배너 */}
-            <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white shadow-xl border border-slate-700/60">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="space-y-5 animate-in fade-in duration-300">
+            {/* 상단 시점 A · B 선택 컨트롤 패널 (앱 라이트/다크 테마 통일) */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-gray-800/90 border border-slate-200/80 dark:border-gray-700 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
                     <div>
-                        <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 text-[10px] font-black uppercase tracking-wider">
-                                Time-Machine Git Diff Engine
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[11px] font-black">
+                                🕰️ 시점별 자산 차이 비교
                             </span>
-                            <span className="text-xs text-slate-400 font-bold">
-                                총 {sortedSnapshots.length}개 히스토리 기록 (주식·계좌 상세 포함 {sortedSnapshots.filter(s => s.hasDetail).length}개)
+                            <span className="text-xs text-slate-500 dark:text-slate-400 font-bold">
+                                총 {sortedSnapshots.length}개 기록 (상세 기록 {sortedSnapshots.filter(s => s.hasDetail).length}개)
                             </span>
                         </div>
-                        <h2 className="text-xl sm:text-2xl font-black mt-2 flex items-center gap-2">
-                            <span>🕰️</span> 스냅샷 타임머신 1:1 Diff 비교기
-                        </h2>
-                        <p className="text-xs text-slate-300 mt-1">
-                            히스토리 스냅샷과 현재 포트폴리오를 Git 코드 비교하듯 대조하여 어떤 계좌가 늘고 어떤 주식을 몇 주 추매·매도했는지 1:1로 추적합니다.
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            {isEmbedded
+                                ? '위 자산 히스토리 그래프에서 점을 클릭해 [⏪ 기준 A] · [⏩ 비교 B]를 지정하거나 아래 목록에서 비교할 두 날짜를 선택하세요.'
+                                : '두 시점 사이에 어떤 계좌가 늘고 어떤 주식을 추매·매도했는지 차이를 비교합니다.'}
                         </p>
                     </div>
                 </div>
 
                 {/* 시점 A vs 시점 B 선택 컨트롤러 */}
-                <div className="grid grid-cols-1 md:grid-cols-11 gap-3 items-center mt-5 bg-slate-950/50 p-4 rounded-2xl border border-white/10">
+                <div className="grid grid-cols-1 md:grid-cols-11 gap-3 items-center bg-white dark:bg-gray-900/70 p-3.5 rounded-xl border border-slate-200/80 dark:border-gray-700">
                     <div className="md:col-span-5">
-                        <label className="block text-[11px] font-black text-indigo-300 mb-1">
-                            ⏪ 기준 시점 A (과거 히스토리 선택)
+                        <label className="flex items-center justify-between text-xs font-black text-amber-700 dark:text-amber-400 mb-1.5">
+                            <span className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span>
+                                ⏪ 기준 시점 A (과거 기록)
+                            </span>
+                            <span className="text-[10px] text-amber-600 dark:text-amber-300/80 font-bold">차트 노란색 핀</span>
                         </label>
                         <select
                             value={baseSnapshotId}
-                            onChange={(e) => setBaseSnapshotId(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            onChange={(e) => handleSelectBase(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-gray-800 border border-amber-300 dark:border-amber-600/60 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                         >
                             {sortedSnapshots.length === 0 && (
-                                <option value="">저장된 히스토리 스냅샷이 없습니다</option>
+                                <option value="">저장된 히스토리 기록이 없습니다</option>
                             )}
                             {sortedSnapshots.map((s) => (
                                 <option key={s.id} value={s.id}>
-                                    [{s.date}] 순자산 {Math.round(s.netWorth).toLocaleString()}만 {s.hasDetail ? `📦(주식 ${s.stockCount}종·계좌 포함)` : '📊(순자산 요약)'} {s.memo ? `- ${s.memo}` : ''}
+                                    [{s.date}] 순자산 {Math.round(s.netWorth).toLocaleString()}만 {s.hasDetail ? `📦(주식 ${s.stockCount}종·계좌 포함)` : '📊(요약 기록)'} {s.memo ? `- ${s.memo}` : ''}
                                 </option>
                             ))}
                         </select>
                     </div>
 
                     <div className="md:col-span-1 flex justify-center">
-                        <span className="w-9 h-9 rounded-full bg-indigo-600/40 border border-indigo-400/40 flex items-center justify-center text-sm font-black">
-                            VS
-                        </span>
+                        <button
+                            type="button"
+                            onClick={handleSwapPoints}
+                            title="기준 시점 A와 비교 시점 B 맞바꾸기"
+                            className="w-9 h-9 rounded-full bg-slate-100 hover:bg-indigo-50 dark:bg-gray-800 dark:hover:bg-indigo-900/40 border border-slate-300 dark:border-gray-600 text-slate-700 dark:text-slate-200 flex items-center justify-center text-sm font-black transition-all active:scale-95 cursor-pointer"
+                        >
+                            ⇄
+                        </button>
                     </div>
 
                     <div className="md:col-span-5">
-                        <label className="block text-[11px] font-black text-emerald-300 mb-1">
-                            ⏩ 비교 시점 B (현재 또는 다른 스냅샷)
+                        <label className="flex items-center justify-between text-xs font-black text-emerald-700 dark:text-emerald-400 mb-1.5">
+                            <span className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                                ⏩ 비교 시점 B (현재 또는 다른 날짜)
+                            </span>
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-300/80 font-bold">차트 초록색 핀</span>
                         </label>
                         <select
                             value={targetSnapshotId}
-                            onChange={(e) => setTargetSnapshotId(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-emerald-600/50 text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            onChange={(e) => handleSelectTarget(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-gray-800 border border-emerald-300 dark:border-emerald-600/60 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         >
-                            <option value="LIVE">🟢 현재 실시간 포트폴리오 (LIVE 상태)</option>
+                            <option value="LIVE">🟢 현재 실시간 자산 상태</option>
                             {sortedSnapshots.map((s) => (
                                 <option key={s.id} value={s.id}>
-                                    [{s.date}] 순자산 {Math.round(s.netWorth).toLocaleString()}만 {s.hasDetail ? `📦(주식 ${s.stockCount}종 포함)` : '📊(요약)'}
+                                    [{s.date}] 순자산 {Math.round(s.netWorth).toLocaleString()}만 {s.hasDetail ? `📦(주식 ${s.stockCount}종 포함)` : '📊(요약 기록)'}
                                 </option>
                             ))}
                         </select>
@@ -522,85 +612,85 @@ export default function SnapshotDiffViewer({
                 </div>
             </div>
 
-            {/* 총괄 4대 지표 Diff 카드 (순자산, 총자산, 총부채, 적용환율) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white dark:bg-slate-850 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-                    <div className="text-xs font-bold text-slate-400">순자산 (Net Worth) 변동</div>
-                    <div className={`text-2xl font-black mt-1.5 ${diffResult.netDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+            {/* 총괄 4대 지표 차이 카드 (순자산, 총자산, 총부채, 적용환율 - 영어 병기 제거) */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-slate-200 dark:border-gray-700 shadow-2xs">
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">순자산 차이</div>
+                    <div className={`text-lg sm:text-xl font-black mt-1 tabular-nums ${diffResult.netDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                         {diffResult.netDiff >= 0 ? '+' : ''}{diffResult.netDiff.toLocaleString()}만원
-                        <span className="text-xs ml-1.5 font-extrabold">
+                        <span className="text-[11px] ml-1 font-extrabold">
                             ({diffResult.netDiff >= 0 ? '+' : ''}{diffResult.netDiffPct}%)
                         </span>
                     </div>
-                    <div className="text-xs text-slate-500 mt-1 font-bold">
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-bold tabular-nums">
                         {Math.round(diffResult.base.netWorth).toLocaleString()}만 ➔ {Math.round(diffResult.target.netWorth).toLocaleString()}만원
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-slate-850 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-                    <div className="text-xs font-bold text-slate-400">총자산 (Gross Assets) 변동</div>
-                    <div className={`text-2xl font-black mt-1.5 ${diffResult.grossDiff >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-slate-200 dark:border-gray-700 shadow-2xs">
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">총자산 차이</div>
+                    <div className={`text-lg sm:text-xl font-black mt-1 tabular-nums ${diffResult.grossDiff >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600 dark:text-rose-400'}`}>
                         {diffResult.grossDiff >= 0 ? '+' : ''}{diffResult.grossDiff.toLocaleString()}만원
-                        <span className="text-xs ml-1.5 font-extrabold">
+                        <span className="text-[11px] ml-1 font-extrabold">
                             ({diffResult.grossDiff >= 0 ? '+' : ''}{diffResult.grossDiffPct}%)
                         </span>
                     </div>
-                    <div className="text-xs text-slate-500 mt-1 font-bold">
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-bold tabular-nums">
                         {Math.round(diffResult.base.grossWorth).toLocaleString()}만 ➔ {Math.round(diffResult.target.grossWorth).toLocaleString()}만원
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-slate-850 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-                    <div className="text-xs font-bold text-slate-400">총부채 (Total Debt) 변동</div>
-                    <div className={`text-2xl font-black mt-1.5 ${diffResult.debtDiff <= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-slate-200 dark:border-gray-700 shadow-2xs">
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">총부채(대출) 차이</div>
+                    <div className={`text-lg sm:text-xl font-black mt-1 tabular-nums ${diffResult.debtDiff <= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                         {diffResult.debtDiff > 0 ? '+' : ''}{diffResult.debtDiff.toLocaleString()}만원
-                        <span className="text-xs ml-1.5 font-extrabold">
+                        <span className="text-[11px] ml-1 font-extrabold">
                             ({diffResult.debtDiff > 0 ? '+' : ''}{diffResult.debtDiffPct}%)
                         </span>
                     </div>
-                    <div className="text-xs text-slate-500 mt-1 font-bold">
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-bold tabular-nums">
                         {Math.round(diffResult.base.totalDebt).toLocaleString()}만 ➔ {Math.round(diffResult.target.totalDebt).toLocaleString()}만원
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-slate-850 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-                    <div className="text-xs font-bold text-slate-400">USD/KRW 적용 환율 변동</div>
-                    <div className={`text-2xl font-black mt-1.5 ${diffResult.fxDiff >= 0 ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-slate-200 dark:border-gray-700 shadow-2xs">
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">적용 환율 차이</div>
+                    <div className={`text-lg sm:text-xl font-black mt-1 tabular-nums ${diffResult.fxDiff >= 0 ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'}`}>
                         {diffResult.fxDiff >= 0 ? '+' : ''}{diffResult.fxDiff.toLocaleString()}원
-                        <span className="text-xs ml-1.5 font-extrabold">
+                        <span className="text-[11px] ml-1 font-extrabold">
                             ({diffResult.fxDiff >= 0 ? '+' : ''}{diffResult.fxDiffPct}%)
                         </span>
                     </div>
-                    <div className="text-xs text-slate-500 mt-1 font-bold">
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-bold tabular-nums">
                         {diffResult.base.fxRate.toLocaleString()}원 ➔ {diffResult.target.fxRate.toLocaleString()}원
                     </div>
                 </div>
             </div>
 
             {!diffResult.base.hasDetail && (
-                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/50 text-xs text-amber-800 dark:text-amber-300 font-bold flex items-center gap-2">
+                <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/50 text-xs text-amber-800 dark:text-amber-300 font-bold flex items-center gap-2">
                     <span>💡</span>
                     <span>
-                        선택하신 과거 기록(<b>{diffResult.base.shortLabel}</b>)은 상세 스냅샷 도입 이전에 저장된 순자산 요약본입니다. 오늘부터 저장되는 히스토리(<b>📦 표시 항목</b>)를 선택하시면 당시 주식 수량·단가 및 계좌별 1:1 비교가 표시됩니다.
+                        선택하신 과거 기록(<b>{diffResult.base.shortLabel}</b>)은 상세 스냅샷 도입 이전에 저장된 순자산 요약본입니다. 상세 기록(<b>📦 표시 항목</b>)을 선택하시면 당시 주식 수량·단가 및 계좌별 변화가 함께 표시됩니다.
                     </span>
                 </div>
             )}
 
             {/* 필터 탭 바 */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
                 {[
-                    { id: 'all', label: '🔍 전체 한눈에 보기' },
-                    { id: 'stocks', label: `📈 보유 종목 수량·단가·평가액 Diff (${diffResult.stockDiffs.length})` },
-                    { id: 'accounts', label: `🏦 개별 계좌 신설·해지·잔액 Diff (${diffResult.accountDiffs.length})` },
-                    { id: 'sectors', label: '📊 자산군 섹터 비중 Diff' }
+                    { id: 'all', label: '🔍 전체 요약' },
+                    { id: 'stocks', label: `📈 보유 주식 차이 (${diffResult.stockDiffs.length})` },
+                    { id: 'accounts', label: `🏦 계좌 · 대출 차이 (${diffResult.accountDiffs.length})` },
+                    { id: 'sectors', label: '📊 자산군 비중 차이' }
                 ].map(tab => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
                             activeTab === tab.id
-                                ? 'bg-indigo-600 text-white shadow-sm'
-                                : 'bg-white dark:bg-slate-850 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:border-indigo-400'
+                                ? 'bg-indigo-600 text-white shadow-2xs'
+                                : 'bg-white dark:bg-gray-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-gray-700 hover:border-indigo-400'
                         }`}
                     >
                         {tab.label}
@@ -608,72 +698,128 @@ export default function SnapshotDiffViewer({
                 ))}
             </div>
 
-            {/* 1. 보유 주식/ETF 종목 1:1 Diff 테이블 */}
+            {/* 1. 보유 주식/ETF 종목 차이 (기본 상위 7개만 노출 + 폴딩 버튼) */}
             {(activeTab === 'all' || activeTab === 'stocks') && (
-                <div className="bg-white dark:bg-slate-850 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-                    <div className="flex items-center justify-between border-b dark:border-slate-800 pb-3">
+                <div className="bg-white dark:bg-gray-800 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-gray-700 shadow-2xs space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-gray-700 pb-3">
                         <div>
                             <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                                <span>📈</span> 보유 주식 · ETF 종목 1:1 타임머신 대조표
+                                <span>📈</span> 보유 주식 · ETF 종목 변화 내역
                             </h3>
-                            <p className="text-[11px] text-slate-400 mt-0.5">
-                                기준 시점 대비 어떤 종목을 몇 주 추매(➕)했거나 매도(➖)했는지, 1주당 평가단가와 총 평가금액이 얼마나 변했는지 대조합니다.
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                평가금액 변화폭이 가장 큰 상위 종목부터 정렬됩니다.
                             </p>
                         </div>
-                        <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">
-                            총 {diffResult.stockDiffs.length}개 종목 추적
-                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">
+                                총 {diffResult.stockDiffs.length}개 종목 중 {visibleStocks.length}개 표시
+                            </span>
+                            {hiddenStockCount > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsStocksExpanded(prev => !prev)}
+                                    className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/40 dark:hover:bg-indigo-900/70 text-indigo-600 dark:text-indigo-300 transition-colors cursor-pointer"
+                                >
+                                    {isStocksExpanded ? '상위 7개만 접기 ▲' : `+${hiddenStockCount}개 더 보기 ▼`}
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {diffResult.stockDiffs.length > 0 ? (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse text-xs">
-                                <thead>
-                                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 font-black">
-                                        <th className="py-2.5 px-3">종목명 (토스 요청 티커)</th>
-                                        <th className="py-2.5 px-3">매매 변동 상태</th>
-                                        <th className="py-2.5 px-3 text-right">보유 수량 변화</th>
-                                        <th className="py-2.5 px-3 text-right">1주당 단가 변화</th>
-                                        <th className="py-2.5 px-3 text-right">시점 A ➔ B 평가액</th>
-                                        <th className="py-2.5 px-3 text-right">평가액 증감 (Δ)</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                                    {diffResult.stockDiffs.map((st, idx) => (
-                                        <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                                            <td className="py-3 px-3">
-                                                <div className="font-black text-slate-800 dark:text-slate-100">{st.name}</div>
-                                                <div className="text-[10px] text-slate-400 font-bold">
-                                                    코드: <code className="text-indigo-500">{st.ticker}</code> • {st.accountName}
-                                                </div>
-                                            </td>
-                                            <td className="py-3 px-3">
-                                                <span className={`inline-block text-[10px] font-black px-2 py-0.5 rounded-lg border ${badgeColorMap[st.actionColor]}`}>
-                                                    {st.actionBadge}
-                                                </span>
-                                            </td>
-                                            <td className="py-3 px-3 text-right font-bold text-slate-700 dark:text-slate-300">
-                                                {st.baseShares.toLocaleString()}주 ➔ <b className="text-slate-900 dark:text-white">{st.targetShares.toLocaleString()}주</b>
-                                            </td>
-                                            <td className="py-3 px-3 text-right font-bold text-slate-600 dark:text-slate-300">
-                                                {st.basePrice > 0 ? `${st.basePrice.toLocaleString()}원` : '-'} ➔ <b className="text-slate-900 dark:text-white">{st.targetPrice > 0 ? `${st.targetPrice.toLocaleString()}원` : '-'}</b>
-                                                {st.priceChangePct !== null && (
-                                                    <div className={`text-[10px] font-bold ${Number(st.priceChangePct) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                                        ({Number(st.priceChangePct) >= 0 ? '+' : ''}{st.priceChangePct}%)
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="py-3 px-3 text-right font-bold text-slate-600 dark:text-slate-300">
-                                                {st.baseVal.toLocaleString()}만 ➔ <b className="text-slate-900 dark:text-white">{st.targetVal.toLocaleString()}만원</b>
-                                            </td>
-                                            <td className={`py-3 px-3 text-right font-black ${st.valDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                                {st.valDiff >= 0 ? '+' : ''}{st.valDiff.toLocaleString()}만원
-                                            </td>
+                        <>
+                            {/* 데스크톱 테이블 뷰 */}
+                            <div className="hidden sm:block overflow-x-auto">
+                                <table className="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                        <tr className="border-b border-slate-200 dark:border-gray-700 text-slate-400 font-black">
+                                            <th className="py-2.5 px-3">종목명 (티커 · 계좌)</th>
+                                            <th className="py-2.5 px-3">수량 변동</th>
+                                            <th className="py-2.5 px-3 text-right">보유 수량 (A ➔ B)</th>
+                                            <th className="py-2.5 px-3 text-right">1주당 단가 (A ➔ B)</th>
+                                            <th className="py-2.5 px-3 text-right">평가액 (A ➔ B)</th>
+                                            <th className="py-2.5 px-3 text-right">평가액 차이</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-gray-700/60">
+                                        {visibleStocks.map((st, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-gray-700/30">
+                                                <td className="py-2.5 px-3">
+                                                    <div className="font-black text-slate-800 dark:text-slate-100">{st.name}</div>
+                                                    <div className="text-[10px] text-slate-400 font-bold">
+                                                        <code className="text-indigo-500">{st.ticker}</code> · {st.accountName}
+                                                    </div>
+                                                </td>
+                                                <td className="py-2.5 px-3">
+                                                    <span className={`inline-block text-[10px] font-black px-2 py-0.5 rounded-lg border ${badgeColorMap[st.actionColor]}`}>
+                                                        {st.actionBadge}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2.5 px-3 text-right font-bold text-slate-700 dark:text-slate-300 tabular-nums">
+                                                    {st.baseShares.toLocaleString()}주 ➔ <b className="text-slate-900 dark:text-white">{st.targetShares.toLocaleString()}주</b>
+                                                </td>
+                                                <td className="py-2.5 px-3 text-right font-bold text-slate-600 dark:text-slate-300 tabular-nums">
+                                                    {st.basePrice > 0 ? `${st.basePrice.toLocaleString()}원` : '-'} ➔ <b className="text-slate-900 dark:text-white">{st.targetPrice > 0 ? `${st.targetPrice.toLocaleString()}원` : '-'}</b>
+                                                    {st.priceChangePct !== null && (
+                                                        <span className={`ml-1 text-[10px] font-bold ${Number(st.priceChangePct) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                            ({Number(st.priceChangePct) >= 0 ? '+' : ''}{st.priceChangePct}%)
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="py-2.5 px-3 text-right font-bold text-slate-600 dark:text-slate-300 tabular-nums">
+                                                    {st.baseVal.toLocaleString()}만 ➔ <b className="text-slate-900 dark:text-white">{st.targetVal.toLocaleString()}만원</b>
+                                                </td>
+                                                <td className={`py-2.5 px-3 text-right font-black tabular-nums ${st.valDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                                    {st.valDiff >= 0 ? '+' : ''}{st.valDiff.toLocaleString()}만원
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* 모바일 카드 뷰 (글자 잘림 및 가로 스크롤 방지) */}
+                            <div className="sm:hidden space-y-2.5">
+                                {visibleStocks.map((st, idx) => (
+                                    <div key={idx} className="p-3.5 rounded-xl bg-slate-50 dark:bg-gray-900/70 border border-slate-200/70 dark:border-gray-700 space-y-2">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-black text-slate-900 dark:text-white truncate">{st.name}</div>
+                                                <div className="text-[10px] text-slate-400 font-bold truncate">
+                                                    {st.ticker} · {st.accountName}
+                                                </div>
+                                            </div>
+                                            <span className={`shrink-0 text-[10px] font-black px-2 py-0.5 rounded-md border ${badgeColorMap[st.actionColor]}`}>
+                                                {st.actionBadge}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-[11px] font-bold pt-1.5 border-t border-slate-200/60 dark:border-gray-700/60">
+                                            <span className="text-slate-500 dark:text-slate-400 tabular-nums">
+                                                {st.baseShares.toLocaleString()}주 ➔ <b className="text-slate-800 dark:text-slate-200">{st.targetShares.toLocaleString()}주</b>
+                                            </span>
+                                            <span className={`font-black tabular-nums ${st.valDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                                {st.valDiff >= 0 ? '+' : ''}{st.valDiff.toLocaleString()}만원 ({st.targetVal.toLocaleString()}만)
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* 하단 폴딩 토글 버튼 */}
+                            {hiddenStockCount > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsStocksExpanded(prev => !prev)}
+                                    className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200/70 dark:bg-gray-700/60 dark:hover:bg-gray-700 text-xs font-black text-slate-700 dark:text-slate-200 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                >
+                                    {isStocksExpanded ? (
+                                        <><span>▲</span> 변화폭 상위 {INITIAL_STOCK_LIMIT}개 종목만 보기 (접기)</>
+                                    ) : (
+                                        <><span>▼</span> 나머지 {hiddenStockCount}개 종목 더 보기 (전체 {diffResult.stockDiffs.length}개 종목 펼치기)</>
+                                    )}
+                                </button>
+                            )}
+                        </>
                     ) : (
                         <div className="py-6 text-center text-xs text-slate-400 font-bold">
                             비교할 세부 주식 종목 데이터가 없습니다.
@@ -682,31 +828,31 @@ export default function SnapshotDiffViewer({
                 </div>
             )}
 
-            {/* 2. 개별 계좌 1:1 Diff 테이블 */}
+            {/* 2. 개별 계좌 차이 (기본 상위 8개 노출 + 폴딩) */}
             {(activeTab === 'all' || activeTab === 'accounts') && (
-                <div className="bg-white dark:bg-slate-850 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-                    <div className="flex items-center justify-between border-b dark:border-slate-800 pb-3">
+                <div className="bg-white dark:bg-gray-800 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-gray-700 shadow-2xs space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-gray-700 pb-3">
                         <div>
                             <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                                <span>🏦</span> 개별 계좌 · 대출 항목 1:1 변동 내역
+                                <span>🏦</span> 개별 계좌 · 대출 잔액 차이
                             </h3>
-                            <p className="text-[11px] text-slate-400 mt-0.5">
-                                새로 개설된 계좌(🆕), 해지·완제된 계좌(🎉/🗑️), 잔액 증감 내역을 큰 변동순으로 정렬합니다.
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                잔액 변화가 큰 순서대로 정렬됩니다.
                             </p>
                         </div>
-                        <span className="text-xs font-black text-slate-500">
-                            총 {diffResult.accountDiffs.length}개 계좌
+                        <span className="text-xs font-black text-slate-500 dark:text-slate-400">
+                            총 {diffResult.accountDiffs.length}개 계좌 중 {visibleAccounts.length}개 표시
                         </span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {diffResult.accountDiffs.map((acc, idx) => (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        {visibleAccounts.map((acc, idx) => (
                             <div
                                 key={idx}
-                                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 flex items-center justify-between gap-3"
+                                className="p-3.5 rounded-xl bg-slate-50 dark:bg-gray-900/70 border border-slate-200/70 dark:border-gray-700 flex items-center justify-between gap-3"
                             >
                                 <div className="min-w-0 space-y-1">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
                                         <span>{acc.secIcon}</span>
                                         <span className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">
                                             {acc.name}
@@ -715,13 +861,13 @@ export default function SnapshotDiffViewer({
                                             {acc.badgeLabel}
                                         </span>
                                     </div>
-                                    <div className="text-[11px] text-slate-500 font-bold">
-                                        {acc.secLabel} • {acc.baseAmt.toLocaleString()}만 ➔ <b className="text-slate-800 dark:text-slate-200">{acc.targetAmt.toLocaleString()}만원</b>
+                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 font-bold tabular-nums">
+                                        {acc.secLabel} · {acc.baseAmt.toLocaleString()}만 ➔ <b className="text-slate-800 dark:text-slate-200">{acc.targetAmt.toLocaleString()}만원</b>
                                     </div>
                                 </div>
 
                                 <div className="text-right flex-shrink-0">
-                                    <div className={`text-sm font-black ${
+                                    <div className={`text-sm font-black tabular-nums ${
                                         acc.diff === 0
                                             ? 'text-slate-400'
                                             : (acc.isDebt ? acc.diff < 0 : acc.diff > 0)
@@ -731,7 +877,7 @@ export default function SnapshotDiffViewer({
                                         {acc.diff > 0 ? '+' : ''}{acc.diff.toLocaleString()}만원
                                     </div>
                                     {(acc.baseContrib !== acc.targetContrib) && (
-                                        <div className="text-[10px] text-indigo-500 font-bold">
+                                        <div className="text-[10px] text-indigo-500 font-bold tabular-nums">
                                             월납입 {acc.baseContrib}만 ➔ {acc.targetContrib}만
                                         </div>
                                     )}
@@ -739,20 +885,34 @@ export default function SnapshotDiffViewer({
                             </div>
                         ))}
                     </div>
+
+                    {hiddenAccountCount > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => setIsAccountsExpanded(prev => !prev)}
+                            className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200/70 dark:bg-gray-700/60 dark:hover:bg-gray-700 text-xs font-black text-slate-700 dark:text-slate-200 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                            {isAccountsExpanded ? (
+                                <><span>▲</span> 주요 변동 계좌 {INITIAL_ACCOUNT_LIMIT}개만 보기 (접기)</>
+                            ) : (
+                                <><span>▼</span> 나머지 {hiddenAccountCount}개 계좌 더 보기 (전체 {diffResult.accountDiffs.length}개)</>
+                            )}
+                        </button>
+                    )}
                 </div>
             )}
 
-            {/* 3. 자산군 섹터별 비중 Diff */}
+            {/* 3. 자산군 섹터별 비중 변화 */}
             {(activeTab === 'all' || activeTab === 'sectors') && (
-                <div className="bg-white dark:bg-slate-850 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-                    <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2 border-b dark:border-slate-800 pb-3">
-                        <span>📊</span> 5대 자산군 섹터별 잔액 & 포트폴리오 비중(%p) 변화
+                <div className="bg-white dark:bg-gray-800 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-gray-700 shadow-2xs space-y-4">
+                    <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2 border-b border-slate-100 dark:border-gray-700 pb-3">
+                        <span>📊</span> 5대 자산군별 잔액 및 비중 변화
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                         {diffResult.sectorDiffs.map((sec) => (
                             <div
                                 key={sec.secKey}
-                                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 space-y-2"
+                                className="p-3.5 rounded-xl bg-slate-50 dark:bg-gray-900/70 border border-slate-200/70 dark:border-gray-700 space-y-1.5"
                             >
                                 <div className="flex items-center justify-between">
                                     <span className="text-xs font-black text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
@@ -760,7 +920,7 @@ export default function SnapshotDiffViewer({
                                         <span>{sec.label}</span>
                                     </span>
                                 </div>
-                                <div className={`text-base font-black ${
+                                <div className={`text-base font-black tabular-nums ${
                                     sec.diff === 0
                                         ? 'text-slate-500'
                                         : (sec.isDebt ? sec.diff < 0 : sec.diff > 0)
@@ -769,11 +929,11 @@ export default function SnapshotDiffViewer({
                                 }`}>
                                     {sec.diff > 0 ? '+' : ''}{sec.diff.toLocaleString()}만원
                                 </div>
-                                <div className="text-[11px] font-bold text-slate-500">
+                                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">
                                     {sec.baseSum.toLocaleString()}만 ➔ {sec.targetSum.toLocaleString()}만
                                 </div>
                                 {!sec.isDebt && (
-                                    <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 pt-1 border-t border-slate-200/60 dark:border-slate-800">
+                                    <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 pt-1 border-t border-slate-200/60 dark:border-gray-700">
                                         비중: {sec.baseWeight}% ➔ {sec.targetWeight}% ({Number(sec.weightDiff) > 0 ? `+${sec.weightDiff}` : sec.weightDiff}%p)
                                     </div>
                                 )}

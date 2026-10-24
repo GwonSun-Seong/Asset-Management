@@ -224,42 +224,42 @@ export default function FireClockSimulator({
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
-            {/* 상단 히어로 배너 */}
-            <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white shadow-xl border border-indigo-500/20">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            {/* 상단 요약 카드 */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-gray-800/90 border border-slate-200 dark:border-gray-700 shadow-xs">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     <div>
                         <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase tracking-wider">
-                                4-Tier FIRE Clock Engine
+                            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700/50 text-amber-800 dark:text-amber-300 text-[10px] font-black">
+                                은퇴 시점 시뮬레이터
                             </span>
-                            <span className="text-xs text-slate-400 font-bold">
-                                안전인출률(SWR) {swrRate}% • 기대복리 연 {baseMetrics.avgReturnRate.toFixed(1)}%
+                            <span className="text-xs text-slate-500 dark:text-slate-400 font-bold">
+                                연간 안전인출률 {swrRate}% • 기대복리 연 {baseMetrics.avgReturnRate.toFixed(1)}%
                             </span>
                         </div>
-                        <h2 className="text-xl sm:text-2xl font-black mt-2 flex items-center gap-2">
-                            <span>🔥</span> 4대 FIRE 은퇴 시계 (Lean · Barista · Regular · Fat)
+                        <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white mt-1.5 flex items-center gap-2">
+                            <span>🔥</span> 4단계 은퇴 시계 (절약 · 바리스타 · 표준 · 여유)
                         </h2>
-                        <p className="text-xs text-slate-300 mt-1">
-                            단 하나의 목표액이 아닌, 내 라이프스타일과 사이드 소득에 맞춘 4가지 은퇴 모델별 필요 시드와 달성 시점을 동시 시뮬레이션합니다.
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            단 하나의 목표액이 아닌, 내 목표 생활비와 은퇴 후 부수입에 맞춘 4가지 은퇴 모델별 필요 자금과 달성 시점을 비교합니다.
                         </p>
                     </div>
 
                     {/* 지금 당장 은퇴 시 월 안전 인출 가능액 카드 */}
-                    <div className="bg-white/5 backdrop-blur-md px-5 py-4 rounded-2xl border border-white/10 flex flex-col sm:flex-row sm:items-center gap-4">
+                    <div className="bg-white dark:bg-gray-900 px-4 py-3.5 rounded-xl border border-slate-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center gap-4 shrink-0">
                         <div>
-                            <div className="text-[11px] text-slate-400 font-bold">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-bold">
                                 지금 당장 은퇴 시 평생 월 안전 인출액
                             </div>
-                            <div className="text-2xl font-black text-emerald-400 mt-0.5">
+                            <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
                                 월 {baseMetrics.currentSafeMonthlyWithdrawal.toLocaleString()}만원
                             </div>
-                            <div className="text-[11px] text-slate-300 mt-0.5">
+                            <div className="text-[11px] text-slate-400 mt-0.5">
                                 현재 순자산 {formatManWon(baseMetrics.netWorth)} × 연 {swrRate}% ÷ 12개월
                             </div>
                         </div>
-                        <div className="pl-0 sm:pl-4 sm:border-l border-white/10 text-left sm:text-right">
-                            <div className="text-[10px] text-slate-400 font-bold">현재 생활비 충당률</div>
-                            <div className="text-xl font-black text-amber-300">
+                        <div className="pl-0 sm:pl-4 sm:border-l border-slate-200 dark:border-gray-700 text-left sm:text-right">
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">현재 생활비 충당률</div>
+                            <div className="text-lg sm:text-xl font-black text-amber-600 dark:text-amber-400">
                                 {baseMetrics.currentExpenseCoveragePct}%
                             </div>
                             <div className="text-[10px] text-slate-400">
@@ -270,13 +270,13 @@ export default function FireClockSimulator({
                 </div>
             </div>
 
-            {/* 컨트롤러 패널 (SWR 선택 + 바리스타 소득 + 저축 부스터) */}
-            <div className="bg-white dark:bg-slate-850 p-5 sm:p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-5">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                    {/* 좌측: 안전인출률(SWR) 선택 */}
+            {/* 컨트롤러 패널 (안전인출률 선택 + 바리스타 소득 + 저축 부스터) */}
+            <div className="bg-white dark:bg-gray-800 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-gray-700 shadow-xs space-y-5">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                    {/* 좌측: 안전인출률 선택 */}
                     <div className="lg:col-span-5 space-y-2.5">
                         <label className="block text-xs font-black text-slate-700 dark:text-slate-200">
-                            🛡️ 안전인출률 (SWR, Safe Withdrawal Rate) 설정
+                            🛡️ 연간 안전인출률 설정
                         </label>
                         <div className="grid grid-cols-2 gap-2">
                             {SWR_OPTIONS.map(opt => (
