@@ -6,6 +6,9 @@ const KoreaLifeSimulator = lazy(() => import('./KoreaLifeSimulator'));
 const RetirementGachaGame = lazy(() => import('./RetirementGachaGame'));
 const ImpulseBuyJudge = lazy(() => import('./ImpulseBuyJudge'));
 const MonthlyCfoAuditReport = lazy(() => import('./MonthlyCfoAuditReport'));
+const LadderExitSimulator = lazy(() => import('./LadderExitSimulator'));
+const FxSensitivityDashboard = lazy(() => import('./FxSensitivityDashboard'));
+const ReverseGoalSolver = lazy(() => import('./ReverseGoalSolver'));
 
 // 추가 기능 카탈로그 정의 (버튼 형태로 나열)
 const FEATURE_CATALOG = [
@@ -14,7 +17,7 @@ const FEATURE_CATALOG = [
         name: '연말정산 미리보기',
         icon: '🧾',
         category: '세무/절세',
-        tag: '2026년 기준',
+        tag: '2026세법',
         isAvailable: true,
         summary: '13월의 월급 환급액 정밀 계산 및 2026년 개정 세법 산출과정',
         detail: '총급여, 신용/체크카드 사용액, 의료비, 기부금 등 2026년 세법 산출과정에 맞춘 정밀 모의계산.'
@@ -34,7 +37,7 @@ const FEATURE_CATALOG = [
         name: '정밀 주차 게임',
         icon: '🚗',
         category: '미니게임',
-        tag: 'NEW',
+        tag: '미니게임',
         isAvailable: true,
         summary: '30초 정밀 주차! 평행주차, T자 직각, 사선주차 완벽 도전',
         detail: '방향키(또는 WASD)로 조작하여 30초 내에 주차 구역에 정확히 주차하고 P(파킹)를 누르세요. 정중앙 100점 만점, 충돌 시 게임오버!'
@@ -54,7 +57,7 @@ const FEATURE_CATALOG = [
         name: 'AI 기회비용 판독기',
         icon: '🛒',
         category: '소비통제',
-        tag: 'AI 판사',
+        tag: 'AI판사',
         isAvailable: true,
         summary: '"이거 사도 될까?" 내 자본 체급·시급·복리 기반 은퇴 지연 판결',
         detail: '사고 싶은 물건의 가격과 할부 조건을 넣으면 내 순자산 체급과 일일 주가 변동폭에 비례하여 합리적 승인 또는 팩폭 판결을 내립니다.'
@@ -64,30 +67,40 @@ const FEATURE_CATALOG = [
         name: '월간 CFO 감사보고서',
         icon: '📊',
         category: '재무감사',
-        tag: 'AI CFO',
+        tag: 'AICFO',
         isAvailable: true,
         summary: '순자산 증감을 [근로저축·투자수익·부채상환]으로 요인분해하는 결산 리포트',
         detail: '지난 기간 동안 내 순자산이 왜 늘었는지 근로저축 기여분, 주식/환율 평가 변동, 부채 원금 축소분으로 분해하여 감사 보고서를 발행합니다.'
     },
     {
-        id: 'upcoming-slot-1',
-        name: '신규 금융 도구 슬롯 A',
-        icon: '🧪',
-        category: '연구실',
-        tag: '준비중',
-        isAvailable: false,
-        summary: '(기존 4대 FIRE 은퇴 시계는 [시각화] 탭으로 승격 이동되었습니다)',
-        detail: '4대 FIRE 은퇴 시계는 핵심 분석 도구로 채택되어 상단 [시각화] 탭에서 상시 확인하실 수 있습니다. 이 슬롯에는 새로운 실험실 기능이 준비 중입니다.'
+        id: 'ladder-exit',
+        name: '분할 익절 계산기',
+        icon: '🪜',
+        category: '매매타점',
+        tag: 'NEW',
+        isAvailable: true,
+        summary: '사다리 분할 매도 시 단계별 실현수익 및 잔여물량 본전 방어선 계산',
+        detail: '보유 종목을 목표 수익률 구간별로 분할 익절할 때 확보되는 확정 수익금과 남은 물량의 본전 방어 주가를 계산합니다.'
     },
     {
-        id: 'upcoming-slot-2',
-        name: '신규 금융 도구 슬롯 B',
-        icon: '🛠️',
-        category: '연구실',
-        tag: '준비중',
-        isAvailable: false,
-        summary: '(기존 스냅샷 타임머신 Diff는 [시각화 > 자산 히스토리] 하단으로 통합되었습니다)',
-        detail: '스냅샷 타임머신 Diff 비교기는 [시각화 > 자산 히스토리] 그래프 하단에 폴딩 형태로 통합되어 그래프 핀(A·B)과 함께 더욱 직관적으로 이용하실 수 있습니다.'
+        id: 'fx-sensitivity',
+        name: '환율 민감도 분석',
+        icon: '💱',
+        category: '환노출',
+        tag: 'NEW',
+        isAvailable: true,
+        summary: '직투 + 국내상장 미국 ETF 환노출 합산 원/달러 변동 스트레스 테스트',
+        detail: '미국 직투뿐만 아니라 국내 상장 미국 ETF(환노출/환헤지)까지 자동 판별하여 환율 및 증시 복합 시나리오별 순자산 변동을 분석합니다.'
+    },
+    {
+        id: 'reverse-goal-solver',
+        name: '목표 달성 계산기',
+        icon: '🎯',
+        category: '목표설계',
+        tag: 'NEW',
+        isAvailable: true,
+        summary: '"N년 뒤 M억 모으려면?" 필요한 월 추가저축 vs 목표 수익률 계산',
+        detail: '원하는 목표 기간과 목표 순자산을 설정했을 때, 오늘 당장 늘려야 할 월 저축액과 필요 수익률 조합을 자동으로 계산합니다.'
     }
 ];
 
@@ -141,9 +154,9 @@ export default function ExtraFeaturesView({
                 </div>
             </div>
 
-            {/* 기능 선택 버튼 바 (메인 패널쪽에 쪼르르 나열) */}
+            {/* 기능 선택 버튼 바 (9개 항목에 맞춰 컴팩트 사이즈로 조절) */}
             <div>
-                <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-black text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                         <span>🛠️</span> 기능 바로가기 선택
                     </span>
@@ -152,52 +165,54 @@ export default function ExtraFeaturesView({
                     </span>
                 </div>
 
-                {/* 가로 스크롤 및 반응형 그리드 버튼 바 */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+                {/* 9개 카드 컴팩트 그리드 (모바일 3열 / 태블릿 5열 / 데스크톱 9열) */}
+                <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-1.5 sm:gap-2">
                     {FEATURE_CATALOG.map((feature) => {
                         const isSelected = selectedFeatureId === feature.id;
                         return (
                             <button
                                 key={feature.id}
                                 onClick={() => setSelectedFeatureId(feature.id)}
-                                className={`p-3 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between relative group cursor-pointer ${
+                                className={`p-2 sm:p-2.5 rounded-xl border text-left transition-all duration-200 flex flex-col justify-between relative group cursor-pointer ${
                                     isSelected
                                         ? 'bg-white dark:bg-slate-800 border-indigo-600 dark:border-indigo-500 ring-2 ring-indigo-500/20 shadow-md translate-y-[-2px]'
                                         : 'bg-white/70 dark:bg-slate-850/70 border-slate-200 dark:border-slate-800 hover:bg-white dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs'
                                 }`}
                             >
-                                <div className="flex items-start justify-between w-full mb-2">
-                                    <span className={`text-2xl p-1.5 rounded-xl transition-transform group-hover:scale-110 ${
+                                <div className="flex items-start justify-between w-full mb-1.5">
+                                    <span className={`text-base sm:text-lg p-1 rounded-lg transition-transform group-hover:scale-110 ${
                                         isSelected 
                                             ? 'bg-indigo-50 dark:bg-indigo-950/60' 
                                             : 'bg-slate-100 dark:bg-slate-800'
                                     }`}>
                                         {feature.icon}
                                     </span>
-                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
-                                        feature.isAvailable
-                                            ? 'bg-emerald-500 text-white shadow-xs'
-                                            : 'bg-slate-200 dark:bg-slate-750 text-slate-600 dark:text-slate-400'
+                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                                        feature.tag === 'NEW'
+                                            ? 'bg-indigo-600 text-white shadow-xs'
+                                            : feature.isAvailable
+                                                ? 'bg-emerald-500 text-white shadow-xs'
+                                                : 'bg-slate-200 dark:bg-slate-750 text-slate-600 dark:text-slate-400'
                                     }`}>
                                         {feature.tag}
                                     </span>
                                 </div>
 
                                 <div>
-                                    <h4 className={`text-xs font-bold truncate transition-colors ${
+                                    <h4 className={`text-[11px] font-black truncate transition-colors ${
                                         isSelected 
                                             ? 'text-indigo-600 dark:text-indigo-400' 
                                             : 'text-slate-800 dark:text-slate-200'
                                     }`}>
                                         {feature.name}
                                     </h4>
-                                    <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">
+                                    <p className="text-[9px] text-slate-400 mt-0.5 line-clamp-1">
                                         {feature.summary}
                                     </p>
                                 </div>
 
                                 {isSelected && (
-                                    <div className="w-full h-1 bg-indigo-600 dark:bg-indigo-400 rounded-full mt-2.5 animate-in fade-in duration-200"></div>
+                                    <div className="w-full h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-full mt-1.5 animate-in fade-in duration-200"></div>
                                 )}
                             </button>
                         );
@@ -261,6 +276,27 @@ export default function ExtraFeaturesView({
                             currentAppData={currentAppData}
                             currentCalculation={currentCalculation}
                             assetHistory={assetHistory}
+                            addToast={addToast}
+                        />
+                    )}
+                    {activeFeature.id === 'ladder-exit' && (
+                        <LadderExitSimulator
+                            currentAppData={currentAppData}
+                            addToast={addToast}
+                        />
+                    )}
+                    {activeFeature.id === 'fx-sensitivity' && (
+                        <FxSensitivityDashboard
+                            currentAppData={currentAppData}
+                            currentCalculation={currentCalculation}
+                            addToast={addToast}
+                        />
+                    )}
+                    {activeFeature.id === 'reverse-goal-solver' && (
+                        <ReverseGoalSolver
+                            monthlySalary={monthlySalary}
+                            currentAppData={currentAppData}
+                            currentCalculation={currentCalculation}
                             addToast={addToast}
                         />
                     )}

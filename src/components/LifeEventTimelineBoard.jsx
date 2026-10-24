@@ -521,186 +521,260 @@ export default function LifeEventTimelineBoard({
                     </div>
                 </div>
 
-                {/* 3. 반응형 타임라인 진행 바 (가로 스크롤 및 글자 잘림 원천 제거) */}
-                <div className="p-4 sm:p-5 rounded-2xl bg-gray-50/70 dark:bg-gray-900/50 border border-gray-200/80 dark:border-gray-700 space-y-5">
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-gray-200/80 dark:border-gray-700">
+                {/* 3. 통합 기준축 기반 반응형 타임라인 보드 (상단 기준라인과 하위 3개 트랙 1:1 수직 정렬) */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-gray-50/70 dark:bg-gray-900/50 border border-gray-200/80 dark:border-gray-700 space-y-4">
+                    {/* 타임라인 헤더 */}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs sm:text-sm font-extrabold text-gray-800 dark:text-gray-100 flex items-center gap-1.5">
                             <span>📊</span>
                             <span>향후 {horizonMonths / 12}년 구간별 진행 타임라인</span>
                         </div>
-                        {/* 연도 눈금 표시줄 (5등분 균등 배치로 겹침 방지) */}
-                        <div className="w-full flex items-center justify-between text-[10px] sm:text-[11px] font-bold text-gray-400 dark:text-gray-500 pt-2">
-                            {rulerCheckpoints.map((pt, i) => (
-                                <span
-                                    key={i}
-                                    className={i === 0 ? 'text-left text-indigo-600 dark:text-indigo-400 font-black' : i === rulerCheckpoints.length - 1 ? 'text-right' : 'text-center'}
-                                >
-                                    {pt.label}
-                                </span>
-                            ))}
-                        </div>
+                        <span className="text-[11px] font-bold text-gray-400 dark:text-gray-500">
+                            상단 기준 눈금선(수직 가이드라인)을 따라 모든 트랙이 1:1 동일한 시간 축으로 정렬됩니다
+                        </span>
                     </div>
 
-                    {/* Track 1: 분기점(Phases) */}
-                    <div className="space-y-2.5">
-                        <div className="text-xs font-extrabold text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                            <span>1. 타임라인 분기점 구간</span>
-                        </div>
-                        <div className="space-y-2">
-                            {phaseItems.map((p) => {
-                                const clampedStart = Math.max(0, Math.min(horizonMonths, p.startOffset));
-                                const clampedEnd = Math.max(clampedStart, Math.min(horizonMonths, p.endOffset));
-                                const leftPct = (clampedStart / horizonMonths) * 100;
-                                const widthPct = Math.max(2, ((clampedEnd - clampedStart) / horizonMonths) * 100);
-                                if (p.startOffset > horizonMonths) return null;
-
-                                return (
-                                    <div
-                                        key={p.id}
-                                        onClick={() => setActiveItem(activeItem?.id === p.id ? null : p)}
-                                        className="p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 transition-all cursor-pointer space-y-2"
-                                    >
-                                        {/* 상단 라벨 행: 제목과 배지가 바 밖(위)에 있어 절대 안 잘림 */}
-                                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <span className="font-black text-gray-900 dark:text-white">{p.title}</span>
-                                                <span className="text-[11px] text-gray-500 dark:text-gray-400 hidden sm:inline">({p.detail})</span>
-                                            </div>
-                                            <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 shrink-0">
-                                                {formatYmKorean(p.startYm)} ~ {p.endOffset >= horizonMonths ? '계속' : formatYmKorean(p.endYm)}
-                                            </span>
-                                        </div>
-                                        {/* 하단 슬림 타임라인 바 */}
-                                        <div className="relative h-2.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
-                                            <div
-                                                className="absolute top-0 bottom-0 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all"
-                                                style={{ left: `${leftPct}%`, width: `${Math.min(100 - leftPct, widthPct)}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    {/* Track 2: 대출 상환 & 완제 해방일 */}
-                    <div className="space-y-2.5">
-                        <div className="text-xs font-extrabold text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                            <span>2. 대출 상환 구간 및 100% 완제 해방일</span>
-                        </div>
-                        {loanItems.length > 0 ? (
-                            <div className="space-y-2">
-                                {loanItems.map((loan) => {
-                                    const clampedStart = Math.max(0, Math.min(horizonMonths, loan.startOffset));
-                                    const clampedEnd = Math.max(clampedStart, Math.min(horizonMonths, loan.endOffset));
-                                    const leftPct = (clampedStart / horizonMonths) * 100;
-                                    const widthPct = Math.max(2, ((clampedEnd - clampedStart) / horizonMonths) * 100);
-                                    const isFinishedWithinHorizon = loan.isPayoffKnown && loan.endOffset <= horizonMonths;
-
+                    {/* 통합 타임라인 좌표 캔버스: 상단 기준라인(Ruler) + 수직 관통 가이드라인 + 3대 트랙 */}
+                    <div className="relative rounded-xl bg-white/60 dark:bg-gray-900/60 border border-gray-200/80 dark:border-gray-700/80 p-3 sm:p-4">
+                        {/* 상단 마스터 기준 눈금 헤더 (하단 카드 내부 바의 좌우 여백 px-3.5와 100% 동일하게 맞춤) */}
+                        <div className="sticky top-0 z-20 pb-3 mb-4 border-b border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xs px-3.5 pt-1 rounded-t-lg">
+                            {/* 눈금 라벨 행 */}
+                            <div className="relative h-5 text-[10px] sm:text-[11px] font-bold text-gray-500 dark:text-gray-400">
+                                {rulerCheckpoints.map((pt, i) => {
+                                    const isFirst = i === 0;
+                                    const isLast = i === rulerCheckpoints.length - 1;
                                     return (
-                                        <div
-                                            key={loan.id}
-                                            onClick={() => setActiveItem(activeItem?.id === loan.id ? null : loan)}
-                                            className="p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 hover:border-emerald-400 dark:hover:border-emerald-500 transition-all cursor-pointer space-y-2"
+                                        <span
+                                            key={i}
+                                            style={{ left: `${pt.pct}%` }}
+                                            className={`absolute top-0 whitespace-nowrap tabular-nums ${
+                                                isFirst
+                                                    ? 'translate-x-0 text-indigo-600 dark:text-indigo-400 font-black'
+                                                    : isLast
+                                                    ? '-translate-x-full text-gray-700 dark:text-gray-200 font-extrabold'
+                                                    : '-translate-x-1/2'
+                                            }`}
                                         >
-                                            {/* 상단 라벨 행: 대출명, 잔액, 완제 해방일이 넉넉하게 전부 표시됨 */}
-                                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                                                <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                                    <span className="font-black text-gray-900 dark:text-white flex items-center gap-1">
-                                                        <span>💳</span>
-                                                        <span>{loan.title}</span>
-                                                    </span>
-                                                    <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">
-                                                        잔액 {formatNumber(loan.currentBalance, displayMode)}만 · 월 {formatNumber(loan.payment, displayMode)}만 ({loan.rate}%)
-                                                    </span>
-                                                </div>
-                                                <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-md shrink-0 ${
-                                                    isFinishedWithinHorizon
-                                                        ? 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/50'
-                                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-                                                }`}>
-                                                    {loan.badge}
-                                                </span>
-                                            </div>
-
-                                            {/* 하단 슬림 타임라인 바 (깔끔한 에메랄드 그라데이션 + 완제 시점 핀) */}
-                                            <div className="relative h-2.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
-                                                <div
-                                                    className={`absolute top-0 bottom-0 rounded-full transition-all ${
-                                                        isFinishedWithinHorizon
-                                                            ? 'bg-gradient-to-r from-teal-500 to-emerald-400'
-                                                            : 'bg-slate-400 dark:bg-slate-500'
-                                                    }`}
-                                                    style={{ left: `${leftPct}%`, width: `${Math.min(100 - leftPct, widthPct)}%` }}
-                                                />
-                                            </div>
-                                        </div>
+                                            {pt.label}
+                                        </span>
                                     );
                                 })}
                             </div>
-                        ) : (
-                            <div className="p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200/60 dark:border-gray-700 text-xs text-gray-400 font-bold text-center">
-                                등록된 대출 항목이 없습니다 (무차입 상태)
+                            {/* 마스터 기준 라인 & 눈금 핀 (Ticks) */}
+                            <div className="relative h-2.5 mt-1 flex items-center">
+                                <div className="w-full h-0.5 bg-indigo-200 dark:bg-indigo-900/80 rounded-full" />
+                                {rulerCheckpoints.map((pt, i) => (
+                                    <div
+                                        key={i}
+                                        style={{ left: `${pt.pct}%` }}
+                                        className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full border-2 ${
+                                            i === 0
+                                                ? 'bg-indigo-600 border-white dark:border-gray-900 ring-2 ring-indigo-400/40'
+                                                : 'bg-white dark:bg-gray-800 border-indigo-400 dark:border-indigo-500'
+                                        }`}
+                                    />
+                                ))}
                             </div>
-                        )}
-                    </div>
-
-                    {/* Track 3: 비정기 목돈 수입 · 지출 이벤트 */}
-                    <div className="space-y-2.5">
-                        <div className="text-xs font-extrabold text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                            <span>3. 비정기 목돈 수입 · 지출 일정</span>
                         </div>
-                        {cashEventItems.filter(e => e.endOffset >= 0 && e.startOffset <= horizonMonths).length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                {cashEventItems
-                                    .filter(e => e.endOffset >= 0 && e.startOffset <= horizonMonths)
-                                    .map((ev) => {
-                                        const isInc = ev.eventType === 'income';
-                                        const clampedStart = Math.max(0, Math.min(horizonMonths, ev.startOffset));
-                                        const clampedEnd = Math.max(clampedStart, Math.min(horizonMonths, ev.endOffset));
+
+                        {/* 트랙 영역 전체를 관통하는 수직 기준 점선 (하단 카드들의 px-3.5 내부 바 좌표계와 정확히 일치) */}
+                        <div className="relative space-y-5">
+                            <div className="pointer-events-none absolute inset-y-0 left-3.5 right-3.5 z-0">
+                                {rulerCheckpoints.map((pt, i) => (
+                                    <div
+                                        key={i}
+                                        style={{ left: `${pt.pct}%` }}
+                                        className={`absolute top-0 bottom-0 border-l ${
+                                            i === 0 || i === rulerCheckpoints.length - 1
+                                                ? 'border-indigo-300/60 dark:border-indigo-700/50'
+                                                : 'border-dashed border-gray-300/80 dark:border-gray-700/80'
+                                        }`}
+                                    />
+                                ))}
+                            </div>
+
+                            {/* Track 1: 분기점(Phases) */}
+                            <div className="relative z-10 space-y-2">
+                                <div className="text-xs font-extrabold text-gray-700 dark:text-gray-200 flex items-center gap-1.5 px-1">
+                                    <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                    <span>1. 타임라인 분기점 구간</span>
+                                </div>
+                                <div className="space-y-2">
+                                    {phaseItems.map((p) => {
+                                        const clampedStart = Math.max(0, Math.min(horizonMonths, p.startOffset));
+                                        const clampedEnd = Math.max(clampedStart, Math.min(horizonMonths, p.endOffset));
                                         const leftPct = (clampedStart / horizonMonths) * 100;
-                                        const widthPct = ev.isRange
-                                            ? Math.max(3, ((clampedEnd - clampedStart + 1) / horizonMonths) * 100)
-                                            : 3;
+                                        const widthPct = Math.max(2, ((clampedEnd - clampedStart) / horizonMonths) * 100);
+                                        if (p.startOffset > horizonMonths) return null;
 
                                         return (
                                             <div
-                                                key={ev.id}
-                                                onClick={() => setActiveItem(activeItem?.id === ev.id ? null : ev)}
-                                                className="p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 hover:border-blue-400 transition-all cursor-pointer space-y-2"
+                                                key={p.id}
+                                                onClick={() => setActiveItem(activeItem?.id === p.id ? null : p)}
+                                                className="px-3.5 py-2.5 rounded-xl bg-white/90 dark:bg-gray-800/90 border border-gray-200/90 dark:border-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 transition-all cursor-pointer space-y-2 shadow-2xs"
                                             >
-                                                <div className="flex items-center justify-between gap-2 text-xs">
-                                                    <div className="flex items-center gap-1.5 min-w-0">
-                                                        <span>{isInc ? '💰' : '💸'}</span>
-                                                        <span className="font-black text-gray-900 dark:text-white truncate">{ev.title}</span>
-                                                        <span className="text-[11px] text-gray-400 shrink-0">({formatYmKorean(ev.startYm)})</span>
+                                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="font-black text-gray-900 dark:text-white">{p.title}</span>
+                                                        <span className="text-[11px] text-gray-500 dark:text-gray-400 hidden sm:inline">({p.detail})</span>
                                                     </div>
-                                                    <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-md shrink-0 ${
-                                                        isInc
-                                                            ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300'
-                                                            : 'bg-rose-50 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300'
-                                                    }`}>
-                                                        {ev.badge}
+                                                    <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 shrink-0 tabular-nums">
+                                                        {formatYmKorean(p.startYm)} ~ {p.endOffset >= horizonMonths ? '계속' : formatYmKorean(p.endYm)}
                                                     </span>
                                                 </div>
-                                                <div className="relative h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                                                {/* 상단 기준라인과 1:1 정렬된 타임라인 바 (내부 눈금선 포함) */}
+                                                <div className="relative h-3 rounded-full bg-gray-100 dark:bg-gray-700/80 overflow-hidden">
+                                                    {rulerCheckpoints.slice(1, -1).map((pt, idx) => (
+                                                        <div
+                                                            key={idx}
+                                                            style={{ left: `${pt.pct}%` }}
+                                                            className="absolute top-0 bottom-0 border-l border-dashed border-gray-300/90 dark:border-gray-600 z-10 pointer-events-none"
+                                                        />
+                                                    ))}
                                                     <div
-                                                        className={`absolute top-0 bottom-0 rounded-full ${isInc ? 'bg-blue-500' : 'bg-rose-500'}`}
-                                                        style={{ left: `${Math.min(97, leftPct)}%`, width: `${Math.min(100 - leftPct, widthPct)}%` }}
+                                                        className="absolute top-0 bottom-0 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all shadow-2xs"
+                                                        style={{ left: `${leftPct}%`, width: `${Math.min(100 - leftPct, widthPct)}%` }}
                                                     />
                                                 </div>
                                             </div>
                                         );
                                     })}
+                                </div>
                             </div>
-                        ) : (
-                            <div className="p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200/60 dark:border-gray-700 text-xs text-gray-400 font-bold text-center">
-                                조회 구간 내 예정된 비정기 수입·지출 이벤트가 없습니다.
+
+                            {/* Track 2: 대출 상환 & 완제 해방일 */}
+                            <div className="relative z-10 space-y-2">
+                                <div className="text-xs font-extrabold text-gray-700 dark:text-gray-200 flex items-center gap-1.5 px-1">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                    <span>2. 대출 상환 구간 및 100% 완제 해방일</span>
+                                </div>
+                                {loanItems.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {loanItems.map((loan) => {
+                                            const clampedStart = Math.max(0, Math.min(horizonMonths, loan.startOffset));
+                                            const clampedEnd = Math.max(clampedStart, Math.min(horizonMonths, loan.endOffset));
+                                            const leftPct = (clampedStart / horizonMonths) * 100;
+                                            const widthPct = Math.max(2, ((clampedEnd - clampedStart) / horizonMonths) * 100);
+                                            const isFinishedWithinHorizon = loan.isPayoffKnown && loan.endOffset <= horizonMonths;
+
+                                            return (
+                                                <div
+                                                    key={loan.id}
+                                                    onClick={() => setActiveItem(activeItem?.id === loan.id ? null : loan)}
+                                                    className="px-3.5 py-2.5 rounded-xl bg-white/90 dark:bg-gray-800/90 border border-gray-200/90 dark:border-gray-700 hover:border-emerald-400 dark:hover:border-emerald-500 transition-all cursor-pointer space-y-2 shadow-2xs"
+                                                >
+                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                                            <span className="font-black text-gray-900 dark:text-white flex items-center gap-1">
+                                                                <span>💳</span>
+                                                                <span>{loan.title}</span>
+                                                            </span>
+                                                            <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium tabular-nums">
+                                                                잔액 {formatNumber(loan.currentBalance, displayMode)}만 · 월 {formatNumber(loan.payment, displayMode)}만 ({loan.rate}%)
+                                                            </span>
+                                                        </div>
+                                                        <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-md shrink-0 tabular-nums ${
+                                                            isFinishedWithinHorizon
+                                                                ? 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/50'
+                                                                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                                                        }`}>
+                                                            {loan.badge}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* 상단 기준라인과 1:1 정렬된 타임라인 바 */}
+                                                    <div className="relative h-3 rounded-full bg-gray-100 dark:bg-gray-700/80 overflow-hidden">
+                                                        {rulerCheckpoints.slice(1, -1).map((pt, idx) => (
+                                                            <div
+                                                                key={idx}
+                                                                style={{ left: `${pt.pct}%` }}
+                                                                className="absolute top-0 bottom-0 border-l border-dashed border-gray-300/90 dark:border-gray-600 z-10 pointer-events-none"
+                                                            />
+                                                        ))}
+                                                        <div
+                                                            className={`absolute top-0 bottom-0 rounded-full transition-all ${
+                                                                isFinishedWithinHorizon
+                                                                    ? 'bg-gradient-to-r from-teal-500 to-emerald-400'
+                                                                    : 'bg-slate-400 dark:bg-slate-500'
+                                                            }`}
+                                                            style={{ left: `${leftPct}%`, width: `${Math.min(100 - leftPct, widthPct)}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="px-3.5 py-3 rounded-xl bg-white/90 dark:bg-gray-800/90 border border-gray-200/60 dark:border-gray-700 text-xs text-gray-400 font-bold text-center">
+                                        등록된 대출 항목이 없습니다 (무차입 상태)
+                                    </div>
+                                )}
                             </div>
-                        )}
+
+                            {/* Track 3: 비정기 목돈 수입 · 지출 이벤트 (상단 기준라인과 100% 동일한 전체 폭으로 통일) */}
+                            <div className="relative z-10 space-y-2">
+                                <div className="text-xs font-extrabold text-gray-700 dark:text-gray-200 flex items-center gap-1.5 px-1">
+                                    <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                                    <span>3. 비정기 목돈 수입 · 지출 일정</span>
+                                </div>
+                                {cashEventItems.filter(e => e.endOffset >= 0 && e.startOffset <= horizonMonths).length > 0 ? (
+                                    <div className="space-y-2">
+                                        {cashEventItems
+                                            .filter(e => e.endOffset >= 0 && e.startOffset <= horizonMonths)
+                                            .map((ev) => {
+                                                const isInc = ev.eventType === 'income';
+                                                const clampedStart = Math.max(0, Math.min(horizonMonths, ev.startOffset));
+                                                const clampedEnd = Math.max(clampedStart, Math.min(horizonMonths, ev.endOffset));
+                                                const leftPct = (clampedStart / horizonMonths) * 100;
+                                                const widthPct = ev.isRange
+                                                    ? Math.max(2.5, ((clampedEnd - clampedStart + 1) / horizonMonths) * 100)
+                                                    : 2.5;
+
+                                                return (
+                                                    <div
+                                                        key={ev.id}
+                                                        onClick={() => setActiveItem(activeItem?.id === ev.id ? null : ev)}
+                                                        className="px-3.5 py-2.5 rounded-xl bg-white/90 dark:bg-gray-800/90 border border-gray-200/90 dark:border-gray-700 hover:border-blue-400 transition-all cursor-pointer space-y-2 shadow-2xs"
+                                                    >
+                                                        <div className="flex items-center justify-between gap-2 text-xs">
+                                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                                <span>{isInc ? '💰' : '💸'}</span>
+                                                                <span className="font-black text-gray-900 dark:text-white truncate">{ev.title}</span>
+                                                                <span className="text-[11px] text-gray-400 shrink-0 tabular-nums">({formatYmKorean(ev.startYm)})</span>
+                                                            </div>
+                                                            <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-md shrink-0 tabular-nums ${
+                                                                isInc
+                                                                    ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300'
+                                                                    : 'bg-rose-50 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300'
+                                                            }`}>
+                                                                {ev.badge}
+                                                            </span>
+                                                        </div>
+                                                        {/* 상단 기준라인과 1:1 정렬된 전체 폭 타임라인 바 */}
+                                                        <div className="relative h-3 rounded-full bg-gray-100 dark:bg-gray-700/80 overflow-hidden">
+                                                            {rulerCheckpoints.slice(1, -1).map((pt, idx) => (
+                                                                <div
+                                                                    key={idx}
+                                                                    style={{ left: `${pt.pct}%` }}
+                                                                    className="absolute top-0 bottom-0 border-l border-dashed border-gray-300/90 dark:border-gray-600 z-10 pointer-events-none"
+                                                                />
+                                                            ))}
+                                                            <div
+                                                                className={`absolute top-0 bottom-0 rounded-full ${isInc ? 'bg-blue-500' : 'bg-rose-500'}`}
+                                                                style={{ left: `${Math.min(97.5, leftPct)}%`, width: `${Math.min(100 - leftPct, widthPct)}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                    </div>
+                                ) : (
+                                    <div className="px-3.5 py-3 rounded-xl bg-white/90 dark:bg-gray-800/90 border border-gray-200/60 dark:border-gray-700 text-xs text-gray-400 font-bold text-center">
+                                        조회 구간 내 예정된 비정기 수입·지출 이벤트가 없습니다.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
                     {/* 선택된 항목 상세 액션 바 */}

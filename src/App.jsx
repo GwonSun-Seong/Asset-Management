@@ -10,6 +10,8 @@ const ExtraFeaturesView = lazy(() => import('./components/ExtraFeatures/ExtraFea
 const FireClockSimulator = lazy(() => import('./components/ExtraFeatures/FireClockSimulator'));
 const SnapshotDiffViewer = lazy(() => import('./components/ExtraFeatures/SnapshotDiffViewer'));
 const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimelineBoard'));
+const PaydaySettlementModal = lazy(() => import('./components/PaydaySettlementModal'));
+const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
 
         const CoreSettingsCard = ({
             monthlySalary, setMonthlySalary, baseDate, setBaseDate, // [변경] baseMonth -> baseDate
@@ -932,8 +934,8 @@ const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimeline
             const [cashFlowReportPage, setCashFlowReportPage] = useState('receipt');
             const TAB_MAPPING = {
                 input: ['assets', 'expenses', 'events', 'memo', 'rebalance'], // 입력
-                visualization: ['budget', 'charts', 'history', 'life-timeline', 'fire-clock', 'scenario'], // 시각화 (요약은 항상 표시되므로 메뉴에서 제외)
-                analysis: ['detail-analysis', 'assumptions'], // 분석
+                visualization: ['budget', 'charts', 'history', 'life-timeline', 'scenario'], // 시각화 (요약은 항상 표시되므로 메뉴에서 제외)
+                analysis: ['detail-analysis', 'fire-clock', 'assumptions'], // 분석
                 community: ['community'], // 커뮤니티
                 tools: ['tools'] // 추가 기능
             };
@@ -1166,6 +1168,27 @@ const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimeline
             const [stockLinkState, setStockLinkState] = useState(null); // [추가] 종목 연동 모달 대상 자산 {sectorKey, index, asset}
             const [isExporting, setIsExporting] = useState(false); // [추가] PDF 내보내기 모드 상태
             const [expandedAssetDetails, setExpandedAssetDetails] = useState({}); // [추가] 자산 상세설정(수익률/수수료 등) 펼침 상태 { [assetKey]: boolean }
+            const [isPaydayModalOpen, setIsPaydayModalOpen] = useState(false); // [추가] 월급날 자동 정산 모달 상태
+
+            // 🗓️ [월급날 자동 정산 팝업] 지정된 급여일 이후 접속 시 이번 달 미정산 상태면 자동 팝업
+            useEffect(() => {
+                if (isLoading || !isInitialized || isDemoMode || editingPhase !== null || !appData) return;
+                const now = new Date();
+                const sDay = Number(appData.salaryDay) || 25;
+                if (now.getDate() < sDay) return;
+
+                const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                if (appData.lastPaydaySettledYm === currentYm) return;
+
+                try {
+                    if (sessionStorage.getItem(`paydayPromptDismissed_${currentYm}`) === 'true') return;
+                } catch (e) {}
+
+                const timer = setTimeout(() => {
+                    setIsPaydayModalOpen(true);
+                }, 600);
+                return () => clearTimeout(timer);
+            }, [isLoading, isInitialized, isDemoMode, editingPhase, appData?.salaryDay, appData?.lastPaydaySettledYm]);
 
             // 🌐 [투자자산 한눈에보기 필터 및 인라인 수정 상태]
             const [assetCategoryFilter, setAssetCategoryFilter] = useState('ALL'); // 'ALL' | '지수' | '개별주' | '코인' | '원화' | '달러'
@@ -1290,7 +1313,7 @@ const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimeline
             }, [isHistoryFullscreen]);
 
             const [layoutOrder, setLayoutOrder] = useState(() => {
-                const defaultOrder = window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'life-timeline', 'fire-clock', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'assumptions', 'community'];
+                const defaultOrder = window.DEFAULT_LAYOUT_ORDER || ['summary', 'scenario', 'charts', 'history', 'life-timeline', 'budget', 'memo', 'rebalance', 'assets', 'expenses', 'events', 'detail-analysis', 'fire-clock', 'assumptions', 'community'];
                 try {
                     const savedOrder = localStorage.getItem('assetDashboardLayoutOrder');
                     let order = defaultOrder;
@@ -1305,8 +1328,8 @@ const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimeline
                         else order.push('life-timeline');
                     }
                     if (!order.includes('fire-clock')) {
-                        const tlIdx = order.indexOf('life-timeline');
-                        if (tlIdx >= 0) order.splice(tlIdx + 1, 0, 'fire-clock');
+                        const daIdx = order.indexOf('detail-analysis');
+                        if (daIdx >= 0) order.splice(daIdx + 1, 0, 'fire-clock');
                         else order.push('fire-clock');
                     }
                     if (!order.includes('community')) {
@@ -7380,6 +7403,28 @@ const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimeline
                                     </div>
                                 </div>
                             </div>
+
+                            {/* 월급날 현금흐름 일괄 정산 바로가기 배너 */}
+                            <div className="mt-6 pt-5 border-t border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-indigo-50/60 dark:bg-indigo-950/30 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-900/50">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-2xl bg-white dark:bg-gray-800 p-2 rounded-xl shadow-2xs">🗓️</span>
+                                    <div>
+                                        <div className="text-xs sm:text-sm font-black text-indigo-950 dark:text-indigo-200">
+                                            월급날 현금흐름 일괄 정산 (매월 {salaryDay || 25}일 자동 팝업)
+                                        </div>
+                                        <p className="text-[11px] text-indigo-700/80 dark:text-indigo-300/80 mt-0.5">
+                                            저축·투자(주식 예수금 포함) 및 대출 상환 실행 여부를 체크하고, 미이체분과 다음 달 소비 예산을 [{mainCashFlowAccount}]에 즉시 플러스(+)합니다.
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPaydayModalOpen(true)}
+                                    className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black whitespace-nowrap shadow-sm transition-all active:scale-95 cursor-pointer self-end sm:self-center"
+                                >
+                                    💰 이번 달 월급 정산하기
+                                </button>
+                            </div>
                         </div>
 
                         {/* 3. 현금 흐름 상세 (영수증 vs 흐름도) */}
@@ -9621,9 +9666,6 @@ const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimeline
                                 <button onClick={() => setAnalysisMode('income')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'income' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                                     <span>💰</span> 자본 소득 분석
                                 </button>
-                                <button onClick={() => setAnalysisMode('fire-clock')} className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition-all flex items-center gap-1.5 ${analysisMode === 'fire-clock' ? 'bg-white dark:bg-gray-700 text-orange-600 dark:text-orange-400 shadow-sm ring-1 ring-orange-500/20' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
-                                    <span>🔥</span> 4대 FIRE 은퇴 시계
-                                </button>
                             </div>
                         </div>
                     )}
@@ -9928,17 +9970,6 @@ const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimeline
                             </table>
                         </div>
                     </div>
-                    )}
-
-                    {/* [4대 FIRE 은퇴 시계] 상세 분석 내에서도 바로 전환 가능 */}
-                    {analysisMode === 'fire-clock' && !isExporting && (
-                        <React.Suspense fallback={<div className="py-12 text-center text-xs font-bold text-slate-400 animate-pulse">4대 FIRE 은퇴 시계 로딩 중...</div>}>
-                            <FireClockSimulator
-                                currentAppData={appData}
-                                currentCalculation={calculation}
-                                monthlySalary={monthlySalary}
-                            />
-                        </React.Suspense>
                     )}
                 </div>
             )};
@@ -10608,6 +10639,7 @@ const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimeline
         setMonthlySalary={setMonthlySalary}
         baseDate={baseDate} setBaseDate={setBaseDate}
         salaryDay={salaryDay} setSalaryDay={setSalaryDay}
+        onOpenPaydayModal={() => setIsPaydayModalOpen(true)}
         onOpenDataManage={() => setIsDataManageModalOpen(true)}
         saveToPDF={saveToPDF}
         saveCurrentAsset={saveCurrentAsset}
@@ -10683,8 +10715,8 @@ const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimeline
                                         );
                                     case 'fire-clock':
                                         return (
-                                            <PanelWrapper key={panelId} {...panelProps} title="🔥 4대 FIRE 은퇴 시계">
-                                                <React.Suspense fallback={<div className="py-12 text-center text-xs font-bold text-slate-400 animate-pulse">4대 FIRE 은퇴 시계 로딩 중...</div>}>
+                                            <PanelWrapper key={panelId} {...panelProps} title="🔥 FIRE 시계">
+                                                <React.Suspense fallback={<div className="py-12 text-center text-xs font-bold text-slate-400 animate-pulse">FIRE 시계 로딩 중...</div>}>
                                                     <FireClockSimulator
                                                         currentAppData={appData}
                                                         currentCalculation={calculation}
@@ -11080,6 +11112,28 @@ const LifeEventTimelineBoard = lazy(() => import('./components/LifeEventTimeline
                             onSave={(updatedData) => updateAssetWithLinked(stockLinkState.sectorKey, stockLinkState.index, updatedData)}
                         />
                     )}
+                    {isPaydayModalOpen && (
+                        <React.Suspense fallback={null}>
+                            <PaydaySettlementModal
+                                isOpen={isPaydayModalOpen}
+                                onClose={() => setIsPaydayModalOpen(false)}
+                                appData={appData}
+                                setAppData={setAppData}
+                                saveCurrentAsset={saveCurrentAsset}
+                                addToast={addToast}
+                            />
+                        </React.Suspense>
+                    )}
+                    <React.Suspense fallback={null}>
+                        <LadderAlertModal
+                            currentAppData={appData}
+                            addToast={addToast}
+                            onNavigateToLadder={() => {
+                                setActiveTab('tools');
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                        />
+                    </React.Suspense>
                     {scenarioToExport && window.DataExportImportModal && (
                         <window.DataExportImportModal 
                             isOpen={!!scenarioToExport} 

@@ -6,7 +6,8 @@ const AssetSummaryCard = (props) => {
         displayMode, editingPhase, isCalculating, monthlySalary, setMonthlySalary,
         salaryDay, setSalaryDay, autoUpdateBaseDate, setAutoUpdateBaseDate,
         onOpenDataManage, saveCurrentAsset, saveScenario, goalMode, setGoalMode,
-        setProjectionMonths, targetAmount, setTargetAmount, inflationRate, setInflationRate
+        setProjectionMonths, targetAmount, setTargetAmount, inflationRate, setInflationRate,
+        onOpenPaydayModal
     } = props;
 
     const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
@@ -171,9 +172,21 @@ const AssetSummaryCard = (props) => {
                                 </div>
                                 <div>
                                     <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 block mb-1">급여 수입일</span>
-                                    <select className="w-full border dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg px-2 py-1.5 font-bold text-xs focus:ring-1 focus:ring-blue-500 outline-none" value={salaryDay} onChange={(e) => setSalaryDay(Number(e.target.value))}>
-                                        {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d}>{d}일</option>)}
-                                    </select>
+                                    <div className="flex items-center gap-1">
+                                        <select className="w-full border dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg px-2 py-1.5 font-bold text-xs focus:ring-1 focus:ring-blue-500 outline-none" value={salaryDay} onChange={(e) => setSalaryDay(Number(e.target.value))}>
+                                            {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d}>{d}일</option>)}
+                                        </select>
+                                        {onOpenPaydayModal && (
+                                            <button
+                                                type="button"
+                                                onClick={onOpenPaydayModal}
+                                                title="이번 달 월급날 현금흐름(저축·대출·소비) 정산 팝업 열기"
+                                                className="px-2 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-black text-[10px] whitespace-nowrap shadow-xs transition-all cursor-pointer"
+                                            >
+                                                🗓️ 정산
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>

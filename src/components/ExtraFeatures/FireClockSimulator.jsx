@@ -237,7 +237,7 @@ export default function FireClockSimulator({
                             </span>
                         </div>
                         <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white mt-1.5 flex items-center gap-2">
-                            <span>🔥</span> 4단계 은퇴 시계 (절약 · 바리스타 · 표준 · 여유)
+                            <span>🔥</span> FIRE 시계 (절약 · 바리스타 · 표준 · 여유)
                         </h2>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                             단 하나의 목표액이 아닌, 내 목표 생활비와 은퇴 후 부수입에 맞춘 4가지 은퇴 모델별 필요 자금과 달성 시점을 비교합니다.

@@ -1291,8 +1291,13 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
     useEffect(() => {
         if (!isOpen || !asset) return;
         setApiKey(localStorage.getItem('asset_gemini_api_key') || '');
-        // 데이터 초기화
-        const initialItems = Array.isArray(asset.linkedItems) ? asset.linkedItems : [];
+        // 데이터 초기화 (보유 주 수 변경 시 평단가 수정 누락 감지용 초기 스냅샷 저장)
+        const initialItems = (Array.isArray(asset.linkedItems) ? asset.linkedItems : []).map(item => ({
+            ...item,
+            _initShares: Number(item.shares) || 0,
+            _initAvgPrice: Number(item.avgPrice) || 0,
+            _avgPriceConfirmed: false
+        }));
         setBaseAmount(asset.baseAmount !== undefined ? asset.baseAmount : (asset.amount || 0));
         setLinkedItems(initialItems);
         
@@ -1901,12 +1906,21 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
         })();
     };
 
+    const confirmItemAvgPrice = (itemId) => {
+        setLinkedItems(prev => prev.map(li => li.id === itemId ? { ...li, _avgPriceConfirmed: true } : li));
+    };
+
+    const confirmAllAvgPrices = () => {
+        setLinkedItems(prev => prev.map(li => ({ ...li, _avgPriceConfirmed: true })));
+    };
+
     const handleSave = () => {
-        // 소수점 2자리 정밀도 유지하며 저장
+        // 임시 추적용 플래그(_initShares, _initAvgPrice, _avgPriceConfirmed) 제거 후 저장
+        const cleanedItems = linkedItems.map(({ _initShares, _initAvgPrice, _avgPriceConfirmed, ...rest }) => rest);
         onSave({ 
             amount: Math.round(totalValueKRW * 100) / 100, 
             baseAmount: Number(baseAmount) || 0, 
-            linkedItems: linkedItems 
+            linkedItems: cleanedItems 
         });
     };
 
@@ -2525,6 +2539,39 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                 </button>
                             </div>
                         </div>
+
+                        {/* 보유 수량 변경 시 평단가 수정 누락 알림 배너 */}
+                        {(() => {
+                            const unconfirmedItems = sortedItemsWithMeta.filter(item => {
+                                const hasInit = item._initShares !== undefined && Number(item._initShares) > 0;
+                                return hasInit && Number(item.shares) !== Number(item._initShares) && Number(item.avgPrice) === Number(item._initAvgPrice) && !item._avgPriceConfirmed;
+                            });
+                            if (unconfirmedItems.length === 0) return null;
+                            return (
+                                <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in duration-200">
+                                    <div className="flex items-start sm:items-center gap-2 text-xs text-amber-900 dark:text-amber-200">
+                                        <span className="text-base leading-none">⚠️</span>
+                                        <div>
+                                            <span className="font-black">보유 주 수가 변경되었으나 평단가(매입가)가 그대로인 종목이 {unconfirmedItems.length}개 있습니다: </span>
+                                            <span className="font-bold text-amber-700 dark:text-amber-300">
+                                                {unconfirmedItems.map(i => `${i.name}(${i._initShares}→${i.shares}주)`).join(', ')}
+                                            </span>
+                                            <span className="block sm:inline sm:ml-1 text-[11px] text-amber-700/90 dark:text-amber-400 font-semibold">
+                                                추가 매수하셨다면 강조된 매입가를 클릭해 평단가를 수정해 주세요. (일부 매도라면 [유지 ✓] 클릭)
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={confirmAllAvgPrices}
+                                        className="px-2.5 py-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black whitespace-nowrap self-end sm:self-center cursor-pointer transition-colors"
+                                    >
+                                        모두 현재 평단 유지 ✓
+                                    </button>
+                                </div>
+                            );
+                        })()}
+
                         {/* 데스크톱 전용 테이블 (md 이상) */}
                         <div className="hidden md:block overflow-x-auto">
                             <table className="w-full text-left border-separate border-spacing-y-2 min-w-[600px]">
@@ -2560,13 +2607,29 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                         const isTossConfigured = !!localStorage.getItem('toss_client_id') && !!localStorage.getItem('toss_client_secret');
                                         const profitColor = isProfit ? 'text-red-500 dark:text-red-400' : 'text-blue-500 dark:text-blue-400';
                                         const safeFxRate = fxRate || 1300;
+                                        const hasInitBaseline = item._initShares !== undefined && Number(item._initShares) > 0;
+                                        const isSharesChanged = hasInitBaseline && Number(item.shares) !== Number(item._initShares);
+                                        const isAvgPriceUnchanged = hasInitBaseline && Number(item.avgPrice) === Number(item._initAvgPrice);
+                                        const needsAvgPriceCheck = isSharesChanged && isAvgPriceUnchanged && !item._avgPriceConfirmed;
+                                        const isAvgPriceUpdated = isSharesChanged && (!isAvgPriceUnchanged || item._avgPriceConfirmed);
                                         
                                         return (
                                         <React.Fragment key={item.id}>
-                                            <tr className="bg-slate-50 dark:bg-slate-900/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10 transition-colors group">
+                                            <tr className={`${
+                                                needsAvgPriceCheck
+                                                    ? 'bg-amber-50/90 dark:bg-amber-950/30 ring-1 ring-amber-400 dark:ring-amber-600/80'
+                                                    : 'bg-slate-50 dark:bg-slate-900/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10'
+                                            } transition-colors group`}>
                                                 <td className="py-3 pl-4 rounded-l-2xl">
                                                     <div className="flex flex-col">
-                                                        <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[120px]" title={item.name}>{item.name}</div>
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <div className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[120px]" title={item.name}>{item.name}</div>
+                                                            {needsAvgPriceCheck && (
+                                                                <span className="px-1.5 py-0.5 rounded bg-amber-200/80 dark:bg-amber-900/70 text-amber-900 dark:text-amber-200 text-[9px] font-black whitespace-nowrap">
+                                                                    ⚠️ 수량변경 ({item._initShares}→{item.shares}주)
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         {editingCell && editingCell.id === item.id && editingCell.field === 'ticker' ? (
                                                             <input 
                                                                 type="text" 
@@ -2617,13 +2680,13 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                                 autoFocus
                                                                 onBlur={(e) => {
                                                                     const val = parseFloat(e.target.value) || 0;
-                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val, _avgPriceConfirmed: false } : li));
                                                                     setEditingCell(null);
                                                                 }}
                                                                 onKeyDown={(e) => {
                                                                     if (e.key === 'Enter') {
                                                                         const val = parseFloat(e.target.value) || 0;
-                                                                        setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
+                                                                        setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val, _avgPriceConfirmed: false } : li));
                                                                         setEditingCell(null);
                                                                     }
                                                                 }}
@@ -2642,40 +2705,71 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                         {editingCell && editingCell.id === item.id && editingCell.field === 'avgPrice' ? (
                                                             <input 
                                                                 type="number" 
-                                                                className="w-24 bg-white dark:bg-slate-800 border border-indigo-400 rounded px-1.5 py-0.5 text-[10px] font-bold focus:outline-none"
+                                                                className="w-24 bg-white dark:bg-slate-800 border-2 border-amber-400 rounded px-1.5 py-0.5 text-[10px] font-bold focus:outline-none"
                                                                 defaultValue={item.avgPrice}
                                                                 autoFocus
                                                                 onBlur={(e) => {
                                                                     const val = parseFloat(e.target.value) || 0;
-                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val, _avgPriceConfirmed: true } : li));
                                                                     setEditingCell(null);
                                                                 }}
                                                                 onKeyDown={(e) => {
                                                                     if (e.key === 'Enter') {
                                                                         const val = parseFloat(e.target.value) || 0;
-                                                                        setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
+                                                                        setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val, _avgPriceConfirmed: true } : li));
                                                                         setEditingCell(null);
                                                                     }
                                                                 }}
                                                             />
                                                         ) : (
-                                                            <span 
-                                                                onClick={() => setEditingCell({ id: item.id, field: 'avgPrice' })} 
-                                                                className="text-[10px] text-slate-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1 w-fit block"
-                                                                title="클릭하여 매입단가 수정"
-                                                            >
-                                                                {(() => {
-                                                                    // 자동시세는 항상 currency='KRW'로 저장 → ticker 패턴으로 해외주식 여부 판별
-                                                                    const isOverseas = /^[A-Za-z]/.test(item.ticker || '') && !/\.KS$/i.test(item.ticker || '');
-                                                                    const krwAvg = Math.round(Number(item.avgPrice) || 0);
-                                                                    if (currencyMode === 'KRW_ONLY' || !isOverseas) {
-                                                                        return `₩${krwAvg.toLocaleString()}`;
-                                                                    }
-                                                                    // KRW → USD 역산
-                                                                    const usdAvg = safeFxRate > 0 ? (krwAvg / safeFxRate) : 0;
-                                                                    return `₩${krwAvg.toLocaleString()} ($${usdAvg.toLocaleString('en-US', { maximumFractionDigits: 2 })})`;
-                                                                })()} ✏️
-                                                            </span>
+                                                            <div className="flex flex-wrap items-center gap-1">
+                                                                <span 
+                                                                    onClick={() => setEditingCell({ id: item.id, field: 'avgPrice' })} 
+                                                                    className={`text-[10px] cursor-pointer rounded px-1.5 py-0.5 w-fit block transition-all ${
+                                                                        needsAvgPriceCheck
+                                                                            ? 'bg-amber-100 dark:bg-amber-900/70 text-amber-900 dark:text-amber-100 ring-2 ring-amber-400 font-black animate-pulse'
+                                                                            : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                                                    }`}
+                                                                    title="클릭하여 매입단가(평단가) 수정"
+                                                                >
+                                                                    {(() => {
+                                                                        // 자동시세는 항상 currency='KRW'로 저장 → ticker 패턴으로 해외주식 여부 판별
+                                                                        const isOverseas = /^[A-Za-z]/.test(item.ticker || '') && !/\.KS$/i.test(item.ticker || '');
+                                                                        const krwAvg = Math.round(Number(item.avgPrice) || 0);
+                                                                        if (currencyMode === 'KRW_ONLY' || !isOverseas) {
+                                                                            return `₩${krwAvg.toLocaleString()}`;
+                                                                        }
+                                                                        // KRW → USD 역산
+                                                                        const usdAvg = safeFxRate > 0 ? (krwAvg / safeFxRate) : 0;
+                                                                        return `₩${krwAvg.toLocaleString()} ($${usdAvg.toLocaleString('en-US', { maximumFractionDigits: 2 })})`;
+                                                                    })()} ✏️
+                                                                </span>
+                                                                {needsAvgPriceCheck && (
+                                                                    <div className="flex items-center gap-1">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setEditingCell({ id: item.id, field: 'avgPrice' })}
+                                                                            className="px-1.5 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black cursor-pointer"
+                                                                            title="새 평단가 입력"
+                                                                        >
+                                                                            평단수정
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => confirmItemAvgPrice(item.id)}
+                                                                            className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 text-[9px] font-black cursor-pointer"
+                                                                            title="매도 등으로 평단가가 동일할 때 클릭"
+                                                                        >
+                                                                            유지✓
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                                {isAvgPriceUpdated && (
+                                                                    <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400">
+                                                                        ✓평단확인
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </td>
@@ -2805,9 +2899,18 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                 const profitColor = isProfit ? 'text-red-500 dark:text-red-400' : 'text-blue-500 dark:text-blue-400';
                                 const safeFxRate = fxRate || 1300;
                                 const isOverseas = /^[A-Za-z]/.test(item.ticker || '') && !/\.KS$/i.test(item.ticker || '');
+                                const hasInitBaseline = item._initShares !== undefined && Number(item._initShares) > 0;
+                                const isSharesChanged = hasInitBaseline && Number(item.shares) !== Number(item._initShares);
+                                const isAvgPriceUnchanged = hasInitBaseline && Number(item.avgPrice) === Number(item._initAvgPrice);
+                                const needsAvgPriceCheck = isSharesChanged && isAvgPriceUnchanged && !item._avgPriceConfirmed;
+                                const isAvgPriceUpdated = isSharesChanged && (!isAvgPriceUnchanged || item._avgPriceConfirmed);
 
                                 return (
-                                    <div key={item.id} className="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-2.5">
+                                    <div key={item.id} className={`p-3.5 rounded-2xl border shadow-sm space-y-2.5 ${
+                                        needsAvgPriceCheck
+                                            ? 'bg-amber-50/90 dark:bg-amber-950/30 border-amber-400 dark:border-amber-600/80 ring-1 ring-amber-400/50'
+                                            : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200/80 dark:border-slate-800'
+                                    }`}>
                                         {/* 상단: 종목명, 티커, 평가금액 & 손익 */}
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="flex-1 min-w-0">
@@ -2816,6 +2919,11 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                     <span className="text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded">
                                                         {item.ticker || '티커 없음'}
                                                     </span>
+                                                    {needsAvgPriceCheck && (
+                                                        <span className="px-1.5 py-0.5 rounded bg-amber-200/80 dark:bg-amber-900/70 text-amber-900 dark:text-amber-200 text-[9px] font-black">
+                                                            ⚠️ 수량변경 ({item._initShares}→{item.shares}주)
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div className="flex items-center gap-2 mt-1">
                                                     {item.autoUpdate === false || !isTossConfigured ? (
@@ -2843,8 +2951,26 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                         {/* 중단: 수량/매입가 및 현재가 그리드 */}
                                         <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800 text-xs">
                                             {/* 수량 및 매입단가 */}
-                                            <div className="bg-white dark:bg-slate-800/80 p-2 rounded-xl border border-slate-100 dark:border-slate-700/60">
-                                                <div className="text-[9px] font-black text-slate-400 uppercase mb-0.5">수량 / 매입단가</div>
+                                            <div className={`p-2 rounded-xl border ${
+                                                needsAvgPriceCheck
+                                                    ? 'bg-amber-100/70 dark:bg-amber-900/40 border-amber-400 dark:border-amber-600'
+                                                    : 'bg-white dark:bg-slate-800/80 border-slate-100 dark:border-slate-700/60'
+                                            }`}>
+                                                <div className="flex items-center justify-between mb-0.5">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase">수량 / 매입단가</span>
+                                                    {needsAvgPriceCheck && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => confirmItemAvgPrice(item.id)}
+                                                            className="px-1.5 py-0.2 rounded bg-amber-600 text-white text-[8px] font-black"
+                                                        >
+                                                            평단유지✓
+                                                        </button>
+                                                    )}
+                                                    {isAvgPriceUpdated && (
+                                                        <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400">✓확인됨</span>
+                                                    )}
+                                                </div>
                                                 <div className="flex items-center justify-between">
                                                     {editingCell && editingCell.id === item.id && editingCell.field === 'shares' ? (
                                                         <input 
@@ -2854,13 +2980,13 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                             autoFocus
                                                             onBlur={(e) => {
                                                                 const val = parseFloat(e.target.value) || 0;
-                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
+                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val, _avgPriceConfirmed: false } : li));
                                                                 setEditingCell(null);
                                                             }}
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter') {
                                                                     const val = parseFloat(e.target.value) || 0;
-                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val } : li));
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, shares: val, _avgPriceConfirmed: false } : li));
                                                                     setEditingCell(null);
                                                                 }
                                                             }}
@@ -2879,19 +3005,23 @@ window.StockLinkModal = ({ isOpen, onClose, asset, onSave }) => {
                                                             autoFocus
                                                             onBlur={(e) => {
                                                                 const val = parseFloat(e.target.value) || 0;
-                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
+                                                                setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val, _avgPriceConfirmed: true } : li));
                                                                 setEditingCell(null);
                                                             }}
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter') {
                                                                     const val = parseFloat(e.target.value) || 0;
-                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val } : li));
+                                                                    setLinkedItems(prev => prev.map(li => li.id === item.id ? { ...li, avgPrice: val, _avgPriceConfirmed: true } : li));
                                                                     setEditingCell(null);
                                                                 }
                                                             }}
                                                         />
                                                     ) : (
-                                                        <span onClick={() => setEditingCell({ id: item.id, field: 'avgPrice' })} className="text-[10px] text-slate-500 font-mono cursor-pointer">
+                                                        <span onClick={() => setEditingCell({ id: item.id, field: 'avgPrice' })} className={`text-[10px] font-mono cursor-pointer ${
+                                                            needsAvgPriceCheck
+                                                                ? 'text-amber-900 dark:text-amber-200 font-black underline decoration-amber-500 animate-pulse'
+                                                                : 'text-slate-500'
+                                                        }`}>
                                                             {(() => {
                                                                 const krwAvg = Math.round(Number(item.avgPrice) || 0);
                                                                 if (currencyMode === 'KRW_ONLY' || !isOverseas) return `₩${krwAvg.toLocaleString()}`;
