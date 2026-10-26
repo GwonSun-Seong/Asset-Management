@@ -3521,12 +3521,13 @@ window.DataExportImportModal = ({ isOpen, onClose, onImport, currentData, initia
 
 window.GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
 window.GEMINI_IMAGE_MODELS = ['gemini-3.1-flash-image', 'gemini-3.8-flash', 'gemini-3.6-flash'];
-window.streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) => {
+window.streamGeminiResponse = async (url, body, onUpdate, onComplete, onError, signal = undefined) => {
     try {
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal
         });
 
         if (!response.ok) {
@@ -3566,6 +3567,7 @@ window.streamGeminiResponse = async (url, body, onUpdate, onComplete, onError) =
         }
         onComplete(accumulatedText);
     } catch (err) {
+        if (err?.name === 'AbortError') return;
         onError(err);
     }
 };
@@ -3586,7 +3588,26 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
     const [proposal, setProposal] = useState(null);
     const messagesEndRef = useRef(null);
 
+    // 응답 지연 감지 및 빠른 응답 전환 상태
+    const [elapsedWaitSec, setElapsedWaitSec] = useState(0);
+    const [hasReceivedFirstChunk, setHasReceivedFirstChunk] = useState(false);
+    const [canManualSwitch, setCanManualSwitch] = useState(false);
+    const abortControllerRef = useRef(null);
+    const manualSwitchFnRef = useRef(null);
+
     const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+
+    // 로딩 중 응답 지연 타이머 (1초 단위 내부 측정만 수행, 임의 자동 모델 전환 없음)
+    useEffect(() => {
+        if (!loading || hasReceivedFirstChunk) {
+            setElapsedWaitSec(0);
+            return;
+        }
+        const timer = setInterval(() => {
+            setElapsedWaitSec(prev => prev + 1);
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [loading, hasReceivedFirstChunk]);
 
     // 모달이 열리면 웰컴 메시지 주입
     useEffect(() => {
@@ -3603,6 +3624,8 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                 ]);
             }
             setTimeout(scrollToBottom, 100);
+        } else if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
         }
     }, [isOpen]);
 
@@ -3632,31 +3655,63 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
 
     const streamGeminiWithFallback = async (urlGenerator, body, onUpdate, onComplete, onError) => {
         const models = window.GEMINI_MODELS || ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+        setHasReceivedFirstChunk(false);
+        setElapsedWaitSec(0);
+        setCanManualSwitch(true);
         
-        const tryModel = (index) => {
+        const tryModel = (index, isUserManualSwitch = false) => {
             if (index >= models.length) {
-                onError(new Error('모든 AI 모델(3.8 Flash, 3.6 Flash, 3.5 Lite) 호출에 실패했습니다. API 키나 할당량을 확인해주세요.'));
+                manualSwitchFnRef.current = null;
+                setCanManualSwitch(false);
+                onError(new Error('AI 응답 호출에 실패했습니다. API 키나 할당량을 확인해주세요.'));
                 return;
             }
             
             const currentModel = models[index];
+            setElapsedWaitSec(0);
+            setHasReceivedFirstChunk(false);
+
+            const controller = new AbortController();
+            abortControllerRef.current = controller;
+
+            // 사용자가 직접 '빠른 응답 전환' 버튼을 클릭했을 때만 1회 전환 허용 (타이머 기반 임의 전환 없음)
+            if (index === 0 && !isUserManualSwitch && models.length > 1) {
+                setCanManualSwitch(true);
+                manualSwitchFnRef.current = () => {
+                    manualSwitchFnRef.current = null;
+                    setCanManualSwitch(false);
+                    controller.abort();
+                    tryModel(1, true);
+                };
+            } else {
+                manualSwitchFnRef.current = null;
+                setCanManualSwitch(false);
+            }
+
             const url = urlGenerator(currentModel);
             
             streamGeminiResponse(
                 url,
                 body,
-                onUpdate,
+                (chunkText) => {
+                    setHasReceivedFirstChunk(true);
+                    setCanManualSwitch(false);
+                    onUpdate(chunkText);
+                },
                 (finalText) => {
+                    manualSwitchFnRef.current = null;
+                    setCanManualSwitch(false);
                     onComplete(finalText);
                 },
                 (err) => {
                     console.warn(`⚠️ Model ${currentModel} failed. Trying next fallback... Error: ${err.message}`);
-                    tryModel(index + 1);
-                }
+                    tryModel(index + 1, isUserManualSwitch);
+                },
+                controller.signal
             );
         };
 
-        tryModel(0);
+        tryModel(0, false);
     };
 
     const handleAnalyze = async () => {
@@ -4011,12 +4066,28 @@ window.AIAnalysisModal = ({ isOpen, onClose, appData, calculation, assetHistory,
                         ))}
                         
                         {loading && (
-                            <div className="flex justify-start">
+                            <div className="flex flex-col items-start gap-2">
                                 <div className="bg-white dark:bg-gray-900 border dark:border-gray-800 rounded-2xl rounded-tl-none p-3.5 flex items-center gap-1.5 shadow-sm">
                                     <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce"></div>
                                     <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce delay-75"></div>
                                     <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce delay-150"></div>
                                 </div>
+
+                                {!hasReceivedFirstChunk && elapsedWaitSec >= 8 && canManualSwitch && (
+                                    <div className="w-full max-w-[90%] p-3.5 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/80 shadow-sm flex flex-wrap items-center justify-between gap-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                                        <div className="text-xs font-bold text-amber-900 dark:text-amber-200 leading-snug">
+                                            ⏱️ 답변 생성이 평소보다 조금 지연되고 있습니다.
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => manualSwitchFnRef.current && manualSwitchFnRef.current()}
+                                            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-black shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                                        >
+                                            <span>⚡</span>
+                                            <span>빠른 응답 모드로 즉시 다시 시도하기</span>
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
