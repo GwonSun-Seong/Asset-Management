@@ -657,7 +657,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                             <p className="text-white/80 text-sm mt-1">비정기적인 {isIncome ? '수입' : '지출'} 이벤트를 관리하세요.</p>
                         </div>
                         <div className="text-right">
-                            <div className="text-3xl font-bold">{formatNumber(total)}만원</div>
+                            <div className="text-3xl font-bold">{formatNumber(total, displayMode)}만원</div>
                             <div className="text-white/80 text-sm">총 {events.length}건 예정</div>
                         </div>
                     </div>
@@ -1180,7 +1180,10 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                 const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
                 if (appData.lastPaydaySettledYm === currentYm) return;
 
+                // [가드] 온보딩 가이드 대상(최초 접속자)이거나 현재 가이드 실행 중이면 자동 팝업 절대 차단
                 try {
+                    const guideCompleted = localStorage.getItem('asset_planner_guide_completed');
+                    if (!guideCompleted || isGuideOpen) return;
                     if (sessionStorage.getItem(`paydayPromptDismissed_${currentYm}`) === 'true') return;
                 } catch (e) {}
 
@@ -1188,7 +1191,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                     setIsPaydayModalOpen(true);
                 }, 600);
                 return () => clearTimeout(timer);
-            }, [isLoading, isInitialized, isDemoMode, editingPhase, appData?.salaryDay, appData?.lastPaydaySettledYm]);
+            }, [isLoading, isInitialized, isDemoMode, editingPhase, isGuideOpen, appData?.salaryDay, appData?.lastPaydaySettledYm]);
 
             // 🌐 [투자자산 한눈에보기 필터 및 인라인 수정 상태]
             const [assetCategoryFilter, setAssetCategoryFilter] = useState('ALL'); // 'ALL' | '지수' | '개별주' | '코인' | '원화' | '달러'
@@ -1872,6 +1875,12 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                 const guideCompleted = localStorage.getItem('asset_planner_guide_completed');
                 if (!isLoading && !guideCompleted) {
                     setIsGuideOpen(true);
+                    // 최초 가이드 대상자는 이번 세션에서 월급날 정산 팝업이 뜨지 않도록 안전하게 사전 차단
+                    try {
+                        const now = new Date();
+                        const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                        sessionStorage.setItem(`paydayPromptDismissed_${currentYm}`, 'true');
+                    } catch (e) {}
                 }
             }, [isLoading]);
 
@@ -4023,13 +4032,13 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                     const val = ctx.parsed || 0;
                                     const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
                                     const pct = ((val / total) * 100).toFixed(1);
-                                    return ` ${label}: ${Math.round(val).toLocaleString()}만원 (${pct}%)`;
+                                    return ` ${label}: ${displayMode === 'percent' ? '***' : `${Math.round(val).toLocaleString()}만원`} (${pct}%)`;
                                 }
                             }
                         }
                     }
                 };
-            }, [darkMode]);
+            }, [darkMode, displayMode]);
 
             const chartBorderColor = darkMode ? '#1e293b' : '#ffffff';
 
@@ -4108,7 +4117,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                 };
                     const timerId = setTimeout(renderCurrentPie, 150);
                 return () => clearTimeout(timerId);
-                }, [currentDrillDown, currentSectorTotals, filteredKeys, assets, excludedAssetIds, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting]);
+                }, [currentDrillDown, currentSectorTotals, filteredKeys, assets, excludedAssetIds, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting, displayMode]);
 
             useEffect(() => {
                 if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
@@ -4400,7 +4409,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
 
                 const timerId = setTimeout(renderInvestmentDonut, 50);
                 return () => clearTimeout(timerId);
-            }, [investmentDrillDown, includeCashInTargetSectors, appData, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting]);
+            }, [investmentDrillDown, includeCashInTargetSectors, appData, darkMode, isLoading, panelCollapseState['charts'], activeTab, isExporting, displayMode]);
 
             useEffect(() => {
                 if (isLoading || panelCollapseState['charts'] || typeof Chart === 'undefined') return;
@@ -5940,6 +5949,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                             const totalPortfolioAssetsManwon = combinedList.reduce((sum, i) => sum + i.totalValueManwon, 0);
 
                             const formattedTotalText = (() => {
+                                if (displayMode === 'percent') return '***';
                                 if (totalPortfolioAssetsManwon >= 10000) {
                                     const eok = Math.floor(totalPortfolioAssetsManwon / 10000);
                                     const man = Math.round(totalPortfolioAssetsManwon % 10000);
@@ -8377,14 +8387,14 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                     ) : calculation.rebalanceInfo.budgetLimited ? (
                                         <span>
                                             {calculation.rebalanceInfo.hasOverweightSurplus ? (
-                                                <>기존 비중 초과 자산이 있거나 월 가용 예산(월 {formatNumber(calculation.rebalanceInfo.disposableIncome ?? 0)}만원) 대비 필요 납입액(월 {formatNumber(Math.round(calculation.rebalanceInfo.monthlyNeeded ?? 0))}만원)이 초과되어 <strong>{calculation.rebalanceInfo.targetMonths}개월 내 순수 적립만으로는 달성이 어렵습니다.</strong> 현재 결손율에 맞춰 월 가용 예산 내 비례 배분 수치를 제안합니다.</>
+                                                <>기존 비중 초과 자산이 있거나 월 가용 예산(월 {formatNumber(calculation.rebalanceInfo.disposableIncome ?? 0, displayMode)}만원) 대비 필요 납입액(월 {formatNumber(Math.round(calculation.rebalanceInfo.monthlyNeeded ?? 0), displayMode)}만원)이 초과되어 <strong>{calculation.rebalanceInfo.targetMonths}개월 내 순수 적립만으로는 달성이 어렵습니다.</strong> 현재 결손율에 맞춰 월 가용 예산 내 비례 배분 수치를 제안합니다.</>
                                             ) : (
-                                                <>예산 제약으로 <strong>{calculation.rebalanceInfo.targetMonths}개월 내 달성이 어렵습니다.</strong> (월 필요: {formatNumber(Math.round(calculation.rebalanceInfo.monthlyNeeded ?? 0))}만원 / 가용: {formatNumber(calculation.rebalanceInfo.disposableIncome ?? 0)}만원). 결손율에 따라 비례 배분된 수치를 제안합니다.</>
+                                                <>예산 제약으로 <strong>{calculation.rebalanceInfo.targetMonths}개월 내 달성이 어렵습니다.</strong> (월 필요: {formatNumber(Math.round(calculation.rebalanceInfo.monthlyNeeded ?? 0), displayMode)}만원 / 가용: {formatNumber(calculation.rebalanceInfo.disposableIncome ?? 0, displayMode)}만원). 결손율에 따라 비례 배분된 수치를 제안합니다.</>
                                             )}
                                         </span>
                                     ) : (
                                         <span>
-                                            현재 월 가용 예산(월 {formatNumber(calculation.rebalanceInfo.disposableIncome ?? 0)}만원)으로 <strong>{calculation.rebalanceInfo.targetMonths}개월 내 목표 비중 달성이 가능합니다.</strong> (월 권장 총 납입: {formatNumber(Math.round(calculation.rebalanceInfo.monthlyNeeded ?? 0))}만원)
+                                            현재 월 가용 예산(월 {formatNumber(calculation.rebalanceInfo.disposableIncome ?? 0, displayMode)}만원)으로 <strong>{calculation.rebalanceInfo.targetMonths}개월 내 목표 비중 달성이 가능합니다.</strong> (월 권장 총 납입: {formatNumber(Math.round(calculation.rebalanceInfo.monthlyNeeded ?? 0), displayMode)}만원)
                                         </span>
                                     )}
                                 </div>
@@ -8757,10 +8767,10 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                             {/* 2행: 총액(비중)과 권장 납입액 */}
                                             <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-sm text-white/95 font-semibold flex-wrap pl-11 sm:pl-0">
                                                 <span className="hidden sm:inline text-white/40 select-none">|</span>
-                                                <span>총 {formatNumber(currentSectorTotals[sectorKey]?.amount || 0)}만원 <span className="text-white/80 font-normal text-[10px] sm:text-xs">({formatPercent(currentSectorTotals[sectorKey]?.percentage || 0)}%)</span></span>
+                                                <span>총 {formatNumber(currentSectorTotals[sectorKey]?.amount || 0, displayMode)}만원 <span className="text-white/80 font-normal text-[10px] sm:text-xs">({formatPercent(currentSectorTotals[sectorKey]?.percentage || 0)}%)</span></span>
                                                 {!isLoan && calculation.rebalanceInfo?.recs[sectorKey] > 0 && (
                                                     <span className="bg-white/25 backdrop-blur-xs px-1.5 sm:px-2 py-0.5 rounded-lg text-[10px] sm:text-xs font-bold border border-white/20 shadow-2xs whitespace-nowrap">
-                                                        권장 납입: {formatNumber(calculation.rebalanceInfo.recs[sectorKey])}만
+                                                        권장 납입: {formatNumber(calculation.rebalanceInfo.recs[sectorKey], displayMode)}만
                                                     </span>
                                                 )}
                                             </div>
@@ -8916,7 +8926,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                                                                         : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500'
                                                                                 }`}>
                                                                                     <span className="text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-500 font-medium select-none">권장</span>
-                                                                                    <span className="font-mono font-black">{itemRec > 0 ? `+${Math.round(itemRec).toLocaleString()}만` : '0만'}</span>
+                                                                                    <span className="font-mono font-black">{itemRec > 0 ? (displayMode === 'percent' ? '***만' : `+${Math.round(itemRec).toLocaleString()}만`) : '0만'}</span>
                                                                                 </div>
                                                                             )}
 
@@ -8944,7 +8954,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                                                                 <>
                                                                                     <span className="text-amber-600 dark:text-amber-400 font-bold">금리 {asset.rate || 0}%</span>
                                                                                     <span className="text-slate-300 dark:text-slate-600">·</span>
-                                                                                    <span>월상환 {formatNumber(asset.monthlyContrib || 0)}만</span>
+                                                                                    <span>월상환 {formatNumber(asset.monthlyContrib || 0, displayMode)}만</span>
                                                                                     {asset.maturityMonth && (
                                                                                         <>
                                                                                             <span className="text-slate-300 dark:text-slate-600">·</span>
@@ -8956,7 +8966,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                                                                 <>
                                                                                     <span className="text-blue-600 dark:text-blue-400 font-bold">수익률 {asset.rate || 0}%</span>
                                                                                     <span className="text-slate-300 dark:text-slate-600">·</span>
-                                                                                    <span>월납입 {formatNumber(asset.monthlyContrib || 0)}만</span>
+                                                                                    <span>월납입 {formatNumber(asset.monthlyContrib || 0, displayMode)}만</span>
                                                                                     {Number(asset.feeRate || 0) > 0 && (
                                                                                         <>
                                                                                             <span className="text-slate-300 dark:text-slate-600">·</span>
@@ -9291,7 +9301,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
 
                                     {/* 총액 및 소득 대비 비중 */}
                                     <div className="flex items-center gap-2 text-xs sm:text-sm text-white/95 font-semibold flex-wrap">
-                                        <span>총 {formatNumber(totalMonthly)}만원 <span className="text-white/80 font-normal text-xs">(연 약 {formatNumber(totalAnnual)}만원)</span></span>
+                                        <span>총 {formatNumber(totalMonthly, displayMode)}만원 <span className="text-white/80 font-normal text-xs">(연 약 {formatNumber(totalAnnual, displayMode)}만원)</span></span>
                                         {Number(monthlySalary || 0) > 0 && (
                                             <span className="bg-white/25 backdrop-blur-xs px-2 py-0.5 rounded-lg text-xs font-bold border border-white/20 shadow-2xs whitespace-nowrap">
                                                 월 소득 대비 {((totalMonthly / monthlySalary) * 100).toFixed(1)}%
@@ -9729,14 +9739,14 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                             <div className="w-8 h-8 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center text-lg mb-2">😴</div>
                                             <div>
                                                 <div className="text-[10px] font-bold text-slate-400 mb-0.5">수면 중 소득 (7h)</div>
-                                                <div className={`text-lg font-black ${sleepIncome >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-500'}`}>{Math.round(sleepIncome).toLocaleString()}원</div>
+                                                <div className={`text-lg font-black ${sleepIncome >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-500'}`}>{displayMode === 'percent' ? '***원' : `${Math.round(sleepIncome).toLocaleString()}원`}</div>
                                             </div>
                                         </div>
                                         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col justify-between hover:border-blue-400 transition-all">
                                             <div className="w-8 h-8 bg-blue-50 dark:bg-blue-900/30 rounded-lg flex items-center justify-center text-lg mb-2">💼</div>
                                             <div>
                                                 <div className="text-[10px] font-bold text-slate-400 mb-0.5">내 자산의 시급</div>
-                                                <div className={`text-lg font-black ${hourlyIncome >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-rose-500'}`}>{Math.round(hourlyIncome).toLocaleString()}원</div>
+                                                <div className={`text-lg font-black ${hourlyIncome >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-rose-500'}`}>{displayMode === 'percent' ? '***원' : `${Math.round(hourlyIncome).toLocaleString()}원`}</div>
                                             </div>
                                         </div>
                                         {funItems.map((item, idx) => (
@@ -9769,7 +9779,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                                     <span className="text-xs">{m.icon}</span>
                                                     <span className="text-[11px] font-bold text-slate-500">{m.label}</span>
                                                 </div>
-                                                <span className="text-sm font-black text-slate-800 dark:text-slate-200 tabular-nums">{m.val.toLocaleString(undefined, {maximumFractionDigits: m.label === '초당' ? 2 : 0})}원</span>
+                                                <span className="text-sm font-black text-slate-800 dark:text-slate-200 tabular-nums">{displayMode === 'percent' ? '***원' : `${m.val.toLocaleString(undefined, {maximumFractionDigits: m.label === '초당' ? 2 : 0})}원`}</span>
                                             </div>
                                         ));
                                     })()}
@@ -9807,8 +9817,8 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                     </div>
                                     
                                     <div className="text-[11px] text-slate-400 dark:text-slate-500 font-medium flex justify-between">
-                                        <span>월 고정 소비금: <strong>{totalMonthlyExpenses.toLocaleString()}만원</strong></span>
-                                        <span>월 자본 소득: <strong>{monthlyCapitalIncome.toFixed(1)}만원</strong></span>
+                                        <span>월 고정 소비금: <strong>{formatNumber(totalMonthlyExpenses, displayMode)}만원</strong></span>
+                                        <span>월 자본 소득: <strong>{displayMode === 'percent' ? '***' : `${monthlyCapitalIncome.toFixed(1)}만원`}</strong></span>
                                     </div>
                                 </div>
 
@@ -9834,12 +9844,12 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                     {/* 목표 자본소득 인라인 수정 폼 */}
                                     <div className="text-[11px] font-medium flex justify-between items-center h-5">
                                         <div className="text-slate-400 dark:text-slate-500">
-                                            월 자본 소득: <strong>{monthlyCapitalIncome.toFixed(1)}만원</strong>
+                                            월 자본 소득: <strong>{displayMode === 'percent' ? '***' : `${monthlyCapitalIncome.toFixed(1)}만원`}</strong>
                                         </div>
                                         
                                         {!isEditingFiTarget ? (
                                             <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
-                                                <span>목표: <strong>{targetCapitalIncome.toLocaleString()}만원</strong></span>
+                                                <span>목표: <strong>{formatNumber(targetCapitalIncome, displayMode)}만원</strong></span>
                                                 <button 
                                                     onClick={() => {
                                                         setTempFiTarget(String(targetCapitalIncome));
@@ -10993,6 +11003,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                         onReset={handlePasswordReset}
                     />}
                     {window.SettingsModal && <window.SettingsModal 
+                        onRestartGuide={() => { setIsSettingsModalOpen(false); setIsGuideOpen(true); }}
                         isOpen={isSettingsModalOpen} 
                         onClose={() => setIsSettingsModalOpen(false)}
                         encryptionMode={encryptionMode}

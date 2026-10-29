@@ -524,21 +524,24 @@ window.OnboardingGuide = ({ isOpen, onClose }) => {
                 const el = document.getElementById(targetId);
                 if (!el) return null;
 
+                const isTopElement = targetId === 'app-title' || targetId === 'mobile-menu-trigger' || targetId === 'header-actions';
+
                 return {
                     element: `#${targetId}`,
                     popover: {
                         title: step.title,
                         description: step.content,
-                        side: "bottom",
+                        side: isMobile ? (isTopElement ? 'bottom' : 'top') : (isTopElement ? 'bottom' : 'bottom'),
                         align: 'start'
                     }
                 };
             }).filter(Boolean); // 존재하지 않는 요소의 단계는 제외
 
             const driverObj = window.driver.js.driver({
-                steps: steps, // [수정] setSteps 대신 설정 객체에 직접 주입
+                steps: steps,
                 showProgress: true,
                 animate: true,
+                smoothScroll: true,
                 allowClose: true,
                 doneBtnText: '시작하기',
                 nextBtnText: '다음',
@@ -556,8 +559,8 @@ window.OnboardingGuide = ({ isOpen, onClose }) => {
     return null; // Driver.js가 DOM을 직접 제어하므로 React 렌더링은 불필요
 };
 
-window.SettingsModal = ({ 
-    isOpen, onClose, encryptionMode, onModeChange, 
+window.SettingsModal = ({
+    isOpen, onClose, encryptionMode, onRestartGuide, onModeChange, 
     darkMode, onThemeToggle, logoutBehavior, onLogoutBehaviorChange,
     onSyncNow, onLogout,
     dataConsent, onToggleConsent,
@@ -1109,6 +1112,29 @@ window.SettingsModal = ({
                                             />
                                         </div>
                                     </div>
+
+                                    {/* 온보딩 투어 다시보기 카드 */}
+                                    {onRestartGuide && (
+                                        <div className="bg-gray-50/70 dark:bg-gray-900/40 p-4 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 flex justify-between items-center">
+                                            <div>
+                                                <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                                                    <span>🧭</span> 튜토리얼 안내
+                                                </h4>
+                                                <span className="text-sm font-medium dark:text-white block">온보딩 가이드 다시보기</span>
+                                                <span className="text-[11px] text-gray-500 block mt-0.5">대시보드 주요 기능과 사용법을 안내하는 튜토리얼을 다시 시작합니다.</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    onClose();
+                                                    setTimeout(onRestartGuide, 200);
+                                                }}
+                                                className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 font-bold text-xs rounded-xl border border-indigo-200 dark:border-indigo-800 transition-colors shrink-0 ml-3"
+                                            >
+                                                가이드 시작
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

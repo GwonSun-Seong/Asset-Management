@@ -43,16 +43,51 @@ const sectorInfo = {
     window.getVaultConfig = (key) => _VAULT[key];
 })();
 
-// 온보딩 가이드 단계 정의
+// 온보딩 가이드 단계 정의 (최신 기능: 실시간 주식 연동, AI 비서, 스마트 리밸런싱, 프라이빗 모드 등 완벽 반영)
 window.ONBOARDING_STEPS = [
-    { id: 'header-actions', title: '기본값 및 시나리오 관리', content: '설정한 데이터를 저장하거나 불러오고, PDF로 내보낼 수 있습니다.', isPro: true },
-    { id: 'summary', title: '요약 및 설정', content: '현재 자산 상황과 물가 상승을 고려한 실질 가치를 한눈에 파악할 수 있습니다.', isPro: true },
-    { id: 'charts', title: "포트폴리오", content: '자산 구성과 미래 성장 곡선을 시각적 그래프로 확인할 수 있습니다.' },
-    { id: 'budget', title: '월납입 예산 관리', content: '월급과 지출을 기반으로 매달 저축 가능한 금액을 계산하고 관리할 수 있습니다.' },
-    { id: 'rebalance', title: '리밸런싱', content: '목표 비중과 현재 비중의 차이를 체크하여 목표한 최적의 비중을 유지할 수 있습니다.', isPro: true },
-    { id: 'assets', title: '자산 상세 입력', content: '주식, 통장 등 보유한 모든 자산 항목을 섹터별로 상세히 기록할 수 있습니다.' },
-    { id: 'events', title: '이벤트성 수입/지출', content: '상여금이나 여행 등 비정기적인 재무 이벤트를 설정해 볼 수 있습니다.' },
-    { id: 'detail-analysis', title: '상세 분석', content: '현재와 미래의 자산을 상세한 표 형태로 비교 분석할 수 있습니다.' }
+    { 
+        id: 'app-title', 
+        title: '자산 플래너 시작하기 🚀', 
+        content: '상단 타이틀을 클릭하면 자산 금액을 비중(%) 또는 마스킹(***)으로 가려주는 <strong>프라이빗 모드</strong>로 손쉽게 전환할 수 있습니다.' 
+    },
+    { 
+        id: 'header-actions', 
+        title: '스마트 도구 & 클라우드 연동 ☁️', 
+        content: '증권사 앱 스크린샷 자동 인식(OCR), Gemini AI 자산 분석 비서, 클라우드 실시간 동기화 및 PDF 리포트 추출을 간편하게 이용하세요.', 
+        isPro: true 
+    },
+    { 
+        id: 'summary', 
+        title: '자산 현황 및 생존 런웨이 요약 📊', 
+        content: '총자산, 순자산과 함께 소득 중단 시 현재 지출로 버틸 수 있는 <strong>생존 런웨이(Runway)</strong> 및 은퇴 목표 달성률을 한눈에 파악합니다.', 
+        isPro: true 
+    },
+    { 
+        id: 'assets', 
+        title: '실시간 주식 연동 & 자산 관리 📈', 
+        content: '한국·미국 주식 및 ETF의 토스 OpenAPI 실시간 시세 연동, 계좌별 예수금 통합 집계, 지수·개별주·코인·금·현금 등 5대 자산군 포트폴리오를 상세 관리합니다.' 
+    },
+    { 
+        id: 'rebalance', 
+        title: '스마트 리밸런싱 & 월 권장 배분 ⚖️', 
+        content: '목표 비중 대비 현재 괴리율을 자동 진단하고, 매달 저축 예산 한도 내에서 어떤 자산을 얼마씩 추가 매수해야 하는지 스마트하게 계산해 줍니다.', 
+        isPro: true 
+    },
+    { 
+        id: 'budget', 
+        title: '월급 및 고정지출 예산 관리 💰', 
+        content: '실수령 급여와 매월 발생하는 고정 생활비를 입력하면, 매달 투자 가능한 여유 자금과 실제 저축률을 실시간 자동 산출합니다.' 
+    },
+    { 
+        id: 'charts', 
+        title: '포트폴리오 비중 & 복리 성장 시뮬레이션 🍩', 
+        content: '무지개 도넛/트리맵 차트로 종목별 비중을 직관적으로 확인하고, 물가상승률을 감안한 미래 30년 복리 자산 성장 곡선을 시각화합니다.' 
+    },
+    { 
+        id: 'detail-analysis', 
+        title: '자본 소득 분석 & 경제적 자유 💡', 
+        content: '수면 중 소득, 자산의 시급 환산액, 2채널 자급자족율 등 강력한 패시브 인컴 지표를 통해 경제적 자유(FIRE) 달성을 확인하세요.' 
+    }
 ];
 
 

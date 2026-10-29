@@ -95,7 +95,7 @@ export default function LifeEventTimelineBoard({
             startOffset: 0,
             endOffset: Math.min(horizonMonths, firstPhaseOffset),
             badge: '현재 구간',
-            detail: `월 급여 ${(Number(appData?.monthlySalary) || 0).toLocaleString()}만원 기준`,
+            detail: displayMode === 'percent' ? '월 급여 *** 기준' : `월 급여 ${(Number(appData?.monthlySalary) || 0).toLocaleString()}만원 기준`,
             originalIdx: null
         });
 
@@ -111,8 +111,8 @@ export default function LifeEventTimelineBoard({
                 : null;
 
             const changeDesc = [];
-            if (phaseSalary !== null) changeDesc.push(`월급 ${phaseSalary.toLocaleString()}만`);
-            if (phaseExpenses !== null) changeDesc.push(`고정지출 ${phaseExpenses.toLocaleString()}만`);
+            if (phaseSalary !== null) changeDesc.push(displayMode === 'percent' ? '월급 ***' : `월급 ${phaseSalary.toLocaleString()}만`);
+            if (phaseExpenses !== null) changeDesc.push(displayMode === 'percent' ? '고정지출 ***' : `고정지출 ${phaseExpenses.toLocaleString()}만`);
 
             items.push({
                 id: `phase-${p.originalIdx}`,
@@ -271,22 +271,24 @@ export default function LifeEventTimelineBoard({
                 const hitProj = monthlyProjections[hitIdx];
                 const ym = addMonthsToYm(baseYm, hitIdx);
                 const isUserGoal = th === targetAmt;
-                const eokLabel = th >= 10000
-                    ? `${(th / 10000).toFixed(th % 10000 === 0 ? 0 : 1)}억원`
-                    : `${th.toLocaleString()}만원`;
+                const eokLabel = displayMode === 'percent'
+                    ? '***'
+                    : (th >= 10000
+                        ? `${(th / 10000).toFixed(th % 10000 === 0 ? 0 : 1)}억원`
+                        : `${th.toLocaleString()}만원`);
 
                 results.push({
                     id: `milestone-${th}`,
                     category: 'milestone',
-                    title: isUserGoal ? `🎯 목표 순자산 ${eokLabel} 달성!` : `🏆 순자산 ${eokLabel} 돌파`,
+                    title: isUserGoal ? (displayMode === 'percent' ? '🎯 목표 순자산 달성!' : `🎯 목표 순자산 ${eokLabel} 달성!`) : (displayMode === 'percent' ? '🏆 순자산 목표 돌파' : `🏆 순자산 ${eokLabel} 돌파`),
                     threshold: th,
                     isUserGoal,
                     startYm: ym,
                     startOffset: hitIdx,
                     endOffset: hitIdx,
                     netWorthAtEvent: hitProj.net,
-                    badge: `순자산 ${formatNumber(hitProj.net, displayMode)}만원`,
-                    detail: `${formatYmKorean(ym)} (${formatRelativeOffset(hitIdx)}) 예상 순자산 ${eokLabel} 돌파`
+                    badge: displayMode === 'percent' ? '순자산 ***' : `순자산 ${formatNumber(hitProj.net, displayMode)}만원`,
+                    detail: displayMode === 'percent' ? `${formatYmKorean(ym)} (${formatRelativeOffset(hitIdx)}) 예상 목표 돌파` : `${formatYmKorean(ym)} (${formatRelativeOffset(hitIdx)}) 예상 순자산 ${eokLabel} 돌파`
                 });
             }
         });
