@@ -1301,18 +1301,31 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
             useEffect(() => {
                 if (isHistoryFullscreen) {
                     document.body.style.overflow = 'hidden';
+                    const handleKeyDown = (e) => {
+                        if (e.key === 'Escape') {
+                            setIsHistoryFullscreen(false);
+                        }
+                    };
+                    window.addEventListener('keydown', handleKeyDown);
+                    const timer = setTimeout(() => {
+                        if (chartInstancesRef.current && chartInstancesRef.current['historyChart']) {
+                            chartInstancesRef.current['historyChart'].resize();
+                        }
+                    }, 100);
+                    return () => {
+                        window.removeEventListener('keydown', handleKeyDown);
+                        clearTimeout(timer);
+                        document.body.style.overflow = '';
+                    };
                 } else {
                     document.body.style.overflow = '';
+                    const timer = setTimeout(() => {
+                        if (chartInstancesRef.current && chartInstancesRef.current['historyChart']) {
+                            chartInstancesRef.current['historyChart'].resize();
+                        }
+                    }, 100);
+                    return () => clearTimeout(timer);
                 }
-                const timer = setTimeout(() => {
-                    if (chartInstancesRef.current && chartInstancesRef.current['historyChart']) {
-                        chartInstancesRef.current['historyChart'].resize();
-                    }
-                }, 100);
-                return () => {
-                    clearTimeout(timer);
-                    document.body.style.overflow = '';
-                };
             }, [isHistoryFullscreen]);
 
             const [layoutOrder, setLayoutOrder] = useState(() => {
@@ -4302,6 +4315,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                         '현금': ['#10b981', '#059669', '#047857', '#34d399', '#6ee7b7', '#065f46', '#14b8a6', '#0d9488']
                     };
 
+                    let topCategories = [];
                     if (investmentDrillDown) {
                         chartTitle = `${investmentDrillDown} 세부 비중`;
                         const categoryItems = combinedList
@@ -4329,7 +4343,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                             bgColors = currentPalette.slice(0, categoryItems.length);
                         }
                     } else {
-                        const topCategories = [
+                        topCategories = [
                             { key: '지수', name: '📈 지수/ETF', val: Math.round(categoryTotals['지수']), color: categoryColorMap['지수'] },
                             { key: '개별주', name: '🏢 개별주', val: Math.round(categoryTotals['개별주']), color: categoryColorMap['개별주'] },
                             { key: '코인', name: '🪙 코인', val: Math.round(categoryTotals['코인']), color: categoryColorMap['코인'] },
@@ -4388,12 +4402,16 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                     setInvestmentDrillDown(null);
                                 } else if (elements && elements.length > 0) {
                                     const idx = elements[0].index;
-                                    const clickedLabel = labels[idx] || '';
-                                    if (clickedLabel.includes('지수')) setInvestmentDrillDown('지수');
-                                    else if (clickedLabel.includes('개별주')) setInvestmentDrillDown('개별주');
-                                    else if (clickedLabel.includes('코인')) setInvestmentDrillDown('코인');
-                                    else if (clickedLabel.includes('금')) setInvestmentDrillDown('금');
-                                    else if (clickedLabel.includes('현금')) setInvestmentDrillDown('현금');
+                                    if (topCategories && topCategories[idx] && topCategories[idx].key) {
+                                        setInvestmentDrillDown(topCategories[idx].key);
+                                    } else {
+                                        const clickedLabel = labels[idx] || '';
+                                        if (clickedLabel.includes('현금') || clickedLabel.includes('예수금')) setInvestmentDrillDown('현금');
+                                        else if (clickedLabel.includes('지수')) setInvestmentDrillDown('지수');
+                                        else if (clickedLabel.includes('개별주')) setInvestmentDrillDown('개별주');
+                                        else if (clickedLabel.includes('코인')) setInvestmentDrillDown('코인');
+                                        else if (clickedLabel.includes('금')) setInvestmentDrillDown('금');
+                                    }
                                 }
                             }
                         },
@@ -6404,6 +6422,9 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                         isCurrent: true
                     });
 
+                    const lastCompletedStage = completedStages.length > 0 ? completedStages[completedStages.length - 1] : null;
+                    const lastCompletedDays = lastCompletedStage ? lastCompletedStage.days : null;
+
                     return {
                         latestVal,
                         athVal,
@@ -6422,6 +6443,11 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                         stages,
                         averageDays,
                         fastestStage,
+                        lastCompletedStage,
+                        lastCompletedDays,
+                        inProgressDays,
+                        progressPct,
+                        inProgressTarget: inProgressTo,
                         accelerationStreak,
                         monthlyPace,
                         nextDDay
@@ -6494,26 +6520,16 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                         <span className="text-amber-400 dark:text-amber-500 cursor-help">ⓘ</span>
                                     </div>
                                     <div className="text-base sm:text-lg font-black text-amber-700 dark:text-amber-300 tabular-nums">
-                                        {historyMetrics.snowballRecentDays}일 소요
+                                        {historyMetrics.lastCompletedDays !== null ? (
+                                            <span>직전 돌파 {historyMetrics.lastCompletedDays}일</span>
+                                        ) : (
+                                            <span>{historyMetrics.snowballRecentDays}일 소요</span>
+                                        )}
                                     </div>
                                     <div className="text-[10px] font-semibold mt-0.5">
-                                        {historyMetrics.snowballSpeedDiff !== null ? (
-                                            historyMetrics.snowballSpeedDiff > 0 ? (
-                                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                                                    🚀 직전보다 {historyMetrics.snowballSpeedDiff}일 단축!
-                                                </span>
-                                            ) : historyMetrics.snowballSpeedDiff < 0 ? (
-                                                <span className="text-slate-400 dark:text-slate-500">
-                                                    ⏳ 직전보다 {Math.abs(historyMetrics.snowballSpeedDiff)}일 지연
-                                                </span>
-                                            ) : (
-                                                <span className="text-slate-400">직전 구간과 동일 속도</span>
-                                            )
-                                        ) : (
-                                            <span className="text-slate-400 dark:text-slate-500">
-                                                기준점: {historyMetrics.recentCrossDate || '기록 시작일'}
-                                            </span>
-                                        )}
+                                        <span className="text-slate-500 dark:text-slate-400">
+                                            현재 {historyMetrics.inProgressDays}일째 진행 ({historyMetrics.progressPct.toFixed(0)}%)
+                                        </span>
                                     </div>
                                     <div className="absolute top-full left-0 mt-2 hidden group-hover:block bg-slate-900 text-white text-[11px] p-3 rounded-xl shadow-2xl z-50 w-72 leading-relaxed border border-slate-700">
                                         💡 <strong>스노우볼 구간 가속도</strong><br/>
@@ -6839,7 +6855,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                                         <span className={`text-[10px] font-black tabular-nums transition-all group-hover:scale-110 ${
                                                             st.isCurrent ? 'text-amber-500 animate-pulse' : isFast ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-600 dark:text-slate-300'
                                                         }`}>
-                                                            {st.days}일
+                                                            {st.isCurrent ? `${st.days}일째` : `${st.days}일`}
                                                         </span>
 
                                                         {/* 막대 바 */}
@@ -6981,16 +6997,17 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                         <span>자산 히스토리 전체화면</span>
                                     </span>
                                     <span className="text-xs text-slate-400 hidden sm:inline">
-                                        (스마트폰 가로 회전 시 더 넓게 볼 수 있습니다)
+                                        (ESC 키 또는 축소 버튼으로 원래 화면으로 복귀)
                                     </span>
                                 </div>
                                 <button
                                     type="button"
                                     onClick={() => setIsHistoryFullscreen(false)}
-                                    className="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors shadow-sm"
+                                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-indigo-500/25 active:scale-95 cursor-pointer z-50"
+                                    title="전체화면 축소하기 (ESC)"
                                 >
-                                    <span>✕</span>
-                                    <span>닫기</span>
+                                    <span className="text-sm leading-none font-bold">✕</span>
+                                    <span>축소 (ESC)</span>
                                 </button>
                             </div>
                         )}
@@ -7003,9 +7020,9 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                 style={{ touchAction: isHistoryFullscreen ? 'none' : 'pan-y' }}
                             ></canvas>
                             {/* [추가] 우클릭 이벤트 리스너를 위한 투명 오버레이 또는 캔버스 직접 제어 */}
-                            <div className="absolute top-2 right-2 flex items-center gap-1.5 pointer-events-none">
+                            <div className="absolute top-2 right-2 flex items-center gap-1.5 pointer-events-none z-30">
                                 <span className="text-[10px] text-gray-400 hidden sm:inline">Tip: 점을 클릭하여 메뉴 열기, 시나리오 호버 시 강조</span>
-                                {!isHistoryFullscreen && (
+                                {!isHistoryFullscreen ? (
                                     <button
                                         type="button"
                                         onClick={() => setIsHistoryFullscreen(true)}
@@ -7014,6 +7031,16 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                     >
                                         <span>⛶</span>
                                         <span>크게보기</span>
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsHistoryFullscreen(false)}
+                                        className="pointer-events-auto px-3 py-1.5 rounded-xl bg-slate-900/90 dark:bg-slate-100/90 hover:bg-black dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold shadow-lg flex items-center gap-1.5 transition-transform hover:scale-105 active:scale-95"
+                                        title="전체화면 축소 (ESC)"
+                                    >
+                                        <span>✕</span>
+                                        <span>축소 (ESC)</span>
                                     </button>
                                 )}
                             </div>

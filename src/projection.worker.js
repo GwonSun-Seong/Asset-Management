@@ -90,16 +90,14 @@ const calculateMonthlyProjection = (initialData, monthsToProject) => {
             currentAssets[sector] = assets[sector].map(asset => {
                 const newAsset = { ...asset, _sector: sector };
                 
-                // [Fix] 섹터 제외 또는 개별 자산 비중 제외 시 초기 금액 및 납입액을 0으로 처리하여 포트폴리오 차트 및 잔액에 정확히 반영
+                // [수정] 비중 제외(excludedSectors / excludedAssetIds)는 차트 및 리밸런싱 비중 집계용 태그이며,
+                // 시뮬레이션 내부의 실제 계좌 잔액과 현금흐름/이체까지 0원으로 만들어버리면 부족 알람 버그가 발생하므로 잔액을 보존함
                 if (excludedSectorList.includes(sector) || (asset.id && excludedAssetIdList.includes(asset.id))) {
-                    newAsset.amount = 0;
-                    newAsset.monthlyContrib = 0;
                     newAsset.isExcluded = true;
-                } else {
-                    if (newAsset.extraContrib > 0) {
-                        newAsset.monthlyContrib = (newAsset.monthlyContrib || 0) + newAsset.extraContrib;
-                        delete newAsset.extraContrib;
-                    }
+                }
+                if (newAsset.extraContrib > 0) {
+                    newAsset.monthlyContrib = (newAsset.monthlyContrib || 0) + newAsset.extraContrib;
+                    delete newAsset.extraContrib;
                 }
 
                 if (!newAsset.monthlyContributionFrom) {
