@@ -5,7 +5,6 @@ const ParkingGame = lazy(() => import('./ParkingGame'));
 const KoreaLifeSimulator = lazy(() => import('./KoreaLifeSimulator'));
 const RetirementGachaGame = lazy(() => import('./RetirementGachaGame'));
 const ImpulseBuyJudge = lazy(() => import('./ImpulseBuyJudge'));
-const MonthlyCfoAuditReport = lazy(() => import('./MonthlyCfoAuditReport'));
 const LadderExitSimulator = lazy(() => import('./LadderExitSimulator'));
 const FxSensitivityDashboard = lazy(() => import('./FxSensitivityDashboard'));
 const ReverseGoalSolver = lazy(() => import('./ReverseGoalSolver'));
@@ -54,23 +53,13 @@ const FEATURE_CATALOG = [
     },
     {
         id: 'impulse-buy-judge',
-        name: 'AI 기회비용 판독기',
+        name: '기회비용 판독기',
         icon: '🛒',
         category: '소비통제',
-        tag: 'AI판사',
+        tag: '소비판독',
         isAvailable: true,
         summary: '"이거 사도 될까?" 내 자본 체급·시급·복리 기반 은퇴 지연 판결',
-        detail: '사고 싶은 물건의 가격과 할부 조건을 넣으면 내 순자산 체급과 일일 주가 변동폭에 비례하여 합리적 승인 또는 팩폭 판결을 내립니다.'
-    },
-    {
-        id: 'cfo-audit-report',
-        name: '월간 CFO 감사보고서',
-        icon: '📊',
-        category: '재무감사',
-        tag: 'AICFO',
-        isAvailable: true,
-        summary: '순자산 증감을 [근로저축·투자수익·부채상환]으로 요인분해하는 결산 리포트',
-        detail: '지난 기간 동안 내 순자산이 왜 늘었는지 근로저축 기여분, 주식/환율 평가 변동, 부채 원금 축소분으로 분해하여 감사 보고서를 발행합니다.'
+        detail: '사고 싶은 물건의 가격과 할부 조건을 넣으면 내 순자산 체급과 일일 주가 변동폭에 비례하여 합리적 승인 또는 기회비용 판정을 내립니다.'
     },
     {
         id: 'ladder-exit',
@@ -165,8 +154,8 @@ export default function ExtraFeaturesView({
                     </span>
                 </div>
 
-                {/* 9개 카드 컴팩트 그리드 (모바일 3열 / 태블릿 5열 / 데스크톱 9열) */}
-                <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-1.5 sm:gap-2">
+                {/* 8개 카드 컴팩트 그리드 (모바일 2열 / 태블릿 4열 / 데스크톱 8열) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5 sm:gap-2">
                     {FEATURE_CATALOG.map((feature) => {
                         const isSelected = selectedFeatureId === feature.id;
                         return (
@@ -263,15 +252,6 @@ export default function ExtraFeaturesView({
                     )}
                     {activeFeature.id === 'impulse-buy-judge' && (
                         <ImpulseBuyJudge
-                            monthlySalary={monthlySalary}
-                            currentAppData={currentAppData}
-                            currentCalculation={currentCalculation}
-                            assetHistory={assetHistory}
-                            addToast={addToast}
-                        />
-                    )}
-                    {activeFeature.id === 'cfo-audit-report' && (
-                        <MonthlyCfoAuditReport
                             monthlySalary={monthlySalary}
                             currentAppData={currentAppData}
                             currentCalculation={currentCalculation}

@@ -333,6 +333,10 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                         }
 
                         ['name', 'icon', 'memo', 'rate', 'feeRate', 'monthlyContrib', 'monthlyContributionFrom', 'maturityMonth', 'repaymentMethod', 'repaymentAccount', 'loanStartDate'].forEach(checkAndAdd);
+                        if (JSON.stringify(asset.purposeTags || []) !== JSON.stringify(pureAsset.purposeTags || [])) {
+                            diff.purposeTags = asset.purposeTags || [];
+                            hasChanges = true;
+                        }
 
                         if (hasChanges) {
                             phaseSectorAssets.push({ id: asset.id, ...diff });
@@ -1168,6 +1172,9 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
             const [stockLinkState, setStockLinkState] = useState(null); // [추가] 종목 연동 모달 대상 자산 {sectorKey, index, asset}
             const [isExporting, setIsExporting] = useState(false); // [추가] PDF 내보내기 모드 상태
             const [expandedAssetDetails, setExpandedAssetDetails] = useState({}); // [추가] 자산 상세설정(수익률/수수료 등) 펼침 상태 { [assetKey]: boolean }
+            const [expandedTagAssetKey, setExpandedTagAssetKey] = useState(null); // [추가] 계좌별 목적자금 꼬리표 인라인 편집기 열림 키
+            const [selectedPurposeTag, setSelectedPurposeTag] = useState(null); // [추가] 상단 꼬리표 합산 바에서 선택된 필터 태그명
+            const [tagDrafts, setTagDrafts] = useState({}); // [추가] 계좌별 새 꼬리표 입력 드래프트 { [assetKey]: { label: '', amount: '' } }
             const [isPaydayModalOpen, setIsPaydayModalOpen] = useState(false); // [추가] 월급날 자동 정산 모달 상태
 
             // 🗓️ [월급날 자동 정산 팝업] 지정된 급여일 이후 접속 시 이번 달 미정산 상태면 자동 팝업
@@ -3269,11 +3276,15 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                     } else if (!customDefault && confirm('저장된 기본값이 없습니다. 사이트 기본값으로 초기화하시겠습니까?')) {
                         const def = JSON.parse(JSON.stringify(window.publicDefaultData || {}));
                         resetAppData(def);
+                        if (Array.isArray(def.history)) setAssetHistory(def.history);
+                        if (Array.isArray(def.scenarios)) setScenarios(def.scenarios);
                         setIsDemoMode(false);
                         originalUserDataRef.current = def;
                         setOriginalUserData(def);
                         try {
                             localStorage.setItem('assetDashboardDataV3', JSON.stringify(def));
+                            if (Array.isArray(def.history)) localStorage.setItem('assetDashboardHistory', JSON.stringify(def.history));
+                            if (Array.isArray(def.scenarios)) localStorage.setItem('assetDashboardScenarios', JSON.stringify(def.scenarios));
                             localStorage.removeItem('assetDashboard_pre_demo_backup');
                         } catch(e) {}
                         addToast('사이트 기본값을 불러왔습니다.', 'info');
@@ -3356,6 +3367,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                         if (pAsset.repaymentMethod !== undefined) ex.repaymentMethod = pAsset.repaymentMethod;
                         if (pAsset.repaymentAccount !== undefined) ex.repaymentAccount = pAsset.repaymentAccount;
                         if (pAsset.loanStartDate !== undefined) ex.loanStartDate = pAsset.loanStartDate;
+                        if (pAsset.purposeTags !== undefined) ex.purposeTags = pAsset.purposeTags;
                     } else {
                         (editingData?.assets || {})[sector].push(pAsset);
                     }
@@ -3513,6 +3525,12 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                     }
 
                     // 2. originalUserDataRef 또는 originalUserData 상태
+                    try {
+                        const cachedHistory = localStorage.getItem('assetDashboardHistory');
+                        if (cachedHistory) setAssetHistory(JSON.parse(cachedHistory));
+                        const cachedScenarios = localStorage.getItem('assetDashboardScenarios');
+                        if (cachedScenarios) setScenarios(JSON.parse(cachedScenarios));
+                    } catch (e) {}
                     let dataToRestore = originalUserDataRef.current || originalUserData;
                     if (!dataToRestore || !dataToRestore.assets || Object.keys(dataToRestore.assets).length === 0) {
                         try {
@@ -3549,11 +3567,13 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                     originalUserDataRef.current = currentFullAppData;
                     setOriginalUserData(currentFullAppData);
 
-                    // 데모 데이터 주입
+                    // 데모 데이터 주입 (히스토리 및 시나리오까지 함께 전환)
                     const demoData = JSON.parse(JSON.stringify(window.publicDefaultData || {}));
                     demoData.isDemo = true;
                     demoData.displayMode = 'amount';
                     resetAppData(demoData);
+                    if (Array.isArray(demoData.history)) setAssetHistory(demoData.history);
+                    if (Array.isArray(demoData.scenarios)) setScenarios(demoData.scenarios);
                     setIsDemoMode(true);
                     addToast('🧪 데모 모드로 전환되었습니다.', 'warning');
                 } else {
@@ -4263,7 +4283,8 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                     if (/GOLD|IAU|GLD|411060|금현물|금\s*99/i.test(ticker) || /금현물|금\s*99|골드/i.test(name)) cat = '금';
                                     else if (/BTC|ETH|SOL|XRP|DOGE|코인|가상자산|비트코인|이더리움/i.test(ticker) || /비트코인|이더리움/i.test(name)) cat = '코인';
                                     else if (/CD금리|KOFR|머니마켓|단기채|MMF/i.test(name)) cat = '현금';
-                                    else if (/S&P500|SP500|나스닥|NASDAQ|코스피|200|VOO|QQQ|SPY|IVV|SCHD|379800|360750|449180|ETF/i.test(name) || /^(VOO|QQQ|SPY|IVV|SCHD|JEPI|JEPQ|VT|VTI|TLT)$/i.test(ticker)) cat = '지수';
+                                    else if (/^(TLT|IEF|SHY|BND|AGG|GOVT|EDV|TMF|TMV|LQD|HYG|TIP|VGIT|VGLT|VGSH|SGOV|BIL)$/i.test(ticker) || /국채|국고채|회사채|채권|미국채|장기채|중기채|종합채권|전단채|산금채/i.test(name)) cat = '채권';
+                                    else if (/S&P500|SP500|나스닥|NASDAQ|코스피|200|VOO|QQQ|SPY|IVV|SCHD|379800|360750|449180|ETF/i.test(name) || /^(VOO|QQQ|SPY|IVV|SCHD|JEPI|JEPQ|VT|VTI)$/i.test(ticker)) cat = '지수';
                                     else cat = '개별주';
                                 }
 
@@ -4279,7 +4300,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                     });
 
                     const combinedList = [...Array.from(tickerMap.values()), ...accountCashList];
-                    const categoryTotals = { '지수': 0, '개별주': 0, '코인': 0, '금': 0, '현금': 0 };
+                    const categoryTotals = { '지수': 0, '개별주': 0, '채권': 0, '코인': 0, '금': 0, '현금': 0 };
 
                     combinedList.forEach(item => {
                         let cat = item.category || '개별주';
@@ -4302,6 +4323,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                     const categoryColorMap = {
                         '지수': '#ef4444', // 빨강 (지수/ETF 배너)
                         '개별주': '#f97316', // 주황 (개별주 배너)
+                        '채권': '#3b82f6', // 파랑 (채권 배너)
                         '코인': '#eab308', // 노랑 (코인 배너)
                         '금': '#f59e0b', // 앰버/골드 (금 배너)
                         '현금': '#10b981'  // 에메랄드 (현금/예수금 배너)
@@ -4310,6 +4332,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                     const drillDownPalettes = {
                         '지수': ['#ef4444', '#dc2626', '#b91c1c', '#f87171', '#fca5a5', '#991b1b', '#f43f5e', '#e11d48'],
                         '개별주': ['#f97316', '#ea580c', '#c2410c', '#fb923c', '#fdba74', '#9a3412', '#ea580c', '#c2410c'],
+                        '채권': ['#3b82f6', '#2563eb', '#1d4ed8', '#60a5fa', '#93c5fd', '#1e40af', '#0284c7', '#0369a1'],
                         '코인': ['#eab308', '#ca8a04', '#a16207', '#fde047', '#fef08a', '#854d0e', '#d97706', '#b45309'],
                         '금': ['#f59e0b', '#d97706', '#b45309', '#fbbf24', '#fde68a', '#92400e', '#78350f', '#eab308'],
                         '현금': ['#10b981', '#059669', '#047857', '#34d399', '#6ee7b7', '#065f46', '#14b8a6', '#0d9488']
@@ -4346,6 +4369,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                         topCategories = [
                             { key: '지수', name: '📈 지수/ETF', val: Math.round(categoryTotals['지수']), color: categoryColorMap['지수'] },
                             { key: '개별주', name: '🏢 개별주', val: Math.round(categoryTotals['개별주']), color: categoryColorMap['개별주'] },
+                            { key: '채권', name: '🏛️ 채권', val: Math.round(categoryTotals['채권']), color: categoryColorMap['채권'] },
                             { key: '코인', name: '🪙 코인', val: Math.round(categoryTotals['코인']), color: categoryColorMap['코인'] },
                             { key: '금', name: '🟡 금', val: Math.round(categoryTotals['금']), color: categoryColorMap['금'] },
                             { key: '현금', name: '💵 현금/예수금', val: Math.round(categoryTotals['현금']), color: categoryColorMap['현금'] }
@@ -4409,6 +4433,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                         if (clickedLabel.includes('현금') || clickedLabel.includes('예수금')) setInvestmentDrillDown('현금');
                                         else if (clickedLabel.includes('지수')) setInvestmentDrillDown('지수');
                                         else if (clickedLabel.includes('개별주')) setInvestmentDrillDown('개별주');
+                                        else if (clickedLabel.includes('채권')) setInvestmentDrillDown('채권');
                                         else if (clickedLabel.includes('코인')) setInvestmentDrillDown('코인');
                                         else if (clickedLabel.includes('금')) setInvestmentDrillDown('금');
                                     }
@@ -5266,10 +5291,15 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                     const targetAsset = prevAssets[sector][index];
                     const oldName = targetAsset.name;
                     
-                    // 1. 자산 정보 업데이트
-                    const newSectorAssets = prevAssets[sector].map((a, i) => 
-                        i === index ? { ...a, [field]: newValue } : a
-                    );
+                    // 1. 자산 정보 업데이트 (미래 분기 편집 중 잔액 직접 수정 시 isAmountOverridden 플래그 부여)
+                    const newSectorAssets = prevAssets[sector].map((a, i) => {
+                        if (i !== index) return a;
+                        const updated = { ...a, [field]: newValue };
+                        if (field === 'amount' && editingPhaseRef.current !== null) {
+                            updated.isAmountOverridden = true;
+                        }
+                        return updated;
+                    });
                     const newAssets = { ...prevAssets, [sector]: newSectorAssets };
                     let newData = { ...prevData, assets: newAssets };
 
@@ -5297,6 +5327,116 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                         });
                     }
                     return newData;
+                });
+            }, [setAppData]);
+
+            // [추가] 타임라인(미래 분기점) 편집 중 개별 계좌 변경사항을 분기 기준 원본(pureProjectedState)으로 즉시 초기화
+            const resetPhaseAsset = React.useCallback((sector, index) => {
+                const currentPhase = editingPhaseRef.current;
+                if (!currentPhase) return;
+                setAppData(prevData => {
+                    if (!prevData || !prevData.assets || !Array.isArray(prevData.assets[sector])) return prevData;
+                    const targetAsset = prevData.assets[sector][index];
+                    if (!targetAsset) return prevData;
+                    const pureAsset = (currentPhase.pureProjectedState?.[sector] || []).find(a => a.id === targetAsset.id);
+                    if (!pureAsset) return prevData;
+
+                    const restoredAsset = {
+                        ...JSON.parse(JSON.stringify(pureAsset)),
+                        amount: Math.round(Number(pureAsset.amount || 0) * 100) / 100,
+                        isAmountOverridden: false
+                    };
+                    const oldName = targetAsset.name;
+                    const newName = restoredAsset.name;
+
+                    const newSectorAssets = prevData.assets[sector].map((a, i) => i === index ? restoredAsset : a);
+                    const newAssets = { ...prevData.assets, [sector]: newSectorAssets };
+                    let newData = { ...prevData, assets: newAssets };
+
+                    if (oldName !== newName) {
+                        if (prevData.mainCashFlowAccount === oldName) newData.mainCashFlowAccount = newName;
+                        if (prevData.residualAccount === oldName) newData.residualAccount = newName;
+                        Object.keys(newAssets).forEach(s => {
+                            newAssets[s] = newAssets[s].map(a => {
+                                let changed = false;
+                                let newA = { ...a };
+                                if (newA.extraFrom === oldName) { newA.extraFrom = newName; changed = true; }
+                                if (newA.monthlyContributionFrom === oldName) { newA.monthlyContributionFrom = newName; changed = true; }
+                                if (s === 'loan' && newA.repaymentAccount === oldName) { newA.repaymentAccount = newName; changed = true; }
+                                return changed ? newA : a;
+                            });
+                        });
+                    }
+                    return newData;
+                });
+                addToast('해당 계좌의 분기점 변경사항이 원래 값으로 초기화되었습니다.', 'info');
+            }, [setAppData, addToast]);
+
+            // [추가] 계좌별 목적자금 꼬리표(purposeTags) 추가 / 수정 / 삭제 핸들러 (물리 잔액 및 시뮬레이션 로직 무침범)
+            const addAssetPurposeTag = React.useCallback((sector, index, labelInput, amountInput) => {
+                const cleanLabel = String(labelInput || '').trim();
+                const numAmount = Math.round((Number(amountInput) || 0) * 100) / 100;
+                if (!cleanLabel) {
+                    addToast('꼬리표 이름을 입력해주세요.', 'warning');
+                    return false;
+                }
+                if (numAmount <= 0) {
+                    addToast('꼬리표 금액을 0보다 크게 입력해주세요.', 'warning');
+                    return false;
+                }
+                setAppData(prevData => {
+                    if (!prevData?.assets?.[sector]) return prevData;
+                    const newSectorAssets = prevData.assets[sector].map((a, i) => {
+                        if (i !== index) return a;
+                        const prevTags = Array.isArray(a.purposeTags) ? [...a.purposeTags] : [];
+                        const existingIdx = prevTags.findIndex(t => (t.label || '').trim() === cleanLabel);
+                        if (existingIdx >= 0) {
+                            prevTags[existingIdx] = {
+                                ...prevTags[existingIdx],
+                                amount: Math.round((Number(prevTags[existingIdx].amount || 0) + numAmount) * 100) / 100
+                            };
+                        } else {
+                            prevTags.push({
+                                id: `ptag-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                                label: cleanLabel,
+                                amount: numAmount
+                            });
+                        }
+                        return { ...a, purposeTags: prevTags };
+                    });
+                    return { ...prevData, assets: { ...prevData.assets, [sector]: newSectorAssets } };
+                });
+                return true;
+            }, [setAppData, addToast]);
+
+            const updateAssetPurposeTagAmount = React.useCallback((sector, index, tagId, nextAmount) => {
+                const numAmount = Math.max(0, Math.round((Number(nextAmount) || 0) * 100) / 100);
+                setAppData(prevData => {
+                    if (!prevData?.assets?.[sector]) return prevData;
+                    const newSectorAssets = prevData.assets[sector].map((a, i) => {
+                        if (i !== index) return a;
+                        const prevTags = Array.isArray(a.purposeTags) ? a.purposeTags : [];
+                        return {
+                            ...a,
+                            purposeTags: prevTags.map(t => t.id === tagId ? { ...t, amount: numAmount } : t)
+                        };
+                    });
+                    return { ...prevData, assets: { ...prevData.assets, [sector]: newSectorAssets } };
+                });
+            }, [setAppData]);
+
+            const removeAssetPurposeTag = React.useCallback((sector, index, tagId) => {
+                setAppData(prevData => {
+                    if (!prevData?.assets?.[sector]) return prevData;
+                    const newSectorAssets = prevData.assets[sector].map((a, i) => {
+                        if (i !== index) return a;
+                        const prevTags = Array.isArray(a.purposeTags) ? a.purposeTags : [];
+                        return {
+                            ...a,
+                            purposeTags: prevTags.filter(t => t.id !== tagId)
+                        };
+                    });
+                    return { ...prevData, assets: { ...prevData.assets, [sector]: newSectorAssets } };
                 });
             }, [setAppData]);
 
@@ -5935,7 +6075,9 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                                 defaultCategory = '코인';
                                             } else if (/CD금리|KOFR|머니마켓|단기채|MMF/i.test(name)) {
                                                 defaultCategory = '현금';
-                                            } else if (/S&P500|SP500|나스닥|NASDAQ|코스피|200|VOO|QQQ|SPY|IVV|SCHD|379800|360750|449180|ETF/i.test(name) || /^(VOO|QQQ|SPY|IVV|SCHD|JEPI|JEPQ|VT|VTI|TLT)$/i.test(ticker)) {
+                                            } else if (/^(TLT|IEF|SHY|BND|AGG|GOVT|EDV|TMF|TMV|LQD|HYG|TIP|VGIT|VGLT|VGSH|SGOV|BIL)$/i.test(ticker) || /국채|국고채|회사채|채권|미국채|장기채|중기채|종합채권|전단채|산금채/i.test(name)) {
+                                                defaultCategory = '채권';
+                                            } else if (/S&P500|SP500|나스닥|NASDAQ|코스피|200|VOO|QQQ|SPY|IVV|SCHD|379800|360750|449180|ETF/i.test(name) || /^(VOO|QQQ|SPY|IVV|SCHD|JEPI|JEPQ|VT|VTI)$/i.test(ticker)) {
                                                 defaultCategory = '지수';
                                             } else {
                                                 defaultCategory = '개별주';
@@ -5984,7 +6126,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                             aggregatedList.sort((a, b) => b.totalValueManwon - a.totalValueManwon);
 
                             // 카테고리별 합산 시 예수금 목적자금 연동 반영
-                            const categoryTotals = { '지수': 0, '개별주': 0, '코인': 0, '금': 0, '현금': 0 };
+                            const categoryTotals = { '지수': 0, '개별주': 0, '채권': 0, '코인': 0, '금': 0, '현금': 0 };
                             aggregatedList.forEach(item => {
                                 let cat = item.category || '개별주';
                                 if (item.isAccountCash && !includeCashInTargetSectors) {
@@ -6044,8 +6186,8 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                         </div>
                                     </div>
 
-                                    {/* 상단 5대 비중 요약 바 */}
-                                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+                                    {/* 상단 6대 비중 요약 바 */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
                                         <div 
                                             onClick={() => setInvestmentDrillDown('지수')}
                                             className="p-3 rounded-xl bg-red-50/60 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 cursor-pointer hover:scale-[1.02] transition-transform"
@@ -6062,6 +6204,15 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                             <div className="text-[10px] text-slate-400 font-bold">🏢 개별주</div>
                                             <div className="text-sm font-black text-orange-600 dark:text-orange-400 mt-0.5">
                                                 {formatNumber(categoryTotals['개별주'], displayMode)}만 ({totalPortfolioAssetsManwon > 0 ? ((categoryTotals['개별주'] / totalPortfolioAssetsManwon) * 100).toFixed(1) : 0}%)
+                                            </div>
+                                        </div>
+                                        <div 
+                                            onClick={() => setInvestmentDrillDown('채권')}
+                                            className="p-3 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50 cursor-pointer hover:scale-[1.02] transition-transform"
+                                        >
+                                            <div className="text-[10px] text-slate-400 font-bold">🏛️ 채권</div>
+                                            <div className="text-sm font-black text-blue-600 dark:text-blue-400 mt-0.5">
+                                                {formatNumber(categoryTotals['채권'], displayMode)}만 ({totalPortfolioAssetsManwon > 0 ? ((categoryTotals['채권'] / totalPortfolioAssetsManwon) * 100).toFixed(1) : 0}%)
                                             </div>
                                         </div>
                                         <div 
@@ -6108,6 +6259,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                                     { id: 'ALL', label: '전체', count: aggregatedList.length },
                                                     { id: '지수', label: '📈 지수', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '지수'; }).length },
                                                     { id: '개별주', label: '🏢 개별주', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '개별주'; }).length },
+                                                    { id: '채권', label: '🏛️ 채권', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '채권'; }).length },
                                                     { id: '코인', label: '🪙 코인', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '코인'; }).length },
                                                     { id: '금', label: '🟡 금', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '금'; }).length },
                                                     { id: '현금', label: '💵 현금', count: aggregatedList.filter(i => { let c = i.category || '개별주'; if (i.isAccountCash && !includeCashInTargetSectors) c = '현금'; return c === '현금' || c === '원화' || c === '달러'; }).length }
@@ -6206,6 +6358,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                                                 >
                                                                     <option value="지수">📈 지수</option>
                                                                     <option value="개별주">🏢 개별주</option>
+                                                                    <option value="채권">🏛️ 채권</option>
                                                                     <option value="코인">🪙 코인</option>
                                                                     <option value="금">🟡 금</option>
                                                                     <option value="현금">💵 현금</option>
@@ -8681,6 +8834,55 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                     }
                 };
 
+                // [추가] 전 계좌 목적자금 꼬리표(purposeTags) 자동 합산 및 추천 프리셋 추출
+                const purposeTagSummary = (() => {
+                    const tagMap = new Map();
+                    let totalTagged = 0;
+                    let totalGrossNonLoan = 0;
+                    const tabBySector = {};
+                    ASSET_TABS.forEach(t => t.sectors.forEach(s => { tabBySector[s] = t.id; }));
+
+                    Object.keys(assets || {}).forEach(secKey => {
+                        if (secKey === 'loan') return;
+                        (assets[secKey] || []).forEach(acc => {
+                            const accAmt = Math.max(0, Number(acc?.amount || 0));
+                            totalGrossNonLoan += accAmt;
+                            const tags = Array.isArray(acc?.purposeTags) ? acc.purposeTags : [];
+                            tags.forEach(t => {
+                                const lbl = String(t?.label || '').trim();
+                                const amt = Math.max(0, Number(t?.amount || 0));
+                                if (!lbl || amt <= 0) return;
+                                totalTagged += amt;
+                                if (!tagMap.has(lbl)) {
+                                    tagMap.set(lbl, { label: lbl, totalAmount: 0, accounts: [] });
+                                }
+                                const entry = tagMap.get(lbl);
+                                entry.totalAmount = Math.round((entry.totalAmount + amt) * 100) / 100;
+                                entry.accounts.push({
+                                    assetId: acc.id,
+                                    accountName: acc.name || '미지정 계좌',
+                                    sectorKey: secKey,
+                                    sectorName: sectorInfo[secKey]?.name || secKey,
+                                    tabId: tabBySector[secKey] || 'cash',
+                                    amount: amt
+                                });
+                            });
+                        });
+                    });
+
+                    const list = Array.from(tagMap.values()).sort((a, b) => b.totalAmount - a.totalAmount);
+                    const untaggedAmount = Math.max(0, Math.round((totalGrossNonLoan - totalTagged) * 100) / 100);
+                    const presetLabels = Array.from(new Set([
+                        ...list.map(item => item.label),
+                        '비상예비금', '주거·전세', '결혼자금', '여행·여가', '세금·공과금', '은퇴·노후'
+                    ])).slice(0, 8);
+
+                    return { list, totalTagged: Math.round(totalTagged * 100) / 100, untaggedAmount, presetLabels };
+                })();
+                const activeSelectedTagObj = selectedPurposeTag
+                    ? purposeTagSummary.list.find(item => item.label === selectedPurposeTag) || null
+                    : null;
+
                 return (
                 <div className="space-y-6"> 
                     {/* 탭 내비게이션 */}
@@ -8709,6 +8911,79 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                             <button onClick={handleNextTab} disabled={currentTabIndex >= ASSET_TABS.length - 1} className="hidden sm:flex p-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors shadow-sm" title="다음 탭">
                                 <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" /></svg>
                             </button>
+                        </div>
+                    )}
+
+                    {/* [신규] 전 계좌 목적자금 꼬리표(Tag) 합산 & 계좌 역추적 바 */}
+                    {!isExporting && purposeTagSummary.list.length > 0 && (
+                        <div className="rounded-2xl bg-slate-50/90 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/70 px-3.5 py-2.5 sm:px-4 sm:py-3 space-y-2.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="text-[11px] sm:text-xs font-black text-slate-700 dark:text-slate-200 flex items-center gap-1 mr-1">
+                                        <span>🏷️</span>
+                                        <span>목적별 자금 합산</span>
+                                    </span>
+                                    {purposeTagSummary.list.map(tagItem => {
+                                        const isSelected = selectedPurposeTag === tagItem.label;
+                                        return (
+                                            <button
+                                                key={tagItem.label}
+                                                type="button"
+                                                onClick={() => setSelectedPurposeTag(prev => prev === tagItem.label ? null : tagItem.label)}
+                                                className={`px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                                    isSelected
+                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200/90 dark:border-slate-700 hover:border-indigo-400'
+                                                }`}
+                                                title="클릭하여 이 꼬리표가 포함된 계좌 내역 보기"
+                                            >
+                                                <span>{tagItem.label}</span>
+                                                <span className={`font-mono font-black ${isSelected ? 'text-indigo-100' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                                                    {formatNumber(tagItem.totalAmount, displayMode)}만
+                                                </span>
+                                                {tagItem.accounts.length > 1 && (
+                                                    <span className={`text-[10px] px-1 rounded ${isSelected ? 'bg-indigo-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+                                                        {tagItem.accounts.length}개 계좌
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-bold">
+                                    <span>미지정 잔액 <strong className="font-mono text-slate-700 dark:text-slate-300">{formatNumber(purposeTagSummary.untaggedAmount, displayMode)}만</strong></span>
+                                    {selectedPurposeTag && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedPurposeTag(null)}
+                                            className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                                        >
+                                            필터 해제 ✕
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {activeSelectedTagObj && (
+                                <div className="pt-2 border-t border-slate-200/70 dark:border-slate-700/70 flex flex-wrap items-center gap-1.5 text-xs">
+                                    <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 mr-1">
+                                        [{activeSelectedTagObj.label}] 보관 계좌:
+                                    </span>
+                                    {activeSelectedTagObj.accounts.map((accItem, aIdx) => (
+                                        <button
+                                            key={`${accItem.assetId}-${aIdx}`}
+                                            type="button"
+                                            onClick={() => setActiveAssetTab(accItem.tabId)}
+                                            className="px-2.5 py-1 rounded-lg bg-indigo-50/90 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-900 dark:text-indigo-200 border border-indigo-200/80 dark:border-indigo-800/70 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                            title="클릭 시 해당 계좌가 있는 탭으로 이동"
+                                        >
+                                            <span className="text-slate-400 dark:text-slate-500 text-[10px]">{accItem.sectorName}</span>
+                                            <span className="font-extrabold">{accItem.accountName}</span>
+                                            <span className="font-mono font-black text-indigo-600 dark:text-indigo-400">{formatNumber(accItem.amount, displayMode)}만</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
                     
@@ -8844,15 +9119,105 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                                     const assetKey = asset.id || `${sectorKey}-${idx}`;
                                                     const isEditing = !!expandedAssetDetails[assetKey];
 
+                                                    // [추가] 타임라인(미래 분기점) 편집 중 원본 대비 변경점(Diff) 추출
+                                                    const pureAsset = editingPhase ? (editingPhase.pureProjectedState?.[sectorKey] || []).find(a => a.id === asset.id) : null;
+                                                    const phaseDiffChips = [];
+                                                    let isNewInPhase = false;
+                                                    if (editingPhase) {
+                                                        if (!pureAsset) {
+                                                            isNewInPhase = true;
+                                                            phaseDiffChips.push('이 분기에서 신규 추가됨');
+                                                        } else {
+                                                            const pureContrib = Number(pureAsset.monthlyContrib || 0);
+                                                            const curContrib = Number(asset.monthlyContrib || 0);
+                                                            if (Math.abs(curContrib - pureContrib) > 0.001) {
+                                                                phaseDiffChips.push(`${isLoan ? '월상환' : '월납입'} (기존 ${formatNumber(pureContrib, displayMode)}만 → ${formatNumber(curContrib, displayMode)}만)`);
+                                                            }
+                                                            const pureAmt = Math.round(Number(pureAsset.amount || 0) * 100) / 100;
+                                                            const curAmt = Math.round(Number(asset.amount || 0) * 100) / 100;
+                                                            if (Math.abs(curAmt - pureAmt) > 0.01) {
+                                                                phaseDiffChips.push(`${isLoan ? '대출잔액' : '잔액'} (기존 ${formatNumber(pureAmt, displayMode)}만 → ${formatNumber(curAmt, displayMode)}만)`);
+                                                            }
+                                                            const pureRate = Number(pureAsset.rate || 0);
+                                                            const curRate = Number(asset.rate || 0);
+                                                            if (Math.abs(curRate - pureRate) > 0.001) {
+                                                                phaseDiffChips.push(`${isLoan ? '금리' : '수익률'} (기존 ${pureRate}% → ${curRate}%)`);
+                                                            }
+                                                            if ((asset.name || '') !== (pureAsset.name || '')) {
+                                                                phaseDiffChips.push(`이름 (${pureAsset.name} → ${asset.name})`);
+                                                            }
+                                                            if (!isLoan && Number(asset.feeRate || 0) !== Number(pureAsset.feeRate || 0)) {
+                                                                phaseDiffChips.push(`수수료 (기존 ${pureAsset.feeRate || 0}% → ${asset.feeRate || 0}%)`);
+                                                            }
+                                                            if (!isLoan && (asset.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE) !== (pureAsset.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE)) {
+                                                                phaseDiffChips.push(`출처 (${pureAsset.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE} → ${asset.monthlyContributionFrom || window.MONTHLY_INCOME_SOURCE})`);
+                                                            }
+                                                            if (isLoan && Number(asset.maturityMonth || 0) !== Number(pureAsset.maturityMonth || 0)) {
+                                                                phaseDiffChips.push(`만기 (기존 ${pureAsset.maturityMonth || 0}개월 → ${asset.maturityMonth || 0}개월)`);
+                                                            }
+                                                            if (isLoan && (asset.repaymentMethod || '원리금균등') !== (pureAsset.repaymentMethod || '원리금균등')) {
+                                                                phaseDiffChips.push(`상환방식 (${pureAsset.repaymentMethod || '원리금균등'} → ${asset.repaymentMethod || '원리금균등'})`);
+                                                            }
+                                                            if (isLoan && (asset.repaymentAccount || 'salary') !== (pureAsset.repaymentAccount || 'salary')) {
+                                                                const fromLabel = (pureAsset.repaymentAccount === 'salary' || !pureAsset.repaymentAccount) ? '월급' : pureAsset.repaymentAccount;
+                                                                const toLabel = (asset.repaymentAccount === 'salary' || !asset.repaymentAccount) ? '월급' : asset.repaymentAccount;
+                                                                phaseDiffChips.push(`상환계좌 (${fromLabel} → ${toLabel})`);
+                                                            }
+                                                        }
+                                                    }
+                                                    const hasPhaseDiff = phaseDiffChips.length > 0;
+                                                    const assetPurposeTags = (!isLoan && Array.isArray(asset.purposeTags)) ? asset.purposeTags : [];
+                                                    const assetTaggedSum = Math.round(assetPurposeTags.reduce((s, t) => s + Math.max(0, Number(t?.amount || 0)), 0) * 100) / 100;
+                                                    const assetUntaggedAmt = Math.round((Math.max(0, Number(asset.amount || 0)) - assetTaggedSum) * 100) / 100;
+                                                    const isTagFilterMatched = Boolean(selectedPurposeTag && assetPurposeTags.some(t => (t.label || '').trim() === selectedPurposeTag));
+                                                    const isTagEditorOpen = expandedTagAssetKey === assetKey;
+                                                    const currentDraft = tagDrafts[assetKey] || { label: '', amount: '' };
+
                                                     return (
                                                         <div 
                                                             key={assetKey} 
                                                             className={`rounded-2xl p-3.5 sm:p-5 transition-all duration-300 relative border flex flex-col justify-between ${
                                                                 isEditing 
                                                                     ? 'bg-gradient-to-b from-indigo-50/90 via-white to-indigo-50/40 dark:from-slate-800 dark:via-slate-850 dark:to-indigo-950/30 border-indigo-400 dark:border-indigo-500 shadow-xl ring-2 ring-indigo-400/40 z-10' 
-                                                                    : 'bg-white dark:bg-slate-800/90 border-slate-200/80 dark:border-slate-700/60 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md'
+                                                                    : hasPhaseDiff
+                                                                        ? 'bg-amber-50/30 dark:bg-amber-950/20 border-amber-400 dark:border-amber-500/80 ring-2 ring-amber-400/40 shadow-md'
+                                                                        : isTagFilterMatched
+                                                                            ? 'bg-indigo-50/30 dark:bg-indigo-950/25 border-indigo-400 dark:border-indigo-500 ring-2 ring-indigo-400/40 shadow-md'
+                                                                            : 'bg-white dark:bg-slate-800/90 border-slate-200/80 dark:border-slate-700/60 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md'
                                                             } ${excludedAssetIds.includes(asset.id) ? 'opacity-70 bg-rose-50/20 dark:bg-rose-950/10 border-rose-200 dark:border-rose-900/40' : ''}`}
                                                         >
+                                                            {/* [신규] 타임라인(미래 분기점) 편집 시 변경점(Diff) 배지 및 개별 초기화 바 */}
+                                                            {editingPhase && hasPhaseDiff && (
+                                                                <div className="mb-3 px-2.5 py-2 rounded-xl bg-amber-100/80 dark:bg-amber-950/70 border border-amber-300/80 dark:border-amber-700/70 flex flex-wrap items-center justify-between gap-2">
+                                                                    <div className="flex flex-wrap items-center gap-1.5 min-w-0 flex-1">
+                                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-black shrink-0 shadow-2xs">
+                                                                            {isNewInPhase ? '✨ 신규' : '✏️ 변경됨'}
+                                                                        </span>
+                                                                        {phaseDiffChips.map((chipText, cIdx) => (
+                                                                            <span
+                                                                                key={cIdx}
+                                                                                className="text-[11px] font-extrabold text-amber-900 dark:text-amber-200 bg-white/80 dark:bg-slate-900/80 px-2 py-0.5 rounded-md border border-amber-200/80 dark:border-amber-800/60 tabular-nums"
+                                                                            >
+                                                                                {chipText}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                    {!isNewInPhase && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                resetPhaseAsset(sectorKey, idx);
+                                                                            }}
+                                                                            className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 text-[11px] font-black flex items-center gap-1 shrink-0 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                                                            title="이 계좌의 분기점 수정사항을 원래 값으로 되돌립니다"
+                                                                        >
+                                                                            <span>↺</span>
+                                                                            <span>초기화</span>
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                             {!isEditing ? (
                                                                 // [Front Side] 정돈되고 세련된 모던 핀테크 카드 뷰
                                                                 <div className="flex flex-col justify-between h-full space-y-3 sm:space-y-3.5">
@@ -9004,13 +9369,186 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                                                             )}
                                                                         </div>
 
-                                                                        {/* 상태 태그 (비중 제외 시에만 노출) */}
-                                                                        {excludedAssetIds.includes(asset.id) && (
-                                                                            <span className="text-[10px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md border border-rose-200/50">
-                                                                                🚫 비중 제외됨
-                                                                            </span>
-                                                                        )}
+                                                                        {/* 우측: 꼬리표 버튼 + 비중 제외 태그 */}
+                                                                        <div className="flex items-center gap-1.5 shrink-0">
+                                                                            {!isLoan && !isExporting && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setExpandedTagAssetKey(prev => prev === assetKey ? null : assetKey)}
+                                                                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 transition-all cursor-pointer ${
+                                                                                        isTagEditorOpen || assetPurposeTags.length > 0
+                                                                                            ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border-indigo-200/80 dark:border-indigo-800/70'
+                                                                                            : 'bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200/70 dark:border-slate-700 hover:text-indigo-600 hover:border-indigo-300'
+                                                                                    }`}
+                                                                                    title="계좌 내 금액을 목적별로 쪼개어 꼬리표 붙이기"
+                                                                                >
+                                                                                    <span>🏷️</span>
+                                                                                    <span>{assetPurposeTags.length > 0 ? `꼬리표 ${assetPurposeTags.length}` : '+꼬리표'}</span>
+                                                                                </button>
+                                                                            )}
+                                                                            {excludedAssetIds.includes(asset.id) && (
+                                                                                <span className="text-[10px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md border border-rose-200/50">
+                                                                                    🚫 비중 제외됨
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
+
+                                                                    {/* [신규] 계좌 내 목적자금 꼬리표 칩 & 인라인 편집기 */}
+                                                                    {!isLoan && (assetPurposeTags.length > 0 || isTagEditorOpen) && (
+                                                                        <div className="pt-2 border-t border-dashed border-slate-200/80 dark:border-slate-700/70 space-y-2">
+                                                                            {assetPurposeTags.length > 0 && (
+                                                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                                                    {assetPurposeTags.map(tag => {
+                                                                                        const isSelectedTag = selectedPurposeTag === tag.label;
+                                                                                        return (
+                                                                                            <span
+                                                                                                key={tag.id}
+                                                                                                onClick={() => setSelectedPurposeTag(prev => prev === tag.label ? null : tag.label)}
+                                                                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold border cursor-pointer transition-all ${
+                                                                                                    isSelectedTag
+                                                                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                                                                                        : 'bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-200 border-indigo-200/70 dark:border-indigo-800/60 hover:border-indigo-400'
+                                                                                                }`}
+                                                                                                title="클릭 시 동일 꼬리표 보유 계좌 필터링"
+                                                                                            >
+                                                                                                <span>🏷️ {tag.label}</span>
+                                                                                                <strong className="font-mono font-black">{formatNumber(tag.amount, displayMode)}만</strong>
+                                                                                                {!isExporting && (
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            removeAssetPurposeTag(sectorKey, idx, tag.id);
+                                                                                                        }}
+                                                                                                        className={`ml-0.5 text-[10px] leading-none hover:text-rose-500 cursor-pointer ${isSelectedTag ? 'text-indigo-200' : 'text-slate-400'}`}
+                                                                                                        title="꼬리표 삭제"
+                                                                                                    >
+                                                                                                        ✕
+                                                                                                    </button>
+                                                                                                )}
+                                                                                            </span>
+                                                                                        );
+                                                                                    })}
+                                                                                    {assetUntaggedAmt > 0.01 && (
+                                                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700">
+                                                                                            미지정 <strong className="font-mono">{formatNumber(assetUntaggedAmt, displayMode)}만</strong>
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {assetUntaggedAmt < -0.01 && (
+                                                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                                                                                            ⚠️ 잔액 대비 +{formatNumber(Math.abs(assetUntaggedAmt), displayMode)}만 초과
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                            )}
+
+                                                                            {isTagEditorOpen && !isExporting && (
+                                                                                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-indigo-200/80 dark:border-indigo-900/60 space-y-2">
+                                                                                    <div className="flex items-center justify-between text-[11px]">
+                                                                                        <span className="font-black text-slate-700 dark:text-slate-200">
+                                                                                            🏷️ 목적자금 꼬리표 분할 지정
+                                                                                        </span>
+                                                                                        <span className="text-[10px] font-bold text-slate-400">
+                                                                                            미지정 잔액: <b className="font-mono text-indigo-600 dark:text-indigo-400">{formatNumber(Math.max(0, assetUntaggedAmt), displayMode)}만</b>
+                                                                                        </span>
+                                                                                    </div>
+
+                                                                                    {/* 빠른 태그 선택 알약 */}
+                                                                                    <div className="flex flex-wrap items-center gap-1">
+                                                                                        {purposeTagSummary.presetLabels.map(preset => (
+                                                                                            <button
+                                                                                                key={preset}
+                                                                                                type="button"
+                                                                                                onClick={() => setTagDrafts(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [assetKey]: {
+                                                                                                        label: preset,
+                                                                                                        amount: prev[assetKey]?.amount || (assetUntaggedAmt > 0 ? String(assetUntaggedAmt) : '')
+                                                                                                    }
+                                                                                                }))}
+                                                                                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors cursor-pointer ${
+                                                                                                    currentDraft.label === preset
+                                                                                                        ? 'bg-indigo-600 text-white border-indigo-600'
+                                                                                                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'
+                                                                                                }`}
+                                                                                            >
+                                                                                                {preset}
+                                                                                            </button>
+                                                                                        ))}
+                                                                                    </div>
+
+                                                                                    {/* 직접 입력 폼 */}
+                                                                                    <div className="flex items-center gap-1.5">
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            placeholder="꼬리표명 (예: 결혼자금)"
+                                                                                            value={currentDraft.label}
+                                                                                            onChange={(e) => setTagDrafts(prev => ({
+                                                                                                ...prev,
+                                                                                                [assetKey]: { ...currentDraft, label: e.target.value }
+                                                                                            }))}
+                                                                                            className="flex-1 min-w-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 dark:text-white focus:border-indigo-500 outline-none"
+                                                                                        />
+                                                                                        <div className="relative w-24 shrink-0">
+                                                                                            <input
+                                                                                                type="number"
+                                                                                                placeholder="금액"
+                                                                                                value={currentDraft.amount}
+                                                                                                onChange={(e) => setTagDrafts(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [assetKey]: { ...currentDraft, amount: e.target.value }
+                                                                                                }))}
+                                                                                                onKeyDown={(e) => {
+                                                                                                    if (e.key === 'Enter') {
+                                                                                                        const ok = addAssetPurposeTag(sectorKey, idx, currentDraft.label, currentDraft.amount);
+                                                                                                        if (ok) {
+                                                                                                            setTagDrafts(prev => ({ ...prev, [assetKey]: { label: '', amount: '' } }));
+                                                                                                        }
+                                                                                                    }
+                                                                                                }}
+                                                                                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-2 pr-5 py-1 text-xs font-mono font-bold text-right text-slate-800 dark:text-white focus:border-indigo-500 outline-none"
+                                                                                            />
+                                                                                            <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">만</span>
+                                                                                        </div>
+                                                                                        {assetUntaggedAmt > 0 && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => setTagDrafts(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [assetKey]: { ...currentDraft, amount: String(assetUntaggedAmt) }
+                                                                                                }))}
+                                                                                                className="px-2 py-1 rounded-lg bg-slate-200/80 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 text-[10px] font-bold shrink-0 cursor-pointer"
+                                                                                                title="남은 미지정 잔액 전체 입력"
+                                                                                            >
+                                                                                                잔여전액
+                                                                                            </button>
+                                                                                        )}
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                const ok = addAssetPurposeTag(sectorKey, idx, currentDraft.label, currentDraft.amount);
+                                                                                                if (ok) {
+                                                                                                    setTagDrafts(prev => ({ ...prev, [assetKey]: { label: '', amount: '' } }));
+                                                                                                }
+                                                                                            }}
+                                                                                            className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black shrink-0 cursor-pointer"
+                                                                                        >
+                                                                                            추가
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => setExpandedTagAssetKey(null)}
+                                                                                            className="px-1.5 py-1 rounded-lg text-slate-400 hover:text-slate-600 text-xs font-bold shrink-0 cursor-pointer"
+                                                                                            title="닫기"
+                                                                                        >
+                                                                                            닫기
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             ) : (
                                                                 // [Back Side] 리밸런싱 카드 스타일 플립 설정 화면

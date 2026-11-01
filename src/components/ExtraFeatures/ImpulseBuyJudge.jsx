@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import MarkdownRenderer from './MarkdownRenderer';
 
 const PRESET_ITEMS = [
     { label: '🎧 프리미엄 소형가전/취미', name: '소형 가전 / 기호품', price: 30, category: '일상/취미', depreciation: 40 },
@@ -23,9 +22,6 @@ export default function ImpulseBuyJudge({
     const [installmentMonths, setInstallmentMonths] = useState(0); // 0 = 일시불
     const [installmentRate, setInstallmentRate] = useState(5.9); // 할부 이자율 (%)
     const [monthlyMaintCost, setMonthlyMaintCost] = useState(0); // 월 추가 유지비 (만원, 차량/구독 등)
-    const [aiVerdictText, setAiVerdictText] = useState('');
-    const [isAiLoading, setIsAiLoading] = useState(false);
-    const [aiError, setAiError] = useState('');
 
     // 사용자의 실제 재무 지표 추출
     const metrics = useMemo(() => {
@@ -233,83 +229,6 @@ export default function ImpulseBuyJudge({
         };
     }, [itemPrice, monthlyMaintCost, installmentMonths, installmentRate, metrics]);
 
-    // Gemini AI 판사 최종 판결문 스트리밍 호출
-    const handleAskAiJudge = async () => {
-        const apiKey = (localStorage.getItem('asset_gemini_api_key') || '').trim();
-        if (!apiKey) {
-            setAiError('Gemini API 키가 설정되어 있지 않습니다. 우측 상단 [설정 > API 키 관리]에서 등록해주세요.');
-            if (window.showApiKeyModal) window.showApiKeyModal();
-            return;
-        }
-
-        setIsAiLoading(true);
-        setAiError('');
-        setAiVerdictText('');
-
-        const prompt = `당신은 사용자의 '자본 체급(순자산 규모 및 현금흐름)'을 정확히 꿰뚫어 보는 합리적이고 위트 있는 '대법원 금융 기회비용 수석 판사'입니다.
-사용자가 다음 물건의 구매 심의를 요청했습니다. 아래 실제 재무 스펙과 시스템 사전 판정 등급(${analysis.verdictGrade}등급)에 맞춰 판결문을 작성해 주세요.
-
-[⚠️ 절대 준수 원칙 (위반 시 판결 무효)]
-1. **날짜 표기 절대 금지**: 당신은 현재가 몇 년 몇 월 며칠인지 알 수 없습니다. 판결문에 '202X년', 'X월 X일', '작성일', '판결일자' 등 어떠한 날짜나 연도도 절대 적지 마세요.
-2. **자본 체급 비례 원칙 (억지 비난 및 볼펜 훈계 금지!)**:
-   - 현재 사용자의 순자산은 **${Math.round(metrics.netWorth).toLocaleString()}만원**, 월 잉여저축액은 **${Math.round(metrics.monthlySurplus).toLocaleString()}만원**, 보유 자산의 하루 ±1% 시장 등락폭은 **약 ${metrics.dailyAssetSwing1Pct.toLocaleString()}만원**입니다.
-   - 이번 구매 금액(${analysis.effectiveInitialCost.toLocaleString()}만원)은 순자산의 **${analysis.netWorthImpactPct}%**에 불과하며, 시스템 판정 등급은 **[${analysis.verdictGrade}등급: ${analysis.verdictTitle}]**입니다.
-   - 만약 **S등급 또는 A등급**(순자산의 1.8% 이하이거나 하루 주가 1% 변동폭 안팎인 소액·적정 소비)이라면: **"모나미 볼펜을 사라"거나 "당장 취소하라"는 식의 영혼 없는 짠돌이 훈계를 절대 하지 마세요!** 사용자의 높은 자본 체급과 저축률을 인정하고, "현재 자산 체급에서는 하루 주식 계좌 등락폭보다도 작은 금액이므로 기분 좋게 일시불로 승인한다"고 쿨하고 품격 있게 허가하세요. 단, 가벼운 재테크 위트(예: 소비 금액의 10%만큼 보유 ETF 1주 함께 적립하기 등)만 곁들이세요.
-   - 반대로 **C등급 또는 F등급**(순자산 대비 과도한 지출, 고금리 할부 이자 발생, 높은 월 유지비)일 때만 대법관답게 매섭고 신랄하게 팩폭하세요.
-
-[구매 심의 신청 내역]
-- 품목명: ${itemName}
-- 구매 가격: ${analysis.price.toLocaleString()}만원 (${analysis.months > 0 ? `${analysis.months}개월 할부, 할부이자 ${analysis.totalInstallmentInterest}만원 발생` : '일시불'})
-- 월 추가 유지비: ${analysis.maint}만원
-- 시스템 사전 산출 등급: **${analysis.verdictGrade}등급** (${analysis.verdictTitle})
-
-[사용자의 실제 재무 체급]
-- 현재 순자산: ${Math.round(metrics.netWorth).toLocaleString()}만원 (목표 은퇴자산: ${metrics.targetAmount.toLocaleString()}만원)
-- 내 포트폴리오 하루 ±1% 시장 등락폭: 약 ${metrics.dailyAssetSwing1Pct.toLocaleString()}만원
-- 월 급여: ${metrics.salary.toLocaleString()}만원 / 월 고정지출: ${Math.round(metrics.totalExpense).toLocaleString()}만원 / 월 잉여저축액: ${Math.round(metrics.monthlySurplus).toLocaleString()}만원
-- 포트폴리오 연평균 기대수익률: ${metrics.avgPortfolioReturn.toFixed(1)}%
-- 보유 대출 현황: ${metrics.loans.map(l => `${l.name}(잔액 ${l.amount}만원, 금리 ${l.rate}%, 월상환 ${l.monthlyContrib}만원)`).join(', ') || '대출 없음'}
-- 보유 주식 대체 기회비용: ${analysis.stockEquivalents.map(s => `${s.name} ${s.buyableShares}주`).join(', ') || '해당 없음'}
-
-[계산된 기회비용 팩트]
-- 순자산 대비 비중: ${analysis.netWorthImpactPct}%
-- 내 노동 시간 환산: ${analysis.workHoursRequired}시간 (${analysis.workDaysRequired}일 근무치)
-- 은퇴 목표 달성 지연: +${analysis.delayedDays}일 (${analysis.delayedMonths}개월)
-- 10년 뒤 복리 가치: ${analysis.fv10Y.toLocaleString()}만원
-
-다음 3단 구성으로 깔끔한 마크다운(표 \`| 항목 | 수치 | 평가 |\`, **볼드체** 적극 활용, 날짜 절대 표기 금지)으로 판결하세요:
-1. ⚖️ **주문 (판결 요약 및 자본 체급 진단)**: [${analysis.verdictGrade}등급] 선언 및 사용자의 순자산·일일 변동폭 대비 이 지출의 실제 무게감 1~2줄 요약
-2. 📊 **기회비용 대조표 (마크다운 표 필수 포함)**: 구매 원금, 순자산 비중, 하루 주가 등락폭 대비 체감도, 10년 복리 가치, 대체 매수 가능 주식/대출 상환 효과를 마크다운 표로 정리
-3. 💡 **수석 판사의 최종 집행 지침**: 등급(${analysis.verdictGrade})에 걸맞은 스마트한 결제/사후관리 팁 제시`;
-
-        const models = window.GEMINI_MODELS || ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
-
-        const tryModel = (idx) => {
-            if (idx >= models.length) {
-                setAiError('AI 판결문 생성에 실패했습니다. API 키 또는 할당량을 확인해주세요.');
-                setIsAiLoading(false);
-                return;
-            }
-            const model = models[idx];
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
-
-            if (window.streamGeminiResponse) {
-                window.streamGeminiResponse(
-                    url,
-                    { contents: [{ parts: [{ text: prompt }] }] },
-                    (chunkText) => setAiVerdictText(chunkText),
-                    () => setIsAiLoading(false),
-                    () => tryModel(idx + 1)
-                );
-            } else {
-                setIsAiLoading(false);
-                setAiError('스트리밍 유틸리티를 찾을 수 없습니다.');
-            }
-        };
-
-        tryModel(0);
-    };
-
     const badgeStyles = {
         emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
         indigo: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30',
@@ -325,14 +244,14 @@ export default function ImpulseBuyJudge({
                     <div>
                         <div className="flex items-center gap-2">
                             <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 border border-indigo-400/40 text-indigo-200 text-[10px] font-black uppercase tracking-wider">
-                                AI Opportunity Cost Judge
+                                Opportunity Cost Judge
                             </span>
                             <span className="text-xs text-slate-400 font-bold">
                                 내 평균 복리 {metrics.avgPortfolioReturn.toFixed(1)}% • 시급 {(metrics.hourlyWage * 10000).toLocaleString()}원 기준
                             </span>
                         </div>
                         <h2 className="text-xl sm:text-2xl font-black mt-2 flex items-center gap-2">
-                            <span>🛒</span> "이거 사도 될까?" AI 기회비용 재판소
+                            <span>🛒</span> "이거 사도 될까?" 기회비용 판독기
                         </h2>
                         <p className="text-xs text-slate-300 mt-1">
                             사고 싶은 물건의 가격을 입력하면 내 실제 순자산·보유주식·대출금리와 대조하여 은퇴 지연 일수와 10년 뒤 복리 증발액을 즉시 판결합니다.
@@ -469,25 +388,6 @@ export default function ImpulseBuyJudge({
                             />
                         </div>
                     </div>
-
-                    {/* AI 판결 요청 버튼 */}
-                    <button
-                        onClick={handleAskAiJudge}
-                        disabled={isAiLoading}
-                        className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black text-sm shadow-lg shadow-indigo-500/20 transition-all cursor-pointer active:scale-98 flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                        {isAiLoading ? (
-                            <>
-                                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                <span>대법원 AI 판사가 판결문 작성 중...</span>
-                            </>
-                        ) : (
-                            <>
-                                <span>👨‍⚖️</span>
-                                <span>AI 금융 판사에게 팩폭 판결문 받기</span>
-                            </>
-                        )}
-                    </button>
                 </div>
 
                 {/* 우측: 기회비용 수학적 시뮬레이션 결과 (7칸) */}
@@ -602,27 +502,6 @@ export default function ImpulseBuyJudge({
                             )}
                         </div>
                     </div>
-
-                    {/* 4. AI 판결문 출력 영역 */}
-                    {(aiVerdictText || aiError) && (
-                        <div className="bg-amber-50/70 dark:bg-slate-900 p-5 rounded-3xl border-2 border-amber-300 dark:border-amber-700/60 shadow-md space-y-3 animate-in fade-in duration-200">
-                            <div className="flex items-center justify-between border-b border-amber-200 dark:border-slate-800 pb-2">
-                                <span className="text-xs font-black text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
-                                    <span>⚖️</span> 대법원 금융 기회비용 판결문
-                                </span>
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/70 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
-                                    피청구품: {itemName} ({analysis.verdictGrade}등급)
-                                </span>
-                            </div>
-                            {aiError ? (
-                                <div className="text-xs font-bold text-rose-600 dark:text-rose-400">
-                                    ⚠️ {aiError}
-                                </div>
-                            ) : (
-                                <MarkdownRenderer content={aiVerdictText} />
-                            )}
-                        </div>
-                    )}
                 </div>
             </div>
         </div>
