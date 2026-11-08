@@ -8,9 +8,20 @@ const ImpulseBuyJudge = lazy(() => import('./ImpulseBuyJudge'));
 const LadderExitSimulator = lazy(() => import('./LadderExitSimulator'));
 const FxSensitivityDashboard = lazy(() => import('./FxSensitivityDashboard'));
 const ReverseGoalSolver = lazy(() => import('./ReverseGoalSolver'));
+const AiHedgeFundDesk = lazy(() => import('./AiHedgeFundDesk'));
 
 // 추가 기능 카탈로그 정의 (버튼 형태로 나열)
 const FEATURE_CATALOG = [
+    {
+        id: 'ai-hedge-fund',
+        name: 'AI 투자위원회',
+        icon: '🏛️',
+        category: '포트폴리오',
+        tag: 'NEW',
+        isAvailable: true,
+        summary: '전체 포트폴리오 비중 및 보유 종목에 대한 투자 대가 위원회 가중 심사',
+        detail: '워렌 버핏·드러켄밀러 등 투자 대가별 발언권 가중치를 설정하여 내 전체 투자자산 비중과 개별 종목을 정량·정성 교차 진단합니다.'
+    },
     {
         id: 'tax-preview',
         name: '연말정산 미리보기',
@@ -103,6 +114,7 @@ export default function ExtraFeaturesView({
     verifiedEmail = null,
     addToast = null,
     savingsRate = 0,
+    onUpdateHedgeFundConfig = null,
     onNavigateToVisualization = null
 }) {
     // 현재 선택된 기능 (기본값: 'tax-preview' 연말정산 미리보기)
@@ -154,8 +166,8 @@ export default function ExtraFeaturesView({
                     </span>
                 </div>
 
-                {/* 8개 카드 컴팩트 그리드 (모바일 2열 / 태블릿 4열 / 데스크톱 8열) */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5 sm:gap-2">
+                {/* 9개 카드 컴팩트 그리드 (모바일 2열 / 태블릿 3열 / 데스크톱 9열) */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-1.5 sm:gap-2">
                     {FEATURE_CATALOG.map((feature) => {
                         const isSelected = selectedFeatureId === feature.id;
                         return (
@@ -219,6 +231,13 @@ export default function ExtraFeaturesView({
                         </div>
                     }
                 >
+                    {activeFeature.id === 'ai-hedge-fund' && (
+                        <AiHedgeFundDesk
+                            currentAppData={currentAppData}
+                            addToast={addToast}
+                            onUpdateHedgeFundConfig={onUpdateHedgeFundConfig}
+                        />
+                    )}
                     {activeFeature.id === 'tax-preview' && (
                         <TaxSettlementPreview
                             monthlySalary={monthlySalary}

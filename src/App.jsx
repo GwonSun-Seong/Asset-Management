@@ -2350,6 +2350,7 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                 setIsCloudLoaded(false);
                 // [보안] 로그아웃 시 저장된 API 키도 삭제
                 localStorage.removeItem('asset_gemini_api_key');
+                localStorage.removeItem('asset_financial_datasets_api_key');
                 // [추가] 로그아웃 시 보안 키 세션 및 상태 초기화 (보안 강화)
                 setUserSecretKey('');
                 sessionStorage.removeItem('assetDashboardSecretKey');
@@ -11163,6 +11164,27 @@ const LadderAlertModal = lazy(() => import('./components/LadderAlertModal'));
                                         addToast={addToast}
                                         savingsRate={monthlySalary > 0 ? ((totalSectorMonthlyContrib + autoDepositAmount) / monthlySalary * 100) : 0}
                                         assetHistory={assetHistory}
+                                        onUpdateHedgeFundConfig={(nextPersonas, nextSelectedIds, nextVoteWeights, nextLastReport, nextReportsByTarget) => {
+                                            setAppData(prev => {
+                                                const newData = {
+                                                    ...prev,
+                                                    ...(nextPersonas ? { hedgeFundPersonas: nextPersonas } : {}),
+                                                    ...(nextSelectedIds ? { hedgeFundSelectedIds: nextSelectedIds } : {}),
+                                                    ...(nextVoteWeights ? { hedgeFundVoteWeights: nextVoteWeights } : {}),
+                                                    ...(nextLastReport !== undefined ? { hedgeFundLastReport: nextLastReport } : {}),
+                                                    ...(nextReportsByTarget ? { hedgeFundReportsByTarget: nextReportsByTarget } : {})
+                                                };
+                                                const trueAppData = getPhaseMergedAppData(newData, editingPhaseRef.current);
+                                                localStorage.setItem('assetDashboardDataV3', JSON.stringify(trueAppData));
+                                                saveToCloud({
+                                                    appData: trueAppData,
+                                                    scenarios: scenariosRef.current,
+                                                    assetHistory: assetHistoryRef.current,
+                                                    referenceScenarios
+                                                });
+                                                return newData;
+                                            });
+                                        }}
                                         onNavigateToVisualization={() => {
                                             setActiveTab('visualization');
                                             window.scrollTo({ top: 0, behavior: 'smooth' });

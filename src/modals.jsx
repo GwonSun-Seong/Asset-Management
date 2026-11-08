@@ -5513,17 +5513,29 @@ ${JSON.stringify(currentAssetsList, null, 2)}
 // [추가] API 키 설정 모달 (키 입력 전용)
 window.ApiKeyModal = ({ isOpen, onClose }) => {
     const [geminiKey, setGeminiKey] = React.useState(() => localStorage.getItem('asset_gemini_api_key') || '');
+    const [financialDatasetsKey, setFinancialDatasetsKey] = React.useState(() => localStorage.getItem('asset_financial_datasets_api_key') || '');
     const [tossId, setTossId] = React.useState(() => localStorage.getItem('toss_client_id') || '');
     const [tossSecret, setTossSecret] = React.useState(() => localStorage.getItem('toss_client_secret') || '');
+
+    React.useEffect(() => {
+        if (isOpen) {
+            setGeminiKey(localStorage.getItem('asset_gemini_api_key') || '');
+            setFinancialDatasetsKey(localStorage.getItem('asset_financial_datasets_api_key') || '');
+            setTossId(localStorage.getItem('toss_client_id') || '');
+            setTossSecret(localStorage.getItem('toss_client_secret') || '');
+        }
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
     const handleSave = () => {
         const cleanGemini = geminiKey.trim();
+        const cleanFinancialDatasets = financialDatasetsKey.trim();
         const cleanTossId = tossId.replace(/[\s\u200B\uFEFF]/g, '');
         const cleanTossSecret = tossSecret.replace(/[\s\u200B\uFEFF]/g, '');
 
         localStorage.setItem('asset_gemini_api_key', cleanGemini);
+        localStorage.setItem('asset_financial_datasets_api_key', cleanFinancialDatasets);
         localStorage.setItem('toss_client_id', cleanTossId);
         localStorage.setItem('toss_client_secret', cleanTossSecret);
         
@@ -5573,6 +5585,26 @@ window.ApiKeyModal = ({ isOpen, onClose }) => {
                             className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 transition-all shadow-sm"
                         />
                         <p className="text-[10px] text-slate-400">자산 분석 조언 기능 및 스크린샷 이미지 종목 일괄 추출에 사용됩니다.</p>
+                    </div>
+
+                    <div className="border-t dark:border-slate-700 my-2"></div>
+
+                    {/* Financial Datasets API Key */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-black text-slate-700 dark:text-slate-200 flex justify-between items-center">
+                            <span>📊 Financial Datasets API Key</span>
+                            <a href="https://financialdatasets.ai/" target="_blank" rel="noreferrer" className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold">
+                                API 키 발급받기 ↗
+                            </a>
+                        </label>
+                        <input
+                            type="password"
+                            placeholder="AI 헤지펀드 재무·주가 데이터 조회용 키 입력"
+                            value={financialDatasetsKey}
+                            onChange={(e) => setFinancialDatasetsKey(e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 transition-all shadow-sm"
+                        />
+                        <p className="text-[10px] text-slate-400">AI 헤지펀드 멀티 에이전트가 종목별 재무제표·주가·뉴스 데이터를 수집할 때 사용됩니다.</p>
                     </div>
 
                     <div className="border-t dark:border-slate-700 my-2"></div>
